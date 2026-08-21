@@ -153,6 +153,9 @@ fn typed_ciphertext_round_trips_through_the_profile_codec() {
 
     let ciphertext: Ciphertext<String, EmailProfile> = value.encrypt_with(&(), &keys).unwrap();
     assert_eq!(format!("{ciphertext:?}"), "Ciphertext([REDACTED])");
+    assert_eq!(AsRef::<[u8]>::as_ref(&ciphertext), ciphertext.as_bytes());
+
+    let ciphertext = Ciphertext::<String, EmailProfile>::try_from(ciphertext.into_bytes()).unwrap();
 
     let decrypted = ciphertext.decrypt_with(&(), &keys).unwrap();
     assert_eq!(decrypted.expose_secret(), "mark@example.com");
@@ -164,6 +167,10 @@ fn malformed_and_unknown_envelopes_fail_strictly() {
 
     assert_eq!(
         decrypt::<Unbound>(b"plaintext", &(), &keys),
+        Err(Error::NotCiphertext)
+    );
+    assert_eq!(
+        Ciphertext::<String, EmailProfile>::try_from(b"plaintext".to_vec()),
         Err(Error::NotCiphertext)
     );
 
