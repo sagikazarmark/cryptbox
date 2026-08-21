@@ -73,8 +73,12 @@ fn blind_indexes_are_deterministic_normalized_and_explicitly_truncated() {
 
     assert_eq!(first, second);
     assert_eq!(format!("{first:?}"), "BlindIndex([REDACTED])");
+    assert_eq!(AsRef::<[u8]>::as_ref(&first), first.as_bytes());
     assert_eq!(first.as_bytes().len(), 21);
     assert_eq!(first.as_bytes().last().unwrap() & 0b0000_0111, 0);
+
+    let stored = BlindIndex::<EmailExact>::try_from(first.as_bytes().to_vec()).unwrap();
+    assert_eq!(stored, first);
 
     let info = inspect_blind_index(first.as_bytes()).unwrap();
     assert_eq!(info.index_key_id(), CURRENT_INDEX_KEY_ID);
@@ -169,6 +173,7 @@ fn prepared_values_derive_ciphertext_and_indexes_from_one_source() {
     )
     .unwrap();
     assert_eq!(prepared_index.as_bytes(), direct.as_bytes());
+    assert_eq!(AsRef::<[u8]>::as_ref(&prepared_index), direct.as_bytes());
 }
 
 struct NameAndPostalCode;
@@ -210,7 +215,7 @@ fn typed_indexes_reject_noncanonical_storage_bytes() {
     let mut bytes = index.into_bytes();
     *bytes.last_mut().unwrap() |= 1;
 
-    assert!(BlindIndex::<EmailExact>::from_bytes(bytes).is_err());
+    assert!(BlindIndex::<EmailExact>::try_from(bytes).is_err());
 }
 
 macro_rules! truncation_spec {

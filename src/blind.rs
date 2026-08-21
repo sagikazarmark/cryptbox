@@ -92,6 +92,20 @@ impl<Spec> BlindIndex<Spec> {
     }
 }
 
+impl<Spec: BlindIndexMetadata> TryFrom<Vec<u8>> for BlindIndex<Spec> {
+    type Error = Error;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
+impl<Spec> AsRef<[u8]> for BlindIndex<Spec> {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 impl<Spec> Clone for BlindIndex<Spec> {
     fn clone(&self) -> Self {
         Self::from_validated_bytes(self.bytes.clone())
@@ -131,6 +145,12 @@ impl<'a, Spec> BlindIndexRef<'a, Spec> {
     #[must_use]
     pub const fn as_bytes(&self) -> &'a [u8] {
         self.bytes
+    }
+}
+
+impl<Spec> AsRef<[u8]> for BlindIndexRef<'_, Spec> {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
     }
 }
 

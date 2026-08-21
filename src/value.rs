@@ -115,6 +115,20 @@ impl<T, Profile> Ciphertext<T, Profile> {
     }
 }
 
+impl<T, Profile> TryFrom<Vec<u8>> for Ciphertext<T, Profile> {
+    type Error = Error;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
+impl<T, Profile> AsRef<[u8]> for Ciphertext<T, Profile> {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 impl<T, Profile> Clone for Ciphertext<T, Profile> {
     fn clone(&self) -> Self {
         Self::from_validated_bytes(self.bytes.clone())
