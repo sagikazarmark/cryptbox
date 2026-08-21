@@ -68,6 +68,25 @@ fn main() -> Result<(), cryptbox::Error> {
 Applications should load random 32-byte root keys through their own secret
 configuration path. The literal key above is only an example.
 
+For applications with many profiles, the `profile!` macro generates the same
+marker type and trait implementations while keeping the binding choice
+explicit:
+
+```rust
+cryptbox::profile! {
+    pub UserEmail: String {
+        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
+        name: "user-email",
+        codec: cryptbox::Utf8,
+        binding: field_bound,
+    }
+}
+```
+
+Use `binding: unbound` to explicitly opt out of field binding. Add
+`keys: ApplicationKeys` to select a custom key context; otherwise the macro
+uses `GlobalKeyContext`.
+
 ## Diagnostics
 
 `Field::ID` is the stable machine identifier; `Field::NAME` is a human-readable
