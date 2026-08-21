@@ -28,6 +28,7 @@ struct VectorField;
 
 impl Field for VectorField {
     const ID: cryptbox::FieldId = field_id!("12345678-1234-4234-8234-1234567890ab");
+    const NAME: &'static str = "vector-field";
 }
 
 #[test]

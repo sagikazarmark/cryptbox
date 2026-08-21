@@ -25,14 +25,22 @@ impl Binding for Unbound {
     }
 }
 
-/// Declares the stable identity of a logical encrypted field.
+/// Declares the identity and diagnostic name of a logical encrypted field.
 ///
 /// Generate a unique ID for each logical field, keep it stable across Rust and
 /// database renames, and never reuse it for a different field. Changing the ID
-/// makes existing field-bound ciphertext fail authentication.
+/// makes existing field-bound ciphertext fail authentication. The name is
+/// non-secret diagnostic metadata: it need not be unique or stable and does not
+/// participate in cryptographic operations.
 pub trait Field: Sized + 'static {
     /// The stable identifier, independent of Rust and database names.
     const ID: FieldId;
+
+    /// A human-readable name for caller-owned diagnostics.
+    ///
+    /// The name may reveal application schema and must not contain plaintext,
+    /// record-specific data, or key material.
+    const NAME: &'static str;
 }
 
 /// Binds ciphertext and blind indexes to the [`Field::ID`] declared by `F`.

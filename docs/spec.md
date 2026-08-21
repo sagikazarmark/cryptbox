@@ -485,6 +485,20 @@ A `FieldId`:
 
 **Rationale:** Tying encryption context to `"users.email"` makes harmless schema renames cryptographic migrations.
 
+Each field also declares a human-readable `Field::NAME` for diagnostics. A field
+name:
+
+- is non-secret operational metadata, but may reveal application schema;
+- need not be unique or stable;
+- MUST NOT contain plaintext, record-specific data, or key material;
+- MUST NOT participate in cryptographic domain separation, authenticated data,
+  ciphertext, or blind-index formats.
+
+Diagnostics SHOULD include both `field_id` and `field_name`: the ID is the stable
+machine identifier, while the name is a display label. Applications own the
+decision to emit this metadata through their logging, tracing, or metrics
+framework.
+
 ---
 
 ## 9.3 Security properties of binding

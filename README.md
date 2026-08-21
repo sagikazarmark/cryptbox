@@ -40,6 +40,7 @@ fn main() -> Result<(), cryptbox::Error> {
     impl Field for UserEmail {
         const ID: cryptbox::FieldId =
             field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+        const NAME: &'static str = "user-email";
     }
 
     impl EncryptionProfile<String> for UserEmail {
@@ -66,6 +67,27 @@ fn main() -> Result<(), cryptbox::Error> {
 
 Applications should load random 32-byte root keys through their own secret
 configuration path. The literal key above is only an example.
+
+## Diagnostics
+
+`Field::ID` is the stable machine identifier; `Field::NAME` is a human-readable
+display label that may change without migrating encrypted data. Include both
+when attaching field context to application-owned errors, logs, traces, or
+metrics:
+
+```rust,ignore
+tracing::warn!(
+    error = %error,
+    field_id = %UserEmail::ID,
+    field_name = UserEmail::NAME,
+    operation = "decrypt",
+    "CryptBox operation failed",
+);
+```
+
+Field names must not contain plaintext, record-specific data, or key material.
+They may still reveal application schema, so applications decide where to emit
+them. CryptBox does not emit logs or require an observability framework.
 
 ## Examples
 

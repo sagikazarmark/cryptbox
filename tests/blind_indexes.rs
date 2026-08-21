@@ -17,12 +17,14 @@ struct EmailField;
 
 impl Field for EmailField {
     const ID: cryptbox::FieldId = field_id!("80000000-0000-4000-8000-000000000008");
+    const NAME: &'static str = "email";
 }
 
 struct PhoneField;
 
 impl Field for PhoneField {
     const ID: cryptbox::FieldId = field_id!("90000000-0000-4000-8000-000000000009");
+    const NAME: &'static str = "phone";
 }
 
 struct EmailExact;

@@ -437,6 +437,7 @@ mod tests {
 
     impl Field for VectorField {
         const ID: FieldId = FieldId::from_uuid_literal("12345678-1234-4234-8234-1234567890ab");
+        const NAME: &'static str = "vector-field";
     }
 
     #[test]
