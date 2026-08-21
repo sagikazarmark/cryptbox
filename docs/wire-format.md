@@ -68,9 +68,13 @@ a 32-byte operational key. Wrong binding, modified metadata, nonce, ciphertext,
 or tag all fail authentication. An unknown `KeyId` is reported before
 authentication because no key is available.
 
-The implementation uses zeroizing HMAC pads and enables SHA-256 and Poly1305
-zeroization support so keyed hash state, pseudorandom keys, operational keys,
-and temporary digest outputs are erased on drop.
+The implementation uses the RustCrypto HKDF and HMAC crates and enables HMAC,
+SHA-256, and Poly1305 zeroization support. This erases keyed digest state,
+buffered hash input, and direct HMAC outputs on drop. CryptBox also immediately
+erases the HKDF extract output and holds derived keys and returned MACs in
+zeroizing buffers. As with other Rust cryptography implementations, transient
+crate- and compiler-generated stack copies remain part of the targeted
+zeroization and compiler review boundary.
 
 ### Provisional Envelope Vector
 

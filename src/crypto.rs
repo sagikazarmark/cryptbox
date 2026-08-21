@@ -1,5 +1,7 @@
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce, aead::AeadInOut};
-use sha2::{Digest, Sha256};
+use hkdf::Hkdf;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{Binding, BindingDomain, EncryptionKey, EncryptionKeyProvider, Error, KeyId, SuiteId};
@@ -384,46 +386,27 @@ fn hkdf_sha256_32_with_salt(
     salt: &[u8],
     info: &[u8],
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
-    let pseudo_random_key = hmac_sha256(salt, &[input_key_material])?;
+    let (mut pseudo_random_key, hkdf) = Hkdf::<Sha256>::extract(Some(salt), input_key_material);
+    // HKDF retains keyed expansion state, so the separately returned PRK is no longer needed.
+    pseudo_random_key.as_mut_slice().zeroize();
+    let mut output = Zeroizing::new([0_u8; 32]);
 
-    hmac_sha256(&pseudo_random_key[..], &[info, &[1]])
+    hkdf.expand(info, &mut output[..])
+        .map_err(|_| Error::InvalidEnvelope)?;
+
+    Ok(output)
 }
 
 pub(crate) fn hmac_sha256(key: &[u8], input: &[&[u8]]) -> Result<Zeroizing<[u8; 32]>, Error> {
-    const BLOCK_LEN: usize = 64;
-    if key.len() > BLOCK_LEN {
-        return Err(Error::InvalidEnvelope);
-    }
-
-    let mut pad = Zeroizing::new([0_u8; BLOCK_LEN]);
-    pad[..key.len()].copy_from_slice(key);
-
-    for byte in pad.iter_mut() {
-        *byte ^= 0x36;
-    }
-
-    let mut inner = Sha256::new();
-    inner.update(&pad[..]);
+    let mut hmac = Hmac::<Sha256>::new_from_slice(key).map_err(|_| Error::InvalidEnvelope)?;
 
     for component in input {
-        inner.update(component);
+        hmac.update(component);
     }
 
-    let mut inner_digest = inner.finalize();
-
-    for byte in pad.iter_mut() {
-        *byte ^= 0x36 ^ 0x5c;
-    }
-
-    let mut outer = Sha256::new();
-    outer.update(&pad[..]);
-    outer.update(&inner_digest[..]);
-    let mut digest = outer.finalize();
-
+    let digest = hmac.finalize();
     let mut output = Zeroizing::new([0_u8; 32]);
-    output.copy_from_slice(&digest);
-    inner_digest.as_mut_slice().zeroize();
-    digest.as_mut_slice().zeroize();
+    output.copy_from_slice(digest.as_bytes());
 
     Ok(output)
 }

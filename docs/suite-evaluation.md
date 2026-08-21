@@ -22,7 +22,7 @@ findings.[rustcrypto-chacha-011]
 
 **Suite 1 is defensible for production after focused review, but the repository
 is correct not to call it production-ready now.** Production should be gated on
-independent suite/envelope vectors, review of the local HKDF/HMAC and AAD
+independent suite/envelope vectors, review of the HKDF/HMAC and AAD
 composition, an explicit key-usage policy, parser/failure testing, supported
 target review, and continued use of a supported RustCrypto release. The current
 dependency is `chacha20poly1305 = "0.11.0"`, which is the current stable line;
@@ -111,13 +111,14 @@ application and context identifiers. It also permits salt reuse; a fixed
 protocol-specific salt is independent of the uniformly random root key. For a
 strong random root key, extract is conservative rather than necessary.[rfc5869]
 
-The local implementation is deliberately narrower than general HMAC: it
-rejects HMAC keys longer than the SHA-256 block size instead of first hashing
-them. Every current call site supplies a short fixed label, a 32-byte root, or
-a 32-byte PRK, so this does not change Suite 1's result. It does increase the
-review surface compared with using maintained `hkdf` and `hmac` crates. The
-included RFC 5869 test covers one HKDF vector; it is not an independent test of
-the complete CryptBox composition.[crypto-hkdf][wire]
+The implementation uses the maintained RustCrypto `hkdf` and `hmac` crates on
+their current 0.13 release lines. The `hmac` zeroization feature and SHA-256
+zeroization support erase keyed state, buffered input, and direct HMAC outputs
+on drop; CryptBox also explicitly erases the extracted pseudorandom key and
+retains derived outputs in zeroizing buffers. Transient crate- and
+compiler-generated stack copies remain in the targeted zeroization review
+boundary. The included RFC 5869 test covers one HKDF vector; it is not an
+independent test of the complete CryptBox composition.[crypto-hkdf][wire]
 
 ## Nonce analysis
 
@@ -171,7 +172,7 @@ not disqualify random AES-GCM-SIV.
 
 | Candidate | Nonce/collision and misuse behavior | Standard and interoperability | Rust implementation maturity | Performance and limits | Persistent-format fit | Review burden |
 |---|---|---|---|---|---|---|
-| **Suite 1: HKDF-SHA-256 + XChaCha20-Poly1305** | 192-bit random nonce; about `2^80` messages per derived key for collision risk near `2^-32`; catastrophic if a full key/nonce pair actually repeats | HKDF is RFC 5869 and ChaCha20-Poly1305 is RFC 8439; XChaCha is an expired IETF draft, not a final standard. It has interoperable implementations including libsodium | Current RustCrypto crate documents one NCC Group audit with no significant findings, and CryptBox uses the current 0.11 release line | Fast and constant-time-oriented in portable software; optional AVX2. Per-message max about 256 GiB. CryptBox also pays HKDF-SHA-256 and allocation costs per field | Excellent. 24-byte nonce + 16-byte tag; current suite payload overhead 40 bytes and complete envelope overhead 62 bytes | Moderate: local HKDF/HMAC, labels, AAD, format, and expired XChaCha specification need focused review; underlying crate is comparatively strong |
+| **Suite 1: HKDF-SHA-256 + XChaCha20-Poly1305** | 192-bit random nonce; about `2^80` messages per derived key for collision risk near `2^-32`; catastrophic if a full key/nonce pair actually repeats | HKDF is RFC 5869 and ChaCha20-Poly1305 is RFC 8439; XChaCha is an expired IETF draft, not a final standard. It has interoperable implementations including libsodium | Current RustCrypto crate documents one NCC Group audit with no significant findings, and CryptBox uses the current 0.11 release line | Fast and constant-time-oriented in portable software; optional AVX2. Per-message max about 256 GiB. CryptBox also pays HKDF-SHA-256 and allocation costs per field | Excellent. 24-byte nonce + 16-byte tag; current suite payload overhead 40 bytes and complete envelope overhead 62 bytes | Moderate: labels, AAD, format, and expired XChaCha specification need focused review; underlying crates are comparatively strong |
 | **AES-256-GCM** | 96-bit nonce must be unique. One repeat is catastrophic. Random nonces are unsuitable for an effectively unbounded long-lived key without a low cap; coordinated counters add distributed state | Strongest standards/compliance position: NIST SP 800-38D and standards-track RFC 5116; broad interoperability and hardware/HSM support | RustCrypto `aes-gcm` documents one NCC Group audit with no significant findings and constant-time-oriented hardware/portable backends | Usually fastest on AES-NI/VAES/ARMv8 AES + carryless-multiply hardware; portable fallback exists. `P_MAX = 2^36 - 31` bytes. Aggregate block and forgery limits still require policy | Compact: 12-byte nonce + 16-byte tag; 50-byte minimum in the current envelope shape | Low primitive-spec burden, high nonce-system burden. Random use does not match CryptBox's long-lived/multi-process goal; counters would require a new reliable subsystem |
 | **AES-256-GCM-SIV** | 96-bit nonce; misuse-resistant rather than collision-resistant. Reuse leaks equality for the repeated nonce instead of destroying key-wide security. Random nonce is recommended | Final CFRG-consensus RFC 8452 with IANA AEAD ID and vectors; not an IETF Standards Track or NIST mode | RustCrypto says the crate itself has never been audited; AES and POLYVAL dependencies were included in the AES-GCM audit | Two-pass encryption. RFC measurements report multikilobyte decryption within 5% of GCM and encryption near two-thirds GCM speed. `P_MAX = A_MAX = 2^36` bytes | Excellent and 12 bytes smaller than Suite 1: 12-byte nonce + 16-byte tag; 50-byte minimum | Lower construction-spec burden than XChaCha, but currently higher Rust implementation-assurance burden. Must never release unauthenticated plaintext during two-pass decryption |
 | **AES-256-SIV (CMAC-SIV)** | Nonce-misuse-resistant. Without a nonce it is deterministic and leaks equality on every repeat, which is not CryptBox's desired randomized mode. RFC 5297 recommends at least 128 random nonce bits when randomized | Final informational RFC 5297 with IANA AEAD IDs and vectors; established but less common than GCM | RustCrypto says no audit has ever been performed and constant-time behavior has not been thoroughly assessed | Two-pass CMAC then CTR and slower than high-throughput modes. AES-256-SIV needs a 64-byte composite key. RFC recommends at most `2^48` distinct invocations per key | Viable with a stored 16-byte random nonce and 16-byte SIV/tag; would need HKDF to derive 64 bytes. Deterministic use is unsuitable | Higher than GCM-SIV: unaudited implementation, larger key schedule, older/more complex S2V interface, and no benefit over GCM-SIV for this use case |
@@ -315,9 +316,9 @@ complete:
 2. **Composition review:** review the fixed HKDF salt, all labels including NUL
    terminators, `info` encoding, binding injectivity, AAD encoding, key-ID use,
    error behavior, and the authenticate-before-use boundary.
-3. **Reduce local primitive code:** either replace the hand-written restricted
-   HMAC/HKDF with maintained crates without changing bytes, or include that
-   code explicitly in the audit scope.
+3. **Maintained primitive implementation (complete):** the hand-written
+   restricted HMAC/HKDF was replaced with RustCrypto crates without changing
+   the RFC 5869, envelope, or blind-index vectors.
 4. **Supported dependency line:** remain on the current RustCrypto release line
    and regenerate cross-version compatibility tests for future major upgrades.
    RustCrypto's policy only supports its latest release.[rustcrypto-security]
