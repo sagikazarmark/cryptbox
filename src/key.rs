@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, fmt, sync::Arc, sync::OnceLock};
 
+use base64::Engine as _;
 use zeroize::Zeroizing;
 
 use crate::{Error, IndexKeyId, KeyId, KeyProviderError};
@@ -19,6 +20,43 @@ struct KeyMaterial<Id> {
 pub struct EncryptionKey(Arc<KeyMaterial<KeyId>>);
 
 impl EncryptionKey {
+    /// Generates a root encryption key and independent random generation ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::RandomnessUnavailable`] if the operating-system random
+    /// source fails.
+    pub fn generate() -> Result<Self, Error> {
+        let id = KeyId::from_bytes(random_id()?);
+        Ok(Self(generate_key_material(id)?))
+    }
+
+    /// Decodes a root encryption key from exactly 64 hexadecimal characters.
+    ///
+    /// Decoded bytes are written directly into zeroizing key storage. The
+    /// caller remains responsible for zeroizing its encoded input when needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// not represent exactly 32 bytes.
+    pub fn from_hex(id: KeyId, encoded: &str) -> Result<Self, Error> {
+        Ok(Self(key_material_from_hex(id, encoded)?))
+    }
+
+    /// Decodes a root encryption key from standard Base64.
+    ///
+    /// Decoded bytes are written directly into zeroizing key storage. The
+    /// caller remains responsible for zeroizing its encoded input when needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// not represent exactly 32 bytes.
+    pub fn from_base64(id: KeyId, encoded: &str) -> Result<Self, Error> {
+        Ok(Self(key_material_from_base64(id, encoded)?))
+    }
+
     /// Creates a root encryption key from 32 bytes of key material.
     ///
     /// Generate this material independently from every blind-index root key.
@@ -60,6 +98,43 @@ impl fmt::Debug for EncryptionKey {
 pub struct BlindIndexKey(Arc<KeyMaterial<IndexKeyId>>);
 
 impl BlindIndexKey {
+    /// Generates a root blind-index key and independent random generation ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::RandomnessUnavailable`] if the operating-system random
+    /// source fails.
+    pub fn generate() -> Result<Self, Error> {
+        let id = IndexKeyId::from_bytes(random_id()?);
+        Ok(Self(generate_key_material(id)?))
+    }
+
+    /// Decodes a root blind-index key from exactly 64 hexadecimal characters.
+    ///
+    /// Decoded bytes are written directly into zeroizing key storage. The
+    /// caller remains responsible for zeroizing its encoded input when needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// not represent exactly 32 bytes.
+    pub fn from_hex(id: IndexKeyId, encoded: &str) -> Result<Self, Error> {
+        Ok(Self(key_material_from_hex(id, encoded)?))
+    }
+
+    /// Decodes a root blind-index key from standard Base64.
+    ///
+    /// Decoded bytes are written directly into zeroizing key storage. The
+    /// caller remains responsible for zeroizing its encoded input when needed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// not represent exactly 32 bytes.
+    pub fn from_base64(id: IndexKeyId, encoded: &str) -> Result<Self, Error> {
+        Ok(Self(key_material_from_base64(id, encoded)?))
+    }
+
     /// Creates a root blind-index key from 32 bytes of key material.
     #[must_use]
     pub fn new(id: IndexKeyId, bytes: [u8; 32]) -> Self {
@@ -88,6 +163,52 @@ impl fmt::Debug for BlindIndexKey {
             .field("material", &"[REDACTED]")
             .finish()
     }
+}
+
+fn random_id() -> Result<[u8; 16], Error> {
+    let mut id = [0_u8; 16];
+    getrandom::fill(&mut id).map_err(|_| Error::RandomnessUnavailable)?;
+    Ok(id)
+}
+
+fn generate_key_material<Id>(id: Id) -> Result<Arc<KeyMaterial<Id>>, Error> {
+    initialize_key_material(id, |bytes| {
+        getrandom::fill(bytes).map_err(|_| Error::RandomnessUnavailable)
+    })
+}
+
+fn key_material_from_hex<Id>(id: Id, encoded: &str) -> Result<Arc<KeyMaterial<Id>>, Error> {
+    initialize_key_material(id, |bytes| {
+        hex::decode_to_slice(encoded, bytes).map_err(|_| Error::InvalidKeyEncoding)
+    })
+}
+
+fn key_material_from_base64<Id>(id: Id, encoded: &str) -> Result<Arc<KeyMaterial<Id>>, Error> {
+    initialize_key_material(id, |bytes| {
+        let decoded_len = base64::engine::general_purpose::STANDARD
+            .decode_slice(encoded, bytes)
+            .map_err(|_| Error::InvalidKeyEncoding)?;
+
+        if decoded_len != bytes.len() {
+            return Err(Error::InvalidKeyEncoding);
+        }
+
+        Ok(())
+    })
+}
+
+fn initialize_key_material<Id>(
+    id: Id,
+    initialize: impl FnOnce(&mut [u8; 32]) -> Result<(), Error>,
+) -> Result<Arc<KeyMaterial<Id>>, Error> {
+    let mut material = Arc::new(KeyMaterial {
+        id,
+        bytes: Zeroizing::new([0_u8; 32]),
+    });
+    let bytes = &mut Arc::get_mut(&mut material).ok_or(Error::Internal)?.bytes;
+    initialize(bytes)?;
+
+    Ok(material)
 }
 
 /// Resolves current and historical root encryption keys synchronously.

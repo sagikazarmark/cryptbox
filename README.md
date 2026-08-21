@@ -31,7 +31,7 @@ plaintext while in application memory and requires explicit plaintext access.
 ```rust
 use cryptbox::{
     Encrypted, EncryptionKey, EncryptionProfile, Field, FieldBound,
-    GlobalKeyContext, LocalEncryptionKeyring, Utf8, field_id, key_id,
+    GlobalKeyContext, LocalEncryptionKeyring, Utf8, field_id,
 };
 
 fn main() -> Result<(), cryptbox::Error> {
@@ -50,10 +50,7 @@ fn main() -> Result<(), cryptbox::Error> {
     }
 
     let keys = LocalEncryptionKeyring::new(
-        EncryptionKey::new(
-            key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"),
-            [0x42; 32],
-        ),
+        EncryptionKey::generate()?,
         [],
     )?;
     let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
@@ -65,8 +62,25 @@ fn main() -> Result<(), cryptbox::Error> {
 }
 ```
 
-Applications should load random 32-byte root keys through their own secret
-configuration path. The literal key above is only an example.
+The quick start generates an ephemeral key. Durable data requires the same key
+and ID across process restarts, provisioned through the application's secret
+management path. Existing 32-byte root keys can be loaded from hex or standard
+Base64 after the application fetches its configuration:
+
+```rust,ignore
+use cryptbox::{EncryptionKey, key_id};
+use zeroize::Zeroizing;
+
+let encoded = Zeroizing::new(std::env::var("MASTER_KEY")?);
+let key = EncryptionKey::from_base64(
+    key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"),
+    &encoded,
+)?;
+```
+
+`from_hex` and `from_base64` decode directly into zeroizing key storage, but
+cannot erase copies retained by the operating system or process environment.
+Generate encryption and blind-index keys independently.
 
 For applications with many profiles, the `profile!` macro generates the same
 marker type and trait implementations while keeping the binding choice

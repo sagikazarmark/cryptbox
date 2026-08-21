@@ -124,6 +124,9 @@ pub enum Error {
     /// The operating-system random source failed.
     #[error("secure randomness is unavailable")]
     RandomnessUnavailable,
+    /// Encoded root key material is malformed or does not decode to 32 bytes.
+    #[error("encoded key material is invalid")]
+    InvalidKeyEncoding,
     /// An internal invariant was violated.
     #[error("internal error")]
     Internal,
