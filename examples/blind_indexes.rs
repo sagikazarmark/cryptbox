@@ -68,7 +68,8 @@ fn main() -> Result<(), cryptbox::Error> {
     let probes =
         blind_index_probes::<EmailLookup, str, FieldBound<UserEmail>>(query, &(), &index_keys)?;
 
-    // A database query should match against every probe during index-key rotation.
+    // Stored indexes are lookup tokens, not plaintext secrets, so ordinary
+    // equality is appropriate when matching every probe during key rotation.
     let is_candidate = probes.iter().any(|probe| probe.as_bytes() == stored_index);
     assert!(is_candidate);
 

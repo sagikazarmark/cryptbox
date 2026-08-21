@@ -1,5 +1,6 @@
 use std::{fmt, marker::PhantomData};
 
+use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
@@ -289,6 +290,10 @@ where
 
 /// Compares normalized query and candidate plaintext after candidate lookup.
 ///
+/// Equal-length normalized values are compared in constant time. A normalized
+/// length mismatch returns early, so callers must treat normalized lengths as
+/// observable.
+///
 /// # Errors
 ///
 /// Returns a sanitized error when either value cannot be normalized.
@@ -303,7 +308,11 @@ where
     let query = Spec::normalize(query)?;
     let candidate = Spec::normalize(candidate)?;
 
-    Ok(query.as_slice() == candidate.as_slice())
+    if query.len() != candidate.len() {
+        return Ok(false);
+    }
+
+    Ok(query.as_slice().ct_eq(candidate.as_slice()).into())
 }
 
 pub(crate) fn derive_with_domain<Spec, Input>(

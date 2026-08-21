@@ -140,9 +140,10 @@ fn candidate_hits_require_normalized_plaintext_verification() {
             .unwrap()
     );
     assert!(
-        !verify_blind_index_candidate::<EmailExact, str>("mark@example.com", "other@example.com")
+        !verify_blind_index_candidate::<EmailExact, str>("mark@example.com", "mask@example.com")
             .unwrap()
     );
+    assert!(!verify_blind_index_candidate::<EmailExact, str>("mark@example.com", "short").unwrap());
 }
 
 struct EmailProfile;

@@ -17,6 +17,17 @@ pub type ProfileContext<T, Profile> =
 /// `Debug`, does not implement `Display` or `Deref`, and requires explicit
 /// access through [`Self::expose_secret`]. It does not zeroize arbitrary `T`;
 /// use [`Secret`] when the application value supports [`Zeroize`].
+///
+/// Plaintext comparison must also be explicit:
+///
+/// ```compile_fail
+/// use cryptbox::Encrypted;
+///
+/// struct Profile;
+/// let left = Encrypted::<_, Profile>::new("secret");
+/// let right = Encrypted::<_, Profile>::new("secret");
+/// let _ = left == right;
+/// ```
 pub struct Encrypted<T, Profile> {
     value: T,
     profile: PhantomData<fn() -> Profile>,
@@ -49,14 +60,6 @@ impl<T: Clone, Profile> Clone for Encrypted<T, Profile> {
         Self::new(self.value.clone())
     }
 }
-
-impl<T: PartialEq, Profile> PartialEq for Encrypted<T, Profile> {
-    fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
-    }
-}
-
-impl<T: Eq, Profile> Eq for Encrypted<T, Profile> {}
 
 impl<T, Profile> From<T> for Encrypted<T, Profile> {
     fn from(value: T) -> Self {
