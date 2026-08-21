@@ -21,11 +21,54 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 /// derivation but is not stored in the index bytes. Changing the ID,
 /// normalization, binding, or precision creates a new logical index and
 /// requires a migration.
+///
+/// Invalid precision is rejected when the specification is used:
+///
+/// ```compile_fail
+/// use cryptbox::{BlindIndex, BlindIndexMetadata, IndexId};
+///
+/// struct ZeroBits;
+///
+/// impl BlindIndexMetadata for ZeroBits {
+///     const ID: IndexId = IndexId::from_bytes([0; 16]);
+///     const BITS: usize = 0;
+/// }
+///
+/// let _ = BlindIndex::<ZeroBits>::from_bytes(Vec::new());
+/// ```
+///
+/// ```compile_fail
+/// use cryptbox::{BlindIndex, BlindIndexMetadata, IndexId};
+///
+/// struct TooManyBits;
+///
+/// impl BlindIndexMetadata for TooManyBits {
+///     const ID: IndexId = IndexId::from_bytes([0; 16]);
+///     const BITS: usize = 300;
+/// }
+///
+/// let _ = BlindIndex::<TooManyBits>::from_bytes(Vec::new());
+/// ```
 pub trait BlindIndexMetadata: Sized + 'static {
     /// The stable logical index identifier.
     const ID: IndexId;
     /// The number of most-significant HMAC bits retained for candidate lookup.
     const BITS: usize;
+}
+
+trait ValidBlindIndexBits {
+    const ASSERT_VALID_BITS: ();
+}
+
+impl<Spec: BlindIndexMetadata> ValidBlindIndexBits for Spec {
+    const ASSERT_VALID_BITS: () = assert!(
+        Spec::BITS > 0 && Spec::BITS <= MAX_INDEX_BITS,
+        "BlindIndexMetadata::BITS must be between 1 and 256",
+    );
+}
+
+fn assert_valid_bits<Spec: BlindIndexMetadata>() {
+    let () = <Spec as ValidBlindIndexBits>::ASSERT_VALID_BITS;
 }
 
 /// Deterministically normalizes an arbitrary input for one logical index.
@@ -60,10 +103,11 @@ impl<Spec: BlindIndexMetadata> BlindIndex<Spec> {
     /// # Errors
     ///
     /// Returns [`Error::InvalidBlindIndex`] for malformed, noncanonical, or
-    /// incorrectly sized values. This validates `Spec::BITS`, but does not
-    /// authenticate the representation or prove that it was derived with
-    /// `Spec::ID`, the expected binding, or the expected input.
+    /// incorrectly sized values. `Spec::BITS` is checked at compile time. This
+    /// does not authenticate the representation or prove that it was derived
+    /// with `Spec::ID`, the expected binding, or the expected input.
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
+        assert_valid_bits::<Spec>();
         let bytes = bytes.into();
         let info = inspect_blind_index(&bytes)?;
 
@@ -235,8 +279,7 @@ pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
 ///
 /// # Errors
 ///
-/// Returns an error for invalid precision, normalization failure, or an
-/// unavailable key provider.
+/// Returns an error for normalization failure or an unavailable key provider.
 pub fn derive_blind_index<Spec, Input, B>(
     input: &Input,
     context: &B::Context,
@@ -267,8 +310,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns an error for invalid precision, normalization failure, or an
-/// unavailable key provider.
+/// Returns an error for normalization failure or an unavailable key provider.
 pub fn blind_index_probes<Spec, Input, B>(
     input: &Input,
     context: &B::Context,
@@ -335,6 +377,7 @@ fn derive_normalized<Spec: BlindIndexMetadata>(
     domain: &BindingDomain,
     key: &BlindIndexKey,
 ) -> Result<BlindIndex<Spec>, Error> {
+    assert_valid_bits::<Spec>();
     validate_bits(Spec::BITS)?;
     let bits = u16::try_from(Spec::BITS).map_err(|_| Error::InvalidBlindIndex)?;
     let mut header = [0_u8; INDEX_HEADER_LEN];
