@@ -221,6 +221,25 @@ fn typed_indexes_reject_noncanonical_storage_bytes() {
     assert!(BlindIndex::<EmailExact>::try_from(bytes).is_err());
 }
 
+#[test]
+fn inspection_rejects_untrusted_out_of_range_precisions() {
+    let index = derive_blind_index::<EmailExact, str, FieldBound<EmailField>>(
+        "mark@example.com",
+        &(),
+        &index_keys(),
+    )
+    .unwrap();
+    let mut bytes = index.into_bytes();
+
+    bytes[17..19].copy_from_slice(&0_u16.to_be_bytes());
+    bytes.truncate(19);
+    assert!(inspect_blind_index(&bytes).is_err());
+
+    bytes[17..19].copy_from_slice(&257_u16.to_be_bytes());
+    bytes.resize(19 + 257_usize.div_ceil(8), 0);
+    assert!(inspect_blind_index(&bytes).is_err());
+}
+
 macro_rules! truncation_spec {
     ($name:ident, $bits:expr, $id_byte:expr) => {
         struct $name;

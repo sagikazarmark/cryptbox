@@ -62,7 +62,7 @@ trait ValidBlindIndexBits {
 
 impl<Spec: BlindIndexMetadata> ValidBlindIndexBits for Spec {
     const ASSERT_VALID_BITS: () = assert!(
-        Spec::BITS > 0 && Spec::BITS <= MAX_INDEX_BITS,
+        valid_bits(Spec::BITS),
         "BlindIndexMetadata::BITS must be between 1 and 256",
     );
 }
@@ -378,7 +378,6 @@ fn derive_normalized<Spec: BlindIndexMetadata>(
     key: &BlindIndexKey,
 ) -> Result<BlindIndex<Spec>, Error> {
     assert_valid_bits::<Spec>();
-    validate_bits(Spec::BITS)?;
     let bits = u16::try_from(Spec::BITS).map_err(|_| Error::InvalidBlindIndex)?;
     let mut header = [0_u8; INDEX_HEADER_LEN];
     header[0] = INDEX_FORMAT_VERSION;
@@ -418,8 +417,12 @@ fn derive_normalized<Spec: BlindIndexMetadata>(
     Ok(BlindIndex::from_validated_bytes(stored))
 }
 
+const fn valid_bits(bits: usize) -> bool {
+    bits > 0 && bits <= MAX_INDEX_BITS
+}
+
 fn validate_bits(bits: usize) -> Result<(), Error> {
-    if !(1..=MAX_INDEX_BITS).contains(&bits) {
+    if !valid_bits(bits) {
         return Err(Error::InvalidBlindIndex);
     }
 
