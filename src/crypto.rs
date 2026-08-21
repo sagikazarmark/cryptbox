@@ -273,13 +273,13 @@ impl XChaCha20Poly1305Suite {
         prefix.extend_from_slice(&nonce);
 
         let operational_key = derive_encryption_key(key, domain, self.id())?;
-        let cipher = XChaCha20Poly1305::new_from_slice(&operational_key[..])
-            .map_err(|_| Error::InvalidEnvelope)?;
+        let cipher =
+            XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
         let aad = envelope_aad(&prefix, domain);
         let mut sealed = Zeroizing::new(plaintext.to_vec());
         cipher
             .encrypt_in_place(&nonce, &aad, &mut *sealed)
-            .map_err(|_| Error::MessageTooLong)?;
+            .map_err(|_| Error::Internal)?;
 
         let capacity = prefix
             .len()
@@ -340,8 +340,8 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         prefix.extend_from_slice(nonce);
 
         let operational_key = derive_encryption_key(key, domain, self.id())?;
-        let cipher = XChaCha20Poly1305::new_from_slice(&operational_key[..])
-            .map_err(|_| Error::InvalidEnvelope)?;
+        let cipher =
+            XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
         let aad = envelope_aad(&prefix, domain);
         let mut plaintext = Zeroizing::new(payload[NONCE_LEN..].to_vec());
         cipher
@@ -392,13 +392,13 @@ fn hkdf_sha256_32_with_salt(
     let mut output = Zeroizing::new([0_u8; 32]);
 
     hkdf.expand(info, &mut output[..])
-        .map_err(|_| Error::InvalidEnvelope)?;
+        .map_err(|_| Error::Internal)?;
 
     Ok(output)
 }
 
 pub(crate) fn hmac_sha256(key: &[u8], input: &[&[u8]]) -> Result<Zeroizing<[u8; 32]>, Error> {
-    let mut hmac = Hmac::<Sha256>::new_from_slice(key).map_err(|_| Error::InvalidEnvelope)?;
+    let mut hmac = Hmac::<Sha256>::new_from_slice(key).map_err(|_| Error::Internal)?;
 
     for component in input {
         hmac.update(component);

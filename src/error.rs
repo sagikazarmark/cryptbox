@@ -124,6 +124,9 @@ pub enum Error {
     /// The operating-system random source failed.
     #[error("secure randomness is unavailable")]
     RandomnessUnavailable,
+    /// An internal invariant was violated.
+    #[error("internal error")]
+    Internal,
     /// The input exceeds the suite's message-size limit.
     #[error("message is too long")]
     MessageTooLong,
