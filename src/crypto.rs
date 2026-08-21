@@ -1,4 +1,4 @@
-use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce, aead::AeadInPlace};
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce, aead::AeadInOut};
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, Zeroizing};
 
@@ -256,6 +256,7 @@ impl XChaCha20Poly1305Suite {
         nonce: [u8; NONCE_LEN],
     ) -> Result<Vec<u8>, Error> {
         validate_plaintext_len(plaintext.len())?;
+        let nonce = XNonce::from(nonce);
         let mut prefix = Vec::with_capacity(PREFIX_LEN);
         prefix.extend_from_slice(header);
         prefix.extend_from_slice(&nonce);
@@ -266,7 +267,7 @@ impl XChaCha20Poly1305Suite {
         let aad = envelope_aad(&prefix, domain);
         let mut sealed = Zeroizing::new(plaintext.to_vec());
         cipher
-            .encrypt_in_place(XNonce::from_slice(&nonce), &aad, &mut *sealed)
+            .encrypt_in_place(&nonce, &aad, &mut *sealed)
             .map_err(|_| Error::MessageTooLong)?;
 
         let capacity = prefix
@@ -315,7 +316,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
         self.validate_payload(payload)?;
-        let nonce: &[u8; NONCE_LEN] = payload[..NONCE_LEN]
+        let nonce: &XNonce = payload[..NONCE_LEN]
             .try_into()
             .map_err(|_| Error::InvalidEnvelope)?;
         let mut prefix = Vec::with_capacity(PREFIX_LEN);
@@ -328,7 +329,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         let aad = envelope_aad(&prefix, domain);
         let mut plaintext = Zeroizing::new(payload[NONCE_LEN..].to_vec());
         cipher
-            .decrypt_in_place(XNonce::from_slice(nonce), &aad, &mut *plaintext)
+            .decrypt_in_place(nonce, &aad, &mut *plaintext)
             .map_err(|_| Error::AuthenticationFailed)?;
         Ok(plaintext)
     }
