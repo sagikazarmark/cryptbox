@@ -18,16 +18,16 @@ callers cannot accidentally supply a counter or repeat a nonce. A 192-bit
 random nonce makes accidental collision negligible at any credible database
 volume, without cross-process coordination. The existing RustCrypto
 `chacha20poly1305` crate has also received a security audit with no significant
-findings.[rustcrypto-chacha-010]
+findings.[rustcrypto-chacha-011]
 
 **Suite 1 is defensible for production after focused review, but the repository
 is correct not to call it production-ready now.** Production should be gated on
 independent suite/envelope vectors, review of the local HKDF/HMAC and AAD
 composition, an explicit key-usage policy, parser/failure testing, supported
-target review, and resolution of the out-of-date RustCrypto major version. The
-current dependency is `chacha20poly1305 = "0.10.1"`, while the current stable
-line is 0.11 and RustCrypto applies security updates only to its most recent
-release.[cargo][rustcrypto-chacha-latest][rustcrypto-security]
+target review, and continued use of a supported RustCrypto release. The current
+dependency is `chacha20poly1305 = "0.11.0"`, which is the current stable line;
+RustCrypto applies security updates only to its most recent release.
+[cargo][rustcrypto-chacha-011][rustcrypto-security]
 
 **AES-256-GCM-SIV is the strongest alternative to keep under consideration.**
 It has a final CFRG-consensus RFC and turns accidental nonce reuse from a
@@ -171,14 +171,14 @@ not disqualify random AES-GCM-SIV.
 
 | Candidate | Nonce/collision and misuse behavior | Standard and interoperability | Rust implementation maturity | Performance and limits | Persistent-format fit | Review burden |
 |---|---|---|---|---|---|---|
-| **Suite 1: HKDF-SHA-256 + XChaCha20-Poly1305** | 192-bit random nonce; about `2^80` messages per derived key for collision risk near `2^-32`; catastrophic if a full key/nonce pair actually repeats | HKDF is RFC 5869 and ChaCha20-Poly1305 is RFC 8439; XChaCha is an expired IETF draft, not a final standard. It has interoperable implementations including libsodium | Current RustCrypto crate documents one NCC Group audit with no significant findings, but CryptBox uses the previous 0.10 major line | Fast and constant-time-oriented in portable software; optional AVX2. Per-message max about 256 GiB. CryptBox also pays HKDF-SHA-256 and allocation costs per field | Excellent. 24-byte nonce + 16-byte tag; current suite payload overhead 40 bytes and complete envelope overhead 62 bytes | Moderate: local HKDF/HMAC, labels, AAD, format, and expired XChaCha specification need focused review; underlying crate is comparatively strong |
+| **Suite 1: HKDF-SHA-256 + XChaCha20-Poly1305** | 192-bit random nonce; about `2^80` messages per derived key for collision risk near `2^-32`; catastrophic if a full key/nonce pair actually repeats | HKDF is RFC 5869 and ChaCha20-Poly1305 is RFC 8439; XChaCha is an expired IETF draft, not a final standard. It has interoperable implementations including libsodium | Current RustCrypto crate documents one NCC Group audit with no significant findings, and CryptBox uses the current 0.11 release line | Fast and constant-time-oriented in portable software; optional AVX2. Per-message max about 256 GiB. CryptBox also pays HKDF-SHA-256 and allocation costs per field | Excellent. 24-byte nonce + 16-byte tag; current suite payload overhead 40 bytes and complete envelope overhead 62 bytes | Moderate: local HKDF/HMAC, labels, AAD, format, and expired XChaCha specification need focused review; underlying crate is comparatively strong |
 | **AES-256-GCM** | 96-bit nonce must be unique. One repeat is catastrophic. Random nonces are unsuitable for an effectively unbounded long-lived key without a low cap; coordinated counters add distributed state | Strongest standards/compliance position: NIST SP 800-38D and standards-track RFC 5116; broad interoperability and hardware/HSM support | RustCrypto `aes-gcm` documents one NCC Group audit with no significant findings and constant-time-oriented hardware/portable backends | Usually fastest on AES-NI/VAES/ARMv8 AES + carryless-multiply hardware; portable fallback exists. `P_MAX = 2^36 - 31` bytes. Aggregate block and forgery limits still require policy | Compact: 12-byte nonce + 16-byte tag; 50-byte minimum in the current envelope shape | Low primitive-spec burden, high nonce-system burden. Random use does not match CryptBox's long-lived/multi-process goal; counters would require a new reliable subsystem |
 | **AES-256-GCM-SIV** | 96-bit nonce; misuse-resistant rather than collision-resistant. Reuse leaks equality for the repeated nonce instead of destroying key-wide security. Random nonce is recommended | Final CFRG-consensus RFC 8452 with IANA AEAD ID and vectors; not an IETF Standards Track or NIST mode | RustCrypto says the crate itself has never been audited; AES and POLYVAL dependencies were included in the AES-GCM audit | Two-pass encryption. RFC measurements report multikilobyte decryption within 5% of GCM and encryption near two-thirds GCM speed. `P_MAX = A_MAX = 2^36` bytes | Excellent and 12 bytes smaller than Suite 1: 12-byte nonce + 16-byte tag; 50-byte minimum | Lower construction-spec burden than XChaCha, but currently higher Rust implementation-assurance burden. Must never release unauthenticated plaintext during two-pass decryption |
 | **AES-256-SIV (CMAC-SIV)** | Nonce-misuse-resistant. Without a nonce it is deterministic and leaks equality on every repeat, which is not CryptBox's desired randomized mode. RFC 5297 recommends at least 128 random nonce bits when randomized | Final informational RFC 5297 with IANA AEAD IDs and vectors; established but less common than GCM | RustCrypto says no audit has ever been performed and constant-time behavior has not been thoroughly assessed | Two-pass CMAC then CTR and slower than high-throughput modes. AES-256-SIV needs a 64-byte composite key. RFC recommends at most `2^48` distinct invocations per key | Viable with a stored 16-byte random nonce and 16-byte SIV/tag; would need HKDF to derive 64 bytes. Deterministic use is unsuitable | Higher than GCM-SIV: unaudited implementation, larger key schedule, older/more complex S2V interface, and no benefit over GCM-SIV for this use case |
 | **XAES-256-GCM** | 192-bit random nonce and the same `2^80`/`2^-32` collision budget as XChaCha; explicitly not misuse-resistant or key-committing | C2SP specification built from NIST KDF/CMAC/AES-GCM components, but not itself an RFC or NIST standard | RustCrypto is `0.1.0-rc.3`; documentation says no audit and no constant-time guarantee | AES-GCM profile plus three AES-256 calls per operation, one amortizable; about 64 GiB max plaintext | Same 24-byte nonce + 16-byte tag overhead as Suite 1 | Too high today. It does not improve Suite 1's misuse behavior and is materially less mature in Rust |
 
 Sources for the table are the algorithm specifications and official crate
-documentation.[rfc5869][rfc8439][xchacha-draft][rfc5116][nist-gcm][rfc8452][rfc5297][c2sp-xaes][rustcrypto-chacha-010][rustcrypto-aes-gcm][rustcrypto-gcm-siv][rustcrypto-aes-siv][rustcrypto-xaes]
+documentation.[rfc5869][rfc8439][xchacha-draft][rfc5116][nist-gcm][rfc8452][rfc5297][c2sp-xaes][rustcrypto-chacha-011][rustcrypto-aes-gcm][rustcrypto-gcm-siv][rustcrypto-aes-siv][rustcrypto-xaes]
 
 ### Key/message limits need operational interpretation
 
@@ -254,7 +254,7 @@ The expected platform ordering is nevertheless clear:
   fields can have a larger fixed-cost gap.[rfc8452]
 - XChaCha20-Poly1305 is a strong portable choice without AES hardware. RFC 8439
   reports ChaCha20 around three times faster than AES in software-only settings,
-  and RustCrypto provides portable and AVX2 paths.[rfc8439][rustcrypto-chacha-010]
+  and RustCrypto provides portable and AVX2 paths.[rfc8439][rustcrypto-chacha-011]
 - AES-SIV is two-pass and CMAC's dependency chain makes it less parallel than
   polynomial hashes. RFC 5297 explicitly trades throughput for nonce-robustness.
   It offers no clear performance or assurance advantage over GCM-SIV here.[rfc5297]
@@ -263,7 +263,7 @@ RustCrypto cautions that its ChaCha/Poly1305, GCM, and GCM-SIV portable paths
 assume constant-time multiplication. Certain 32-bit PowerPC CPUs and some
 non-ARM microcontrollers have variable-time multiplication and are unsuitable.
 CryptBox should state its reviewed target set rather than claiming portable
-constant time on every architecture.[rustcrypto-chacha-010][rustcrypto-aes-gcm][rustcrypto-gcm-siv]
+constant time on every architecture.[rustcrypto-chacha-011][rustcrypto-aes-gcm][rustcrypto-gcm-siv]
 
 ## Persistent format and rotation
 
@@ -318,10 +318,9 @@ complete:
 3. **Reduce local primitive code:** either replace the hand-written restricted
    HMAC/HKDF with maintained crates without changing bytes, or include that
    code explicitly in the audit scope.
-4. **Supported dependency line:** move to the current RustCrypto major release
-   and regenerate cross-version compatibility tests, or obtain an explicit
-   maintenance/audit commitment for 0.10.1. RustCrypto's policy only supports
-   its latest release.[rustcrypto-security]
+4. **Supported dependency line:** remain on the current RustCrypto release line
+   and regenerate cross-version compatibility tests for future major upgrades.
+   RustCrypto's policy only supports its latest release.[rustcrypto-security]
 5. **Usage policy:** define maximum plaintext/AAD length appropriate to a
    database field, encryption count per `(KeyId, binding)`, total failed
    decryption attempts, acceptable attacker advantage, and a conservative
@@ -377,16 +376,16 @@ Only specifications, official project documentation/source, and this
 repository were used for substantive claims.
 
 [aead-limits]: https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-aead-limits-12
-[binding]: ../src/binding.rs#L55-L87
+[binding]: ../src/binding.rs#L55-L88
 [c2sp-xaes]: https://c2sp.org/XAES-256-GCM
 [cargo]: ../Cargo.toml#L19-L28
-[crypto-aad]: ../src/crypto.rs#L217-L239
-[crypto-hkdf]: ../src/crypto.rs#L358-L405
+[crypto-aad]: ../src/crypto.rs#L222-L245
+[crypto-hkdf]: ../src/crypto.rs#L373-L425
 [crypto-limits]: ../src/crypto.rs#L7-L17
-[crypto-open]: ../src/crypto.rs#L310-L333
-[crypto-seal]: ../src/crypto.rs#L249-L307
+[crypto-open]: ../src/crypto.rs#L323-L347
+[crypto-seal]: ../src/crypto.rs#L257-L320
 [crypto-tests]: ../tests/crypto.rs#L33-L139
-[getrandom]: https://docs.rs/getrandom/0.3.3/getrandom/
+[getrandom]: https://docs.rs/getrandom/0.4.3/getrandom/
 [libsodium-xchacha]: https://doc.libsodium.org/secret-key_cryptography/aead/chacha20-poly1305/xchacha20-poly1305_construction
 [nist-ascon]: https://csrc.nist.gov/pubs/sp/800/232/final
 [nist-gcm]: https://csrc.nist.gov/pubs/sp/800/38/d/final
@@ -400,7 +399,7 @@ repository were used for substantive claims.
 [rustcrypto-aes-gcm]: https://docs.rs/aes-gcm/latest/aes_gcm/
 [rustcrypto-aes-siv]: https://docs.rs/aes-siv/latest/aes_siv/
 [rustcrypto-ascon]: https://docs.rs/ascon-aead128/latest/ascon_aead128/
-[rustcrypto-chacha-010]: https://docs.rs/chacha20poly1305/0.10.1/chacha20poly1305/
+[rustcrypto-chacha-011]: https://docs.rs/chacha20poly1305/0.11.0/chacha20poly1305/
 [rustcrypto-chacha-latest]: https://docs.rs/chacha20poly1305/latest/chacha20poly1305/
 [rustcrypto-gcm-siv]: https://docs.rs/aes-gcm-siv/latest/aes_gcm_siv/
 [rustcrypto-security]: https://github.com/RustCrypto/AEADs/blob/master/SECURITY.md

@@ -91,6 +91,7 @@ impl fmt::Display for SuiteId {
 
 /// The supplied text is not a canonical hyphenated UUID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[non_exhaustive]
 pub struct InvalidIdentifier;
 
 impl fmt::Display for InvalidIdentifier {
@@ -103,11 +104,13 @@ impl std::error::Error for InvalidIdentifier {}
 
 const fn parse_uuid_literal(value: &str) -> [u8; 16] {
     let input = value.as_bytes();
+
     assert!(input.len() == 36, "identifier must be a hyphenated UUID");
 
     let mut output = [0_u8; 16];
     let mut input_index = 0;
     let mut output_index = 0;
+
     while input_index < 36 {
         if input_index == 8 || input_index == 13 || input_index == 18 || input_index == 23 {
             assert!(input[input_index] == b'-', "identifier has invalid hyphens");
@@ -120,6 +123,7 @@ const fn parse_uuid_literal(value: &str) -> [u8; 16] {
             output_index += 1;
         }
     }
+
     output
 }
 
@@ -134,6 +138,7 @@ const fn hex_nibble(value: u8) -> u8 {
 
 fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
     let input = value.as_bytes();
+
     if input.len() != 36 {
         return Err(InvalidIdentifier);
     }
@@ -141,6 +146,7 @@ fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
     let mut output = [0_u8; 16];
     let mut input_index = 0;
     let mut output_index = 0;
+
     while input_index < input.len() {
         if matches!(input_index, 8 | 13 | 18 | 23) {
             if input[input_index] != b'-' {
@@ -175,6 +181,7 @@ fn write_uuid(formatter: &mut fmt::Formatter<'_>, bytes: &[u8; 16]) -> fmt::Resu
         }
         write!(formatter, "{byte:02x}")?;
     }
+
     Ok(())
 }
 

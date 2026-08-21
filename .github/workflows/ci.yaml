@@ -26,12 +26,12 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Check SQLx features independently
         run: |
-          cargo check --all-targets --features sqlx-postgres
-          cargo check --all-targets --features sqlx-sqlite
+          cargo check --locked --all-targets --features sqlx-postgres
+          cargo check --locked --all-targets --features sqlx-sqlite
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.20.2 --locked
@@ -40,21 +40,26 @@ jobs:
         run: cargo deny check
 
       - name: Run tests
-        run: cargo test --all-targets --all-features
+        run: cargo test --locked --all-targets --all-features
 
       - name: Run examples
         run: |
-          cargo run --example key_rotation
-          cargo run --example blind_indexes
-          cargo run --example sqlx_sqlite --features sqlx-sqlite
+          cargo run --locked --example key_rotation
+          cargo run --locked --example blind_indexes
+          cargo run --locked --example sqlx_sqlite --features sqlx-sqlite
 
       - name: Run documentation tests
-        run: cargo test --doc --all-features
+        run: cargo test --locked --doc --all-features
 
       - name: Build API documentation
         run: |
-          cargo doc --no-deps --no-default-features
-          cargo doc --no-deps --all-features
+          cargo doc --locked --no-deps --no-default-features
+          cargo doc --locked --no-deps --all-features
+
+      - name: Check current compatible dependencies
+        run: |
+          cargo update
+          cargo check --all-targets --all-features
 
   msrv:
     name: Rust 1.85
@@ -70,4 +75,4 @@ jobs:
         run: rustup toolchain install 1.85.0 --profile minimal
 
       - name: Check minimum Rust version
-        run: cargo +1.85.0 check --all-targets --all-features
+        run: cargo +1.85.0 check --locked --all-targets --all-features

@@ -45,6 +45,7 @@ impl std::fmt::Display for CodecErrorKind {
 
 /// A non-sensitive blind-index normalization failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
 #[error("blind-index normalization failed")]
 pub struct BlindIndexError;
 

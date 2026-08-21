@@ -75,6 +75,7 @@ impl BindingDomain {
         let mut encoded = [0_u8; 17];
         encoded[0] = 1;
         encoded[1..].copy_from_slice(id.as_bytes());
+
         Self { encoded, len: 17 }
     }
 

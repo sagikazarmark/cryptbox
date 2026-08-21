@@ -92,6 +92,7 @@ impl<T, Profile> Ciphertext<T, Profile> {
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
         let bytes = bytes.into();
         crate::inspect_ciphertext(&bytes)?;
+
         Ok(Self::from_validated_bytes(bytes))
     }
 
@@ -166,6 +167,7 @@ where
     ) -> Result<Ciphertext<T, Profile>, Error> {
         let plaintext = Profile::Codec::encode(&self.value)?;
         let ciphertext = encrypt::<Profile::Binding>(&plaintext, context, keys)?;
+
         Ok(Ciphertext::from_validated_bytes(ciphertext))
     }
 }
@@ -203,6 +205,7 @@ where
     ) -> Result<Encrypted<T, Profile>, Error> {
         let plaintext = decrypt::<Profile::Binding>(&self.bytes, context, keys)?;
         let value = Profile::Codec::decode(&plaintext)?;
+
         Ok(Encrypted::new(value))
     }
 
@@ -215,7 +218,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error for an invalid envelope or unavailable provider.
+    /// Returns an error for a malformed or unsupported envelope, or unavailable
+    /// provider.
     pub fn needs_reencryption_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<bool, Error> {
         needs_reencryption(&self.bytes, keys)
     }

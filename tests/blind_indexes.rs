@@ -251,10 +251,13 @@ where
         &index_keys(),
     )
     .unwrap();
+
     assert_eq!(index.as_bytes().len(), 19 + expected_bytes);
+
     if Spec::BITS % 8 != 0 {
         let unused_bits = 8 - Spec::BITS % 8;
         let unused_mask = (1_u8 << unused_bits) - 1;
+
         assert_eq!(index.as_bytes().last().unwrap() & unused_mask, 0);
     }
 }

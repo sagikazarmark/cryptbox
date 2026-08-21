@@ -73,6 +73,7 @@ where
         buffer.push(SqliteArgumentValue::Blob(Cow::Owned(
             ciphertext.into_bytes(),
         )));
+
         Ok(IsNull::No)
     }
 
@@ -89,6 +90,7 @@ impl<'q, T, Profile> Encode<'q, Sqlite> for Ciphertext<T, Profile> {
         buffer.push(SqliteArgumentValue::Blob(Cow::Owned(
             self.as_bytes().to_vec(),
         )));
+
         Ok(IsNull::No)
     }
 
@@ -105,6 +107,7 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndex<Spec> {
         buffer.push(SqliteArgumentValue::Blob(Cow::Owned(
             self.as_bytes().to_vec(),
         )));
+
         Ok(IsNull::No)
     }
 
@@ -121,6 +124,7 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
         buffer.push(SqliteArgumentValue::Blob(Cow::Owned(
             self.as_bytes().to_vec(),
         )));
+
         Ok(IsNull::No)
     }
 
@@ -137,6 +141,7 @@ where
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
         let ciphertext = Ciphertext::<T, Profile>::from_bytes(bytes)?;
+
         Ok(ciphertext.decrypt()?)
     }
 }
@@ -144,6 +149,7 @@ where
 impl<'row, T, Profile> Decode<'row, Sqlite> for Ciphertext<T, Profile> {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
+
         Ok(Self::from_bytes(bytes)?)
     }
 }
@@ -154,6 +160,7 @@ where
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
+
         Ok(Self::from_bytes(bytes)?)
     }
 }

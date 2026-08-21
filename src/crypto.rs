@@ -105,7 +105,7 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
 /// # Errors
 ///
 /// Returns an error for unavailable keys, failed OS randomness, or messages
-/// beyond the suite limit.
+/// longer than the active suite's 274,877,906,880-byte limit.
 pub fn encrypt<B: Binding>(
     plaintext: &[u8],
     context: &B::Context,
@@ -114,6 +114,7 @@ pub fn encrypt<B: Binding>(
     let key = keys.current_key()?;
     let suite = active_suite();
     let header = envelope_header(suite.id(), key.id());
+
     suite.seal(
         &header,
         plaintext,
@@ -141,6 +142,7 @@ pub fn decrypt<B: Binding>(
         .key(parsed.info.key_id)?
         .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id))?;
     let domain = BindingDomain::from_binding::<B>(context);
+
     registered_suite(parsed.info.suite_id)?.open(parsed.header, parsed.suite_payload, &domain, &key)
 }
 
@@ -150,7 +152,8 @@ pub fn decrypt<B: Binding>(
 ///
 /// # Errors
 ///
-/// Returns an error for malformed envelopes or unavailable providers.
+/// Returns an error for malformed or unsupported envelopes, or unavailable
+/// providers.
 pub fn needs_reencryption(
     ciphertext: &[u8],
     keys: &dyn EncryptionKeyProvider,
@@ -172,6 +175,7 @@ pub fn reencrypt<B: Binding>(
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Vec<u8>, Error> {
     let plaintext = decrypt::<B>(ciphertext, context, keys)?;
+
     encrypt::<B>(&plaintext, context, keys)
 }
 
@@ -183,6 +187,7 @@ fn seal_with_nonce(
     nonce: [u8; NONCE_LEN],
 ) -> Result<Vec<u8>, Error> {
     let header = envelope_header(EXPERIMENTAL_XCHACHA20_POLY1305, key.id());
+
     XCHACHA20_POLY1305_SUITE.seal_with_nonce(&header, plaintext, &domain, key, nonce)
 }
 
@@ -235,14 +240,17 @@ fn envelope_aad(prefix: &[u8], domain: &BindingDomain) -> Vec<u8> {
     aad.extend_from_slice(ENVELOPE_AAD_LABEL);
     aad.extend_from_slice(prefix);
     aad.extend_from_slice(domain.as_bytes());
+
     aad
 }
 
 fn validate_plaintext_len(len: usize) -> Result<(), Error> {
     let len = u64::try_from(len).map_err(|_| Error::MessageTooLong)?;
+
     if len > MAX_PLAINTEXT_LEN {
         return Err(Error::MessageTooLong);
     }
+
     Ok(())
 }
 
@@ -256,6 +264,7 @@ impl XChaCha20Poly1305Suite {
         nonce: [u8; NONCE_LEN],
     ) -> Result<Vec<u8>, Error> {
         validate_plaintext_len(plaintext.len())?;
+
         let nonce = XNonce::from(nonce);
         let mut prefix = Vec::with_capacity(PREFIX_LEN);
         prefix.extend_from_slice(header);
@@ -277,6 +286,7 @@ impl XChaCha20Poly1305Suite {
         let mut envelope = Vec::with_capacity(capacity);
         envelope.extend_from_slice(&prefix);
         envelope.extend_from_slice(&sealed);
+
         Ok(envelope)
     }
 }
@@ -290,9 +300,11 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         let minimum_len = NONCE_LEN
             .checked_add(TAG_LEN)
             .ok_or(Error::InvalidEnvelope)?;
+
         if payload.len() < minimum_len {
             return Err(Error::InvalidEnvelope);
         }
+
         validate_plaintext_len(payload.len() - minimum_len)
     }
 
@@ -305,6 +317,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
     ) -> Result<Vec<u8>, Error> {
         let mut nonce = [0_u8; NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(|_| Error::RandomnessUnavailable)?;
+
         self.seal_with_nonce(header, plaintext, domain, key, nonce)
     }
 
@@ -316,6 +329,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
         self.validate_payload(payload)?;
+
         let nonce: &XNonce = payload[..NONCE_LEN]
             .try_into()
             .map_err(|_| Error::InvalidEnvelope)?;
@@ -331,6 +345,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         cipher
             .decrypt_in_place(nonce, &aad, &mut *plaintext)
             .map_err(|_| Error::AuthenticationFailed)?;
+
         Ok(plaintext)
     }
 }
@@ -353,6 +368,7 @@ fn envelope_header(suite_id: SuiteId, key_id: KeyId) -> [u8; HEADER_LEN] {
     header[4] = FORMAT_VERSION;
     header[5] = suite_id.get();
     header[6..].copy_from_slice(key_id.as_bytes());
+
     header
 }
 
@@ -369,6 +385,7 @@ fn hkdf_sha256_32_with_salt(
     info: &[u8],
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
     let pseudo_random_key = hmac_sha256(salt, &[input_key_material])?;
+
     hmac_sha256(&pseudo_random_key[..], &[info, &[1]])
 }
 
@@ -380,20 +397,24 @@ pub(crate) fn hmac_sha256(key: &[u8], input: &[&[u8]]) -> Result<Zeroizing<[u8; 
 
     let mut pad = Zeroizing::new([0_u8; BLOCK_LEN]);
     pad[..key.len()].copy_from_slice(key);
+
     for byte in pad.iter_mut() {
         *byte ^= 0x36;
     }
 
     let mut inner = Sha256::new();
     inner.update(&pad[..]);
+
     for component in input {
         inner.update(component);
     }
+
     let mut inner_digest = inner.finalize();
 
     for byte in pad.iter_mut() {
         *byte ^= 0x36 ^ 0x5c;
     }
+
     let mut outer = Sha256::new();
     outer.update(&pad[..]);
     outer.update(&inner_digest[..]);
@@ -403,6 +424,7 @@ pub(crate) fn hmac_sha256(key: &[u8], input: &[&[u8]]) -> Result<Zeroizing<[u8; 
     output.copy_from_slice(&digest);
     inner_digest.as_mut_slice().zeroize();
     digest.as_mut_slice().zeroize();
+
     Ok(output)
 }
 
@@ -438,6 +460,7 @@ mod tests {
             [0x11; 32],
         );
         let mut nonce = [0_u8; NONCE_LEN];
+
         for (value, byte) in nonce.iter_mut().zip(0_u8..) {
             *value = byte;
         }
@@ -463,6 +486,7 @@ mod tests {
             [0x11; 32],
         );
         let mut nonce = [0_u8; NONCE_LEN];
+
         for (value, byte) in nonce.iter_mut().zip(0_u8..) {
             *value = byte;
         }

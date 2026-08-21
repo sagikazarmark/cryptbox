@@ -36,6 +36,7 @@ where
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         let ciphertext = self.encrypt()?;
         buffer.extend_from_slice(ciphertext.as_bytes());
+
         Ok(IsNull::No)
     }
 
@@ -52,6 +53,7 @@ where
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
         let ciphertext = Ciphertext::<T, Profile>::from_bytes(bytes)?;
+
         Ok(ciphertext.decrypt()?)
     }
 }
@@ -69,6 +71,7 @@ impl<T, Profile> Type<Postgres> for Ciphertext<T, Profile> {
 impl<T, Profile> Encode<'_, Postgres> for Ciphertext<T, Profile> {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         buffer.extend_from_slice(self.as_bytes());
+
         Ok(IsNull::No)
     }
 
@@ -80,6 +83,7 @@ impl<T, Profile> Encode<'_, Postgres> for Ciphertext<T, Profile> {
 impl<'row, T, Profile> Decode<'row, Postgres> for Ciphertext<T, Profile> {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
+
         Ok(Self::from_bytes(bytes)?)
     }
 }
@@ -97,6 +101,7 @@ impl<Spec> Type<Postgres> for BlindIndex<Spec> {
 impl<Spec> Encode<'_, Postgres> for BlindIndex<Spec> {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         buffer.extend_from_slice(self.as_bytes());
+
         Ok(IsNull::No)
     }
 
@@ -111,6 +116,7 @@ where
 {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
+
         Ok(Self::from_bytes(bytes)?)
     }
 }
@@ -128,6 +134,7 @@ impl<Spec> Type<Postgres> for BlindIndexRef<'_, Spec> {
 impl<Spec> Encode<'_, Postgres> for BlindIndexRef<'_, Spec> {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         buffer.extend_from_slice(self.as_bytes());
+
         Ok(IsNull::No)
     }
 

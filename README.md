@@ -1,5 +1,10 @@
 # cryptbox
 
+[![ci](https://img.shields.io/github/actions/workflow/status/sagikazarmark/cryptbox/ci.yaml?style=flat-square)](https://github.com/sagikazarmark/cryptbox/actions/workflows/ci.yaml)
+[![openssf scorecard](https://api.securityscorecards.dev/projects/github.com/sagikazarmark/cryptbox/badge?style=flat-square)](https://securityscorecards.dev/viewer/?uri=github.com/sagikazarmark/cryptbox)
+[![crates.io](https://img.shields.io/crates/v/cryptbox?style=flat-square)](https://crates.io/crates/cryptbox)
+[![docs.rs](https://img.shields.io/docsrs/cryptbox?style=flat-square)](https://docs.rs/cryptbox)
+
 **Strongly typed application-layer encryption for Rust values.**
 
 CryptBox keeps serialization, byte-oriented cryptography, key management, and
@@ -30,32 +35,32 @@ use cryptbox::{
 };
 
 fn main() -> Result<(), cryptbox::Error> {
-struct UserEmail;
+    struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: cryptbox::FieldId =
-        field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-}
+    impl Field for UserEmail {
+        const ID: cryptbox::FieldId =
+            field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+    }
 
-impl EncryptionProfile<String> for UserEmail {
-    type Codec = Utf8;
-    type Binding = FieldBound<Self>;
-    type Keys = GlobalKeyContext;
-}
+    impl EncryptionProfile<String> for UserEmail {
+        type Codec = Utf8;
+        type Binding = FieldBound<Self>;
+        type Keys = GlobalKeyContext;
+    }
 
-let keys = LocalEncryptionKeyring::new(
-    EncryptionKey::new(
-        key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"),
-        [0x42; 32],
-    ),
-    [],
-)?;
-let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
-let ciphertext = email.encrypt_with(&(), &keys)?;
-let decrypted = ciphertext.decrypt_with(&(), &keys)?;
+    let keys = LocalEncryptionKeyring::new(
+        EncryptionKey::new(
+            key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"),
+            [0x42; 32],
+        ),
+        [],
+    )?;
+    let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
+    let ciphertext = email.encrypt_with(&(), &keys)?;
+    let decrypted = ciphertext.decrypt_with(&(), &keys)?;
 
-assert_eq!(decrypted.expose_secret(), "mark@example.com");
-Ok(())
+    assert_eq!(decrypted.expose_secret(), "mark@example.com");
+    Ok(())
 }
 ```
 
@@ -96,18 +101,23 @@ CryptBox intentionally does not implement blanket Serde serialization for
 `Encrypted<T, Profile>` because plaintext-versus-ciphertext semantics must be
 explicit.
 
+The [crate documentation](https://docs.rs/cryptbox/latest/cryptbox/#features)
+is the authoritative reference for feature semantics and constraints.
+
 ## Development
 
 Run the standard checks with:
 
 ```text
 cargo fmt --all --check
-cargo clippy --all-targets --all-features -- -D warnings
+cargo clippy --locked --all-targets --all-features -- -D warnings
 cargo deny check
-cargo test --all-targets --all-features
-cargo test --doc --all-features
-cargo doc --no-deps --all-features
+cargo test --locked --all-targets --all-features
+cargo test --locked --doc --all-features
+cargo doc --locked --no-deps --all-features
 ```
+
+Run the repository's Dagger checks with `dagger check`.
 
 The exact experimental formats and provisional vectors are documented in
 [`docs/wire-format.md`](docs/wire-format.md).

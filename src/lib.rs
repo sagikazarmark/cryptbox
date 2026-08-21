@@ -29,6 +29,7 @@
 //!     type Keys = GlobalKeyContext;
 //! }
 //!
+//! // Fixed key material is for this doctest only; load production keys securely.
 //! let keys = LocalEncryptionKeyring::new(
 //!     EncryptionKey::new(
 //!         key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"),
@@ -66,6 +67,10 @@
 //!
 //! This is a standard-library crate requiring Rust 1.85 or newer. Encryption
 //! requires a target on which `getrandom` can obtain operating-system entropy.
+//! The portable `RustCrypto` backends assume constant-time integer multiplication;
+//! targets where multiplication is variable-time, including certain 32-bit
+//! PowerPC CPUs and some non-ARM microcontrollers, are not supported for secret
+//! operations. The complete production target review is not yet finished.
 //!
 //! # Persistent schema
 //!
@@ -92,6 +97,15 @@
 //! frequency; every hit is a candidate that must be decrypted and compared.
 //! Ciphertext also reveals the encoded plaintext length plus fixed envelope
 //! overhead.
+//!
+//! Authenticated encryption does not prevent replay or rollback of an older
+//! valid ciphertext. Retaining historical keys keeps old ciphertext readable,
+//! so rotation is neither revocation nor crypto-shredding.
+//!
+//! `CryptBox` does not protect plaintext from a compromised application process
+//! while keys are live, or hide database query and access patterns. Treat logs,
+//! tracing data, crash dumps, swap, and other plaintext-bearing artifacts as
+//! sensitive.
 //!
 //! Load root keys from a cryptographically secure secret source. Encryption and
 //! blind-index root keys must be generated independently, and a generation ID

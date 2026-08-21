@@ -229,6 +229,7 @@ impl BlindIndexKeyProvider for LocalBlindIndexKeyring {
                 .filter(|key| key.id() != self.current.id())
                 .cloned(),
         );
+
         Ok(keys)
     }
 }

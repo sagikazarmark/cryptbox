@@ -109,6 +109,7 @@ where
             id: Spec::ID,
             bytes: index.into_bytes(),
         });
+
         Ok(self)
     }
 
@@ -116,8 +117,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error when providers are unavailable or index derivation
-    /// fails.
+    /// Returns an error for duplicate index IDs, unavailable providers, or
+    /// failed index derivation.
     pub fn with_index<Spec>(self) -> Result<Self, Error>
     where
         Spec: BlindIndexSpec<T>,

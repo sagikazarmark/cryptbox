@@ -75,6 +75,7 @@ where
 {
     fn encode(value: &T) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         let mut bytes = Zeroizing::new(Vec::new());
+
         serde_json::to_writer(&mut *bytes, value)
             .map(|()| bytes)
             .map_err(|_| CodecError::new(CodecErrorKind::Encoding))
@@ -97,6 +98,7 @@ where
 {
     fn encode(value: &T) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         let bytes = ZeroizingByteBuffer(Zeroizing::new(Vec::new()));
+
         postcard::to_extend(value, bytes)
             .map(|bytes| bytes.0)
             .map_err(|_| CodecError::new(CodecErrorKind::Encoding))

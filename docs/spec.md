@@ -1385,9 +1385,9 @@ verify normalized plaintext
 
 # 25. Initial SQLx backend scope
 
-PostgreSQL SHOULD be the first officially supported SQLx backend for v0.1.
+PostgreSQL and SQLite are the officially supported SQLx backends for v0.1.
 
-SQLite and MySQL support are intentionally deferred unless their implementations prove trivial and do not delay stabilization of the core API.
+MySQL support is intentionally deferred so that it does not delay stabilization of the core API.
 
 ### Reason for deferral
 
@@ -1911,7 +1911,7 @@ Storage preparation
   Prepared representation
 
 SQLx
-  PostgreSQL binary storage
+  PostgreSQL and SQLite binary storage
   scalar encrypted Encode/Decode
   typed blind-index values
   Prepared indexed writes
@@ -2026,9 +2026,9 @@ Deferred until the Fieldseal protocol is sufficiently stable and reviewed.
 
 ---
 
-## 42.15 SQLite and MySQL SQLx adapters
+## 42.15 MySQL SQLx adapter
 
-Architecturally straightforward but deferred until PostgreSQL and the core API stabilize.
+Architecturally straightforward but deferred until the core API stabilizes.
 
 ---
 
@@ -2097,7 +2097,7 @@ CryptBox v0.1
 ├── codecs
 ├── field binding
 ├── equality blind indexes
-└── SQLx/PostgreSQL
+└── SQLx/PostgreSQL and SQLite
         │
         ▼
 CryptBox v0.2+
