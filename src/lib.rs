@@ -22,6 +22,7 @@
 //! impl Field for UserEmail {
 //!     const ID: cryptbox::FieldId =
 //!         field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+//!     const NAME: &'static str = "user-email";
 //! }
 //! impl EncryptionProfile<String> for UserEmail {
 //!     type Codec = Utf8;

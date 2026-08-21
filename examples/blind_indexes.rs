@@ -16,6 +16,7 @@ struct UserEmail;
 
 impl Field for UserEmail {
     const ID: cryptbox::FieldId = field_id!("70000000-0000-4000-8000-000000000007");
+    const NAME: &'static str = "user-email";
 }
 
 impl EncryptionProfile<String> for UserEmail {
