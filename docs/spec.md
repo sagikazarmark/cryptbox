@@ -303,6 +303,10 @@ CryptBox MUST zeroize:
 
 The `zeroize` crate or an equivalently strong mechanism SHOULD be used.
 
+When a temporary plaintext buffer grows during encoding, every superseded
+allocation MUST be zeroized before it is returned to the allocator. Zeroizing
+only the buffer's final allocation is insufficient.
+
 CryptBox MUST NOT claim that arbitrary `T` is zeroized merely because its temporary serialized representation is zeroized.
 
 For example:

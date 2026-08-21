@@ -115,9 +115,10 @@
 //! blind-index root keys must be generated independently, and a generation ID
 //! must never be reused with different key material.
 //!
-//! `CryptBox` zeroizes key material and temporary plaintext buffers it owns, but
-//! cannot promise to erase arbitrary application values or operating-system
-//! copies of configuration.
+//! `CryptBox` zeroizes key material and temporary plaintext buffers it owns,
+//! including superseded allocations when serialization buffers grow. It cannot
+//! promise to erase arbitrary application values or operating-system copies of
+//! configuration.
 
 #![forbid(unsafe_code)]
 
