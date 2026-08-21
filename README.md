@@ -92,8 +92,13 @@ them. CryptBox does not emit logs or require an observability framework.
 ## Examples
 
 - [Key rotation](examples/key_rotation.rs): `cargo run --example key_rotation`
+- [Re-encryption sweep](examples/reencryption_sweep.rs): `cargo run --example reencryption_sweep --features sqlx-sqlite`
 - [Blind-index lookup](examples/blind_indexes.rs): `cargo run --example blind_indexes`
 - [In-memory SQLite storage](examples/sqlx_sqlite.rs): `cargo run --example sqlx_sqlite --features sqlx-sqlite`
+
+The [maintenance sweep guide](docs/reencryption-sweep.md) covers batching,
+optimistic concurrency, interruption recovery, verification, and historical-key
+retirement for ciphertext and blind indexes.
 
 ## Blind Indexes
 

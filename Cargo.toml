@@ -50,6 +50,10 @@ broken_intra_doc_links = "deny"
 name = "sqlx_sqlite"
 required-features = ["sqlx-sqlite"]
 
+[[example]]
+name = "reencryption_sweep"
+required-features = ["sqlx-sqlite"]
+
 [package.metadata.docs.rs]
 all-features = true
 

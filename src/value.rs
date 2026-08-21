@@ -212,9 +212,10 @@ where
     /// Reports whether this envelope uses a non-current suite or key.
     ///
     /// Envelope metadata is unauthenticated until decryption succeeds.
-    /// See the complete [key-rotation example].
+    /// See the complete [key-rotation example] and [maintenance sweep example].
     ///
     /// [key-rotation example]: https://docs.rs/crate/cryptbox/latest/source/examples/key_rotation.rs
+    /// [maintenance sweep example]: https://docs.rs/crate/cryptbox/latest/source/examples/reencryption_sweep.rs
     ///
     /// # Errors
     ///

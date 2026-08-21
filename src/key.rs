@@ -135,9 +135,11 @@ pub trait BlindIndexKeyProvider: Send + Sync {
 ///
 /// New encryption uses `current`; decryption can resolve every retained key.
 /// Keep historical keys readable until all ciphertext using them has been
-/// rewritten. See the complete [key-rotation example].
+/// rewritten. See the complete [key-rotation example] and [maintenance sweep
+/// example].
 ///
 /// [key-rotation example]: https://docs.rs/crate/cryptbox/latest/source/examples/key_rotation.rs
+/// [maintenance sweep example]: https://docs.rs/crate/cryptbox/latest/source/examples/reencryption_sweep.rs
 #[derive(Clone, Debug)]
 pub struct LocalEncryptionKeyring {
     current: EncryptionKey,
@@ -180,9 +182,10 @@ impl EncryptionKeyProvider for LocalEncryptionKeyring {
 ///
 /// New stored indexes use `current`. During rotation, query with probes derived
 /// from every retained key until old indexes have been rewritten. See the
-/// complete [blind-index example].
+/// complete [blind-index example] and [maintenance sweep example].
 ///
 /// [blind-index example]: https://docs.rs/crate/cryptbox/latest/source/examples/blind_indexes.rs
+/// [maintenance sweep example]: https://docs.rs/crate/cryptbox/latest/source/examples/reencryption_sweep.rs
 #[derive(Clone, Debug)]
 pub struct LocalBlindIndexKeyring {
     current: BlindIndexKey,

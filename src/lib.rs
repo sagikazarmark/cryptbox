@@ -82,13 +82,16 @@
 //!
 //! # Workflows
 //!
-//! Complete runnable programs demonstrate [key rotation], [blind-index lookup],
-//! and [in-memory SQLite storage]. The [wire-format guide] records the
-//! experimental envelope and index formats.
+//! Complete runnable programs demonstrate [key rotation], a [re-encryption
+//! sweep], [blind-index lookup], and [in-memory SQLite storage]. The
+//! [maintenance sweep guide] covers the operational pattern, and the
+//! [wire-format guide] records the experimental envelope and index formats.
 //!
 //! [key rotation]: https://docs.rs/crate/cryptbox/latest/source/examples/key_rotation.rs
+//! [re-encryption sweep]: https://docs.rs/crate/cryptbox/latest/source/examples/reencryption_sweep.rs
 //! [blind-index lookup]: https://docs.rs/crate/cryptbox/latest/source/examples/blind_indexes.rs
 //! [in-memory SQLite storage]: https://docs.rs/crate/cryptbox/latest/source/examples/sqlx_sqlite.rs
+//! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/latest/source/docs/reencryption-sweep.md
 //! [wire-format guide]: https://docs.rs/crate/cryptbox/latest/source/docs/wire-format.md
 //!
 //! # Security boundaries
