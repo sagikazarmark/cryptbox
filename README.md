@@ -101,6 +101,75 @@ Use `binding: unbound` to explicitly opt out of field binding. Add
 `keys: ApplicationKeys` to select a custom key context; otherwise the macro
 uses `GlobalKeyContext`.
 
+## Testing
+
+Applications that use context-less methods or automatic storage adapters should
+install `GlobalKeyContext` once in the binary entry point. Do not install it from
+test setup or reusable library code: it is process-global and cannot be replaced
+or reset. Most tests should keep their keyring local and use the explicit
+`encrypt_with`, `decrypt_with`, `prepare_with`, `with_index_with`,
+`needs_reencryption_with`, and `reencrypt_with` methods. This keeps tests
+independent and safe to run in parallel.
+
+Tests that exercise automatic storage adapters cannot pass a provider directly.
+Such a test binary can select an application-defined `KeyContext` whose provider
+delegates through an `RwLock`:
+
+```rust
+use std::sync::{OnceLock, RwLock};
+
+use cryptbox::{
+    BlindIndexKeyProvider, EncryptionKey, EncryptionKeyProvider, KeyContext,
+    KeyId, KeyProviderError, LocalEncryptionKeyring,
+};
+
+struct TestKeys(RwLock<LocalEncryptionKeyring>);
+
+static TEST_KEYS: OnceLock<TestKeys> = OnceLock::new();
+
+impl TestKeys {
+    fn replace(keys: LocalEncryptionKeyring) -> Result<(), KeyProviderError> {
+        let context = TEST_KEYS.get_or_init(|| Self(RwLock::new(keys.clone())));
+        *context.0.write().map_err(|_| KeyProviderError::Unavailable)? = keys;
+        Ok(())
+    }
+}
+
+impl EncryptionKeyProvider for TestKeys {
+    fn current_key(&self) -> Result<EncryptionKey, KeyProviderError> {
+        self.0
+            .read()
+            .map_err(|_| KeyProviderError::Unavailable)?
+            .current_key()
+    }
+
+    fn key(&self, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
+        self.0
+            .read()
+            .map_err(|_| KeyProviderError::Unavailable)?
+            .key(id)
+    }
+}
+
+impl KeyContext for TestKeys {
+    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, KeyProviderError> {
+        TEST_KEYS
+            .get()
+            .map(|keys| keys as &dyn EncryptionKeyProvider)
+            .ok_or(KeyProviderError::NotInitialized)
+    }
+
+    fn blind_index_keys() -> Result<&'static dyn BlindIndexKeyProvider, KeyProviderError> {
+        Err(KeyProviderError::Unavailable)
+    }
+}
+```
+
+Set `type Keys = TestKeys` on profiles used by those tests and call
+`TestKeys::replace` before each case. The context is still shared across the test
+process, so tests that replace it must be serialized. Add a second locked
+provider when automatic blind-index operations also need test-specific keys.
+
 ## Diagnostics
 
 `Field::ID` is the stable machine identifier; `Field::NAME` is a human-readable

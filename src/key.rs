@@ -406,6 +406,14 @@ static GLOBAL_PROVIDERS: OnceLock<GlobalProviders> = OnceLock::new();
 /// [`crate::Encrypted::encrypt`], [`crate::Encrypted::prepare`], or an automatic
 /// storage adapter. Prefer explicit provider APIs where process-global state is
 /// undesirable.
+///
+/// The installed providers cannot be replaced or reset. Applications should
+/// therefore call [`Self::install`] only from their binary entry point, not from
+/// reusable library code or test setup. Tests should normally inject providers
+/// through methods such as [`crate::Encrypted::encrypt_with`] and
+/// [`crate::Ciphertext::decrypt_with`]. Tests of automatic storage adapters can
+/// instead define their own [`KeyContext`] backed by synchronized, swappable
+/// providers.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GlobalKeyContext;
 
