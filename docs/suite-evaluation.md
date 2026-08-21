@@ -377,15 +377,15 @@ Only specifications, official project documentation/source, and this
 repository were used for substantive claims.
 
 [aead-limits]: https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-aead-limits-12
-[binding]: ../src/binding.rs#L55-L88
+[binding]: ../src/binding.rs
 [c2sp-xaes]: https://c2sp.org/XAES-256-GCM
-[cargo]: ../Cargo.toml#L19-L28
-[crypto-aad]: ../src/crypto.rs#L222-L245
-[crypto-hkdf]: ../src/crypto.rs#L373-L425
-[crypto-limits]: ../src/crypto.rs#L7-L17
-[crypto-open]: ../src/crypto.rs#L323-L347
-[crypto-seal]: ../src/crypto.rs#L257-L320
-[crypto-tests]: ../tests/crypto.rs#L33-L139
+[cargo]: ../Cargo.toml
+[crypto-aad]: ../src/crypto.rs
+[crypto-hkdf]: ../src/crypto.rs
+[crypto-limits]: ../src/crypto.rs
+[crypto-open]: ../src/crypto.rs
+[crypto-seal]: ../src/crypto.rs
+[crypto-tests]: ../tests/crypto.rs
 [getrandom]: https://docs.rs/getrandom/0.4.3/getrandom/
 [libsodium-xchacha]: https://doc.libsodium.org/secret-key_cryptography/aead/chacha20-poly1305/xchacha20-poly1305_construction
 [nist-ascon]: https://csrc.nist.gov/pubs/sp/800/232/final
@@ -405,9 +405,9 @@ repository were used for substantive claims.
 [rustcrypto-gcm-siv]: https://docs.rs/aes-gcm-siv/latest/aes_gcm_siv/
 [rustcrypto-security]: https://github.com/RustCrypto/AEADs/blob/master/SECURITY.md
 [rustcrypto-xaes]: https://docs.rs/xaes-256-gcm/latest/xaes_256_gcm/
-[spec-binding]: ../spec.md#L490-L515
-[spec-format]: ../spec.md#L763-L830
-[spec-suite]: ../spec.md#L844-L872
-[spec-threat]: ../spec.md#L177-L213
+[spec-binding]: spec.md#93-security-properties-of-binding
+[spec-format]: spec.md#15-ciphertext-envelope
+[spec-suite]: spec.md#16-cipher-suite-selection
+[spec-threat]: spec.md#4-threat-model
 [wire]: wire-format.md
 [xchacha-draft]: https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-xchacha-03
