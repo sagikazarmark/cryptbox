@@ -8,6 +8,12 @@ an encryption suite.
 The runnable [SQLite sweep example] shows the complete pattern with SQLx. The
 same control flow applies to PostgreSQL and other stores.
 
+The manual loop below remains the reference semantics. The `migrate` Cargo
+feature packages the same invariants as library code —
+`cryptbox::migrate::{RowPlanner, Sweep, SweepStore}` — and additionally
+handles plaintext-to-ciphertext adoption; see the
+[plaintext migration guide](plaintext-migration.md).
+
 ## Preconditions
 
 Before starting a sweep, deploy the current-plus-historical keyring to every
@@ -15,8 +21,11 @@ application instance. Confirm that every writer uses the current encryption and
 blind-index keys. Keep all historical keys available until final verification
 passes.
 
-Choose an immutable, indexed cursor such as a monotonically increasing primary
-key. Size batches to limit database load and plaintext residence time. A sweep
+Choose a unique, immutable, indexed cursor such as a monotonically increasing
+primary key. Uniqueness is required, not just recommended: paging resumes
+strictly after the last cursor value, so rows sharing a value with a batch
+boundary would be skipped by the sweep and its verification alike. Size
+batches to limit database load and plaintext residence time. A sweep
 decrypts sensitive data in the maintenance process, so give that process the
 same logging, memory, and access controls as an application writer.
 

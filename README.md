@@ -23,6 +23,7 @@ plaintext while in application memory and requires explicit plaintext access.
 - **Non-disruptive rotation.** Ciphertext names one current or historical key generation, so rotation does not require an immediate rewrite.
 - **Explicit searchable projections.** Separately keyed, intentionally truncated blind indexes support equality candidate lookup.
 - **Storage preparation.** `Prepared` derives ciphertext and blind indexes from the same source value.
+- **Explicit migration facility.** The opt-in `migrate` feature adds a permissive plaintext-or-ciphertext read type and a resumable sweep driver for adopting encryption over existing data; the default decoding path stays strict.
 - **SQLx integration.** Backend-specific features map encrypted values and blind indexes to PostgreSQL `BYTEA` or SQLite `BLOB` columns.
 - **Secret hygiene.** Keys and CryptBox-owned plaintext buffers are zeroized; `Debug` output is redacted.
 
@@ -195,12 +196,15 @@ them. CryptBox does not emit logs or require an observability framework.
 
 - [Key rotation](examples/key_rotation.rs): `cargo run --example key_rotation`
 - [Re-encryption sweep](examples/reencryption_sweep.rs): `cargo run --example reencryption_sweep --features sqlx-sqlite`
+- [Plaintext migration](examples/plaintext_migration.rs): `cargo run --example plaintext_migration --features migrate,sqlx-sqlite`
 - [Blind-index lookup](examples/blind_indexes.rs): `cargo run --example blind_indexes`
 - [In-memory SQLite storage](examples/sqlx_sqlite.rs): `cargo run --example sqlx_sqlite --features sqlx-sqlite`
 
 The [maintenance sweep guide](docs/reencryption-sweep.md) covers batching,
 optimistic concurrency, interruption recovery, verification, and historical-key
-retirement for ciphertext and blind indexes.
+retirement for ciphertext and blind indexes. The
+[plaintext migration guide](docs/plaintext-migration.md) covers adopting
+encryption over existing plaintext columns with the `migrate` feature.
 
 ## Blind Indexes
 
@@ -217,6 +221,7 @@ probe returned by `blind_index_probes`, then rewrite stored indexes separately.
 ## Feature Flags
 
 - `json` enables the Serde JSON codec.
+- `migrate` enables the explicit plaintext-to-ciphertext migration facility, intended for a bounded migration window only.
 - `postcard` enables the Serde Postcard codec.
 - `sqlx-postgres` enables SQLx 0.8 `BYTEA` support for PostgreSQL.
 - `sqlx-sqlite` enables SQLx 0.8 `BLOB` support for SQLite.
