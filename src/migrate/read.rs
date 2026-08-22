@@ -7,32 +7,48 @@ use crate::{
     value::ProfileContext,
 };
 
-/// A permissive read of a stored value that may still hold legacy plaintext.
+use super::{LegacyFormat, legacy};
+
+/// A permissive read of a stored value that may still use a legacy format.
 ///
 /// This type exists for the bounded window in which a column is being migrated
-/// from plaintext to encryption. Classification keys on the envelope magic
-/// alone: bytes without it are treated as legacy plaintext and decoded through
-/// the profile's codec, while bytes that carry the magic but fail structural
-/// validation remain hard errors rather than falling back to plaintext.
+/// from plaintext or a previous encryption solution. Classification keys on
+/// the envelope magic alone: bytes without it are retained in a zeroizing
+/// buffer and recovered at decrypt time. Bytes that carry the magic but fail
+/// structural validation remain hard errors rather than falling back to a
+/// legacy handler.
+///
+/// [`Self::decrypt_with`] and [`Self::decrypt`] use identity recovery for
+/// plaintext-only migrations. [`Self::decrypt_with_legacy`] and
+/// [`Self::decrypt_legacy`] first invoke a [`LegacyFormat`] handler for foreign
+/// ciphertext. Valid `CryptBox` envelopes ignore the handler.
 ///
 /// Reads are permissive; writes never are. `MaybeEncrypted` implements no
 /// storage `Encode` and no Serde: the only forward path is an [`Encrypted`]
 /// value, which always encrypts when stored.
 ///
-/// Legacy binary plaintext that happens to begin with the 4-byte envelope
-/// magic is classified as ciphertext and then fails structurally or on
-/// authentication — a hard error, never silently wrong data. Stores that
-/// reject interior NUL bytes in text cannot produce such values. Deployments
-/// holding arbitrary binary legacy data must track encryption state out of
-/// band and construct this type through [`Self::from_plaintext`] or
-/// [`From<Ciphertext>`](Self::from) instead of byte classification.
+/// Legacy data that happens to begin with the 4-byte envelope magic is
+/// classified as ciphertext and then fails structurally or on authentication,
+/// a hard error rather than silently wrong data. Deployments that track the
+/// storage format out of band can bypass classification with
+/// [`Self::from_legacy_bytes`].
 ///
 /// ```
 /// use cryptbox::{
 ///     Encrypted, EncryptionKey, EncryptionProfile, Field, FieldBound,
 ///     GlobalKeyContext, LocalEncryptionKeyring, Utf8, field_id, key_id,
-///     migrate::MaybeEncrypted,
+///     migrate::{LegacyError, LegacyFormat, MaybeEncrypted},
 /// };
+/// use zeroize::Zeroizing;
+///
+/// struct PreviousFormat;
+/// impl LegacyFormat for PreviousFormat {
+///     fn recover(&self, bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError> {
+///         Ok(Zeroizing::new(
+///             bytes.strip_prefix(b"previous:").unwrap_or(bytes).to_vec(),
+///         ))
+///     }
+/// }
 ///
 /// struct UserEmail;
 /// impl Field for UserEmail {
@@ -55,17 +71,25 @@ use crate::{
 ///     [],
 /// )?;
 ///
-/// // A legacy column value without the envelope magic reads as plaintext.
-/// let legacy = MaybeEncrypted::<String, UserEmail>::from_bytes(
+/// // The handler accepts both plaintext and the previous format.
+/// let plaintext = MaybeEncrypted::<String, UserEmail>::from_bytes(
 ///     b"mark@example.com".to_vec(),
 /// )?;
-/// assert!(legacy.is_plaintext());
+/// assert!(plaintext.is_legacy());
+/// assert_eq!(
+///     plaintext
+///         .decrypt_with_legacy(&(), &keys, &PreviousFormat)?
+///         .expose_secret(),
+///     "mark@example.com",
+/// );
 ///
-/// // The only forward path is an `Encrypted` value, which always encrypts.
-/// let value = legacy.decrypt_with(&(), &keys)?;
+/// let foreign = MaybeEncrypted::<String, UserEmail>::from_bytes(
+///     b"previous:other@example.com".to_vec(),
+/// )?;
+/// let value = foreign.decrypt_with_legacy(&(), &keys, &PreviousFormat)?;
 /// let stored = value.encrypt_with(&(), &keys)?;
 /// let read = MaybeEncrypted::<String, UserEmail>::from_bytes(stored.into_bytes())?;
-/// assert!(!read.is_plaintext());
+/// assert!(!read.is_legacy());
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
 pub struct MaybeEncrypted<T, Profile> {
@@ -75,22 +99,35 @@ pub struct MaybeEncrypted<T, Profile> {
 enum State<T, Profile> {
     Ciphertext(Ciphertext<T, Profile>),
     Plaintext(Encrypted<T, Profile>),
+    Legacy(Zeroizing<Vec<u8>>),
+}
+
+fn decode_legacy<T, Profile>(
+    bytes: &[u8],
+    legacy: Option<&dyn LegacyFormat>,
+) -> Result<Encrypted<T, Profile>, Error>
+where
+    Profile: EncryptionProfile<T>,
+{
+    let plaintext = legacy::recover(bytes, legacy)?;
+    Ok(Encrypted::new(<Profile::Codec as Codec<T>>::decode(
+        &plaintext,
+    )?))
 }
 
 impl<T, Profile> MaybeEncrypted<T, Profile>
 where
     Profile: EncryptionProfile<T>,
 {
-    /// Classifies stored bytes as an envelope or legacy plaintext.
+    /// Classifies stored bytes as a `CryptBox` envelope or legacy data.
     ///
-    /// Legacy plaintext is decoded through the profile's codec immediately, in
-    /// a zeroizing buffer. Empty input classifies as legacy plaintext.
+    /// Non-envelope bytes are retained in a zeroizing buffer and decoded when
+    /// the value is decrypted. Empty input classifies as legacy data.
     ///
     /// # Errors
     ///
     /// Returns an error when bytes carrying the envelope magic are not a
-    /// supported, structurally valid envelope, or when legacy plaintext cannot
-    /// be decoded by the profile's codec.
+    /// supported, structurally valid envelope.
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
         let bytes = bytes.into();
 
@@ -98,12 +135,9 @@ where
             Ok(_) => Ok(Self {
                 state: State::Ciphertext(Ciphertext::from_validated_bytes(bytes)),
             }),
-            Err(Error::NotCiphertext) => {
-                let bytes = Zeroizing::new(bytes);
-                let value = <Profile::Codec as Codec<T>>::decode(&bytes)?;
-
-                Ok(Self::from_plaintext(Encrypted::new(value)))
-            }
+            Err(Error::NotCiphertext) => Ok(Self {
+                state: State::Legacy(Zeroizing::new(bytes)),
+            }),
             Err(error) => Err(error),
         }
     }
@@ -115,10 +149,41 @@ where
         }
     }
 
+    /// Wraps bytes known out of band to use a legacy storage format.
+    ///
+    /// This bypasses envelope classification and is the escape hatch for a
+    /// legacy value that begins with the `CryptBox` envelope magic.
+    ///
+    /// ```
+    /// use cryptbox::{EncryptionProfile, GlobalKeyContext, Raw, Unbound};
+    /// use cryptbox::migrate::MaybeEncrypted;
+    ///
+    /// struct LegacyBlob;
+    /// impl EncryptionProfile<Vec<u8>> for LegacyBlob {
+    ///     type Codec = Raw;
+    ///     type Binding = Unbound;
+    ///     type Keys = GlobalKeyContext;
+    /// }
+    ///
+    /// // A discriminator column established that these bytes are legacy, even
+    /// // though they collide with CryptBox's envelope magic.
+    /// let read = MaybeEncrypted::<Vec<u8>, LegacyBlob>::from_legacy_bytes(
+    ///     b"CBX\0previous-format".to_vec(),
+    /// );
+    /// assert!(read.is_legacy());
+    /// assert!(read.as_ciphertext().is_none());
+    /// ```
+    #[must_use]
+    pub fn from_legacy_bytes(bytes: impl Into<Vec<u8>>) -> Self {
+        Self {
+            state: State::Legacy(Zeroizing::new(bytes.into())),
+        }
+    }
+
     /// Consumes the read and returns the plaintext value marker.
     ///
-    /// A legacy plaintext read is returned directly; an envelope is
-    /// authenticated, decrypted, and decoded with the injected provider.
+    /// Legacy bytes use identity recovery and decode through the profile's
+    /// codec; an envelope is authenticated and decrypted with the provider.
     ///
     /// # Errors
     ///
@@ -132,6 +197,30 @@ where
         match self.state {
             State::Ciphertext(ciphertext) => ciphertext.decrypt_with(context, keys),
             State::Plaintext(value) => Ok(value),
+            State::Legacy(bytes) => decode_legacy(&bytes, None),
+        }
+    }
+
+    /// Consumes the read, recovering non-envelope bytes with `legacy` before
+    /// decoding them through the profile's codec.
+    ///
+    /// Valid `CryptBox` envelopes ignore the legacy handler and use the normal
+    /// authenticated decryption path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when legacy recovery, codec decoding, or envelope
+    /// decryption fails.
+    pub fn decrypt_with_legacy(
+        self,
+        context: &ProfileContext<T, Profile>,
+        keys: &dyn EncryptionKeyProvider,
+        legacy: &dyn LegacyFormat,
+    ) -> Result<Encrypted<T, Profile>, Error> {
+        match self.state {
+            State::Ciphertext(ciphertext) => ciphertext.decrypt_with(context, keys),
+            State::Plaintext(value) => Ok(value),
+            State::Legacy(bytes) => decode_legacy(&bytes, Some(legacy)),
         }
     }
 }
@@ -143,25 +232,42 @@ where
 {
     /// Consumes the read and decrypts with the profile's global key context.
     ///
-    /// A legacy plaintext read is returned directly without touching the
-    /// providers.
+    /// Legacy bytes use identity recovery without touching the providers.
     ///
     /// # Errors
     ///
-    /// Returns an error when providers are uninitialized or decryption fails.
+    /// Returns an error when providers are uninitialized, decryption fails, or
+    /// legacy bytes cannot be decoded by the profile's codec.
     pub fn decrypt(self) -> Result<Encrypted<T, Profile>, Error> {
         match self.state {
             State::Ciphertext(ciphertext) => ciphertext.decrypt(),
             State::Plaintext(value) => Ok(value),
+            State::Legacy(bytes) => decode_legacy(&bytes, None),
+        }
+    }
+
+    /// Consumes the read and recovers legacy bytes with an explicit handler,
+    /// using the profile's global key context for `CryptBox` envelopes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when legacy recovery, codec decoding, provider lookup,
+    /// or envelope decryption fails.
+    pub fn decrypt_legacy(self, legacy: &dyn LegacyFormat) -> Result<Encrypted<T, Profile>, Error> {
+        match self.state {
+            State::Ciphertext(ciphertext) => ciphertext.decrypt(),
+            State::Plaintext(value) => Ok(value),
+            State::Legacy(bytes) => decode_legacy(&bytes, Some(legacy)),
         }
     }
 }
 
 impl<T, Profile> MaybeEncrypted<T, Profile> {
-    /// Returns whether the stored bytes were classified as legacy plaintext.
+    /// Returns whether the value represents legacy, non-envelope storage.
+    #[doc(alias = "is_plaintext")]
     #[must_use]
-    pub const fn is_plaintext(&self) -> bool {
-        matches!(self.state, State::Plaintext(_))
+    pub const fn is_legacy(&self) -> bool {
+        matches!(self.state, State::Plaintext(_) | State::Legacy(_))
     }
 
     /// Returns the envelope when the stored bytes were classified as one.
@@ -169,7 +275,7 @@ impl<T, Profile> MaybeEncrypted<T, Profile> {
     pub fn as_ciphertext(&self) -> Option<&Ciphertext<T, Profile>> {
         match &self.state {
             State::Ciphertext(ciphertext) => Some(ciphertext),
-            State::Plaintext(_) => None,
+            State::Plaintext(_) | State::Legacy(_) => None,
         }
     }
 }

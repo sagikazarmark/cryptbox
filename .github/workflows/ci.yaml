@@ -46,6 +46,8 @@ jobs:
         run: |
           cargo run --locked --example key_rotation
           cargo run --locked --example reencryption_sweep --features sqlx-sqlite
+          cargo run --locked --example plaintext_migration --features migrate,sqlx-sqlite
+          cargo run --locked --example legacy_migration --features migrate,sqlx-sqlite
           cargo run --locked --example blind_indexes
           cargo run --locked --example sqlx_sqlite --features sqlx-sqlite
 

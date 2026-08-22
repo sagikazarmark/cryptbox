@@ -9,11 +9,13 @@ use std::{
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, EncryptionProfile, Error, Field, FieldBound, GlobalKeyContext, IndexId,
-    IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, derive_blind_index,
-    field_id, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    EncryptionKey, EncryptionKeyProvider, EncryptionProfile, Error, Field, FieldBound,
+    GlobalKeyContext, IndexId, IndexKeyId, KeyId, KeyProviderError, LocalBlindIndexKeyring,
+    LocalEncryptionKeyring, Utf8, derive_blind_index, field_id, index_id, index_key_id,
+    inspect_blind_index, inspect_ciphertext, key_id,
     migrate::{
-        MaybeEncrypted, RowPlanner, RowState, Sweep, SweepError, SweepReport, SweepRow, SweepStore,
+        LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
+        SweepError, SweepReport, SweepRow, SweepStore,
     },
 };
 use zeroize::Zeroizing;
@@ -38,6 +40,8 @@ impl EncryptionProfile<String> for UserEmail {
 
 struct EmailLookup;
 
+struct EmailDomain;
+
 impl BlindIndexMetadata for EmailLookup {
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
     const BITS: usize = 128;
@@ -47,6 +51,23 @@ impl BlindIndexSpec<String> for EmailLookup {
     fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(Zeroizing::new(
             input.trim().to_ascii_lowercase().into_bytes(),
+        ))
+    }
+}
+
+impl BlindIndexMetadata for EmailDomain {
+    const ID: IndexId = index_id!("70000000-0000-4000-8000-000000000007");
+    const BITS: usize = 128;
+}
+
+impl BlindIndexSpec<String> for EmailDomain {
+    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(Zeroizing::new(
+            input
+                .rsplit_once('@')
+                .map_or(input.as_str(), |(_, domain)| domain)
+                .to_ascii_lowercase()
+                .into_bytes(),
         ))
     }
 }
@@ -92,13 +113,53 @@ fn derive_email_index(email: &str, index_keys: &LocalBlindIndexKeyring) -> Vec<u
     .into_bytes()
 }
 
+fn derive_email_domain_index(email: &str, index_keys: &LocalBlindIndexKeyring) -> Vec<u8> {
+    derive_blind_index::<EmailDomain, String, FieldBound<UserEmail>>(
+        &email.to_owned(),
+        &(),
+        index_keys,
+    )
+    .unwrap()
+    .into_bytes()
+}
+
+struct ToyLegacy;
+
+static TOY_LEGACY: ToyLegacy = ToyLegacy;
+
+impl LegacyFormat for ToyLegacy {
+    fn recover(&self, bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError> {
+        if let Some(plaintext) = bytes.strip_prefix(b"legacy:") {
+            Ok(Zeroizing::new(plaintext.to_vec()))
+        } else {
+            Ok(Zeroizing::new(bytes.to_vec()))
+        }
+    }
+}
+
+struct FailingLegacy;
+
+impl LegacyFormat for FailingLegacy {
+    fn recover(&self, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError> {
+        Err(LegacyError::new(LegacyErrorKind::AuthenticationFailed))
+    }
+}
+
+struct PanickingLegacy;
+
+impl LegacyFormat for PanickingLegacy {
+    fn recover(&self, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError> {
+        panic!("legacy handler must not be called for an envelope")
+    }
+}
+
 #[test]
 fn classification_accepts_valid_envelopes() {
     let keys = rotated_keys();
     let bytes = encrypt_email("mark@example.com", &keys);
 
     let read = MaybeEncrypted::<String, UserEmail>::from_bytes(bytes).unwrap();
-    assert!(!read.is_plaintext());
+    assert!(!read.is_legacy());
     assert!(read.as_ciphertext().is_some());
     assert_eq!(
         read.decrypt_with(&(), &keys).unwrap().expose_secret(),
@@ -107,10 +168,10 @@ fn classification_accepts_valid_envelopes() {
 }
 
 #[test]
-fn classification_treats_bytes_without_magic_as_legacy_plaintext() {
+fn classification_treats_bytes_without_magic_as_legacy() {
     let read =
         MaybeEncrypted::<String, UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
-    assert!(read.is_plaintext());
+    assert!(read.is_legacy());
     assert!(read.as_ciphertext().is_none());
 
     // A legacy plaintext read never touches key providers, including the
@@ -119,19 +180,137 @@ fn classification_treats_bytes_without_magic_as_legacy_plaintext() {
 }
 
 #[test]
-fn classification_treats_empty_bytes_as_legacy_plaintext() {
+fn decrypt_with_recovers_legacy_plaintext_through_the_codec() {
+    let read =
+        MaybeEncrypted::<String, UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
+
+    assert_eq!(
+        read.decrypt_with(&(), &rotated_keys())
+            .unwrap()
+            .expose_secret(),
+        "mark@example.com"
+    );
+}
+
+#[test]
+fn classification_treats_empty_bytes_as_legacy() {
     let read = MaybeEncrypted::<String, UserEmail>::from_bytes(Vec::new()).unwrap();
-    assert!(read.is_plaintext());
+    assert!(read.is_legacy());
     assert_eq!(read.decrypt().unwrap().expose_secret(), "");
 }
 
 #[test]
-fn classification_fails_on_plaintext_the_codec_rejects() {
+fn from_bytes_defers_codec_errors_to_decrypt() {
+    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(vec![0xFF, 0xFE]).unwrap();
+
     assert_eq!(
-        MaybeEncrypted::<String, UserEmail>::from_bytes(vec![0xFF, 0xFE]).unwrap_err(),
+        read.decrypt_with(&(), &rotated_keys()).unwrap_err(),
         Error::CodecFailed(cryptbox::CodecError::new(
             cryptbox::CodecErrorKind::InvalidUtf8
         )),
+    );
+}
+
+#[test]
+fn decrypt_with_legacy_recovers_foreign_ciphertext() {
+    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec())
+        .unwrap();
+
+    assert_eq!(
+        read.decrypt_with_legacy(&(), &rotated_keys(), &ToyLegacy)
+            .unwrap()
+            .expose_secret(),
+        "mark@example.com"
+    );
+}
+
+#[test]
+fn decrypt_legacy_recovers_without_touching_global_keys() {
+    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec())
+        .unwrap();
+
+    assert_eq!(
+        read.decrypt_legacy(&TOY_LEGACY).unwrap().expose_secret(),
+        "mark@example.com"
+    );
+}
+
+#[test]
+fn debug_redacts_deferred_legacy_bytes() {
+    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec())
+        .unwrap();
+
+    assert_eq!(format!("{read:?}"), "MaybeEncrypted([REDACTED])");
+}
+
+#[test]
+fn decrypt_with_legacy_ignores_the_handler_for_envelopes() {
+    let keys = rotated_keys();
+    let read =
+        MaybeEncrypted::<String, UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys))
+            .unwrap();
+
+    assert_eq!(
+        read.decrypt_with_legacy(&(), &keys, &PanickingLegacy)
+            .unwrap()
+            .expose_secret(),
+        "mark@example.com"
+    );
+}
+
+#[test]
+fn legacy_recovery_failure_is_a_hard_error() {
+    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
+
+    assert_eq!(
+        read.decrypt_with_legacy(&(), &rotated_keys(), &FailingLegacy)
+            .unwrap_err(),
+        Error::LegacyRecoveryFailed(LegacyError::new(LegacyErrorKind::AuthenticationFailed))
+    );
+}
+
+#[test]
+fn recovered_garbage_fails_codec_decode() {
+    struct InvalidUtf8;
+
+    impl LegacyFormat for InvalidUtf8 {
+        fn recover(&self, _: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError> {
+            Ok(Zeroizing::new(vec![0xFF, 0xFE]))
+        }
+    }
+
+    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
+    assert_eq!(
+        read.decrypt_with_legacy(&(), &rotated_keys(), &InvalidUtf8)
+            .unwrap_err(),
+        Error::CodecFailed(cryptbox::CodecError::new(
+            cryptbox::CodecErrorKind::InvalidUtf8
+        ))
+    );
+}
+
+#[test]
+fn from_legacy_bytes_bypasses_classification_even_with_magic_prefix() {
+    struct MagicPrefixed;
+
+    impl LegacyFormat for MagicPrefixed {
+        fn recover(&self, bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError> {
+            let plaintext = bytes
+                .strip_prefix(b"CBX\0legacy:")
+                .ok_or_else(|| LegacyError::new(LegacyErrorKind::Malformed))?;
+            Ok(Zeroizing::new(plaintext.to_vec()))
+        }
+    }
+
+    let read = MaybeEncrypted::<String, UserEmail>::from_legacy_bytes(
+        b"CBX\0legacy:mark@example.com".to_vec(),
+    );
+    assert!(read.is_legacy());
+    assert_eq!(
+        read.decrypt_with_legacy(&(), &rotated_keys(), &MagicPrefixed)
+            .unwrap()
+            .expose_secret(),
+        "mark@example.com"
     );
 }
 
@@ -160,13 +339,13 @@ fn out_of_band_constructors_bypass_byte_classification() {
     let read = MaybeEncrypted::from_plaintext(Encrypted::<String, UserEmail>::new(
         "CBX\0-prefixed legacy value".to_owned(),
     ));
-    assert!(read.is_plaintext());
+    assert!(read.is_legacy());
 
     let ciphertext =
         Ciphertext::<String, UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys))
             .unwrap();
     let read = MaybeEncrypted::from(ciphertext);
-    assert!(!read.is_plaintext());
+    assert!(!read.is_legacy());
 }
 
 #[test]
@@ -255,7 +434,7 @@ fn planner_encrypts_legacy_plaintext_and_derives_every_index() {
     let outcome = planner
         .plan_row(b"mark@example.com", &[placeholder])
         .unwrap();
-    assert_eq!(outcome.state(), RowState::Plaintext);
+    assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
     assert_eq!(
         Ciphertext::<String, UserEmail>::from_bytes(write.ciphertext().to_vec())
@@ -268,6 +447,64 @@ fn planner_encrypts_legacy_plaintext_and_derives_every_index() {
     assert_eq!(
         write.indexes(),
         &[derive_email_index("mark@example.com", &index_keys)]
+    );
+}
+
+#[test]
+fn planner_recovers_foreign_ciphertext_and_derives_indexes() {
+    let keys = rotated_keys();
+    let index_keys = rotated_index_keys();
+    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&TOY_LEGACY)
+        .with_index_with::<EmailLookup>(&index_keys)
+        .with_index_with::<EmailDomain>(&index_keys);
+
+    let outcome = planner
+        .plan_row(b"legacy:mark@example.com", &[&[], &[]])
+        .unwrap();
+    assert_eq!(outcome.state(), RowState::Legacy);
+    let write = outcome.into_write().unwrap();
+    assert_eq!(
+        Ciphertext::<String, UserEmail>::from_bytes(write.ciphertext().to_vec())
+            .unwrap()
+            .decrypt_with(&(), &keys)
+            .unwrap()
+            .expose_secret(),
+        "mark@example.com"
+    );
+    assert_eq!(
+        write.indexes(),
+        &[
+            derive_email_index("mark@example.com", &index_keys),
+            derive_email_domain_index("mark@example.com", &index_keys),
+        ]
+    );
+}
+
+#[test]
+fn planner_propagates_legacy_recovery_failure() {
+    let keys = rotated_keys();
+    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys).with_legacy(&FailingLegacy);
+
+    assert_eq!(
+        planner.plan_row(b"legacy:broken", &[]).unwrap_err(),
+        Error::LegacyRecoveryFailed(LegacyError::new(LegacyErrorKind::AuthenticationFailed))
+    );
+}
+
+#[test]
+fn planner_ignores_the_handler_for_envelope_rows() {
+    let keys = rotated_keys();
+    let ciphertext = encrypt_email("mark@example.com", &keys);
+    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys).with_legacy(&PanickingLegacy);
+
+    assert_eq!(
+        planner.classify_row(&ciphertext, &[]).unwrap(),
+        RowState::Current
+    );
+    assert_eq!(
+        planner.plan_row(&ciphertext, &[]).unwrap().state(),
+        RowState::Current
     );
 }
 
@@ -415,6 +652,7 @@ fn mixed_rows() -> Vec<(i64, Vec<u8>, Vec<Vec<u8>>)> {
             encrypt_email("fourth@example.com", &keys),
             vec![derive_email_index("fourth@example.com", &index_keys)],
         ),
+        (5, b"legacy:fifth@example.com".to_vec(), vec![Vec::new()]),
     ]
 }
 
@@ -423,22 +661,23 @@ fn sweep_migrates_plaintext_and_stale_rows_to_a_terminal_state() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&TOY_LEGACY)
         .with_index_with::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = MemoryStore::new(mixed_rows());
 
     let report = futures_executor::block_on(sweep.run(&mut store)).unwrap();
-    assert_eq!(report.plaintext, 2);
+    assert_eq!(report.legacy, 3);
     assert_eq!(report.stale, 1);
     assert_eq!(report.current, 1);
     assert_eq!(report.conflicts, 0);
     // One checkpoint per non-empty batch, saved only after the whole batch.
-    assert_eq!(store.checkpoint_saves, 2);
-    assert_eq!(store.checkpoint, Some(4));
+    assert_eq!(store.checkpoint_saves, 3);
+    assert_eq!(store.checkpoint, Some(5));
 
     let report = futures_executor::block_on(sweep.verify(&mut store)).unwrap();
     assert!(report.is_terminal());
-    assert_eq!(report.current, 4);
+    assert_eq!(report.current, 5);
 }
 
 #[test]
@@ -446,6 +685,7 @@ fn sweep_replay_after_a_lost_checkpoint_is_idempotent() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&TOY_LEGACY)
         .with_index_with::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = MemoryStore::new(mixed_rows());
@@ -457,8 +697,8 @@ fn sweep_replay_after_a_lost_checkpoint_is_idempotent() {
     // already current, so replay rewrites nothing.
     store.checkpoint = None;
     let report = futures_executor::block_on(sweep.run(&mut store)).unwrap();
-    assert_eq!(report.current, 4);
-    assert_eq!(report.plaintext + report.stale + report.conflicts, 0);
+    assert_eq!(report.current, 5);
+    assert_eq!(report.legacy + report.stale + report.conflicts, 0);
     assert_eq!(store.rows, migrated);
 }
 
@@ -467,6 +707,7 @@ fn sweep_never_overwrites_a_concurrent_writer() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&TOY_LEGACY)
         .with_index_with::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = MemoryStore::new(mixed_rows());
@@ -478,7 +719,7 @@ fn sweep_never_overwrites_a_concurrent_writer() {
 
     let report = futures_executor::block_on(sweep.run(&mut store)).unwrap();
     assert_eq!(report.conflicts, 1);
-    assert_eq!(report.plaintext, 1);
+    assert_eq!(report.legacy, 2);
     assert_eq!(store.rows[0].1, newer_ciphertext);
     assert_eq!(store.rows[0].2, vec![newer_index]);
 }
@@ -488,6 +729,7 @@ fn sweep_run_stops_at_a_malformed_row_and_keeps_the_last_checkpoint() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&TOY_LEGACY)
         .with_index_with::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
 
@@ -506,10 +748,63 @@ fn sweep_run_stops_at_a_malformed_row_and_keeps_the_last_checkpoint() {
 }
 
 #[test]
-fn verification_is_read_only_and_ignores_the_checkpoint() {
+fn sweep_stops_at_an_unrecoverable_legacy_row_and_resumes_after_repair() {
+    struct RejectForeign;
+
+    impl LegacyFormat for RejectForeign {
+        fn recover(&self, bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError> {
+            if bytes.starts_with(b"legacy:") {
+                Err(LegacyError::new(LegacyErrorKind::AuthenticationFailed))
+            } else {
+                Ok(Zeroizing::new(bytes.to_vec()))
+            }
+        }
+    }
+
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
+    let legacy = RejectForeign;
     let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&legacy)
+        .with_index_with::<EmailLookup>(&index_keys);
+    let sweep = Sweep::new(planner).with_batch_size(2);
+    let mut store = MemoryStore::new(mixed_rows());
+
+    assert!(matches!(
+        futures_executor::block_on(sweep.run(&mut store)),
+        Err(SweepError::Row(Error::LegacyRecoveryFailed(_)))
+    ));
+    assert_eq!(store.checkpoint, Some(4));
+
+    store.rows[4].1 = b"fifth@example.com".to_vec();
+    let report = futures_executor::block_on(sweep.run(&mut store)).unwrap();
+    assert_eq!(report.legacy, 1);
+    assert_eq!(store.checkpoint, Some(5));
+    assert!(
+        futures_executor::block_on(sweep.verify(&mut store))
+            .unwrap()
+            .is_terminal()
+    );
+}
+
+#[test]
+fn verification_counts_foreign_ciphertext_without_recovery() {
+    struct ClassificationOnlyKeys(EncryptionKey);
+
+    impl EncryptionKeyProvider for ClassificationOnlyKeys {
+        fn current_key(&self) -> Result<EncryptionKey, KeyProviderError> {
+            Ok(self.0.clone())
+        }
+
+        fn key(&self, _: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
+            panic!("verification must not resolve decryption keys")
+        }
+    }
+
+    let keys = ClassificationOnlyKeys(EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]));
+    let index_keys = rotated_index_keys();
+    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&PanickingLegacy)
         .with_index_with::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(3);
     let mut store = MemoryStore::new(mixed_rows());
@@ -517,7 +812,7 @@ fn verification_is_read_only_and_ignores_the_checkpoint() {
 
     let report = futures_executor::block_on(sweep.verify(&mut store)).unwrap();
     // The pass covered every row despite the checkpoint and wrote nothing.
-    assert_eq!(report.plaintext, 2);
+    assert_eq!(report.legacy, 3);
     assert_eq!(report.stale, 1);
     assert_eq!(report.current, 1);
     assert_eq!(store.update_calls, 0);
@@ -530,6 +825,7 @@ fn stepped_run_batches_match_a_full_run() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&TOY_LEGACY)
         .with_index_with::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = MemoryStore::new(mixed_rows());
@@ -548,9 +844,9 @@ fn stepped_run_batches_match_a_full_run() {
         assert_eq!(store.checkpoint, outcome.checkpoint);
     }
 
-    assert_eq!(steps, 3);
-    assert_eq!(store.checkpoint_saves, 2);
-    assert_eq!(report.plaintext, 2);
+    assert_eq!(steps, 4);
+    assert_eq!(store.checkpoint_saves, 3);
+    assert_eq!(report.legacy, 3);
     assert_eq!(report.stale, 1);
     assert_eq!(report.current, 1);
     assert_eq!(report.conflicts, 0);
@@ -564,6 +860,7 @@ fn orchestrator_owned_cursor_never_touches_store_checkpoints() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&TOY_LEGACY)
         .with_index_with::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = MemoryStore::new(mixed_rows());
@@ -585,8 +882,8 @@ fn orchestrator_owned_cursor_never_touches_store_checkpoints() {
 
     assert_eq!(store.checkpoint_saves, 0);
     assert_eq!(store.checkpoint, None);
-    assert_eq!(journaled_cursor, Some(4));
-    assert_eq!(report.plaintext, 2);
+    assert_eq!(journaled_cursor, Some(5));
+    assert_eq!(report.legacy, 3);
     assert_eq!(report.stale, 1);
     assert_eq!(report.current, 1);
 
@@ -599,6 +896,7 @@ fn replaying_a_processed_batch_is_idempotent() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&TOY_LEGACY)
         .with_index_with::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = MemoryStore::new(mixed_rows());
@@ -606,7 +904,7 @@ fn replaying_a_processed_batch_is_idempotent() {
     // An at-least-once runtime applied the side effect but crashed before
     // journaling the cursor, so the same step fires again.
     let first = futures_executor::block_on(sweep.process_batch(&mut store, None)).unwrap();
-    assert_eq!(first.report.plaintext, 2);
+    assert_eq!(first.report.legacy, 2);
     assert_eq!(first.checkpoint, Some(2));
     let rows_after_first: Vec<_> = store.rows.clone();
 
@@ -614,7 +912,7 @@ fn replaying_a_processed_batch_is_idempotent() {
     assert_eq!(replay.checkpoint, Some(2));
     assert_eq!(replay.report.current, 2);
     assert_eq!(
-        replay.report.plaintext + replay.report.stale + replay.report.conflicts,
+        replay.report.legacy + replay.report.stale + replay.report.conflicts,
         0
     );
     assert_eq!(store.rows, rows_after_first);
@@ -625,6 +923,7 @@ fn stepped_verification_matches_a_full_pass() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        .with_legacy(&TOY_LEGACY)
         .with_index_with::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(3);
     let mut store = MemoryStore::new(mixed_rows());
@@ -649,20 +948,20 @@ fn stepped_verification_matches_a_full_pass() {
 }
 
 #[test]
-fn report_terminal_state_requires_zero_plaintext_stale_and_malformed() {
+fn report_terminal_state_requires_zero_legacy_stale_and_malformed() {
     let mut clean = SweepReport::default();
     clean.current = 10;
     clean.conflicts = 3;
     assert!(clean.is_terminal());
 
-    let mut with_plaintext = clean;
-    with_plaintext.plaintext = 1;
+    let mut with_legacy = clean;
+    with_legacy.legacy = 1;
     let mut with_stale = clean;
     with_stale.stale = 1;
     let mut with_malformed = clean;
     with_malformed.malformed = 1;
 
-    for dirty in [with_plaintext, with_stale, with_malformed] {
+    for dirty in [with_legacy, with_stale, with_malformed] {
         assert!(!dirty.is_terminal());
     }
 }

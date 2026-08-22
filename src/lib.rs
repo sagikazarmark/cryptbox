@@ -53,10 +53,10 @@
 //!
 //! - `json` adds the `Json` codec. Its serialized representation is part of
 //!   the persistent schema.
-//! - `migrate` adds the explicit `migrate` module for adopting encryption
-//!   over existing plaintext data: a permissive read type and a resumable
-//!   sweep driver. Intended for a bounded migration window only; the default
-//!   decoding path stays strict.
+//! - `migrate` adds the explicit `migrate` module for adopting `CryptBox` over
+//!   plaintext or data encrypted by a previous solution: permissive reads, a
+//!   legacy recovery handler, and a resumable sweep. Intended for a bounded
+//!   migration window only; the default decoding path stays strict.
 //! - `postcard` adds the `Postcard` codec. Its serialized representation is
 //!   part of the persistent schema.
 //! - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
@@ -87,18 +87,19 @@
 //! # Workflows
 //!
 //! Complete runnable programs demonstrate [key rotation], a [re-encryption
-//! sweep], a [plaintext migration], [blind-index lookup], and [in-memory
-//! SQLite storage]. The [maintenance sweep guide] and the
-//! [plaintext migration guide] cover the operational patterns, and the
+//! sweep], a [legacy migration], a [plaintext migration], [blind-index lookup],
+//! and [in-memory SQLite storage]. The [maintenance sweep guide] and the
+//! [legacy migration guide] cover the operational patterns, and the
 //! [wire-format guide] records the experimental envelope and index formats.
 //!
 //! [key rotation]: https://docs.rs/crate/cryptbox/latest/source/examples/key_rotation.rs
 //! [re-encryption sweep]: https://docs.rs/crate/cryptbox/latest/source/examples/reencryption_sweep.rs
+//! [legacy migration]: https://docs.rs/crate/cryptbox/latest/source/examples/legacy_migration.rs
 //! [plaintext migration]: https://docs.rs/crate/cryptbox/latest/source/examples/plaintext_migration.rs
 //! [blind-index lookup]: https://docs.rs/crate/cryptbox/latest/source/examples/blind_indexes.rs
 //! [in-memory SQLite storage]: https://docs.rs/crate/cryptbox/latest/source/examples/sqlx_sqlite.rs
 //! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/latest/source/docs/reencryption-sweep.md
-//! [plaintext migration guide]: https://docs.rs/crate/cryptbox/latest/source/docs/plaintext-migration.md
+//! [legacy migration guide]: https://docs.rs/crate/cryptbox/latest/source/docs/legacy-migration.md
 //! [wire-format guide]: https://docs.rs/crate/cryptbox/latest/source/docs/wire-format.md
 //!
 //! # Security boundaries

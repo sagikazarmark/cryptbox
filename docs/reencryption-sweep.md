@@ -11,8 +11,8 @@ same control flow applies to PostgreSQL and other stores.
 The manual loop below remains the reference semantics. The `migrate` Cargo
 feature packages the same invariants as library code —
 `cryptbox::migrate::{RowPlanner, Sweep, SweepStore}` — and additionally
-handles plaintext-to-ciphertext adoption; see the
-[plaintext migration guide](plaintext-migration.md).
+handles migration from plaintext or a previous encryption solution; see the
+[legacy migration guide](legacy-migration.md).
 
 ## Preconditions
 

@@ -132,8 +132,8 @@ impl<T, Profile> Type<Postgres> for crate::migrate::MaybeEncrypted<T, Profile> {
     }
 }
 
-// Migration-window reads only. Decoding classifies bytes without touching key
-// providers; decryption stays an explicit call. There is deliberately no
+// Migration-window reads only. Decoding classifies bytes without CryptBox or
+// legacy keys; recovery and decryption stay explicit calls. There is no
 // `Encode` counterpart: writes always encrypt through `Encrypted` or
 // `Prepared`.
 #[cfg(feature = "migrate")]

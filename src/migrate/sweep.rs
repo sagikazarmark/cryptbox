@@ -9,8 +9,8 @@ use super::{RowPlanner, RowState, RowWrite, SweepReport};
 /// One loaded row: its cursor plus the exact bytes read from every migrated
 /// column.
 ///
-/// The stored bytes may be legacy plaintext, so the buffers are zeroized on
-/// drop and `Debug` prints lengths only.
+/// The stored bytes may be legacy data, including plaintext, so the buffers are
+/// zeroized on drop and `Debug` prints lengths only.
 pub struct SweepRow<C> {
     /// The row's unique, immutable cursor value.
     pub cursor: C,
@@ -107,8 +107,8 @@ where
 
 /// Drives a batched, resumable migration sweep over one column family.
 ///
-/// [`Self::run`] resumes from the durable checkpoint and rewrites plaintext
-/// and stale rows; [`Self::verify`] is the read-only terminal-state check.
+/// [`Self::run`] resumes from the durable checkpoint and rewrites legacy and
+/// stale rows; [`Self::verify`] is the read-only terminal-state check.
 /// Both operate through a [`SweepStore`], keeping the driver independent of
 /// any storage backend.
 ///

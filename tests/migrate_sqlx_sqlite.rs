@@ -7,9 +7,14 @@ use cryptbox::{
     EncryptionKey, EncryptionProfile, Error, Field, FieldBound, GlobalKeyContext, IndexId,
     IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, field_id, index_id,
     index_key_id, key_id,
-    migrate::{MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
+    migrate::{
+        LegacyError, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable,
+    },
 };
-use sqlx::{Connection, Row, sqlite::SqliteConnection};
+use sqlx::{
+    Connection, Row,
+    sqlite::{SqliteConnection, SqliteRow},
+};
 use zeroize::Zeroizing;
 
 const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
@@ -32,6 +37,18 @@ impl EncryptionProfile<String> for UserEmail {
 
 struct EmailLookup;
 
+struct ToyLegacy;
+
+static TOY_LEGACY: ToyLegacy = ToyLegacy;
+
+impl LegacyFormat for ToyLegacy {
+    fn recover(&self, bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError> {
+        Ok(Zeroizing::new(
+            bytes.strip_prefix(b"legacy:").unwrap_or(bytes).to_vec(),
+        ))
+    }
+}
+
 impl BlindIndexMetadata for EmailLookup {
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
     const BITS: usize = 128;
@@ -43,6 +60,19 @@ impl BlindIndexSpec<String> for EmailLookup {
             input.trim().to_ascii_lowercase().into_bytes(),
         ))
     }
+}
+
+fn assert_strict_decode(row: &SqliteRow, is_legacy: bool) {
+    let result = row.try_get::<Ciphertext<String, UserEmail>, _>("email_ciphertext");
+    if !is_legacy {
+        result.unwrap();
+        return;
+    }
+
+    let sqlx::Error::ColumnDecode { source, .. } = result.unwrap_err() else {
+        panic!("expected a column decode error");
+    };
+    assert_eq!(source.downcast_ref::<Error>(), Some(&Error::NotCiphertext));
 }
 
 #[test]
@@ -69,10 +99,14 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
         let keys = LocalEncryptionKeyring::new(current_key, [old_key]).unwrap();
         let index_keys = LocalBlindIndexKeyring::new(current_index_key, [old_index_key]).unwrap();
 
-        // Two legacy plaintext rows, one stale encrypted row, one current row.
-        for email in ["first@example.com", "second@example.com"] {
+        // One plaintext row, one foreign-ciphertext row, one stale encrypted
+        // row, and one current row.
+        for bytes in [
+            b"first@example.com".to_vec(),
+            b"legacy:second@example.com".to_vec(),
+        ] {
             sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
-                .bind(email.as_bytes().to_vec())
+                .bind(bytes)
                 .bind(Vec::<u8>::new())
                 .execute(&mut connection)
                 .await
@@ -104,15 +138,15 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
             .unwrap();
         for row in rows {
             let id: i64 = row.try_get("id").unwrap();
-            let strict = row.try_get::<Ciphertext<String, UserEmail>, _>("email_ciphertext");
-            assert_eq!(strict.is_err(), id <= 2);
+            assert_strict_decode(&row, id <= 2);
             let read: MaybeEncrypted<String, UserEmail> = row.try_get("email_ciphertext").unwrap();
-            assert_eq!(read.is_plaintext(), id <= 2);
-            read.decrypt_with(&(), &keys).unwrap();
+            assert_eq!(read.is_legacy(), id <= 2);
+            read.decrypt_with_legacy(&(), &keys, &TOY_LEGACY).unwrap();
         }
 
         // Batch size one exercises pagination and per-batch checkpoints.
         let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+            .with_legacy(&TOY_LEGACY)
             .with_index_with::<EmailLookup>(&index_keys);
         let sweep = Sweep::new(planner).with_batch_size(1);
         let table =
@@ -121,7 +155,7 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
         store.ensure_progress_table().await.unwrap();
 
         let report = sweep.run(&mut store).await.unwrap();
-        assert_eq!(report.plaintext, 2);
+        assert_eq!(report.legacy, 2);
         assert_eq!(report.stale, 1);
         assert_eq!(report.current, 1);
         assert_eq!(report.conflicts, 0);
@@ -129,7 +163,7 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
         // A resumed worker finds the durable checkpoint and rewrites nothing.
         let report = sweep.run(&mut store).await.unwrap();
         assert_eq!(report.current, 0);
-        assert_eq!(report.plaintext + report.stale + report.conflicts, 0);
+        assert_eq!(report.legacy + report.stale + report.conflicts, 0);
 
         let report = sweep.verify(&mut store).await.unwrap();
         assert!(report.is_terminal());

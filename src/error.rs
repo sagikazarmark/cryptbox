@@ -152,6 +152,10 @@ pub enum Error {
         /// The number of blind-index columns the row supplied.
         actual: usize,
     },
+    /// A previous encryption format could not recover the stored value.
+    #[cfg(feature = "migrate")]
+    #[error("legacy recovery failed: {0}")]
+    LegacyRecoveryFailed(#[from] crate::migrate::LegacyError),
 }
 
 impl From<KeyProviderError> for Error {

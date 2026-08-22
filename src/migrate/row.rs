@@ -1,12 +1,12 @@
 use std::fmt;
 
-use zeroize::Zeroizing;
-
 use crate::{
     BlindIndex, BlindIndexKeyProvider, BlindIndexSpec, Ciphertext, Codec, Encrypted,
     EncryptionKeyProvider, EncryptionProfile, Error, derive_blind_index, inspect_blind_index,
     needs_reencryption, value::ProfileContext,
 };
+
+use super::{LegacyFormat, legacy};
 
 /// The classification of one stored row against the current key generations.
 ///
@@ -18,8 +18,9 @@ pub enum RowState {
     Current,
     /// The envelope or at least one blind index names a historical generation.
     Stale,
-    /// The stored bytes are legacy plaintext.
-    Plaintext,
+    /// The stored bytes are legacy data rather than a `CryptBox` envelope.
+    #[doc(alias = "Plaintext")]
+    Legacy,
 }
 
 /// Replacement bytes for one row.
@@ -111,7 +112,7 @@ where
 /// implements the per-row rules of the maintenance sweep guide: current rows
 /// are skipped without generating fresh nonces, stale envelopes are
 /// re-encrypted, stale blind indexes are re-derived from the authoritative
-/// (decrypted) ciphertext, and legacy plaintext is encrypted with every
+/// (decrypted) ciphertext, and recovered legacy data is encrypted with every
 /// registered index derived alongside.
 pub struct RowPlanner<'a, T, Profile>
 where
@@ -119,6 +120,7 @@ where
 {
     context: &'a ProfileContext<T, Profile>,
     keys: &'a dyn EncryptionKeyProvider,
+    legacy: Option<&'a dyn LegacyFormat>,
     indexes: Vec<IndexColumn<'a, T, Profile>>,
 }
 
@@ -134,8 +136,19 @@ where
         Self {
             context,
             keys,
+            legacy: None,
             indexes: Vec::new(),
         }
+    }
+
+    /// Configures the handler used to recover non-envelope stored values.
+    ///
+    /// Without a handler, non-envelope bytes are treated as plaintext and
+    /// decoded directly through the profile's codec.
+    #[must_use]
+    pub fn with_legacy(mut self, legacy: &'a dyn LegacyFormat) -> Self {
+        self.legacy = Some(legacy);
+        self
     }
 
     /// Registers the next blind-index column.
@@ -167,7 +180,7 @@ where
 
         match crate::inspect_ciphertext(ciphertext) {
             Ok(_) => {}
-            Err(Error::NotCiphertext) => return Ok(RowState::Plaintext),
+            Err(Error::NotCiphertext) => return Ok(RowState::Legacy),
             Err(error) => return Err(error),
         }
 
@@ -196,7 +209,7 @@ where
 
         match crate::inspect_ciphertext(ciphertext) {
             Ok(_) => {}
-            Err(Error::NotCiphertext) => return self.plan_plaintext_row(ciphertext),
+            Err(Error::NotCiphertext) => return self.plan_legacy_row(ciphertext),
             Err(error) => return Err(error),
         }
 
@@ -247,9 +260,9 @@ where
         })
     }
 
-    fn plan_plaintext_row(&self, plaintext: &[u8]) -> Result<RowOutcome, Error> {
-        let buffer = Zeroizing::new(plaintext.to_vec());
-        let value = Encrypted::<T, Profile>::new(<Profile::Codec as Codec<T>>::decode(&buffer)?);
+    fn plan_legacy_row(&self, bytes: &[u8]) -> Result<RowOutcome, Error> {
+        let plaintext = legacy::recover(bytes, self.legacy)?;
+        let value = Encrypted::<T, Profile>::new(<Profile::Codec as Codec<T>>::decode(&plaintext)?);
         let ciphertext = value.encrypt_with(self.context, self.keys)?;
         let mut indexes = Vec::with_capacity(self.indexes.len());
         for column in &self.indexes {
@@ -261,7 +274,7 @@ where
         }
 
         Ok(RowOutcome {
-            state: RowState::Plaintext,
+            state: RowState::Legacy,
             write: Some(RowWrite {
                 ciphertext: ciphertext.into_bytes(),
                 indexes,
@@ -297,6 +310,7 @@ where
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RowPlanner")
+            .field("legacy", &self.legacy.is_some())
             .field("indexes", &self.indexes.len())
             .finish_non_exhaustive()
     }

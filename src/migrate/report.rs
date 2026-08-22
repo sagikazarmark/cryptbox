@@ -11,8 +11,9 @@ pub struct SweepReport {
     /// Rows rewritten from (or, during verification, still naming) a
     /// historical generation.
     pub stale: u64,
-    /// Rows encrypted from (or still holding) legacy plaintext.
-    pub plaintext: u64,
+    /// Rows encrypted from (or still holding) legacy data.
+    #[doc(alias = "plaintext")]
+    pub legacy: u64,
     /// Rows that could not be classified during verification.
     pub malformed: u64,
     /// Rewrites lost to a concurrent writer; always zero for verification.
@@ -24,7 +25,7 @@ impl SweepReport {
         match state {
             RowState::Current => self.current += 1,
             RowState::Stale => self.stale += 1,
-            RowState::Plaintext => self.plaintext += 1,
+            RowState::Legacy => self.legacy += 1,
         }
     }
 
@@ -38,12 +39,12 @@ impl SweepReport {
     pub const fn merge(&mut self, other: Self) {
         self.current += other.current;
         self.stale += other.stale;
-        self.plaintext += other.plaintext;
+        self.legacy += other.legacy;
         self.malformed += other.malformed;
         self.conflicts += other.conflicts;
     }
 
-    /// Returns whether a full pass observed no plaintext, stale, or malformed
+    /// Returns whether a full pass observed no legacy, stale, or malformed
     /// rows.
     ///
     /// This is the terminal-state predicate for the migration window: only a
@@ -52,6 +53,6 @@ impl SweepReport {
     /// repeat until one complete pass is clean.
     #[must_use]
     pub const fn is_terminal(&self) -> bool {
-        self.plaintext == 0 && self.stale == 0 && self.malformed == 0
+        self.legacy == 0 && self.stale == 0 && self.malformed == 0
     }
 }

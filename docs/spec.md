@@ -1595,9 +1595,9 @@ These enable applications and maintenance tools to build migrations explicitly.
 
 ---
 
-## 30.2 Plaintext-to-encrypted migration mode
+## 30.2 Legacy-to-encrypted migration mode
 
-A permissive mode that accepts both plaintext and ciphertext is deliberately NOT part of normal v0.1 SQLx decoding.
+A permissive mode that accepts legacy data and CryptBox ciphertext is deliberately NOT part of normal v0.1 SQLx decoding.
 
 **Rationale:** A global migration mode risks becoming permanent and silently weakening the encrypted-field guarantee.
 
@@ -1605,21 +1605,23 @@ The dedicated migration facility (the `migrate` Cargo feature) provides this cap
 
 The permissive read MUST be an explicit opt-in and a distinct type (`MaybeEncrypted`), never a mode on `Encrypted` or `Ciphertext` decoding. The steady-state adapter remains strict.
 
-Classification MUST treat bytes as legacy plaintext only when they lack the envelope magic (`NotCiphertext`). Bytes that carry the magic but fail structural validation (`InvalidEnvelope`, `UnsupportedFormatVersion`, `UnsupportedSuite`) MUST remain hard errors. There is no plaintext fallback for malformed envelopes.
+Classification MUST treat bytes as legacy only when they lack the envelope magic (`NotCiphertext`). Bytes that carry the magic but fail structural validation (`InvalidEnvelope`, `UnsupportedFormatVersion`, `UnsupportedSuite`) MUST remain hard errors. There is no legacy fallback for malformed envelopes.
 
 The permissive type MUST NOT implement any storage `Encode`. Writes MUST always encrypt; the only forward path from a permissive read is an `Encrypted` value.
 
-Legacy plaintext MUST be decoded through the profile's codec. Codec failure is an error, never silence.
+Non-envelope bytes MUST be retained until an explicit decrypt call. Without a legacy handler they are plaintext decoded through the profile's codec. With an explicitly injected `LegacyFormat`, the handler MUST recover plaintext bytes before the profile codec decodes them. Legacy recovery and codec failures are errors, never silence; SQLx `Decode` performs classification only and does not access either key provider.
 
-Classification keys on the 4-byte envelope magic alone. Legacy plaintext that begins with the magic is classified as ciphertext and then fails structurally or on authentication — a hard error, never silently wrong data. Stores that reject interior NUL bytes in text (for example PostgreSQL `TEXT`) cannot produce such values, and real text is overwhelmingly unlikely to. Deployments holding arbitrary binary legacy data MUST track encryption state out of band and construct permissive reads through the explicit constructors instead of byte classification.
+Classification keys on the 4-byte envelope magic alone. Legacy data that begins with the magic is classified as ciphertext and then fails structurally or on authentication — a hard error, never silently wrong data. Deployments holding arbitrary binary legacy data MUST track encryption state out of band and use `from_legacy_bytes`, which bypasses classification.
 
-**Terminal state.** The migration window MAY end — permissive readers removed and the `migrate` feature dropped — only after a full verification pass over all rows observes zero plaintext, zero stale, and zero malformed values. If writes continue during verification, the pass MUST be repeated until one complete pass is clean. Historical keys are retired only after that, per the maintenance sweep rules.
+The legacy handler MUST be application-owned, explicitly injected, synchronous, and responsible for zeroizing its own key material and intermediate buffers. It MUST return plaintext in a zeroizing buffer and sanitized errors that retain neither input nor keys. Authenticated legacy formats are strongly preferred; unauthenticated formats require out-of-band integrity checks because successful recovery and codec decoding do not prove the plaintext is correct.
+
+**Terminal state.** The migration window MAY end only after a full verification pass over all rows observes zero legacy, zero stale, and zero malformed values. If writes continue during verification, the pass MUST be repeated until one complete pass is clean. Then permissive readers and the handler are removed, the `migrate` feature is dropped, historical CryptBox keys are retired per the maintenance sweep rules, and legacy keys are destroyed when rollback and retention requirements permit.
 
 ---
 
 ## 30.3 Sweep driver
 
-The library sweep driver generalizes the maintenance sweep pattern to both re-encryption and plaintext adoption. It MUST uphold the operational invariants of the sweep guide:
+The library sweep driver generalizes the maintenance sweep pattern to re-encryption and legacy adoption. It MUST uphold the operational invariants of the sweep guide:
 
 - batches page by a unique, immutable, indexed cursor providing a total order, in ascending order; a non-unique cursor lets a batch boundary inside a group of equal values silently skip rows from both the sweep and verification;
 - rows whose envelope and blind indexes are current are skipped without generating fresh nonces or writes;
@@ -1632,7 +1634,7 @@ The library sweep driver generalizes the maintenance sweep pattern to both re-en
 
 Sweep writes are operator-initiated maintenance, not read-triggered mutation, so §13.6 and §42.6 are preserved: a read remains a read.
 
-The driver reports metadata-only tallies (current, stale, plaintext, malformed, conflicts) consistent with §33. A sweep run stops at the first malformed row so the operator can investigate; verification counts malformed rows and completes so its report is total.
+The driver reports metadata-only tallies (current, stale, legacy, malformed, conflicts) consistent with §33. A sweep run stops at the first malformed or unrecoverable row so the operator can investigate; verification counts malformed rows and completes so its report is total.
 
 **Stepped execution.** The driver MUST expose single-batch execution alongside the run-to-exhaustion loop, in two forms: one that uses the store's durable checkpoint, and one that takes and returns the cursor without checkpoint IO so an external orchestrator — a scheduler, queue consumer, or durable-execution runtime — owns progress durability. Progress ownership is caller policy, not adapter policy.
 
@@ -2027,7 +2029,7 @@ Reads should not cause hidden writes.
 
 ---
 
-## 42.7 Permissive plaintext/ciphertext SQLx decoding
+## 42.7 Permissive legacy/CryptBox SQLx decoding
 
 Originally deferred to an explicit migration facility rather than weakening normal encrypted-field semantics.
 

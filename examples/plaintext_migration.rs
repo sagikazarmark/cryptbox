@@ -107,7 +107,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     for row in rows {
         let id: i64 = row.try_get("id")?;
         let value: MaybeEncrypted<String, UserEmail> = row.try_get("email_ciphertext")?;
-        assert_eq!(value.is_plaintext(), id <= 2);
+        assert_eq!(value.is_legacy(), id <= 2);
         let email = value.decrypt_with(&(), &keys)?;
         assert!(email.expose_secret().ends_with("@example.com"));
     }
@@ -121,12 +121,12 @@ async fn run() -> Result<(), Box<dyn Error>> {
     store.ensure_progress_table().await?;
 
     let report = sweep.run(&mut store).await?;
-    assert_eq!(report.plaintext, 2);
+    assert_eq!(report.legacy, 2);
     assert_eq!(report.stale, 1);
     assert_eq!(report.current, 1);
     assert_eq!(report.conflicts, 0);
 
-    // The read-only verification pass proves the terminal state: no plaintext,
+    // The read-only verification pass proves the terminal state: no legacy,
     // stale, or malformed rows remain, so the permissive reads and the
     // `migrate` feature can be removed, and historical keys retired.
     let report = sweep.verify(&mut store).await?;

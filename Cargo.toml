@@ -62,6 +62,10 @@ required-features = ["sqlx-sqlite"]
 name = "plaintext_migration"
 required-features = ["migrate", "sqlx-sqlite"]
 
+[[example]]
+name = "legacy_migration"
+required-features = ["migrate", "sqlx-sqlite"]
+
 [package.metadata.docs.rs]
 all-features = true
 
