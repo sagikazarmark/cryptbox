@@ -1621,7 +1621,7 @@ Classification keys on the 4-byte envelope magic alone. Legacy plaintext that be
 
 The library sweep driver generalizes the maintenance sweep pattern to both re-encryption and plaintext adoption. It MUST uphold the operational invariants of the sweep guide:
 
-- batches page by an immutable, indexed cursor in ascending order;
+- batches page by a unique, immutable, indexed cursor providing a total order, in ascending order; a non-unique cursor lets a batch boundary inside a group of equal values silently skip rows from both the sweep and verification;
 - rows whose envelope and blind indexes are current are skipped without generating fresh nonces or writes;
 - every update is a compare-and-swap whose predicate includes every column byte originally read;
 - a zero-affected-rows update means a concurrent writer won and MUST NOT be retried or overwritten;

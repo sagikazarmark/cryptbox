@@ -16,6 +16,11 @@ pub struct SweepTable {
 impl SweepTable {
     /// Describes a table by its cursor and encrypted columns.
     ///
+    /// `cursor_column` must hold unique, immutable values, such as an integer
+    /// primary key. Pagination resumes strictly after the checkpoint, so a
+    /// non-unique cursor silently skips rows sharing a value with a batch
+    /// boundary — from verification as well as the sweep.
+    ///
     /// The progress table defaults to `cryptbox_migration_progress` and the
     /// migration name to `table.ciphertext_column`.
     #[must_use]

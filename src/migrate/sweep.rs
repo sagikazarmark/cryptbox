@@ -12,7 +12,7 @@ use super::{RowPlanner, RowState, RowWrite, SweepReport};
 /// The stored bytes may be legacy plaintext, so the buffers are zeroized on
 /// drop and `Debug` prints lengths only.
 pub struct SweepRow<C> {
-    /// The row's immutable, indexed cursor value.
+    /// The row's unique, immutable cursor value.
     pub cursor: C,
     /// The encrypted column's bytes exactly as read.
     pub ciphertext: Vec<u8>,
@@ -46,13 +46,16 @@ impl<C: fmt::Debug> fmt::Debug for SweepRow<C> {
 /// Implementations must uphold the sweep guide's contract:
 ///
 /// - [`Self::load_batch`] returns rows strictly after `after`, ordered
-///   ascending by an immutable, indexed cursor.
+///   ascending by a unique, immutable, indexed cursor. Uniqueness is
+///   load-bearing: paging resumes strictly after the checkpoint, so rows
+///   sharing a cursor value with a batch boundary would be silently skipped
+///   by both the sweep and verification.
 /// - [`Self::update`] compares every byte in `row` in its predicate and
 ///   reports whether the row was written; zero matched rows means a
 ///   concurrent writer won.
 /// - Checkpoints are durable outside the worker's memory.
 pub trait SweepStore {
-    /// The immutable, indexed cursor rows are ordered by.
+    /// The unique, immutable, indexed cursor rows are totally ordered by.
     type Cursor: Clone + Send + Sync;
     /// The storage backend's error type.
     type Error: std::error::Error + Send + Sync + 'static;

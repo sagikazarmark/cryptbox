@@ -54,8 +54,13 @@ provider, and each blind-index column in stored order, then drive it with
 
 - `SqliteSweepStore` and `PostgresSweepStore` cover tables with an integer
   cursor column; a `SweepTable` names the table, cursor, ciphertext, and index
-  columns.
-- Any other store or cursor shape implements the `SweepStore` trait directly.
+  columns. The cursor column must hold unique, immutable values, such as an
+  integer primary key: pagination resumes strictly after the checkpoint, so a
+  non-unique cursor silently skips rows sharing a value with a batch
+  boundary — and the verification pass pages the same way, so it would miss
+  them too.
+- Any other store or cursor shape implements the `SweepStore` trait directly,
+  under the same unique total-order cursor contract.
 
 `Sweep::run` resumes from the durable checkpoint and, per row, encrypts legacy
 plaintext (deriving every registered index), re-encrypts stale envelopes,

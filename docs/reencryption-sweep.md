@@ -21,8 +21,11 @@ application instance. Confirm that every writer uses the current encryption and
 blind-index keys. Keep all historical keys available until final verification
 passes.
 
-Choose an immutable, indexed cursor such as a monotonically increasing primary
-key. Size batches to limit database load and plaintext residence time. A sweep
+Choose a unique, immutable, indexed cursor such as a monotonically increasing
+primary key. Uniqueness is required, not just recommended: paging resumes
+strictly after the last cursor value, so rows sharing a value with a batch
+boundary would be skipped by the sweep and its verification alike. Size
+batches to limit database load and plaintext residence time. A sweep
 decrypts sensitive data in the maintenance process, so give that process the
 same logging, memory, and access controls as an application writer.
 
