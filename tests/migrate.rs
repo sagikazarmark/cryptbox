@@ -2,7 +2,10 @@
 
 #![cfg(feature = "migrate")]
 
-use std::convert::Infallible;
+use std::{
+    convert::Infallible,
+    future::{Future, ready},
+};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
@@ -332,23 +335,26 @@ impl SweepStore for MemoryStore {
     type Cursor = i64;
     type Error = Infallible;
 
-    async fn load_checkpoint(&mut self) -> Result<Option<i64>, Infallible> {
-        Ok(self.checkpoint)
+    fn load_checkpoint(&mut self) -> impl Future<Output = Result<Option<i64>, Infallible>> + Send {
+        ready(Ok(self.checkpoint))
     }
 
-    async fn save_checkpoint(&mut self, cursor: &i64) -> Result<(), Infallible> {
+    fn save_checkpoint(
+        &mut self,
+        cursor: &i64,
+    ) -> impl Future<Output = Result<(), Infallible>> + Send {
         self.checkpoint = Some(*cursor);
         self.checkpoint_saves += 1;
-        Ok(())
+        ready(Ok(()))
     }
 
-    async fn load_batch(
+    fn load_batch(
         &mut self,
         after: Option<&i64>,
         limit: usize,
-    ) -> Result<Vec<SweepRow<i64>>, Infallible> {
+    ) -> impl Future<Output = Result<Vec<SweepRow<i64>>, Infallible>> + Send {
         let after = after.copied().unwrap_or(i64::MIN);
-        Ok(self
+        ready(Ok(self
             .rows
             .iter()
             .filter(|(cursor, _, _)| *cursor > after)
@@ -358,14 +364,14 @@ impl SweepStore for MemoryStore {
                 ciphertext: ciphertext.clone(),
                 indexes: indexes.clone(),
             })
-            .collect())
+            .collect()))
     }
 
-    async fn update(
+    fn update(
         &mut self,
         row: &SweepRow<i64>,
         replacement: &cryptbox::migrate::RowWrite,
-    ) -> Result<bool, Infallible> {
+    ) -> impl Future<Output = Result<bool, Infallible>> + Send {
         self.update_calls += 1;
 
         if let Some((cursor, ciphertext, indexes)) = self.concurrent_writer_on.take() {
@@ -384,12 +390,12 @@ impl SweepStore for MemoryStore {
             .find(|(cursor, _, _)| *cursor == row.cursor)
             .unwrap();
         if stored.1 != row.ciphertext || stored.2 != row.indexes {
-            return Ok(false);
+            return ready(Ok(false));
         }
 
         stored.1 = replacement.ciphertext().to_vec();
         stored.2 = replacement.indexes().to_vec();
-        Ok(true)
+        ready(Ok(true))
     }
 }
 
