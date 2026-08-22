@@ -62,12 +62,25 @@ where
 {
 }
 
+#[cfg(feature = "migrate")]
+fn assert_sqlx_decode<T>()
+where
+    T: Type<Postgres>,
+    for<'r> T: Decode<'r, Postgres>,
+{
+}
+
 #[test]
 fn encrypted_storage_types_map_to_postgres_bytea() {
     assert_sqlx_traits::<Encrypted<String, Profile>>();
     assert_sqlx_traits::<Ciphertext<String, Profile>>();
     assert_sqlx_traits::<BlindIndex<IndexSpec>>();
     assert_sqlx_encode::<BlindIndexRef<'static, IndexSpec>>();
+
+    // The permissive migration read decodes but deliberately has no Encode:
+    // writes always encrypt through `Encrypted` or `Prepared`.
+    #[cfg(feature = "migrate")]
+    assert_sqlx_decode::<cryptbox::migrate::MaybeEncrypted<String, Profile>>();
 
     let bytea: PgTypeInfo = <Vec<u8> as Type<Postgres>>::type_info();
     assert_eq!(
