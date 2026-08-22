@@ -8,6 +8,12 @@ an encryption suite.
 The runnable [SQLite sweep example] shows the complete pattern with SQLx. The
 same control flow applies to PostgreSQL and other stores.
 
+The manual loop below remains the reference semantics. The `migrate` Cargo
+feature packages the same invariants as library code —
+`cryptbox::migrate::{RowPlanner, Sweep, SweepStore}` — and additionally
+handles plaintext-to-ciphertext adoption; see the
+[plaintext migration guide](plaintext-migration.md).
+
 ## Preconditions
 
 Before starting a sweep, deploy the current-plus-historical keyring to every

@@ -1599,9 +1599,44 @@ These enable applications and maintenance tools to build migrations explicitly.
 
 A permissive mode that accepts both plaintext and ciphertext is deliberately NOT part of normal v0.1 SQLx decoding.
 
-A future dedicated migration adapter MAY provide this capability.
-
 **Rationale:** A global migration mode risks becoming permanent and silently weakening the encrypted-field guarantee.
+
+The dedicated migration facility (the `migrate` Cargo feature) provides this capability under the following rules.
+
+The permissive read MUST be an explicit opt-in and a distinct type (`MaybeEncrypted`), never a mode on `Encrypted` or `Ciphertext` decoding. The steady-state adapter remains strict.
+
+Classification MUST treat bytes as legacy plaintext only when they lack the envelope magic (`NotCiphertext`). Bytes that carry the magic but fail structural validation (`InvalidEnvelope`, `UnsupportedFormatVersion`, `UnsupportedSuite`) MUST remain hard errors. There is no plaintext fallback for malformed envelopes.
+
+The permissive type MUST NOT implement any storage `Encode`. Writes MUST always encrypt; the only forward path from a permissive read is an `Encrypted` value.
+
+Legacy plaintext MUST be decoded through the profile's codec. Codec failure is an error, never silence.
+
+Classification keys on the 4-byte envelope magic alone. Legacy plaintext that begins with the magic is classified as ciphertext and then fails structurally or on authentication — a hard error, never silently wrong data. Stores that reject interior NUL bytes in text (for example PostgreSQL `TEXT`) cannot produce such values, and real text is overwhelmingly unlikely to. Deployments holding arbitrary binary legacy data MUST track encryption state out of band and construct permissive reads through the explicit constructors instead of byte classification.
+
+**Terminal state.** The migration window MAY end — permissive readers removed and the `migrate` feature dropped — only after a full verification pass over all rows observes zero plaintext, zero stale, and zero malformed values. If writes continue during verification, the pass MUST be repeated until one complete pass is clean. Historical keys are retired only after that, per the maintenance sweep rules.
+
+---
+
+## 30.3 Sweep driver
+
+The library sweep driver generalizes the maintenance sweep pattern to both re-encryption and plaintext adoption. It MUST uphold the operational invariants of the sweep guide:
+
+- batches page by an immutable, indexed cursor in ascending order;
+- rows whose envelope and blind indexes are current are skipped without generating fresh nonces or writes;
+- every update is a compare-and-swap whose predicate includes every column byte originally read;
+- a zero-affected-rows update means a concurrent writer won and MUST NOT be retried or overwritten;
+- the durable checkpoint advances only after a whole batch succeeds and is persisted outside the worker's memory;
+- replay after a crash is safe because current rows are skipped and updates compare original bytes;
+- blind-index rewrites derive from the decrypted, authoritative ciphertext, never from index metadata;
+- verification is a fresh, full, read-only pass that ignores the checkpoint and performs no writes.
+
+Sweep writes are operator-initiated maintenance, not read-triggered mutation, so §13.6 and §42.6 are preserved: a read remains a read.
+
+The driver reports metadata-only tallies (current, stale, plaintext, malformed, conflicts) consistent with §33. A sweep run stops at the first malformed row so the operator can investigate; verification counts malformed rows and completes so its report is total.
+
+**Stepped execution.** The driver MUST expose single-batch execution alongside the run-to-exhaustion loop, in two forms: one that uses the store's durable checkpoint, and one that takes and returns the cursor without checkpoint IO so an external orchestrator — a scheduler, queue consumer, or durable-execution runtime — owns progress durability. Progress ownership is caller policy, not adapter policy.
+
+Batch replay MUST remain idempotent: current rows are skipped and compare-and-swap rejects duplicated rewrites, so stepped execution composes with at-least-once runtimes without additional fencing. Under replay, per-batch tallies MAY overcount conflicts; summed reports are advisory and the verification pass remains the authoritative terminal-state check.
 
 ---
 
@@ -1994,7 +2029,9 @@ Reads should not cause hidden writes.
 
 ## 42.7 Permissive plaintext/ciphertext SQLx decoding
 
-Deferred to an explicit migration facility rather than weakening normal encrypted-field semantics.
+Originally deferred to an explicit migration facility rather than weakening normal encrypted-field semantics.
+
+That facility now exists behind the `migrate` Cargo feature under the rules of §30.2 and §30.3. The normal decoding path remains strict.
 
 ---
 
