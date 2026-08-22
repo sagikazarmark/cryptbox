@@ -12,6 +12,7 @@ categories = ["cryptography", "database"]
 [features]
 default = []
 json = ["dep:serde", "dep:serde_json"]
+migrate = []
 postcard = ["dep:postcard", "dep:serde"]
 sqlx-postgres = ["dep:sqlx", "sqlx/postgres"]
 sqlx-sqlite = ["dep:sqlx", "sqlx/sqlite"]
@@ -56,6 +57,10 @@ required-features = ["sqlx-sqlite"]
 [[example]]
 name = "reencryption_sweep"
 required-features = ["sqlx-sqlite"]
+
+[[example]]
+name = "plaintext_migration"
+required-features = ["migrate", "sqlx-sqlite"]
 
 [package.metadata.docs.rs]
 all-features = true

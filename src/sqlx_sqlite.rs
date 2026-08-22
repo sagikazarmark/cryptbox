@@ -164,3 +164,31 @@ where
         Ok(Self::from_bytes(bytes)?)
     }
 }
+
+#[cfg(feature = "migrate")]
+impl<T, Profile> Type<Sqlite> for crate::migrate::MaybeEncrypted<T, Profile> {
+    fn type_info() -> SqliteTypeInfo {
+        blob_type_info()
+    }
+
+    fn compatible(ty: &SqliteTypeInfo) -> bool {
+        blob_compatible(ty)
+    }
+}
+
+// Migration-window reads only. Decoding classifies bytes without touching key
+// providers; decryption stays an explicit call. There is deliberately no
+// `Encode` counterpart: writes always encrypt through `Encrypted` or
+// `Prepared`.
+#[cfg(feature = "migrate")]
+impl<'row, T, Profile> Decode<'row, Sqlite> for crate::migrate::MaybeEncrypted<T, Profile>
+where
+    Profile: EncryptionProfile<T>,
+    Profile::Binding: Binding<Context = ()>,
+{
+    fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
+        let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
+
+        Ok(Self::from_bytes(bytes)?)
+    }
+}

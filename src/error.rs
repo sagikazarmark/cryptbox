@@ -142,6 +142,16 @@ pub enum Error {
     /// The requested logical index was not prepared.
     #[error("blind index {0} was not prepared")]
     BlindIndexNotPrepared(IndexId),
+    /// A sweep row supplied a different number of blind-index columns than the
+    /// planner registered.
+    #[cfg(feature = "migrate")]
+    #[error("row has {actual} blind-index columns, but {expected} are planned")]
+    IndexColumnMismatch {
+        /// The number of blind-index columns the planner registered.
+        expected: usize,
+        /// The number of blind-index columns the row supplied.
+        actual: usize,
+    },
 }
 
 impl From<KeyProviderError> for Error {

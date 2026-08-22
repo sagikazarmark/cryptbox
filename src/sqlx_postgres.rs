@@ -121,6 +121,34 @@ where
     }
 }
 
+#[cfg(feature = "migrate")]
+impl<T, Profile> Type<Postgres> for crate::migrate::MaybeEncrypted<T, Profile> {
+    fn type_info() -> PgTypeInfo {
+        bytea_type_info()
+    }
+
+    fn compatible(ty: &PgTypeInfo) -> bool {
+        bytea_compatible(ty)
+    }
+}
+
+// Migration-window reads only. Decoding classifies bytes without touching key
+// providers; decryption stays an explicit call. There is deliberately no
+// `Encode` counterpart: writes always encrypt through `Encrypted` or
+// `Prepared`.
+#[cfg(feature = "migrate")]
+impl<'row, T, Profile> Decode<'row, Postgres> for crate::migrate::MaybeEncrypted<T, Profile>
+where
+    Profile: EncryptionProfile<T>,
+    Profile::Binding: Binding<Context = ()>,
+{
+    fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
+        let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
+
+        Ok(Self::from_bytes(bytes)?)
+    }
+}
+
 impl<Spec> Type<Postgres> for BlindIndexRef<'_, Spec> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
