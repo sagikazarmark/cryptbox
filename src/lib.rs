@@ -53,7 +53,7 @@
 //!
 //! - `json` adds the `Json` codec. Its serialized representation is part of
 //!   the persistent schema.
-//! - `migrate` adds the explicit [`migrate`] facility for adopting encryption
+//! - `migrate` adds the explicit `migrate` module for adopting encryption
 //!   over existing plaintext data: a permissive read type and a resumable
 //!   sweep driver. Intended for a bounded migration window only; the default
 //!   decoding path stays strict.
