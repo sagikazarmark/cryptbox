@@ -14,6 +14,7 @@ impl EncryptionProfile<String> for StoredEmail {
     type Binding = Unbound;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
+    type Padding = cryptbox::NoPadding;
 }
 
 fn main() -> Result<(), Box<dyn Error>> {

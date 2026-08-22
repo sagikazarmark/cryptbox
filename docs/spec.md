@@ -144,6 +144,7 @@ A profile describes the policy for a particular logical encrypted value:
 trait EncryptionProfile<T> {
     type Codec: Codec<T>;
     type Binding: Binding;
+    type Padding: Padding;
     type Keys: KeyContext;
 }
 ```
@@ -156,6 +157,7 @@ struct UserEmail;
 impl EncryptionProfile<String> for UserEmail {
     type Codec = Utf8;
     type Binding = FieldBound<USER_EMAIL_FIELD_ID>;
+    type Padding = NoPadding;
     type Keys = ApplicationKeys;
 }
 

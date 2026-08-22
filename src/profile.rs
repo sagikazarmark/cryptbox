@@ -1,6 +1,6 @@
-use crate::{Binding, Codec, KeyContext};
+use crate::{Binding, Codec, KeyContext, Padding};
 
-/// Selects the codec, binding policy, and global key context for a value.
+/// Selects the codec, binding, padding, and global key context for a value.
 ///
 /// These associated types define persistent schema. The ciphertext envelope
 /// does not store a profile or codec identifier, so changing them can make
@@ -13,6 +13,11 @@ pub trait EncryptionProfile<T>: Sized + 'static {
     type Codec: Codec<T>;
     /// The authenticated binding policy, which must remain stable for stored data.
     type Binding: Binding;
+    /// The padding policy applied between the codec and encryption.
+    ///
+    /// Enabling or disabling padding for stored ciphertext requires an explicit
+    /// migration. Parameters of an already-padded policy may change freely.
+    type Padding: Padding;
     /// The process-global key context used by context-less adapters.
     ///
     /// Explicit-provider APIs do not read this context.
@@ -24,7 +29,8 @@ pub trait EncryptionProfile<T>: Sized + 'static {
 /// This generates the same [`Field`](crate::Field) and [`EncryptionProfile`]
 /// implementations as an explicit declaration. The binding mode is always
 /// required: use `field_bound` to bind ciphertext to the declared field ID, or
-/// `unbound` to explicitly opt out. Omitting `keys` selects
+/// `unbound` to explicitly opt out. Omitting `padding` selects
+/// [`NoPadding`](crate::NoPadding), and omitting `keys` selects
 /// [`GlobalKeyContext`](crate::GlobalKeyContext).
 ///
 /// # Example
@@ -36,6 +42,7 @@ pub trait EncryptionProfile<T>: Sized + 'static {
 ///         name: "user-email",
 ///         codec: cryptbox::Utf8,
 ///         binding: field_bound,
+///         padding: cryptbox::PadToBlock<16>,
 ///     }
 /// }
 /// ```
@@ -53,6 +60,12 @@ macro_rules! profile {
     (@keys $keys:ty) => {
         $keys
     };
+    (@padding) => {
+        $crate::NoPadding
+    };
+    (@padding $padding:ty) => {
+        $padding
+    };
     (
         $(#[$attribute:meta])*
         $visibility:vis $profile:ident: $value:ty {
@@ -60,6 +73,7 @@ macro_rules! profile {
             name: $name:literal,
             codec: $codec:ty,
             binding: $binding:ident
+            $(, padding: $padding:ty)?
             $(, keys: $keys:ty)?
             $(,)?
         }
@@ -75,6 +89,7 @@ macro_rules! profile {
         impl $crate::EncryptionProfile<$value> for $profile {
             type Codec = $codec;
             type Binding = $crate::profile!(@binding Self, $binding);
+            type Padding = $crate::profile!(@padding $($padding)?);
             type Keys = $crate::profile!(@keys $($keys)?);
         }
     };

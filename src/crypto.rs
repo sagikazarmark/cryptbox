@@ -464,6 +464,32 @@ mod tests {
     }
 
     #[test]
+    fn experimental_padded_envelope_vector_is_stable() {
+        let key = EncryptionKey::new(
+            KeyId::from_uuid_literal("11111111-2222-4333-8444-555555555555"),
+            [0x11; 32],
+        );
+        let mut nonce = [0_u8; NONCE_LEN];
+
+        for (value, byte) in nonce.iter_mut().zip(0_u8..) {
+            *value = byte;
+        }
+
+        let envelope = seal_with_nonce(
+            b"cryptbox vector\x80",
+            BindingDomain::from_binding::<crate::Unbound>(&()),
+            &key,
+            nonce,
+        )
+        .unwrap();
+
+        assert_eq!(
+            hex::encode(envelope),
+            "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b9368a9985aacb04ff8f7b6a677d9665a9ba"
+        );
+    }
+
+    #[test]
     fn experimental_field_bound_envelope_vector_is_stable() {
         let key = EncryptionKey::new(
             KeyId::from_uuid_literal("11111111-2222-4333-8444-555555555555"),

@@ -28,6 +28,7 @@
 //!     type Codec = Utf8;
 //!     type Binding = FieldBound<Self>;
 //!     type Keys = GlobalKeyContext;
+//!     type Padding = cryptbox::NoPadding;
 //! }
 //!
 //! // Fixed key material is for this doctest only; load production keys securely.
@@ -79,10 +80,12 @@
 //!
 //! # Persistent schema
 //!
-//! A profile's codec, binding policy, stable field and index IDs, blind-index
-//! normalization, and retained precision are persistent schema decisions. They
-//! are not all self-described by stored bytes. Changing one requires an
-//! explicit migration for existing ciphertext or indexes.
+//! A profile's codec, presence or absence of padding, binding policy, stable
+//! field and index IDs, blind-index normalization, and retained precision are
+//! persistent schema decisions. They are not all self-described by stored
+//! bytes. Changing one requires an explicit migration for existing ciphertext
+//! or indexes. Parameters of an already-padded policy may change without a
+//! migration because padding removal is parameter-independent.
 //!
 //! # Workflows
 //!
@@ -106,9 +109,10 @@
 //!
 //! Field binding prevents cross-field substitution, but not same-field
 //! cross-row substitution. Blind indexes intentionally leak equality and
-//! frequency; every hit is a candidate that must be decrypted and compared.
-//! Ciphertext also reveals the encoded plaintext length plus fixed envelope
-//! overhead.
+//! frequency; every hit is a candidate that must be decrypted and compared,
+//! regardless of padding. Unpadded profiles reveal the exact encoded plaintext
+//! length. A padding policy coarsens that leakage to a size bucket or hides it
+//! entirely up to a fixed length.
 //!
 //! Authenticated encryption does not prevent replay or rollback of an older
 //! valid ciphertext. Retaining historical keys keeps old ciphertext readable,
@@ -139,6 +143,7 @@ mod id;
 mod key;
 #[cfg(feature = "migrate")]
 pub mod migrate;
+mod padding;
 mod prepare;
 mod profile;
 #[cfg(feature = "sqlx-postgres")]
@@ -169,6 +174,7 @@ pub use key::{
     BlindIndexKey, BlindIndexKeyProvider, EncryptionKey, EncryptionKeyProvider, GlobalKeyContext,
     GlobalProviders, KeyContext, LocalBlindIndexKeyring, LocalEncryptionKeyring,
 };
+pub use padding::{NoPadding, PadToBlock, PadToLength, Padding};
 pub use prepare::Prepared;
 pub use profile::EncryptionProfile;
 pub use value::{Ciphertext, Encrypted, ProfileContext, Secret};

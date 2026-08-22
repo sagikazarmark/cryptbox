@@ -36,6 +36,16 @@ impl EncryptionProfile<String> for UserEmail {
     type Binding = FieldBound<Self>;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
+    type Padding = cryptbox::NoPadding;
+}
+
+struct PaddedUserEmail;
+
+impl EncryptionProfile<String> for PaddedUserEmail {
+    type Binding = FieldBound<UserEmail>;
+    type Codec = Utf8;
+    type Keys = GlobalKeyContext;
+    type Padding = cryptbox::PadToBlock<16>;
 }
 
 struct EmailLookup;
@@ -447,6 +457,25 @@ fn planner_encrypts_legacy_plaintext_and_derives_every_index() {
     assert_eq!(
         write.indexes(),
         &[derive_email_index("mark@example.com", &index_keys)]
+    );
+}
+
+#[test]
+fn planner_encrypts_legacy_plaintext_with_the_profile_padding_policy() {
+    let keys = rotated_keys();
+    let planner = RowPlanner::<String, PaddedUserEmail>::new(&(), &keys);
+
+    let outcome = planner.plan_row(b"mark@example.com", &[]).unwrap();
+    assert_eq!(outcome.state(), RowState::Legacy);
+    let write = outcome.into_write().unwrap();
+    assert_eq!(write.ciphertext().len(), 62 + 32);
+    assert_eq!(
+        Ciphertext::<String, PaddedUserEmail>::from_bytes(write.ciphertext().to_vec())
+            .unwrap()
+            .decrypt_with(&(), &keys)
+            .unwrap()
+            .expose_secret(),
+        "mark@example.com"
     );
 }
 

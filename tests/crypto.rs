@@ -146,6 +146,7 @@ impl EncryptionProfile<String> for EmailProfile {
     type Binding = FieldBound<EmailField>;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
+    type Padding = cryptbox::NoPadding;
 }
 
 #[test]

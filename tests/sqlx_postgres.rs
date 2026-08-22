@@ -38,6 +38,7 @@ impl EncryptionProfile<String> for Profile {
     type Binding = Unbound;
     type Codec = Utf8;
     type Keys = TestKeys;
+    type Padding = cryptbox::NoPadding;
 }
 
 struct IndexSpec;

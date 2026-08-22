@@ -70,8 +70,9 @@ Important limits of the threat model remain independent of suite choice:
 - None of the compared AEADs supplies replay or rollback protection. An
   attacker can restore an older authentic ciphertext unless a higher layer
   authenticates record identity and version/state.
-- Ciphertext length is visible. Suite 1 adds a fixed 62-byte minimum envelope
-  and otherwise reveals plaintext length exactly.[wire]
+- Ciphertext length is visible. Suite 1 adds a fixed 62-byte minimum envelope;
+  unpadded profiles reveal encoded plaintext length exactly, while padded
+  profiles reveal the selected size bucket.[wire]
 - A retained historical key intentionally keeps its old ciphertext readable.
   Rotation is not revocation and is not crypto-shredding.
 

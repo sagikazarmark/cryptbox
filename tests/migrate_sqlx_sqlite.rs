@@ -33,6 +33,7 @@ impl EncryptionProfile<String> for UserEmail {
     type Binding = FieldBound<Self>;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
+    type Padding = cryptbox::NoPadding;
 }
 
 struct EmailLookup;

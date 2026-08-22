@@ -2,7 +2,7 @@
 
 use cryptbox::{
     BlindIndexKeyProvider, EncryptionKeyProvider, EncryptionProfile, Field, FieldBound,
-    GlobalKeyContext, KeyContext, KeyProviderError, Raw, Unbound, Utf8,
+    GlobalKeyContext, KeyContext, KeyProviderError, NoPadding, PadToBlock, Raw, Unbound, Utf8,
 };
 
 cryptbox::profile! {
@@ -12,6 +12,17 @@ cryptbox::profile! {
         name: "user-email",
         codec: Utf8,
         binding: field_bound,
+    }
+}
+
+cryptbox::profile! {
+    /// Email encrypted with field binding and block padding.
+    pub PaddedEmail: String {
+        id: "b49a65a7-93e6-4b09-8f04-a502578045c1",
+        name: "padded-email",
+        codec: Utf8,
+        binding: field_bound,
+        padding: PadToBlock<16>,
     }
 }
 
@@ -49,6 +60,7 @@ fn field_bound_profile_declares_field_metadata_and_policy() {
                 Codec = Utf8,
                 Binding = FieldBound<P>,
                 Keys = GlobalKeyContext,
+                Padding = NoPadding,
             >,
     {
     }
@@ -66,7 +78,13 @@ fn unbound_profile_requires_explicit_binding_and_accepts_custom_keys() {
     fn assert_policy<P>()
     where
         P: Field
-            + EncryptionProfile<Vec<u8>, Codec = Raw, Binding = Unbound, Keys = ApplicationKeys>,
+            + EncryptionProfile<
+                Vec<u8>,
+                Codec = Raw,
+                Binding = Unbound,
+                Keys = ApplicationKeys,
+                Padding = NoPadding,
+            >,
     {
     }
 
@@ -76,4 +94,22 @@ fn unbound_profile_requires_explicit_binding_and_accepts_custom_keys() {
         "de8c983c-7d2b-4c4f-8162-f7193010de55"
     );
     assert_eq!(ApiToken::NAME, "api-token");
+}
+
+#[test]
+fn profile_accepts_an_explicit_padding_policy() {
+    fn assert_policy<P>()
+    where
+        P: Field
+            + EncryptionProfile<
+                String,
+                Codec = Utf8,
+                Binding = FieldBound<P>,
+                Keys = GlobalKeyContext,
+                Padding = PadToBlock<16>,
+            >,
+    {
+    }
+
+    assert_policy::<PaddedEmail>();
 }

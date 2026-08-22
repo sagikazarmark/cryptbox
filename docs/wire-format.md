@@ -42,8 +42,9 @@ offset  size  field
 46+N    16    Poly1305 tag
 ```
 
-The minimum envelope is 62 bytes and represents empty plaintext. Ciphertext
-leaks plaintext length exactly, plus this fixed overhead.
+The minimum envelope is 62 bytes and represents empty AEAD plaintext. For an
+unpadded profile, ciphertext leaks encoded plaintext length exactly plus this
+fixed overhead. A padded profile reveals its padded bucket length instead.
 
 Exact domain labels include the terminating NUL byte:
 
@@ -67,6 +68,29 @@ HKDF performs RFC 5869 extract-and-expand using the 32-byte root key and derives
 a 32-byte operational key. Wrong binding, modified metadata, nonce, ciphertext,
 or tag all fail authentication. An unknown `KeyId` is reported before
 authentication because no key is available.
+
+### Plaintext padding
+
+Profiles may apply ISO/IEC 7816-4 padding to encoded plaintext before passing
+it to the encryption suite. Padding appends one `80` byte followed by `00`
+bytes to the selected block or fixed length. Removal scans backward over zero
+bytes, requires the `80` marker, and strips it. It does not depend on the block
+size or fixed length that produced the padding.
+
+The envelope does not record whether padding is enabled or which parameters
+were used, and its format version remains unchanged. Enabling or disabling
+padding is therefore a persistent-schema change requiring migration. Changing
+the parameters of an already-padded profile does not prevent old ciphertext
+from decrypting. Re-encryption rewrites authenticated plaintext with the
+profile's current padding parameters.
+
+For `"cryptbox vector"` under `PadToBlock<16>`, the padded plaintext and
+corresponding deterministic test envelope are:
+
+```text
+padded plaintext: 6372797074626f7820766563746f7280
+envelope:         43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b9368a9985aacb04ff8f7b6a677d9665a9ba
+```
 
 The implementation uses the RustCrypto HKDF and HMAC crates and enables HMAC,
 SHA-256, and Poly1305 zeroization support. This erases keyed digest state,

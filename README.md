@@ -18,7 +18,7 @@ plaintext while in application memory and requires explicit plaintext access.
 
 ## Features
 
-- **Typed encryption policy.** Profiles select a codec, stable binding, and key context without making application types noisy.
+- **Typed encryption policy.** Profiles select a codec, optional length-hiding padding, stable binding, and key context without making application types noisy.
 - **Authenticated field binding.** Stable random field IDs prevent valid ciphertext from moving between different logical fields.
 - **Non-disruptive rotation.** Ciphertext names one current or historical key generation, so rotation does not require an immediate rewrite.
 - **Explicit searchable projections.** Separately keyed, intentionally truncated blind indexes support equality candidate lookup.
@@ -48,6 +48,7 @@ fn main() -> Result<(), cryptbox::Error> {
         type Codec = Utf8;
         type Binding = FieldBound<Self>;
         type Keys = GlobalKeyContext;
+        type Padding = cryptbox::NoPadding;
     }
 
     let keys = LocalEncryptionKeyring::new(
@@ -100,7 +101,9 @@ cryptbox::profile! {
 
 Use `binding: unbound` to explicitly opt out of field binding. Add
 `keys: ApplicationKeys` to select a custom key context; otherwise the macro
-uses `GlobalKeyContext`.
+uses `GlobalKeyContext`. Add `padding: cryptbox::PadToBlock<16>` or
+`padding: cryptbox::PadToLength<256>` to hide encoded lengths; otherwise the
+macro uses `NoPadding`.
 
 ## Testing
 

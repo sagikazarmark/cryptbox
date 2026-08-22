@@ -60,6 +60,7 @@ use super::{LegacyFormat, legacy};
 ///     type Codec = Utf8;
 ///     type Binding = FieldBound<Self>;
 ///     type Keys = GlobalKeyContext;
+///     type Padding = cryptbox::NoPadding;
 /// }
 ///
 /// // Fixed key material is for this doctest only; load production keys securely.
@@ -163,6 +164,7 @@ where
     ///     type Codec = Raw;
     ///     type Binding = Unbound;
     ///     type Keys = GlobalKeyContext;
+    ///     type Padding = cryptbox::NoPadding;
     /// }
     ///
     /// // A discriminator column established that these bytes are legacy, even

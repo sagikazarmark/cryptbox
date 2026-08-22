@@ -3,8 +3,8 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Binding, Codec, EncryptionKeyProvider, EncryptionProfile, Error, KeyContext, decrypt, encrypt,
-    needs_reencryption, reencrypt,
+    Binding, Codec, EncryptionKeyProvider, EncryptionProfile, Error, KeyContext, Padding, decrypt,
+    encrypt, needs_reencryption,
 };
 
 /// The runtime binding context selected by an encryption profile.
@@ -161,14 +161,15 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error when encoding, key lookup, randomness, or encryption
-    /// fails.
+    /// Returns an error when encoding, padding, key lookup, randomness, or
+    /// encryption fails.
     pub fn encrypt_with(
         &self,
         context: &ProfileContext<T, Profile>,
         keys: &dyn EncryptionKeyProvider,
     ) -> Result<Ciphertext<T, Profile>, Error> {
         let plaintext = Profile::Codec::encode(&self.value)?;
+        let plaintext = Profile::Padding::pad(plaintext)?;
         let ciphertext = encrypt::<Profile::Binding>(&plaintext, context, keys)?;
 
         Ok(Ciphertext::from_validated_bytes(ciphertext))
@@ -200,13 +201,14 @@ where
     /// # Errors
     ///
     /// Returns an error for invalid envelopes, unknown keys, authentication
-    /// failure, unavailable providers, or codec failure.
+    /// failure, unavailable providers, invalid padding, or codec failure.
     pub fn decrypt_with(
         &self,
         context: &ProfileContext<T, Profile>,
         keys: &dyn EncryptionKeyProvider,
     ) -> Result<Encrypted<T, Profile>, Error> {
         let plaintext = decrypt::<Profile::Binding>(&self.bytes, context, keys)?;
+        let plaintext = Profile::Padding::unpad(plaintext)?;
         let value = Profile::Codec::decode(&plaintext)?;
 
         Ok(Encrypted::new(value))
@@ -232,13 +234,17 @@ where
     ///
     /// # Errors
     ///
-    /// Returns any decryption or encryption error.
+    /// Returns any decryption, padding, or encryption error.
     pub fn reencrypt_with(
         &self,
         context: &ProfileContext<T, Profile>,
         keys: &dyn EncryptionKeyProvider,
     ) -> Result<Self, Error> {
-        reencrypt::<Profile::Binding>(&self.bytes, context, keys).map(Self::from_validated_bytes)
+        let plaintext = decrypt::<Profile::Binding>(&self.bytes, context, keys)?;
+        let plaintext = Profile::Padding::unpad(plaintext)?;
+        let plaintext = Profile::Padding::pad(plaintext)?;
+
+        encrypt::<Profile::Binding>(&plaintext, context, keys).map(Self::from_validated_bytes)
     }
 }
 

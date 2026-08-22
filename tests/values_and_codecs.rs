@@ -14,6 +14,7 @@ impl EncryptionProfile<String> for ExampleProfile {
     type Binding = Unbound;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
+    type Padding = cryptbox::NoPadding;
 }
 
 #[test]
