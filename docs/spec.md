@@ -1,4 +1,4 @@
-# CryptBox — v0.1 Design Specification
+# CryptBox: v0.1 Design Specification
 
 **Project:** CryptBox
 **Primary Rust crate:** `cryptbox`
@@ -1613,7 +1613,7 @@ The permissive type MUST NOT implement any storage `Encode`. Writes MUST always 
 
 Non-envelope bytes MUST be retained until an explicit decrypt call. Without a legacy handler they are plaintext decoded through the profile's codec. With an explicitly injected `LegacyFormat`, the handler MUST recover plaintext bytes before the profile codec decodes them. Legacy recovery and codec failures are errors, never silence; SQLx `Decode` performs classification only and does not access either key provider.
 
-Classification keys on the 4-byte envelope magic alone. Legacy data that begins with the magic is classified as ciphertext and then fails structurally or on authentication — a hard error, never silently wrong data. Deployments holding arbitrary binary legacy data MUST track encryption state out of band and use `from_legacy_bytes`, which bypasses classification.
+Classification keys on the 4-byte envelope magic alone. Legacy data that begins with the magic is classified as ciphertext and then fails structurally or on authentication, which is a hard error, never silently wrong data. Deployments holding arbitrary binary legacy data MUST track encryption state out of band and use `from_legacy_bytes`, which bypasses classification.
 
 The legacy handler MUST be application-owned, explicitly injected, synchronous, and responsible for zeroizing its own key material and intermediate buffers. It MUST return plaintext in a zeroizing buffer and sanitized errors that retain neither input nor keys. Authenticated legacy formats are strongly preferred; unauthenticated formats require out-of-band integrity checks because successful recovery and codec decoding do not prove the plaintext is correct.
 
@@ -1638,7 +1638,7 @@ Sweep writes are operator-initiated maintenance, not read-triggered mutation, so
 
 The driver reports metadata-only tallies (current, stale, legacy, malformed, conflicts) consistent with §33. A sweep run stops at the first malformed or unrecoverable row so the operator can investigate; verification counts malformed rows and completes so its report is total.
 
-**Stepped execution.** The driver MUST expose single-batch execution alongside the run-to-exhaustion loop, in two forms: one that uses the store's durable checkpoint, and one that takes and returns the cursor without checkpoint IO so an external orchestrator — a scheduler, queue consumer, or durable-execution runtime — owns progress durability. Progress ownership is caller policy, not adapter policy.
+**Stepped execution.** The driver MUST expose single-batch execution alongside the run-to-exhaustion loop, in two forms: one that uses the store's durable checkpoint, and one that takes and returns the cursor without checkpoint IO so an external orchestrator (a scheduler, queue consumer, or durable-execution runtime) owns progress durability. Progress ownership is caller policy, not adapter policy.
 
 Batch replay MUST remain idempotent: current rows are skipped and compare-and-swap rejects duplicated rewrites, so stepped execution composes with at-least-once runtimes without additional fencing. Under replay, per-batch tallies MAY overcount conflicts; summed reports are advisory and the verification pass remains the authoritative terminal-state check.
 
@@ -2103,43 +2103,43 @@ This is a deliberate security gate rather than an omitted implementation detail.
 
 The following invariants SHOULD be treated as the most important requirements in the CryptBox specification.
 
-**Invariant 1 — The crypto core only operates on bytes, keys, and explicit cryptographic binding.**
+**Invariant 1: The crypto core only operates on bytes, keys, and explicit cryptographic binding.**
 
 Framework and serialization concerns remain outside it.
 
-**Invariant 2 — New ciphertext is always created with exactly one current encryption key.**
+**Invariant 2: New ciphertext is always created with exactly one current encryption key.**
 
 Historical keys are decrypt-only.
 
-**Invariant 3 — Every ciphertext identifies the suite and key generation necessary to interpret it.**
+**Invariant 3: Every ciphertext identifies the suite and key generation necessary to interpret it.**
 
 Normal rotation never requires immediate database migration.
 
-**Invariant 4 — Field binding, when selected, is stable and independent of database names.**
+**Invariant 4: Field binding, when selected, is stable and independent of database names.**
 
 Schema renames must not silently change cryptographic identity.
 
-**Invariant 5 — Unbound encryption is supported but explicit.**
+**Invariant 5: Unbound encryption is supported but explicit.**
 
 The weaker security posture must be visible in configuration/type policy.
 
-**Invariant 6 — Blind indexes use a key hierarchy independent from data-encryption rotation.**
+**Invariant 6: Blind indexes use a key hierarchy independent from data-encryption rotation.**
 
 Rotating encryption keys must not require rebuilding indexes.
 
-**Invariant 7 — Blind-index hits are candidates, never authoritative matches.**
+**Invariant 7: Blind-index hits are candidates, never authoritative matches.**
 
 Plaintext verification is mandatory.
 
-**Invariant 8 — Storage adapters cannot weaken the core threat model to provide framework magic.**
+**Invariant 8: Storage adapters cannot weaken the core threat model to provide framework magic.**
 
 In particular, SQLx limitations must not distort the cryptographic API.
 
-**Invariant 9 — Secret material and temporary plaintext owned by CryptBox are zeroized.**
+**Invariant 9: Secret material and temporary plaintext owned by CryptBox are zeroized.**
 
 CryptBox does not make false zeroization guarantees for arbitrary application values.
 
-**Invariant 10 — Cryptographic algorithms are selected as complete reviewed suites, not user-composed primitives.**
+**Invariant 10: Cryptographic algorithms are selected as complete reviewed suites, not user-composed primitives.**
 
 ---
 

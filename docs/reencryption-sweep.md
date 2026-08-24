@@ -9,8 +9,8 @@ The runnable [SQLite sweep example] shows the complete pattern with SQLx. The
 same control flow applies to PostgreSQL and other stores.
 
 The manual loop below remains the reference semantics. The `migrate` Cargo
-feature packages the same invariants as library code —
-`cryptbox::migrate::{RowPlanner, Sweep, SweepStore}` — and additionally
+feature packages the same invariants as library code in
+`cryptbox::migrate::{RowPlanner, Sweep, SweepStore}` and additionally
 handles migration from plaintext or a previous encryption solution; see the
 [legacy migration guide](legacy-migration.md).
 

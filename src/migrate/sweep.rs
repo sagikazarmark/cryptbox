@@ -113,8 +113,8 @@ where
 /// any storage backend.
 ///
 /// Both are thin loops over single-batch primitives, so external
-/// orchestrators — a scheduler tick, a queue consumer, or a durable-execution
-/// runtime — can drive the sweep one batch at a time instead:
+/// orchestrators (a scheduler tick, a queue consumer, or a durable-execution
+/// runtime) can drive the sweep one batch at a time instead:
 ///
 /// - [`Self::run_batch`] and [`Self::verify_batch`] page with the store's
 ///   durable checkpoint (run) or a caller-held cursor (verify);
@@ -223,7 +223,7 @@ where
     ///
     /// Loads the checkpoint, processes the next batch, and saves the new
     /// checkpoint when the batch was non-empty. Suited to externally
-    /// scheduled steps — a cron tick or queue consumer — that rely on the
+    /// scheduled steps (a cron tick or queue consumer) that rely on the
     /// store for progress durability. A returned checkpoint of `None` means
     /// the scan is exhausted.
     ///
