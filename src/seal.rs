@@ -1,0 +1,122 @@
+use crate::id::identifier;
+use crate::{Codec, Padding};
+
+identifier!(SealId, "A stable seal identifier.");
+
+/// Declares how values are sealed: their identity, value type, codec, and
+/// padding. Blind indexes over a seal's values are
+/// [`BlindIndexSpec`](crate::BlindIndexSpec)s.
+///
+/// A seal is either a marker over a separate value type or its own value
+/// (`type Value = Self`). A value type (`String`, `Address`, `Secret<String>`)
+/// says how it encodes; the seal gives its values an identity. One value type
+/// can back several markers, such as `HomeAddress` and `BillingAddress` over one
+/// `Address`, and each seal has its own ID so their sealed values cannot be
+/// swapped. A seal is not tied to storage: its values may be database columns,
+/// messages, or whole responses. A marker and a self-valued seal with the same
+/// ID and codec read each other's values.
+///
+/// Every sealed value is bound at runtime to its seal ID: opening it as another
+/// seal fails authentication. A seal knows nothing of where its values are
+/// stored: a value sealed in a [`Context`](crate::Context), such as a record's
+/// field in [`InRecord`](crate::InRecord), is bound to the context's value too;
+/// see [`Sealed`](crate::Sealed) and [`Record`](crate::Record).
+/// Which keys protect a value is the caller's choice: with a keyring per
+/// tenant, another tenant's value fails to open.
+///
+/// Generate a unique ID for each seal, keep it stable across Rust and database
+/// renames, and never reuse it for a different seal. Changing the ID makes
+/// existing values fail authentication. Declaring the same ID on several types
+/// deliberately makes them the same seal.
+///
+/// The value type, codec representation, and seal ID define
+/// persistent schema. The envelope does not store a codec identifier, so
+/// incompatible changes require an explicit data migration. Padding is write
+/// policy instead: the envelope records whether a value is padded. See
+/// [`crate::schema`] and [`crate::testing`] for CI checks of the codec and IDs;
+/// a record field's value read as a standalone value reports
+/// [`Error::ContextMismatch`](crate::Error::ContextMismatch) when opened.
+///
+/// For blind indexes, the seal domain-separates derivation; it does not
+/// authenticate the stored index representation. Compare decrypted candidate
+/// plaintext for lookup, and recompute indexes separately when stored-index
+/// consistency is required.
+///
+/// # Examples
+///
+/// ```
+/// use cryptbox::{Padding, Seal, SealId, Utf8};
+///
+/// /// Primary contact address.
+/// pub struct UserEmail;
+///
+/// impl Seal for UserEmail {
+///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+///     const PADDING: Padding = Padding::NONE;
+///     type Value = String;
+///     type Codec = Utf8;
+/// }
+/// ```
+///
+/// With the `derive` feature, `#[derive(Seal)]` writes this impl from
+/// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
+/// taking `String`'s built-in default codec, `Utf8`.
+/// On a type with fields, the derive makes the type its own value: `codec = Json`
+/// encodes it whole, and `transparent` stores its single field.
+///
+/// A hand-written impl always names its codec. Only a derived seal over `String`,
+/// `Vec<u8>`, or their [`Secret`](crate::Secret) wrappers may omit it, taking
+/// [`Utf8`](crate::Utf8) or [`Raw`](crate::Raw); every other value type names
+/// its codec, so no other crate can choose or change it.
+///
+/// See the [custom-seal example] and [ownership reference].
+///
+#[doc = concat!(
+    "[custom-seal example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/custom_seal/README.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#ownership-and-erasure",
+)]
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a seal",
+    label = "not a seal",
+    note = "declare one with `#[derive(cryptbox::Seal)]`; in a `#[derive(Record)]`, mark a field `#[cryptbox(seal = \"<uuid>\")]`"
+)]
+pub trait Seal: 'static {
+    /// The stable identifier, independent of Rust and database names.
+    const ID: SealId;
+
+    /// The padding policy applied to new values between the codec and encryption.
+    ///
+    /// This describes how values are written, not how they are read: the
+    /// envelope records whether its payload is padded. Changing the policy keeps
+    /// stored values readable, and resealing rewrites them with it; see
+    /// [`Padding`].
+    const PADDING: Padding;
+
+    /// The plaintext application type of this seal's values.
+    type Value;
+
+    /// The codec used before encryption and after decryption.
+    ///
+    /// Its byte representation must remain compatible with stored values.
+    /// A derived seal over `String`, `Vec<u8>`, or their `Secret` wrappers
+    /// defaults to [`Utf8`](crate::Utf8) or [`Raw`](crate::Raw).
+    type Codec: Codec<Self::Value>;
+}
+
+/// Creates a [`SealId`](crate::SealId) from a UUID literal.
+///
+/// The literal is checked at compile time, and the nil UUID is rejected, as it
+/// is by `index_id!`, `key_id!`, and `index_key_id!`:
+///
+/// ```compile_fail,E0080
+/// const ID: cryptbox::SealId = cryptbox::seal_id!("00000000-0000-0000-0000-000000000000");
+/// ```
+#[macro_export]
+macro_rules! seal_id {
+    ($value:literal) => {{
+        const ID: $crate::SealId = $crate::SealId::from_bytes($crate::__private::non_nil(
+            $crate::__private::uuid::uuid!($value).into_bytes(),
+        ));
+        ID
+    }};
+}

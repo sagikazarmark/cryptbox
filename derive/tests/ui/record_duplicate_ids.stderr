@@ -1,0 +1,11 @@
+error: `home_phone` already declares this seal ID: give each sealed field its own, or their values can be swapped undetected
+  --> tests/ui/record_duplicate_ids.rs:13:23
+   |
+13 |     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `email` already declares this index ID: give each blind index its own
+  --> tests/ui/record_duplicate_ids.rs:31:14
+   |
+31 |         id = "ab78afa9-7aaa-499c-8239-037b7e136130",
+   |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

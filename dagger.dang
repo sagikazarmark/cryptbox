@@ -1,0 +1,196 @@
+type Cryptbox {
+  let rust: Rust!
+  let postgresVersion: String!
+
+  new(
+    ws: Workspace!,
+    """
+    Version (image tag) to use from the official Rust image repository as a base container.
+    """
+    rustVersion: String!,
+    """
+    Version (image tag) to use from the official PostgreSQL image repository.
+    """
+    postgresVersion: String! = "18-trixie",
+  ) {
+    self.rust = Dagger.rust(ws: ws, version: rustVersion)
+    self.postgresVersion = postgresVersion
+
+    self
+  }
+
+  """
+  Tests and examples from the CI workflow that the Rust module's own checks do not cover.
+  """
+  test: Test! {
+    Test(self.rust.container, self.postgresVersion)
+  }
+}
+
+"""
+Tests and examples from the CI workflow that the Rust module's own checks do not cover.
+
+The Rust module's `test` check runs tests, including doctests, across the feature
+matrix configured in Cargo.toml. The explicit all-target test run and runnable
+examples live here: the Rust module builds examples, but never runs them.
+The PostgreSQL tests need a server,
+which GitHub Actions does not provide but Dagger can bind as a service.
+"""
+type Test {
+  let container: Container!
+  let postgresVersion: String!
+
+  new(
+    """
+    Container with the Rust toolchain and the project source.
+    """
+    container: Container!,
+    """
+    Version (image tag) to use from the official PostgreSQL image repository.
+    """
+    postgresVersion: String!,
+  ) {
+    self.container = container
+    self.postgresVersion = postgresVersion
+
+    self
+  }
+
+  """
+  Execute all unit and integration tests with every feature enabled.
+  """
+  allFeatures: String! @check {
+    self.run(["cargo", "test", "--locked", "--all-targets", "--all-features"])
+  }
+
+  """
+  Test the derive macros, including compiler diagnostics and expansion snapshots.
+  """
+  derive: String! @check {
+    self
+      .container
+      .withExec(["cargo", "install", "cargo-expand", "--version", "1.0.126", "--locked"])
+      .withExec(["cargo", "test", "--locked", "-p", "cryptbox-derive"])
+      .combinedOutput
+  }
+
+  """
+   Execute SQLx integration and process-level E2E tests against live PostgreSQL.
+  """
+  postgres: String! @check {
+    let server = Dagger
+      .container
+      .from("postgres:" + self.postgresVersion)
+      .withEnvVariable("POSTGRES_USER", "cryptbox")
+      .withEnvVariable("POSTGRES_PASSWORD", "cryptbox")
+      .withEnvVariable("POSTGRES_DB", "cryptbox")
+      .withExposedPort(5432)
+      .asService(useEntrypoint: true)
+
+    self
+      .container
+      .withServiceBinding("postgres", server)
+      .withEnvVariable("DATABASE_URL", "postgres://cryptbox:cryptbox@postgres:5432/cryptbox")
+      .withExec([
+        "cargo", "test", "--locked",
+        "--test", "sqlx_postgres",
+        "--test", "migrate_sqlx_postgres",
+        "--test", "e2e",
+        "--no-default-features", "--features", "migrate,sqlx-postgres",
+        "--", "--include-ignored",
+      ])
+      .combinedOutput
+  }
+
+  """
+  Fuzz the stored-format parsers for a minute per target; see fuzz/README.md.
+  """
+  fuzz: String! @check {
+    let container = self
+      .container
+      .withExec(["apt-get", "update"])
+      .withExec(["apt-get", "install", "--yes", "--no-install-recommends", "g++"])
+      .withExec(["rustup", "toolchain", "install", "nightly", "--profile", "minimal"])
+      .withExec(["cargo", "install", "cargo-fuzz", "--version", "0.13.2", "--locked"])
+
+    let targets = ["envelope_parse", "envelope_round_trip", "blind_index_parse", "blind_index_round_trip"]
+
+    targets.each { target =>
+      container = container.withExec([
+        "cargo", "+nightly", "fuzz", "run", target, "--", "-max_total_time=60",
+      ])
+    }
+
+    container.combinedOutput
+  }
+
+  """
+  Run the key rotation example.
+  """
+  keyRotation: String! @check {
+    self.example("key_rotation", feature: ["derive"])
+  }
+
+  """
+  Run the re-encryption sweep example.
+  """
+  reencryptionSweep: String! @check {
+    self.example("reencryption_sweep", feature: ["derive", "sqlx-sqlite"])
+  }
+
+  """
+  Run the plaintext migration example.
+  """
+  plaintextMigration: String! @check {
+    self.example("plaintext_migration", feature: ["derive", "migrate", "sqlx-sqlite"])
+  }
+
+  """
+  Run the legacy migration example.
+  """
+  legacyMigration: String! @check {
+    self.example("legacy_migration", feature: ["derive", "migrate", "sqlx-sqlite"])
+  }
+
+  """
+  Run the blind indexes example.
+  """
+  blindIndexes: String! @check {
+    self.example("blind_indexes", feature: ["derive"])
+  }
+
+  """
+  Run the SQLx SQLite example.
+  """
+  sqlxSqlite: String! @check {
+    self.example("sqlx_sqlite", feature: ["derive", "sqlx-sqlite"])
+  }
+
+  """
+  Run the explicit Serde stored-value example.
+  """
+  storedValues: String! @check {
+    self.example("stored_values", feature: ["derive", "serde"])
+  }
+
+  let example(
+    """
+    Name of the example target to run.
+    """
+    name: String!,
+    """
+    List of features to activate.
+    """
+    feature: [String!]! = [],
+  ): String! {
+    let args = ["cargo", "run", "--locked", "--example", name]
+
+    feature.each { f => args += ["--features", f] }
+
+    self.run(args)
+  }
+
+  let run(args: [String!]!): String! {
+    self.container.withExec(args).combinedOutput
+  }
+}

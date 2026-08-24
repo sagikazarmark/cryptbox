@@ -1,51 +1,48 @@
-//! Compile and encoding tests for the optional `SQLx` `PostgreSQL` adapter.
+//! Public-boundary tests for the optional `SQLx` `PostgreSQL` adapter.
 
 #![cfg(feature = "sqlx-postgres")]
 
-use std::sync::OnceLock;
-
 use cryptbox::{
-    BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted, EncryptionKey,
-    EncryptionKeyProvider, EncryptionProfile, IndexId, KeyContext, KeyId, KeyProviderError,
-    LocalEncryptionKeyring, Unbound, Utf8, encrypt, index_id, key_id,
+    BlindIndex, BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, IndexId, KeyId,
+    Keys, Padding, Seal, Sealed, Utf8, index_id, key_id,
 };
 use sqlx::{
-    Decode, Encode, Postgres, Type,
-    postgres::{PgArgumentBuffer, PgTypeInfo},
+    Connection, Decode, Encode, Postgres, Row, Type,
+    postgres::{PgArgumentBuffer, PgConnection, PgTypeInfo},
 };
+use zeroize::Zeroizing;
 
 const KEY_ID: KeyId = key_id!("c0000000-0000-4000-8000-00000000000c");
 
-struct TestKeys;
-
-impl KeyContext for TestKeys {
-    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, KeyProviderError> {
-        static KEYS: OnceLock<LocalEncryptionKeyring> = OnceLock::new();
-        Ok(KEYS.get_or_init(|| {
-            LocalEncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap()
-        }))
-    }
-
-    fn blind_index_keys() -> Result<&'static dyn cryptbox::BlindIndexKeyProvider, KeyProviderError>
-    {
-        Err(KeyProviderError::Unavailable)
-    }
+fn test_keys() -> Keys {
+    Keys::new(EncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap())
 }
 
-struct Profile;
+struct TestSeal;
 
-impl EncryptionProfile<String> for Profile {
-    type Binding = Unbound;
+impl Seal for TestSeal {
+    const ID: cryptbox::SealId = cryptbox::seal_id!("4e2d8b17-6c3a-4f95-8b0e-1a7c9d3f5e26");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
     type Codec = Utf8;
-    type Keys = TestKeys;
-    type Padding = cryptbox::NoPadding;
 }
 
 struct IndexSpec;
 
-impl BlindIndexMetadata for IndexSpec {
-    const BITS: usize = 128;
+impl BlindIndexSpec for IndexSpec {
+    type Seal = TestSeal;
     const ID: IndexId = index_id!("d0000000-0000-4000-8000-00000000000d");
+    const BITS: u16 = 128;
+    const NORMALIZER: &'static str = "exact/1";
+    type Query = str;
+
+    fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(Zeroizing::new(query.as_bytes().to_vec()))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
+    }
 }
 
 fn assert_sqlx_traits<T>()
@@ -53,13 +50,6 @@ where
     T: Type<Postgres>,
     for<'q> T: Encode<'q, Postgres>,
     for<'r> T: Decode<'r, Postgres>,
-{
-}
-
-fn assert_sqlx_encode<T>()
-where
-    T: Type<Postgres>,
-    for<'q> T: Encode<'q, Postgres>,
 {
 }
 
@@ -73,25 +63,16 @@ where
 
 #[test]
 fn encrypted_storage_types_map_to_postgres_bytea() {
-    assert_sqlx_traits::<Encrypted<String, Profile>>();
-    assert_sqlx_traits::<Ciphertext<String, Profile>>();
+    assert_sqlx_traits::<Sealed<TestSeal>>();
     assert_sqlx_traits::<BlindIndex<IndexSpec>>();
-    assert_sqlx_encode::<BlindIndexRef<'static, IndexSpec>>();
 
     // The permissive migration read decodes but deliberately has no Encode:
-    // writes always encrypt through `Encrypted` or `Prepared`.
+    // writes always encrypt through `Sealed`.
     #[cfg(feature = "migrate")]
-    assert_sqlx_decode::<cryptbox::migrate::MaybeEncrypted<String, Profile>>();
+    assert_sqlx_decode::<cryptbox::migrate::MaybeSealed<TestSeal>>();
 
     let bytea: PgTypeInfo = <Vec<u8> as Type<Postgres>>::type_info();
-    assert_eq!(
-        <Encrypted<String, Profile> as Type<Postgres>>::type_info(),
-        bytea
-    );
-    assert_eq!(
-        <Ciphertext<String, Profile> as Type<Postgres>>::type_info(),
-        bytea
-    );
+    assert_eq!(<Sealed<TestSeal> as Type<Postgres>>::type_info(), bytea);
     assert_eq!(
         <BlindIndex<IndexSpec> as Type<Postgres>>::type_info(),
         bytea
@@ -99,31 +80,59 @@ fn encrypted_storage_types_map_to_postgres_bytea() {
 }
 
 #[test]
-fn sqlx_encode_encrypts_plaintext_into_an_owned_argument_buffer() {
-    let value = Encrypted::<_, Profile>::new("mark@example.com".to_owned());
+fn sealed_encoding_preserves_the_binary_envelope() {
+    let keys = test_keys();
+    let bytes = Sealed::<TestSeal>::seal(&"value".to_owned(), &keys)
+        .unwrap()
+        .into_bytes();
+    let ciphertext = Sealed::<TestSeal>::from_bytes(bytes.clone()).unwrap();
     let mut buffer = PgArgumentBuffer::default();
 
     let result =
-        <Encrypted<String, Profile> as Encode<'_, Postgres>>::encode_by_ref(&value, &mut buffer)
+        <Sealed<TestSeal> as Encode<'_, Postgres>>::encode_by_ref(&ciphertext, &mut buffer)
             .unwrap();
 
     assert!(!result.is_null());
-    assert!(buffer.starts_with(b"CBX\0"));
+    assert_eq!(buffer.as_slice(), bytes.as_slice());
 }
 
+/// Round-trips a value through a live `PostgreSQL` server.
+///
+/// Ignored by default because it needs a server: set `DATABASE_URL` and run with
+/// `--ignored`. The Dagger `cryptbox:test:postgres` check binds one and does exactly that.
 #[test]
-fn typed_ciphertext_encoding_preserves_the_binary_envelope() {
-    let keys = TestKeys::encryption_keys().unwrap();
-    let bytes = encrypt::<Unbound>(b"value", &(), keys).unwrap();
-    let ciphertext = Ciphertext::<String, Profile>::from_bytes(bytes.clone()).unwrap();
-    let mut buffer = PgArgumentBuffer::default();
+#[ignore = "requires a PostgreSQL server; set DATABASE_URL and run with --ignored"]
+fn postgres_round_trips_sealed_values() {
+    let url = std::env::var("DATABASE_URL")
+        .expect("DATABASE_URL must point at a PostgreSQL server to run this test");
 
-    let result = <Ciphertext<String, Profile> as Encode<'_, Postgres>>::encode_by_ref(
-        &ciphertext,
-        &mut buffer,
-    )
-    .unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
 
-    assert!(!result.is_null());
-    assert_eq!(buffer.as_slice(), bytes.as_slice());
+    runtime.block_on(async {
+        let mut connection = PgConnection::connect(&url).await.unwrap();
+        sqlx::query("CREATE TEMPORARY TABLE secrets (value BYTEA NOT NULL)")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        let keys = test_keys();
+        let value = Sealed::<TestSeal>::seal(&"mark@example.com".to_owned(), &keys).unwrap();
+        sqlx::query("INSERT INTO secrets (value) VALUES ($1)")
+            .bind(&value)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        let row = sqlx::query("SELECT value FROM secrets")
+            .fetch_one(&mut connection)
+            .await
+            .unwrap();
+        let sealed: Sealed<TestSeal> = row.try_get("value").unwrap();
+
+        assert_eq!(sealed, value);
+        assert_eq!(sealed.open(&keys).unwrap(), "mark@example.com");
+    });
 }

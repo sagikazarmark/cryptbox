@@ -1,0 +1,29 @@
+error: `MissingRecordId` needs a record ID: mark the field that holds it `#[cryptbox(record_id)]`
+ --> tests/ui/record_shape_misuse.rs:8:8
+  |
+8 | struct MissingRecordId {
+  |        ^^^^^^^^^^^^^^^
+
+error: a record has one record ID: mark only one field `#[cryptbox(record_id)]`
+  --> tests/ui/record_shape_misuse.rs:20:5
+   |
+20 |     uuid: [u8; 16],
+   |     ^^^^
+
+error: `NothingSealed` has no sealed field: mark one `#[cryptbox(seal = "<uuid>")]`, or store it without `#[derive(Record)]`
+  --> tests/ui/record_shape_misuse.rs:26:8
+   |
+26 | struct NothingSealed {
+   |        ^^^^^^^^^^^^^
+
+error: `id` is bound into every sealed field, so it can't be optional
+  --> tests/ui/record_shape_misuse.rs:37:9
+   |
+37 |     id: Option<i64>,
+   |         ^^^^^^
+
+error: the blind index of `email` is stored in the `email_index` column, which is already a field: rename that field
+  --> tests/ui/record_shape_misuse.rs:54:5
+   |
+54 |     email: String,
+   |     ^^^^^

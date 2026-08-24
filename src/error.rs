@@ -1,4 +1,4 @@
-use crate::{IndexId, IndexKeyId, KeyId, SuiteId};
+use crate::{IndexKeyId, KeyId, crypto};
 
 /// The non-sensitive category of a codec failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,19 +63,12 @@ impl Default for BlindIndexError {
     }
 }
 
-/// An error returned while resolving local key material.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[non_exhaustive]
-pub enum KeyProviderError {
-    /// The provider is temporarily or permanently unavailable.
-    #[error("key provider is unavailable")]
-    Unavailable,
-    /// The process-global provider has not been installed.
-    #[error("key provider is not initialized")]
-    NotInitialized,
-}
-
 /// An error returned by `CryptBox` operations.
+///
+/// Errors carry a category and public IDs only, never a value, plaintext, or an
+/// upstream error, which could quote its input, so any error is safe to log.
+/// Codecs and normalizers report failures the same way, through [`CodecError`]
+/// and [`BlindIndexError`].
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -90,31 +83,43 @@ pub enum Error {
     UnsupportedFormatVersion(u8),
     /// The envelope uses an unavailable suite.
     #[error("unsupported encryption suite {0}")]
-    UnsupportedSuite(SuiteId),
-    /// The envelope names a key that the provider cannot resolve.
+    UnsupportedSuite(u8),
+    /// The envelope sets a reserved flag bit, which a later format may define;
+    /// carries the flags byte read from the header.
+    #[error("unsupported ciphertext flags {0:#04x}")]
+    UnsupportedFlags(u8),
+    /// The envelope names a key that the keyring does not hold.
     #[error("unknown encryption key {0}")]
     UnknownEncryptionKey(KeyId),
-    /// A blind index names a key that the provider cannot resolve.
+    /// A blind index names a key that the keyring does not hold.
     #[error("unknown blind-index key {0}")]
     UnknownBlindIndexKey(IndexKeyId),
     /// Ciphertext authentication failed.
     #[error("ciphertext authentication failed")]
     AuthenticationFailed,
+    /// The envelope was sealed under a different kind of context than the
+    /// reader's, such as a record field's value read as a standalone value.
+    ///
+    /// Reported from the envelope's context fingerprint before any key lookup or
+    /// authentication. Another seal ID or record ID under the same kind of
+    /// context reports [`Error::AuthenticationFailed`].
+    #[error("ciphertext context does not match the seal")]
+    ContextMismatch,
     /// Encoding or decoding the typed value failed.
     #[error("codec failed: {0}")]
     CodecFailed(#[from] CodecError),
     /// Normalizing a blind-index input failed.
-    #[error("blind-index normalization failed")]
-    BlindIndexNormalizationFailed,
-    /// A local key provider was unavailable.
-    #[error("key provider is unavailable")]
-    KeyProviderUnavailable,
-    /// A required process-global provider was not installed.
-    #[error("key provider is not initialized")]
-    KeyProviderNotInitialized,
-    /// Process-global providers were already installed.
-    #[error("key providers are already initialized")]
-    KeyProviderAlreadyInitialized,
+    #[error(transparent)]
+    BlindIndexNormalizationFailed(#[from] BlindIndexError),
+    /// A blind-index operation used [`Keys`](crate::Keys) without a
+    /// blind-index keyring; add one with
+    /// [`Keys::with_blind_indexes`](crate::Keys::with_blind_indexes).
+    #[error("no blind-index keyring is configured")]
+    BlindIndexKeysNotConfigured,
+    /// A stored row is not the one the caller expected, so it was not
+    /// decrypted; see [`Record::open_expecting`](crate::Record::open_expecting).
+    #[error("stored record is not the one expected")]
+    UnexpectedRecord,
     /// A keyring contains the same encryption key ID more than once.
     #[error("duplicate encryption key ID {0}")]
     DuplicateEncryptionKey(KeyId),
@@ -133,25 +138,22 @@ pub enum Error {
     /// The input exceeds the suite's message-size limit.
     #[error("message is too long")]
     MessageTooLong,
-    /// The encoded plaintext does not fit the profile's fixed padding length.
+    /// The encoded plaintext does not fit the seal's fixed padding length.
     #[error("encoded plaintext exceeds the padding length")]
     PaddingOverflow,
     /// Authenticated plaintext does not carry valid padding.
     ///
-    /// This indicates a profile/schema mismatch, such as enabling padding for
-    /// existing unpadded ciphertext. Padding is checked only after successful
-    /// authenticated decryption.
+    /// The envelope records padding, so this indicates a defective writer.
+    /// Padding is checked only after successful authenticated decryption.
     #[error("plaintext padding is invalid")]
     InvalidPadding,
     /// A blind-index representation or bit count is invalid.
     #[error("blind index is invalid")]
     InvalidBlindIndex,
-    /// The same logical index was added to a prepared value twice.
-    #[error("blind index {0} was prepared more than once")]
-    DuplicatePreparedIndex(IndexId),
-    /// The requested logical index was not prepared.
-    #[error("blind index {0} was not prepared")]
-    BlindIndexNotPrepared(IndexId),
+    /// The blind index uses an unknown format version, such as format 1, which
+    /// 0.5.0 wrote.
+    #[error("unsupported blind-index format version {0}")]
+    UnsupportedBlindIndexVersion(u8),
     /// A sweep row supplied a different number of blind-index columns than the
     /// planner registered.
     #[cfg(feature = "migrate")]
@@ -168,17 +170,11 @@ pub enum Error {
     LegacyRecoveryFailed(#[from] crate::migrate::LegacyError),
 }
 
-impl From<KeyProviderError> for Error {
-    fn from(error: KeyProviderError) -> Self {
+impl From<crypto::Error> for Error {
+    fn from(error: crypto::Error) -> Self {
         match error {
-            KeyProviderError::Unavailable => Self::KeyProviderUnavailable,
-            KeyProviderError::NotInitialized => Self::KeyProviderNotInitialized,
+            crypto::Error::Internal => Self::Internal,
+            crypto::Error::RandomnessUnavailable => Self::RandomnessUnavailable,
         }
-    }
-}
-
-impl From<BlindIndexError> for Error {
-    fn from(_: BlindIndexError) -> Self {
-        Self::BlindIndexNormalizationFailed
     }
 }

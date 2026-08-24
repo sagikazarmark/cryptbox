@@ -1,0 +1,5 @@
+error: missing `id`: add `#[cryptbox(id = "<uuid>")]`
+ --> tests/ui/missing_id.rs:3:8
+  |
+3 | struct UserEmail;
+  |        ^^^^^^^^^

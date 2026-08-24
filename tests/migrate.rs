@@ -7,16 +7,16 @@ use std::{
     future::{Future, ready},
 };
 
+use cryptbox::envelope::{inspect_blind_index, inspect_ciphertext};
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, EncryptionKeyProvider, EncryptionProfile, Error, Field, FieldBound,
-    GlobalKeyContext, IndexId, IndexKeyId, KeyId, KeyProviderError, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Utf8, derive_blind_index, field_id, index_id, index_key_id,
-    inspect_blind_index, inspect_ciphertext, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Keys, Padding, Seal, Sealed, Utf8,
+    index_id, index_key_id, key_id,
     migrate::{
-        LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
+        LegacyError, LegacyErrorKind, LegacyFormat, MaybeSealed, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
     },
+    seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -27,110 +27,106 @@ const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("40000000-0000-4000-8000-
 
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
-    const NAME: &'static str = "user-email";
-}
-
-impl EncryptionProfile<String> for UserEmail {
-    type Binding = FieldBound<Self>;
+impl Seal for UserEmail {
+    const ID: cryptbox::SealId = seal_id!("50000000-0000-4000-8000-000000000005");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
 }
 
 struct PaddedUserEmail;
 
-impl EncryptionProfile<String> for PaddedUserEmail {
-    type Binding = FieldBound<UserEmail>;
+impl Seal for PaddedUserEmail {
+    const ID: cryptbox::SealId = UserEmail::ID;
+    const PADDING: Padding = Padding::block(16);
+    type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::PadToBlock<16>;
 }
 
 struct EmailLookup;
 
 struct EmailDomain;
 
-impl BlindIndexMetadata for EmailLookup {
+impl BlindIndexSpec for EmailLookup {
+    type Seal = UserEmail;
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    const NORMALIZER: &'static str = "email/1";
+    type Query = str;
 
-impl BlindIndexSpec<String> for EmailLookup {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(Zeroizing::new(
             input.trim().to_ascii_lowercase().into_bytes(),
         ))
     }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
+    }
 }
 
-impl BlindIndexMetadata for EmailDomain {
+impl BlindIndexSpec for EmailDomain {
+    type Seal = UserEmail;
     const ID: IndexId = index_id!("70000000-0000-4000-8000-000000000007");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    const NORMALIZER: &'static str = "email-domain/1";
+    type Query = str;
 
-impl BlindIndexSpec<String> for EmailDomain {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(Zeroizing::new(
             input
                 .rsplit_once('@')
-                .map_or(input.as_str(), |(_, domain)| domain)
+                .map_or(input, |(_, domain)| domain)
                 .to_ascii_lowercase()
                 .into_bytes(),
         ))
     }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
+    }
 }
 
-fn old_keys() -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(EncryptionKey::new(OLD_KEY_ID, [0x11; 32]), []).unwrap()
+fn old_keys() -> EncryptionKeyring {
+    EncryptionKeyring::new(EncryptionKey::new(OLD_KEY_ID, [0x11; 32]), []).unwrap()
 }
 
-fn rotated_keys() -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(
+fn rotated_keys() -> EncryptionKeyring {
+    EncryptionKeyring::new(
         EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]),
         [EncryptionKey::new(OLD_KEY_ID, [0x11; 32])],
     )
     .unwrap()
 }
 
-fn old_index_keys() -> LocalBlindIndexKeyring {
-    LocalBlindIndexKeyring::new(BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x33; 32]), []).unwrap()
+fn old_index_keys() -> BlindIndexKeyring {
+    BlindIndexKeyring::new(BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x33; 32]), []).unwrap()
 }
 
-fn rotated_index_keys() -> LocalBlindIndexKeyring {
-    LocalBlindIndexKeyring::new(
+fn rotated_index_keys() -> BlindIndexKeyring {
+    BlindIndexKeyring::new(
         BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x44; 32]),
         [BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x33; 32])],
     )
     .unwrap()
 }
 
-fn encrypt_email(email: &str, keys: &LocalEncryptionKeyring) -> Vec<u8> {
-    Encrypted::<_, UserEmail>::new(email.to_owned())
-        .encrypt_with(&(), keys)
+fn encrypt_email(email: &str, keys: &EncryptionKeyring) -> Vec<u8> {
+    Sealed::<UserEmail>::seal(&email.to_owned(), keys)
         .unwrap()
         .into_bytes()
 }
 
-fn derive_email_index(email: &str, index_keys: &LocalBlindIndexKeyring) -> Vec<u8> {
-    derive_blind_index::<EmailLookup, String, FieldBound<UserEmail>>(
-        &email.to_owned(),
-        &(),
-        index_keys,
-    )
-    .unwrap()
-    .into_bytes()
+fn derive_email_index(email: &str, index_keys: &BlindIndexKeyring) -> Vec<u8> {
+    BlindIndex::<EmailLookup>::derive(&email.to_owned(), index_keys)
+        .unwrap()
+        .into_bytes()
 }
 
-fn derive_email_domain_index(email: &str, index_keys: &LocalBlindIndexKeyring) -> Vec<u8> {
-    derive_blind_index::<EmailDomain, String, FieldBound<UserEmail>>(
-        &email.to_owned(),
-        &(),
-        index_keys,
-    )
-    .unwrap()
-    .into_bytes()
+fn derive_email_domain_index(email: &str, index_keys: &BlindIndexKeyring) -> Vec<u8> {
+    BlindIndex::<EmailDomain>::derive(&email.to_owned(), index_keys)
+        .unwrap()
+        .into_bytes()
 }
 
 struct ToyLegacy;
@@ -168,53 +164,39 @@ fn classification_accepts_valid_envelopes() {
     let keys = rotated_keys();
     let bytes = encrypt_email("mark@example.com", &keys);
 
-    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(bytes).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(bytes).unwrap();
     assert!(!read.is_legacy());
-    assert!(read.as_ciphertext().is_some());
-    assert_eq!(
-        read.decrypt_with(&(), &keys).unwrap().expose_secret(),
-        "mark@example.com"
-    );
+    assert!(read.as_sealed().is_some());
+    assert_eq!(read.open(&keys).unwrap(), "mark@example.com");
 }
 
 #[test]
 fn classification_treats_bytes_without_magic_as_legacy() {
-    let read =
-        MaybeEncrypted::<String, UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
     assert!(read.is_legacy());
-    assert!(read.as_ciphertext().is_none());
-
-    // A legacy plaintext read never touches key providers, including the
-    // uninstalled process-global context selected by the profile.
-    assert_eq!(read.decrypt().unwrap().expose_secret(), "mark@example.com");
+    assert!(read.as_sealed().is_none());
 }
 
 #[test]
-fn decrypt_with_recovers_legacy_plaintext_through_the_codec() {
-    let read =
-        MaybeEncrypted::<String, UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
+fn open_recovers_legacy_plaintext_through_the_codec() {
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
 
-    assert_eq!(
-        read.decrypt_with(&(), &rotated_keys())
-            .unwrap()
-            .expose_secret(),
-        "mark@example.com"
-    );
+    assert_eq!(read.open(&rotated_keys()).unwrap(), "mark@example.com");
 }
 
 #[test]
 fn classification_treats_empty_bytes_as_legacy() {
-    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(Vec::new()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(Vec::new()).unwrap();
     assert!(read.is_legacy());
-    assert_eq!(read.decrypt().unwrap().expose_secret(), "");
+    assert_eq!(read.open(&rotated_keys()).unwrap(), "");
 }
 
 #[test]
-fn from_bytes_defers_codec_errors_to_decrypt() {
-    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(vec![0xFF, 0xFE]).unwrap();
+fn from_bytes_defers_codec_errors_to_open() {
+    let read = MaybeSealed::<UserEmail>::from_bytes(vec![0xFF, 0xFE]).unwrap();
 
     assert_eq!(
-        read.decrypt_with(&(), &rotated_keys()).unwrap_err(),
+        read.open(&rotated_keys()).unwrap_err(),
         Error::CodecFailed(cryptbox::CodecError::new(
             cryptbox::CodecErrorKind::InvalidUtf8
         )),
@@ -222,58 +204,40 @@ fn from_bytes_defers_codec_errors_to_decrypt() {
 }
 
 #[test]
-fn decrypt_with_legacy_recovers_foreign_ciphertext() {
-    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec())
-        .unwrap();
+fn open_legacy_recovers_foreign_ciphertext() {
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec()).unwrap();
 
     assert_eq!(
-        read.decrypt_with_legacy(&(), &rotated_keys(), &ToyLegacy)
-            .unwrap()
-            .expose_secret(),
-        "mark@example.com"
-    );
-}
-
-#[test]
-fn decrypt_legacy_recovers_without_touching_global_keys() {
-    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec())
-        .unwrap();
-
-    assert_eq!(
-        read.decrypt_legacy(&TOY_LEGACY).unwrap().expose_secret(),
+        read.open_legacy(&rotated_keys(), &ToyLegacy).unwrap(),
         "mark@example.com"
     );
 }
 
 #[test]
 fn debug_redacts_deferred_legacy_bytes() {
-    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec())
-        .unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec()).unwrap();
 
-    assert_eq!(format!("{read:?}"), "MaybeEncrypted([REDACTED])");
+    assert_eq!(format!("{read:?}"), "MaybeSealed([REDACTED])");
 }
 
 #[test]
-fn decrypt_with_legacy_ignores_the_handler_for_envelopes() {
+fn open_legacy_ignores_the_handler_for_envelopes() {
     let keys = rotated_keys();
     let read =
-        MaybeEncrypted::<String, UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys))
-            .unwrap();
+        MaybeSealed::<UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys)).unwrap();
 
     assert_eq!(
-        read.decrypt_with_legacy(&(), &keys, &PanickingLegacy)
-            .unwrap()
-            .expose_secret(),
+        read.open_legacy(&keys, &PanickingLegacy).unwrap(),
         "mark@example.com"
     );
 }
 
 #[test]
 fn legacy_recovery_failure_is_a_hard_error() {
-    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
 
     assert_eq!(
-        read.decrypt_with_legacy(&(), &rotated_keys(), &FailingLegacy)
+        read.open_legacy(&rotated_keys(), &FailingLegacy)
             .unwrap_err(),
         Error::LegacyRecoveryFailed(LegacyError::new(LegacyErrorKind::AuthenticationFailed))
     );
@@ -289,10 +253,9 @@ fn recovered_garbage_fails_codec_decode() {
         }
     }
 
-    let read = MaybeEncrypted::<String, UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
     assert_eq!(
-        read.decrypt_with_legacy(&(), &rotated_keys(), &InvalidUtf8)
-            .unwrap_err(),
+        read.open_legacy(&rotated_keys(), &InvalidUtf8).unwrap_err(),
         Error::CodecFailed(cryptbox::CodecError::new(
             cryptbox::CodecErrorKind::InvalidUtf8
         ))
@@ -312,14 +275,11 @@ fn from_legacy_bytes_bypasses_classification_even_with_magic_prefix() {
         }
     }
 
-    let read = MaybeEncrypted::<String, UserEmail>::from_legacy_bytes(
-        b"CBX\0legacy:mark@example.com".to_vec(),
-    );
+    let read =
+        MaybeSealed::<UserEmail>::from_legacy_bytes(b"CBX\0legacy:mark@example.com".to_vec());
     assert!(read.is_legacy());
     assert_eq!(
-        read.decrypt_with_legacy(&(), &rotated_keys(), &MagicPrefixed)
-            .unwrap()
-            .expose_secret(),
+        read.open_legacy(&rotated_keys(), &MagicPrefixed).unwrap(),
         "mark@example.com"
     );
 }
@@ -327,7 +287,7 @@ fn from_legacy_bytes_bypasses_classification_even_with_magic_prefix() {
 #[test]
 fn magic_prefixed_garbage_is_a_hard_error_not_plaintext() {
     assert_eq!(
-        MaybeEncrypted::<String, UserEmail>::from_bytes(b"CBX\0garbage".to_vec()).unwrap_err(),
+        MaybeSealed::<UserEmail>::from_bytes(b"CBX\0\x02garbage".to_vec()).unwrap_err(),
         Error::InvalidEnvelope,
     );
 }
@@ -338,7 +298,7 @@ fn unsupported_format_version_is_a_hard_error_not_plaintext() {
     bytes[4] = 9;
 
     assert_eq!(
-        MaybeEncrypted::<String, UserEmail>::from_bytes(bytes).unwrap_err(),
+        MaybeSealed::<UserEmail>::from_bytes(bytes).unwrap_err(),
         Error::UnsupportedFormatVersion(9),
     );
 }
@@ -346,15 +306,12 @@ fn unsupported_format_version_is_a_hard_error_not_plaintext() {
 #[test]
 fn out_of_band_constructors_bypass_byte_classification() {
     let keys = rotated_keys();
-    let read = MaybeEncrypted::from_plaintext(Encrypted::<String, UserEmail>::new(
-        "CBX\0-prefixed legacy value".to_owned(),
-    ));
+    let read = MaybeSealed::<UserEmail>::from_legacy_bytes(b"CBX\0-prefixed legacy value".to_vec());
     assert!(read.is_legacy());
 
     let ciphertext =
-        Ciphertext::<String, UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys))
-            .unwrap();
-    let read = MaybeEncrypted::from(ciphertext);
+        Sealed::<UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys)).unwrap();
+    let read = MaybeSealed::from(ciphertext);
     assert!(!read.is_legacy());
 }
 
@@ -364,16 +321,53 @@ fn planner_skips_current_rows_without_writes() {
     let index_keys = rotated_index_keys();
     let ciphertext = encrypt_email("mark@example.com", &keys);
     let index = derive_email_index("mark@example.com", &index_keys);
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_index_with::<EmailLookup>(&index_keys);
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
 
     assert_eq!(
-        planner.classify_row(&ciphertext, &[&index]).unwrap(),
+        planner.classify_row(&(), &ciphertext, &[&index]).unwrap(),
         RowState::Current
     );
-    let outcome = planner.plan_row(&ciphertext, &[&index]).unwrap();
+    let outcome = planner.plan_row(&(), &ciphertext, &[&index]).unwrap();
     assert_eq!(outcome.state(), RowState::Current);
     assert!(outcome.into_write().is_none());
+}
+
+#[test]
+fn planner_takes_keys_like_sealed_values_do() {
+    let keys = Keys::new(rotated_keys()).with_blind_indexes(rotated_index_keys());
+    let ciphertext = encrypt_email("mark@example.com", &rotated_keys());
+    let index = derive_email_index("mark@example.com", &old_index_keys());
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&keys);
+
+    let write = planner
+        .plan_row(&(), &ciphertext, &[&index])
+        .unwrap()
+        .into_write()
+        .unwrap();
+    assert_eq!(
+        write.indexes(),
+        &[derive_email_index(
+            "mark@example.com",
+            &rotated_index_keys()
+        )]
+    );
+}
+
+#[test]
+fn planner_index_without_blind_index_keys_fails_every_row() {
+    let keys = Keys::new(rotated_keys());
+    let ciphertext = encrypt_email("mark@example.com", &rotated_keys());
+    let index = derive_email_index("mark@example.com", &rotated_index_keys());
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&keys);
+
+    assert_eq!(
+        planner.classify_row(&(), &ciphertext, &[&index]),
+        Err(Error::BlindIndexKeysNotConfigured)
+    );
+    assert_eq!(
+        planner.plan_row(&(), &ciphertext, &[&index]).unwrap_err(),
+        Error::BlindIndexKeysNotConfigured
+    );
 }
 
 #[test]
@@ -382,14 +376,13 @@ fn planner_reencrypts_stale_envelopes_and_keeps_current_index_bytes() {
     let index_keys = rotated_index_keys();
     let ciphertext = encrypt_email("mark@example.com", &old_keys());
     let index = derive_email_index("mark@example.com", &index_keys);
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_index_with::<EmailLookup>(&index_keys);
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
 
     assert_eq!(
-        planner.classify_row(&ciphertext, &[&index]).unwrap(),
+        planner.classify_row(&(), &ciphertext, &[&index]).unwrap(),
         RowState::Stale
     );
-    let outcome = planner.plan_row(&ciphertext, &[&index]).unwrap();
+    let outcome = planner.plan_row(&(), &ciphertext, &[&index]).unwrap();
     assert_eq!(outcome.state(), RowState::Stale);
     let write = outcome.into_write().unwrap();
     assert_eq!(
@@ -397,11 +390,10 @@ fn planner_reencrypts_stale_envelopes_and_keeps_current_index_bytes() {
         CURRENT_KEY_ID
     );
     assert_eq!(
-        Ciphertext::<String, UserEmail>::from_bytes(write.ciphertext().to_vec())
+        Sealed::<UserEmail>::from_bytes(write.ciphertext().to_vec())
             .unwrap()
-            .decrypt_with(&(), &keys)
-            .unwrap()
-            .expose_secret(),
+            .open(&keys)
+            .unwrap(),
         "mark@example.com"
     );
     assert_eq!(write.indexes(), &[index]);
@@ -413,10 +405,9 @@ fn planner_rederives_stale_indexes_from_the_authoritative_ciphertext() {
     let index_keys = rotated_index_keys();
     let ciphertext = encrypt_email("mark@example.com", &keys);
     let index = derive_email_index("mark@example.com", &old_index_keys());
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_index_with::<EmailLookup>(&index_keys);
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
 
-    let outcome = planner.plan_row(&ciphertext, &[&index]).unwrap();
+    let outcome = planner.plan_row(&(), &ciphertext, &[&index]).unwrap();
     assert_eq!(outcome.state(), RowState::Stale);
     let write = outcome.into_write().unwrap();
     // A current envelope is kept byte-identical: no fresh nonce is consumed.
@@ -437,21 +428,19 @@ fn planner_rederives_stale_indexes_from_the_authoritative_ciphertext() {
 fn planner_encrypts_legacy_plaintext_and_derives_every_index() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_index_with::<EmailLookup>(&index_keys);
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
 
     let placeholder: &[u8] = &[];
     let outcome = planner
-        .plan_row(b"mark@example.com", &[placeholder])
+        .plan_row(&(), b"mark@example.com", &[placeholder])
         .unwrap();
     assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
     assert_eq!(
-        Ciphertext::<String, UserEmail>::from_bytes(write.ciphertext().to_vec())
+        Sealed::<UserEmail>::from_bytes(write.ciphertext().to_vec())
             .unwrap()
-            .decrypt_with(&(), &keys)
-            .unwrap()
-            .expose_secret(),
+            .open(&keys)
+            .unwrap(),
         "mark@example.com"
     );
     assert_eq!(
@@ -461,21 +450,42 @@ fn planner_encrypts_legacy_plaintext_and_derives_every_index() {
 }
 
 #[test]
-fn planner_encrypts_legacy_plaintext_with_the_profile_padding_policy() {
+fn planner_encrypts_legacy_plaintext_with_the_seal_padding_policy() {
     let keys = rotated_keys();
-    let planner = RowPlanner::<String, PaddedUserEmail>::new(&(), &keys);
+    let planner = RowPlanner::<PaddedUserEmail>::new(&keys);
 
-    let outcome = planner.plan_row(b"mark@example.com", &[]).unwrap();
+    let outcome = planner.plan_row(&(), b"mark@example.com", &[]).unwrap();
     assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
-    assert_eq!(write.ciphertext().len(), 62 + 32);
+    assert_eq!(write.ciphertext().len(), 71 + 32);
     assert_eq!(
-        Ciphertext::<String, PaddedUserEmail>::from_bytes(write.ciphertext().to_vec())
+        Sealed::<PaddedUserEmail>::from_bytes(write.ciphertext().to_vec())
             .unwrap()
-            .decrypt_with(&(), &keys)
-            .unwrap()
-            .expose_secret(),
+            .open(&keys)
+            .unwrap(),
         "mark@example.com"
+    );
+}
+
+#[test]
+fn planner_rewrites_current_key_envelopes_when_the_padding_policy_changes() {
+    let keys = rotated_keys();
+    let unpadded = encrypt_email("mark@example.com", &keys);
+    let planner = RowPlanner::<PaddedUserEmail>::new(&keys);
+
+    assert_eq!(
+        planner.classify_row(&(), &unpadded, &[]).unwrap(),
+        RowState::Stale
+    );
+    let write = planner
+        .plan_row(&(), &unpadded, &[])
+        .unwrap()
+        .into_write()
+        .unwrap();
+    assert!(inspect_ciphertext(write.ciphertext()).unwrap().padded());
+    assert_eq!(
+        planner.classify_row(&(), write.ciphertext(), &[]).unwrap(),
+        RowState::Current
     );
 }
 
@@ -483,22 +493,21 @@ fn planner_encrypts_legacy_plaintext_with_the_profile_padding_policy() {
 fn planner_recovers_foreign_ciphertext_and_derives_indexes() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+    let planner = RowPlanner::<UserEmail>::new(&keys)
         .with_legacy(&TOY_LEGACY)
-        .with_index_with::<EmailLookup>(&index_keys)
-        .with_index_with::<EmailDomain>(&index_keys);
+        .with_index::<EmailLookup>(&index_keys)
+        .with_index::<EmailDomain>(&index_keys);
 
     let outcome = planner
-        .plan_row(b"legacy:mark@example.com", &[&[], &[]])
+        .plan_row(&(), b"legacy:mark@example.com", &[&[], &[]])
         .unwrap();
     assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
     assert_eq!(
-        Ciphertext::<String, UserEmail>::from_bytes(write.ciphertext().to_vec())
+        Sealed::<UserEmail>::from_bytes(write.ciphertext().to_vec())
             .unwrap()
-            .decrypt_with(&(), &keys)
-            .unwrap()
-            .expose_secret(),
+            .open(&keys)
+            .unwrap(),
         "mark@example.com"
     );
     assert_eq!(
@@ -513,10 +522,10 @@ fn planner_recovers_foreign_ciphertext_and_derives_indexes() {
 #[test]
 fn planner_propagates_legacy_recovery_failure() {
     let keys = rotated_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys).with_legacy(&FailingLegacy);
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_legacy(&FailingLegacy);
 
     assert_eq!(
-        planner.plan_row(b"legacy:broken", &[]).unwrap_err(),
+        planner.plan_row(&(), b"legacy:broken", &[]).unwrap_err(),
         Error::LegacyRecoveryFailed(LegacyError::new(LegacyErrorKind::AuthenticationFailed))
     );
 }
@@ -525,14 +534,14 @@ fn planner_propagates_legacy_recovery_failure() {
 fn planner_ignores_the_handler_for_envelope_rows() {
     let keys = rotated_keys();
     let ciphertext = encrypt_email("mark@example.com", &keys);
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys).with_legacy(&PanickingLegacy);
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_legacy(&PanickingLegacy);
 
     assert_eq!(
-        planner.classify_row(&ciphertext, &[]).unwrap(),
+        planner.classify_row(&(), &ciphertext, &[]).unwrap(),
         RowState::Current
     );
     assert_eq!(
-        planner.plan_row(&ciphertext, &[]).unwrap().state(),
+        planner.plan_row(&(), &ciphertext, &[]).unwrap().state(),
         RowState::Current
     );
 }
@@ -542,16 +551,19 @@ fn planner_propagates_malformed_index_bytes() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let ciphertext = encrypt_email("mark@example.com", &keys);
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_index_with::<EmailLookup>(&index_keys);
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
 
     let malformed: &[u8] = b"not an index";
     assert_eq!(
-        planner.classify_row(&ciphertext, &[malformed]).unwrap_err(),
+        planner
+            .classify_row(&(), &ciphertext, &[malformed])
+            .unwrap_err(),
         Error::InvalidBlindIndex
     );
     assert_eq!(
-        planner.plan_row(&ciphertext, &[malformed]).unwrap_err(),
+        planner
+            .plan_row(&(), &ciphertext, &[malformed])
+            .unwrap_err(),
         Error::InvalidBlindIndex
     );
 }
@@ -561,11 +573,10 @@ fn planner_rejects_index_column_arity_mismatch() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let ciphertext = encrypt_email("mark@example.com", &keys);
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_index_with::<EmailLookup>(&index_keys);
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
 
     assert_eq!(
-        planner.classify_row(&ciphertext, &[]).unwrap_err(),
+        planner.classify_row(&(), &ciphertext, &[]).unwrap_err(),
         Error::IndexColumnMismatch {
             expected: 1,
             actual: 0
@@ -599,6 +610,7 @@ impl MemoryStore {
 
 impl SweepStore for MemoryStore {
     type Cursor = i64;
+    type Columns = ();
     type Error = Infallible;
 
     fn load_checkpoint(&mut self) -> impl Future<Output = Result<Option<i64>, Infallible>> + Send {
@@ -625,10 +637,8 @@ impl SweepStore for MemoryStore {
             .iter()
             .filter(|(cursor, _, _)| *cursor > after)
             .take(limit)
-            .map(|(cursor, ciphertext, indexes)| SweepRow {
-                cursor: *cursor,
-                ciphertext: ciphertext.clone(),
-                indexes: indexes.clone(),
+            .map(|(cursor, ciphertext, indexes)| {
+                SweepRow::new(*cursor, (), ciphertext.clone(), indexes.clone())
             })
             .collect()))
     }
@@ -689,9 +699,9 @@ fn mixed_rows() -> Vec<(i64, Vec<u8>, Vec<Vec<u8>>)> {
 fn sweep_migrates_plaintext_and_stale_rows_to_a_terminal_state() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+    let planner = RowPlanner::<UserEmail>::new(&keys)
         .with_legacy(&TOY_LEGACY)
-        .with_index_with::<EmailLookup>(&index_keys);
+        .with_index::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = MemoryStore::new(mixed_rows());
 
@@ -710,12 +720,57 @@ fn sweep_migrates_plaintext_and_stale_rows_to_a_terminal_state() {
 }
 
 #[test]
+fn a_sweep_with_a_legacy_handler_can_run_on_a_spawned_task() {
+    // Compiles only while the sweep and its future are `Send`, as
+    // `tokio::spawn` requires.
+    fn assert_send<T: Send>(value: T) -> T {
+        value
+    }
+
+    let keys = rotated_keys();
+    let index_keys = rotated_index_keys();
+    let planner = RowPlanner::<UserEmail>::new(&keys)
+        .with_legacy(&TOY_LEGACY)
+        .with_index::<EmailLookup>(&index_keys);
+    let sweep = assert_send(Sweep::new(planner));
+    let mut store = MemoryStore::new(mixed_rows());
+
+    let report = futures_executor::block_on(assert_send(sweep.run(&mut store))).unwrap();
+    assert_eq!(report.legacy, 3);
+}
+
+#[test]
+fn terminal_verification_does_not_establish_authenticated_readability() {
+    let keys = rotated_keys();
+    let mut bytes = encrypt_email("mark@example.com", &keys);
+    // Corrupt the stored payload without depending on private envelope offsets.
+    *bytes.last_mut().unwrap() ^= 1;
+    let ciphertext = Sealed::<UserEmail>::from_bytes(bytes.clone()).unwrap();
+    assert!(!ciphertext.needs_reseal(&keys).unwrap());
+
+    let planner = RowPlanner::<UserEmail>::new(&keys);
+    assert_eq!(
+        planner.classify_row(&(), &bytes, &[]).unwrap(),
+        RowState::Current
+    );
+    let sweep = Sweep::new(planner);
+    let mut store = MemoryStore::new(vec![(1, bytes, vec![])]);
+    let report = futures_executor::block_on(sweep.verify(&mut store)).unwrap();
+    assert!(report.is_terminal());
+    assert_eq!(report.current, 1);
+    assert_eq!(
+        ciphertext.open(&keys).unwrap_err(),
+        Error::AuthenticationFailed
+    );
+}
+
+#[test]
 fn sweep_replay_after_a_lost_checkpoint_is_idempotent() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+    let planner = RowPlanner::<UserEmail>::new(&keys)
         .with_legacy(&TOY_LEGACY)
-        .with_index_with::<EmailLookup>(&index_keys);
+        .with_index::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = MemoryStore::new(mixed_rows());
 
@@ -735,9 +790,9 @@ fn sweep_replay_after_a_lost_checkpoint_is_idempotent() {
 fn sweep_never_overwrites_a_concurrent_writer() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+    let planner = RowPlanner::<UserEmail>::new(&keys)
         .with_legacy(&TOY_LEGACY)
-        .with_index_with::<EmailLookup>(&index_keys);
+        .with_index::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = MemoryStore::new(mixed_rows());
 
@@ -757,13 +812,13 @@ fn sweep_never_overwrites_a_concurrent_writer() {
 fn sweep_run_stops_at_a_malformed_row_and_keeps_the_last_checkpoint() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+    let planner = RowPlanner::<UserEmail>::new(&keys)
         .with_legacy(&TOY_LEGACY)
-        .with_index_with::<EmailLookup>(&index_keys);
+        .with_index::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
 
     let mut rows = mixed_rows();
-    rows[2].1 = b"CBX\0garbage".to_vec();
+    rows[2].1 = b"CBX\0\x02garbage".to_vec();
     let mut store = MemoryStore::new(rows);
 
     let error = futures_executor::block_on(sweep.run(&mut store)).unwrap_err();
@@ -793,9 +848,9 @@ fn sweep_stops_at_an_unrecoverable_legacy_row_and_resumes_after_repair() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();
     let legacy = RejectForeign;
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+    let planner = RowPlanner::<UserEmail>::new(&keys)
         .with_legacy(&legacy)
-        .with_index_with::<EmailLookup>(&index_keys);
+        .with_index::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = MemoryStore::new(mixed_rows());
 
@@ -818,23 +873,12 @@ fn sweep_stops_at_an_unrecoverable_legacy_row_and_resumes_after_repair() {
 
 #[test]
 fn verification_counts_foreign_ciphertext_without_recovery() {
-    struct ClassificationOnlyKeys(EncryptionKey);
-
-    impl EncryptionKeyProvider for ClassificationOnlyKeys {
-        fn current_key(&self) -> Result<EncryptionKey, KeyProviderError> {
-            Ok(self.0.clone())
-        }
-
-        fn key(&self, _: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
-            panic!("verification must not resolve decryption keys")
-        }
-    }
-
-    let keys = ClassificationOnlyKeys(EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]));
+    // Without the previous key, any attempt to open a stale row would fail.
+    let keys = EncryptionKeyring::new(EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]), []).unwrap();
     let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+    let planner = RowPlanner::<UserEmail>::new(&keys)
         .with_legacy(&PanickingLegacy)
-        .with_index_with::<EmailLookup>(&index_keys);
+        .with_index::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(3);
     let mut store = MemoryStore::new(mixed_rows());
     store.checkpoint = Some(3);
@@ -847,133 +891,6 @@ fn verification_counts_foreign_ciphertext_without_recovery() {
     assert_eq!(store.update_calls, 0);
     assert_eq!(store.checkpoint_saves, 0);
     assert_eq!(store.checkpoint, Some(3));
-}
-
-#[test]
-fn stepped_run_batches_match_a_full_run() {
-    let keys = rotated_keys();
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_legacy(&TOY_LEGACY)
-        .with_index_with::<EmailLookup>(&index_keys);
-    let sweep = Sweep::new(planner).with_batch_size(2);
-    let mut store = MemoryStore::new(mixed_rows());
-
-    // Each externally scheduled step processes exactly one batch and saves
-    // the durable checkpoint; the None checkpoint signals exhaustion.
-    let mut report = SweepReport::default();
-    let mut steps = 0;
-    loop {
-        let outcome = futures_executor::block_on(sweep.run_batch(&mut store)).unwrap();
-        report.merge(outcome.report);
-        steps += 1;
-        if outcome.checkpoint.is_none() {
-            break;
-        }
-        assert_eq!(store.checkpoint, outcome.checkpoint);
-    }
-
-    assert_eq!(steps, 4);
-    assert_eq!(store.checkpoint_saves, 3);
-    assert_eq!(report.legacy, 3);
-    assert_eq!(report.stale, 1);
-    assert_eq!(report.current, 1);
-    assert_eq!(report.conflicts, 0);
-
-    let verified = futures_executor::block_on(sweep.verify(&mut store)).unwrap();
-    assert!(verified.is_terminal());
-}
-
-#[test]
-fn orchestrator_owned_cursor_never_touches_store_checkpoints() {
-    let keys = rotated_keys();
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_legacy(&TOY_LEGACY)
-        .with_index_with::<EmailLookup>(&index_keys);
-    let sweep = Sweep::new(planner).with_batch_size(2);
-    let mut store = MemoryStore::new(mixed_rows());
-
-    // A durable-execution runtime journals the cursor itself and passes it
-    // back on the next step; the store's checkpoint stays untouched.
-    let mut journaled_cursor: Option<i64> = None;
-    let mut report = SweepReport::default();
-    loop {
-        let outcome =
-            futures_executor::block_on(sweep.process_batch(&mut store, journaled_cursor.as_ref()))
-                .unwrap();
-        report.merge(outcome.report);
-        match outcome.checkpoint {
-            Some(next) => journaled_cursor = Some(next),
-            None => break,
-        }
-    }
-
-    assert_eq!(store.checkpoint_saves, 0);
-    assert_eq!(store.checkpoint, None);
-    assert_eq!(journaled_cursor, Some(5));
-    assert_eq!(report.legacy, 3);
-    assert_eq!(report.stale, 1);
-    assert_eq!(report.current, 1);
-
-    let verified = futures_executor::block_on(sweep.verify(&mut store)).unwrap();
-    assert!(verified.is_terminal());
-}
-
-#[test]
-fn replaying_a_processed_batch_is_idempotent() {
-    let keys = rotated_keys();
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_legacy(&TOY_LEGACY)
-        .with_index_with::<EmailLookup>(&index_keys);
-    let sweep = Sweep::new(planner).with_batch_size(2);
-    let mut store = MemoryStore::new(mixed_rows());
-
-    // An at-least-once runtime applied the side effect but crashed before
-    // journaling the cursor, so the same step fires again.
-    let first = futures_executor::block_on(sweep.process_batch(&mut store, None)).unwrap();
-    assert_eq!(first.report.legacy, 2);
-    assert_eq!(first.checkpoint, Some(2));
-    let rows_after_first: Vec<_> = store.rows.clone();
-
-    let replay = futures_executor::block_on(sweep.process_batch(&mut store, None)).unwrap();
-    assert_eq!(replay.checkpoint, Some(2));
-    assert_eq!(replay.report.current, 2);
-    assert_eq!(
-        replay.report.legacy + replay.report.stale + replay.report.conflicts,
-        0
-    );
-    assert_eq!(store.rows, rows_after_first);
-}
-
-#[test]
-fn stepped_verification_matches_a_full_pass() {
-    let keys = rotated_keys();
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_legacy(&TOY_LEGACY)
-        .with_index_with::<EmailLookup>(&index_keys);
-    let sweep = Sweep::new(planner).with_batch_size(3);
-    let mut store = MemoryStore::new(mixed_rows());
-
-    let full = futures_executor::block_on(sweep.verify(&mut store)).unwrap();
-
-    let mut cursor: Option<i64> = None;
-    let mut stepped = SweepReport::default();
-    loop {
-        let outcome =
-            futures_executor::block_on(sweep.verify_batch(&mut store, cursor.as_ref())).unwrap();
-        stepped.merge(outcome.report);
-        match outcome.checkpoint {
-            Some(next) => cursor = Some(next),
-            None => break,
-        }
-    }
-
-    assert_eq!(stepped, full);
-    assert_eq!(store.update_calls, 0);
-    assert_eq!(store.checkpoint_saves, 0);
 }
 
 #[test]

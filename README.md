@@ -1,264 +1,168 @@
-# cryptbox
+# CryptBox
 
 [![ci](https://img.shields.io/github/actions/workflow/status/sagikazarmark/cryptbox/ci.yaml?style=flat-square)](https://github.com/sagikazarmark/cryptbox/actions/workflows/ci.yaml)
 [![openssf scorecard](https://api.securityscorecards.dev/projects/github.com/sagikazarmark/cryptbox/badge?style=flat-square)](https://securityscorecards.dev/viewer/?uri=github.com/sagikazarmark/cryptbox)
 [![crates.io](https://img.shields.io/crates/v/cryptbox?style=flat-square)](https://crates.io/crates/cryptbox)
-[![docs.rs](https://img.shields.io/docsrs/cryptbox?style=flat-square)](https://docs.rs/cryptbox)
+[![docs.rs](https://img.shields.io/docsrs/cryptbox?style=flat-square)](https://docs.rs/cryptbox/latest/cryptbox/)
 
-**Strongly typed application-layer encryption for Rust values.**
-
-CryptBox keeps serialization, byte-oriented cryptography, key management, and
-storage adapters separate. Its primary `Encrypted<T, Profile>` type contains
-plaintext while in application memory and requires explicit plaintext access.
+**Application-layer encryption for sensitive data in Rust.**
 
 > [!WARNING]
-> The v0.1 XChaCha20-Poly1305 suite and binary formats are experimental pending
-> focused cryptographic review and independent verification of the provisional
-> test vectors. Do not treat this draft implementation as production-ready.
+> CryptBox has not been independently audited, and its API may change before
+> 1.0. Its stored format is stable as of 0.6; 0.6 cannot read values stored by
+> 0.5 (see [upgrading stored values from 0.5](docs/operations.md#upgrading-stored-values-from-05)).
+> **Use it at your own risk.**
+>
+> Read the [threat model](docs/security.md) for its security boundaries and
+> outstanding review work.
 
 ## Features
 
-- **Typed encryption policy.** Profiles select a codec, optional length-hiding padding, stable binding, and key context without making application types noisy.
-- **Authenticated field binding.** Stable random field IDs prevent valid ciphertext from moving between different logical fields.
-- **Non-disruptive rotation.** Ciphertext names one current or historical key generation, so rotation does not require an immediate rewrite.
-- **Explicit searchable projections.** Separately keyed, intentionally truncated blind indexes support equality candidate lookup.
-- **Storage preparation.** `Prepared` derives ciphertext and blind indexes from the same source value.
-- **Explicit migration facility.** The opt-in `migrate` feature adds permissive reads and a resumable sweep for migrating plaintext or a previous encryption solution to CryptBox; the default decoding path stays strict.
-- **SQLx integration.** Backend-specific features map encrypted values and blind indexes to PostgreSQL `BYTEA` or SQLite `BLOB` columns.
-- **Secret hygiene.** Keys and CryptBox-owned plaintext buffers are zeroized; `Debug` output is redacted.
+- 🛡️ **Encryption for your Rust data models.**
+- 🔌 **Database and serialization support.**
+- 🔑 **Rotate keys at your own pace.**
+- 🔎 **Search encrypted data using blind indexes.**
+- 🧹 **Prevent sensitive data exposure in logs.**
 
-## Quick Start
+| Capability | Protection |
+| --- | --- |
+| ✅ It CAN | Protect encrypted values in a stolen database dump when keys stay separate. |
+| ❌ It CAN'T | Protect a compromised application. |
+| ❌ It CAN'T | Prevent replay, or cross-row substitution of standalone values. |
+
+## Quick start
+
+```sh
+cargo add cryptbox --features derive
+cargo add zeroize
+```
+
+To store records with SQLx, also enable `sqlx-sqlite` or `sqlx-postgres`; see
+[features](docs/features.md) for the `sqlx` features your own dependency needs.
+
+### Seal a record
+
+Mark the sensitive fields of a row, seal it before you store it, and open it
+after you load it:
 
 ```rust
-use cryptbox::{
-    Encrypted, EncryptionKey, EncryptionProfile, Field, FieldBound,
-    GlobalKeyContext, LocalEncryptionKeyring, Utf8, field_id,
-};
+use cryptbox::{EncryptionKey, EncryptionKeyring, Record, Secret};
+
+#[derive(Record)]
+struct User {
+    #[cryptbox(record_id)]
+    id: i64,
+    // Generate a fresh UUID for every seal, such as with `uuidgen`.
+    #[cryptbox(seal = "7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13")]
+    ssn: Secret<String>,
+}
 
 fn main() -> Result<(), cryptbox::Error> {
-    struct UserEmail;
+    // Demo only: this key is lost when the process exits.
+    let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 
-    impl Field for UserEmail {
-        const ID: cryptbox::FieldId =
-            field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-        const NAME: &'static str = "user-email";
-    }
+    let user = User {
+        id: 7,
+        ssn: Secret::new("123-45-6789".to_owned()),
+    };
 
-    impl EncryptionProfile<String> for UserEmail {
-        type Codec = Utf8;
-        type Binding = FieldBound<Self>;
-        type Keys = GlobalKeyContext;
-        type Padding = cryptbox::NoPadding;
-    }
+    // What you store: `id` as it is, and `ssn` sealed.
+    let stored: StoredUser = user.seal(&keys)?;
 
-    let keys = LocalEncryptionKeyring::new(
-        EncryptionKey::generate()?,
-        [],
-    )?;
-    let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
-    let ciphertext = email.encrypt_with(&(), &keys)?;
-    let decrypted = ciphertext.decrypt_with(&(), &keys)?;
-
-    assert_eq!(decrypted.expose_secret(), "mark@example.com");
+    // What you load: opening authenticates and decrypts every sealed field.
+    let user = User::open(stored, &keys)?;
+    assert_eq!(user.ssn.expose_secret(), "123-45-6789");
     Ok(())
 }
 ```
 
-The quick start generates an ephemeral key. Durable data requires the same key
-and ID across process restarts, provisioned through the application's secret
-management path. Existing 32-byte root keys can be loaded from hex or standard
-Base64 after the application fetches its configuration:
+`#[derive(Record)]` generates the stored form, `StoredUser`, with a `Sealed`
+column for each sealed field. Every sealed field is bound to its seal and to the
+row's `id`, so a value copied to another field or row fails to open. The record
+ID must exist before sealing, so generate it in the application (UUIDv7 is a good
+choice), not with an autoincrement column. `Secret` keeps the SSN out of `Debug`
+output and wipes it on drop; read it with `expose_secret`.
 
-```rust,ignore
-use cryptbox::{EncryptionKey, key_id};
+### Look it up by email
+
+Encryption is randomized, so equal values never share ciphertext. To find a row
+by a sealed field, add a blind index, a keyed hash stored beside it:
+
+```rust
+use cryptbox::{
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, Keys,
+    Record, Secret,
+};
 use zeroize::Zeroizing;
 
-let encoded = Zeroizing::new(std::env::var("MASTER_KEY")?);
-let key = EncryptionKey::from_base64(
-    key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"),
-    &encoded,
-)?;
-```
+#[derive(Record)]
+struct User {
+    #[cryptbox(record_id)]
+    id: i64,
+    #[cryptbox(seal = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25")]
+    #[cryptbox(blind_index(
+        id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
+        bits = 32,
+        normalize = normalize_email,
+        normalizer = "email/1",
+    ))]
+    email: String,
+    #[cryptbox(seal = "7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13")]
+    ssn: Secret<String>,
+}
 
-`from_hex` and `from_base64` decode directly into zeroizing key storage, but
-cannot erase copies retained by the operating system or process environment.
-Generate encryption and blind-index keys independently.
+/// Lookups match emails that differ only in case or surrounding spaces.
+fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    Ok(Zeroizing::new(email.trim().to_ascii_lowercase().into_bytes()))
+}
 
-For applications with many profiles, the `profile!` macro generates the same
-marker type and trait implementations while keeping the binding choice
-explicit:
+fn main() -> Result<(), cryptbox::Error> {
+    // Blind indexes have their own, independently generated keys.
+    let keys = Keys::new(EncryptionKeyring::new(EncryptionKey::generate()?, [])?)
+        .with_blind_indexes(BlindIndexKeyring::new(BlindIndexKey::generate()?, [])?);
 
-```rust
-cryptbox::profile! {
-    pub UserEmail: String {
-        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-        name: "user-email",
-        codec: cryptbox::Utf8,
-        binding: field_bound,
-    }
+    let user = User {
+        id: 7,
+        email: "Mark@Example.com".to_owned(),
+        ssn: Secret::new("123-45-6789".to_owned()),
+    };
+
+    // The stored form gains an `email_index` column; write it with the row.
+    let stored: StoredUser = user.seal(&keys)?;
+
+    // Select the rows whose `email_index` is one of the probes...
+    let probes = User::EMAIL_INDEX.probes("mark@example.com", &keys)?;
+    assert!(probes.contains(&stored.email_index));
+
+    // ...then open those rows, keeping only the real matches.
+    let found = User::EMAIL_INDEX.open_matching("mark@example.com", [stored], &keys)?;
+    let user = found.into_iter().next().expect("one match")?;
+    assert_eq!(user.ssn.expose_secret(), "123-45-6789");
+    Ok(())
 }
 ```
 
-Use `binding: unbound` to explicitly opt out of field binding. Add
-`keys: ApplicationKeys` to select a custom key context; otherwise the macro
-uses `GlobalKeyContext`. Add `padding: cryptbox::PadToBlock<16>` or
-`padding: cryptbox::PadToLength<256>` to hide encoded lengths; otherwise the
-macro uses `NoPadding`.
+`normalize` defines which emails are equal, and `normalizer = "email/1"` names
+those rules. Stored indexes depend on the rules, not the name: when the rules
+change, bump the name and give the index a new `id`, then derive its indexes
+again. The name only makes the change visible in a schema snapshot. `User::EMAIL_INDEX` is the index handle the derive generates. An
+index reveals which rows share an email, and a 32-bit index also selects some
+rows that do not match, so `open_matching` decrypts each candidate and compares
+it before returning a match.
 
-## Testing
+Without the derive, implement `Seal` for a value type and seal it with
+`Sealed::seal`; see the [API docs](https://docs.rs/cryptbox/latest/cryptbox/).
+For real keys, read [loading keys](docs/guide.md#loading-keys) in the guide; it
+also covers key rotation and storage with SQLx.
 
-Applications that use context-less methods or automatic storage adapters should
-install `GlobalKeyContext` once in the binary entry point. Do not install it from
-test setup or reusable library code: it is process-global and cannot be replaced
-or reset. Most tests should keep their keyring local and use the explicit
-`encrypt_with`, `decrypt_with`, `prepare_with`, `with_index_with`,
-`needs_reencryption_with`, and `reencrypt_with` methods. This keeps tests
-independent and safe to run in parallel.
+## Documentation
 
-Tests that exercise automatic storage adapters cannot pass a provider directly.
-Such a test binary can select an application-defined `KeyContext` whose provider
-delegates through an `RwLock`:
-
-```rust
-use std::sync::{OnceLock, RwLock};
-
-use cryptbox::{
-    BlindIndexKeyProvider, EncryptionKey, EncryptionKeyProvider, KeyContext,
-    KeyId, KeyProviderError, LocalEncryptionKeyring,
-};
-
-struct TestKeys(RwLock<LocalEncryptionKeyring>);
-
-static TEST_KEYS: OnceLock<TestKeys> = OnceLock::new();
-
-impl TestKeys {
-    fn replace(keys: LocalEncryptionKeyring) -> Result<(), KeyProviderError> {
-        let context = TEST_KEYS.get_or_init(|| Self(RwLock::new(keys.clone())));
-        *context.0.write().map_err(|_| KeyProviderError::Unavailable)? = keys;
-        Ok(())
-    }
-}
-
-impl EncryptionKeyProvider for TestKeys {
-    fn current_key(&self) -> Result<EncryptionKey, KeyProviderError> {
-        self.0
-            .read()
-            .map_err(|_| KeyProviderError::Unavailable)?
-            .current_key()
-    }
-
-    fn key(&self, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
-        self.0
-            .read()
-            .map_err(|_| KeyProviderError::Unavailable)?
-            .key(id)
-    }
-}
-
-impl KeyContext for TestKeys {
-    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, KeyProviderError> {
-        TEST_KEYS
-            .get()
-            .map(|keys| keys as &dyn EncryptionKeyProvider)
-            .ok_or(KeyProviderError::NotInitialized)
-    }
-
-    fn blind_index_keys() -> Result<&'static dyn BlindIndexKeyProvider, KeyProviderError> {
-        Err(KeyProviderError::Unavailable)
-    }
-}
-```
-
-Set `type Keys = TestKeys` on profiles used by those tests and call
-`TestKeys::replace` before each case. The context is still shared across the test
-process, so tests that replace it must be serialized. Add a second locked
-provider when automatic blind-index operations also need test-specific keys.
-
-## Diagnostics
-
-`Field::ID` is the stable machine identifier; `Field::NAME` is a human-readable
-display label that may change without migrating encrypted data. Include both
-when attaching field context to application-owned errors, logs, traces, or
-metrics:
-
-```rust,ignore
-tracing::warn!(
-    error = %error,
-    field_id = %UserEmail::ID,
-    field_name = UserEmail::NAME,
-    operation = "decrypt",
-    "CryptBox operation failed",
-);
-```
-
-Field names must not contain plaintext, record-specific data, or key material.
-They may still reveal application schema, so applications decide where to emit
-them. CryptBox does not emit logs or require an observability framework.
-
-## Examples
-
-- [Key rotation](examples/key_rotation.rs): `cargo run --example key_rotation`
-- [Re-encryption sweep](examples/reencryption_sweep.rs): `cargo run --example reencryption_sweep --features sqlx-sqlite`
-- [Legacy migration](examples/legacy_migration.rs): `cargo run --example legacy_migration --features migrate,sqlx-sqlite`
-- [Plaintext migration](examples/plaintext_migration.rs): `cargo run --example plaintext_migration --features migrate,sqlx-sqlite`
-- [Blind-index lookup](examples/blind_indexes.rs): `cargo run --example blind_indexes`
-- [In-memory SQLite storage](examples/sqlx_sqlite.rs): `cargo run --example sqlx_sqlite --features sqlx-sqlite`
-
-The [maintenance sweep guide](docs/reencryption-sweep.md) covers batching,
-optimistic concurrency, interruption recovery, verification, and historical-key
-retirement for ciphertext and blind indexes. The
-[legacy migration guide](docs/legacy-migration.md) covers adopting CryptBox over
-plaintext or data encrypted by a previous solution with the `migrate` feature.
-
-## Blind Indexes
-
-Blind indexes intentionally leak equality and frequency information. They are
-candidate selectors, not authoritative matches: decrypt candidate rows and
-compare normalized plaintext before accepting a result. Do not use a truncated
-blind index as a uniqueness constraint, and avoid indexing low-cardinality or
-highly skewed sensitive values.
-
-Encryption keys and blind-index keys use independent providers and must be
-generated independently. During blind-index key rotation, query with every
-probe returned by `blind_index_probes`, then rewrite stored indexes separately.
-
-## Feature Flags
-
-- `json` enables the Serde JSON codec.
-- `migrate` enables explicit migration from plaintext or a previous encryption solution, intended for a bounded migration window only.
-- `postcard` enables the Serde Postcard codec.
-- `sqlx-postgres` enables SQLx 0.8 `BYTEA` support for PostgreSQL.
-- `sqlx-sqlite` enables SQLx 0.8 `BLOB` support for SQLite.
-
-No features are enabled by default. Features are additive and can be combined.
-Both SQLx adapters support automatic encryption and decryption only for
-unit-context profiles; typed ciphertext and blind indexes remain available for
-profiles with explicit binding contexts. The SQLx features activate their
-database backends but do not select an application async runtime or TLS stack.
-CryptBox intentionally does not implement blanket Serde serialization for
-`Encrypted<T, Profile>` because plaintext-versus-ciphertext semantics must be
-explicit.
-
-The [crate documentation](https://docs.rs/cryptbox/latest/cryptbox/#features)
-is the authoritative reference for feature semantics and constraints.
-
-## Development
-
-Run the standard checks with:
-
-```text
-cargo fmt --all --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo deny check
-cargo test --locked --all-targets --all-features
-cargo test --locked --doc --all-features
-cargo doc --locked --no-deps --all-features
-```
-
-Run the repository's Dagger checks with `dagger check`.
-
-The exact experimental formats and provisional vectors are documented in
-[`docs/wire-format.md`](docs/wire-format.md).
+- [Guide](docs/guide.md): records and tenants, how it works, loading and choosing keys, schema, storage and search, testing.
+- [Operations](docs/operations.md): key rotation, maintenance sweeps, legacy migration, shredding.
+- [Security](docs/security.md): threat model and review status.
+- [Wire format](docs/wire-format.md), [features](docs/features.md), [glossary](docs/glossary.md), [API](https://docs.rs/cryptbox/latest/cryptbox/).
+- [Examples](examples/README.md): start with the [records example](examples/records/README.md),
+  which extends the quick start with SQLx, a keyring per org, and a JSON message.
 
 ## License
 

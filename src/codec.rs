@@ -1,13 +1,13 @@
 use zeroize::Zeroizing;
 
-use crate::{CodecError, CodecErrorKind};
+use crate::{CodecError, CodecErrorKind, Secret};
 
-#[cfg(any(feature = "json", feature = "postcard"))]
+#[cfg(feature = "json")]
 struct ZeroizingByteBuffer {
     bytes: Zeroizing<Vec<u8>>,
 }
 
-#[cfg(any(feature = "json", feature = "postcard"))]
+#[cfg(feature = "json")]
 impl ZeroizingByteBuffer {
     fn new() -> Self {
         Self {
@@ -17,11 +17,6 @@ impl ZeroizingByteBuffer {
 
     fn into_bytes(self) -> Zeroizing<Vec<u8>> {
         self.bytes
-    }
-
-    fn push(&mut self, byte: u8) {
-        self.reserve(1);
-        self.bytes.push(byte);
     }
 
     fn extend_from_slice(&mut self, bytes: &[u8]) {
@@ -55,15 +50,6 @@ impl ZeroizingByteBuffer {
     }
 }
 
-#[cfg(feature = "postcard")]
-impl Extend<u8> for ZeroizingByteBuffer {
-    fn extend<I: IntoIterator<Item = u8>>(&mut self, iter: I) {
-        for byte in iter {
-            self.push(byte);
-        }
-    }
-}
-
 #[cfg(feature = "json")]
 impl std::io::Write for ZeroizingByteBuffer {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
@@ -78,10 +64,54 @@ impl std::io::Write for ZeroizingByteBuffer {
 
 /// Encodes and decodes typed values independently from encryption.
 ///
-/// A profile's codec is part of its persistent schema: ciphertext does not
+/// A codec is a strategy: it does not decide which values use it. A seal names
+/// its codec with [`Seal::Codec`](crate::Seal::Codec). Only `String`, `Vec<u8>`,
+/// and their [`Secret`] wrappers have a built-in default, which a derived seal
+/// uses when it names no codec.
+///
+/// A seal's codec is part of its persistent schema: ciphertext does not
 /// contain a codec identifier or codec version. Changing the emitted bytes or
-/// decode compatibility requires migrating existing data.
-pub trait Codec<T>: Sized + 'static {
+/// decode compatibility requires migrating existing data. [`Self::ID`] names
+/// the representation for the [schema manifest](crate::schema::Manifest), and
+/// [`assert_encoding`](crate::testing::assert_encoding) pins its bytes in tests.
+///
+/// # Implementor obligations
+///
+/// This interface is extensible; [`crate::Padding`] is a closed set of policies.
+/// Encode only the intended value, and decode into an owned value that does not
+/// borrow the temporary input. Returned encoding buffers must be
+/// [`Zeroizing<Vec<u8>>`]; protect intermediate plaintext allocations on
+/// success and error paths too. Wrapping a growable buffer does not erase an old
+/// allocation abandoned by reallocation. Preallocate before writing sensitive
+/// bytes, or copy into a new zeroizing allocation and wipe the old one before
+/// releasing it. Avoid third-party serializers that leave unprotected copies.
+///
+/// Discard parser/serializer errors that retain input; return only a sanitized
+/// [`CodecError`] category without logging plaintext. The decoded `T` belongs to
+/// the application, which zeroizes it only if it is a [`Secret`] or erases
+/// itself on drop.
+///
+/// See the [custom-seal example] and [ownership reference].
+///
+#[doc = concat!(
+    "[custom-seal example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/custom_seal/README.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#ownership-and-erasure",
+)]
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot encode `{T}`",
+    label = "not a codec for `{T}`",
+    note = "name a codec that implements `Codec<{T}>`, such as `cryptbox::Json`"
+)]
+pub trait Codec<T>: 'static {
+    /// A stable name for this codec's byte representation, such as `"json/1"`.
+    ///
+    /// The [schema manifest](crate::schema::Manifest) reports it; ciphertext
+    /// does not store it. Give every representation its own ID, and change the
+    /// ID whenever the emitted bytes or decode compatibility change, so a
+    /// manifest snapshot flags the migration. The crate's codecs are `"utf8"`,
+    /// `"raw"`, and `"json/1"`.
+    const ID: &'static str;
+
     /// Encodes `value` into an owned, zeroizing plaintext buffer.
     ///
     /// # Errors
@@ -97,11 +127,65 @@ pub trait Codec<T>: Sized + 'static {
     fn decode(bytes: &[u8]) -> Result<T, CodecError>;
 }
 
+/// The built-in default codec of a value type, which a seal uses when it names
+/// none.
+///
+/// Exactly four types have one, permanently and independent of features:
+/// `String` and [`Secret<String>`] use [`Utf8`], and `Vec<u8>` and
+/// [`Secret<Vec<u8>>`] use [`Raw`]. A `Secret` value is stored with exactly the
+/// same bytes as the value it wraps. The set is closed: a default another crate
+/// could declare, or change behind a Cargo feature, would silently change the
+/// bytes of every seal that relied on it. Every other type names its codec on
+/// the seal, or is stored through a `transparent` seal (ADR-0007).
+///
+/// Only derive-generated code names this trait.
+#[doc(hidden)]
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` has no default codec",
+    label = "`{Self}` has no built-in codec",
+    note = "only `String`, `Vec<u8>`, `Secret<String>`, and `Secret<Vec<u8>>` have one: name the codec with `codec = …`, such as `codec = cryptbox::Json`; the codec is persistent schema"
+)]
+pub trait DefaultCodec: Sized + sealed::Sealed {
+    /// The codec a seal over this type uses when it names none.
+    type Codec: Codec<Self>;
+}
+
+mod sealed {
+    use crate::Secret;
+
+    pub trait Sealed {}
+
+    impl Sealed for String {}
+    impl Sealed for Vec<u8> {}
+    impl Sealed for Secret<String> {}
+    impl Sealed for Secret<Vec<u8>> {}
+}
+
+impl DefaultCodec for String {
+    type Codec = Utf8;
+}
+
+impl DefaultCodec for Vec<u8> {
+    type Codec = Raw;
+}
+
+impl DefaultCodec for Secret<String> {
+    type Codec = Utf8;
+}
+
+impl DefaultCodec for Secret<Vec<u8>> {
+    type Codec = Raw;
+}
+
 /// Encodes an owned byte vector without transformation.
+///
+/// Also encodes [`Secret<Vec<u8>>`] with identical bytes.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Raw;
 
 impl Codec<Vec<u8>> for Raw {
+    const ID: &'static str = "raw";
+
     fn encode(value: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         Ok(Zeroizing::new(value.clone()))
     }
@@ -111,11 +195,27 @@ impl Codec<Vec<u8>> for Raw {
     }
 }
 
+impl Codec<Secret<Vec<u8>>> for Raw {
+    const ID: &'static str = "raw";
+
+    fn encode(value: &Secret<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, CodecError> {
+        Self::encode(value.expose_secret())
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Secret<Vec<u8>>, CodecError> {
+        <Self as Codec<Vec<u8>>>::decode(bytes).map(Secret::new)
+    }
+}
+
 /// Encodes an owned string as UTF-8.
+///
+/// Also encodes [`Secret<String>`] with identical bytes.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Utf8;
 
 impl Codec<String> for Utf8 {
+    const ID: &'static str = "utf8";
+
     fn encode(value: &String) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         Ok(Zeroizing::new(value.as_bytes().to_vec()))
     }
@@ -127,7 +227,28 @@ impl Codec<String> for Utf8 {
     }
 }
 
+impl Codec<Secret<String>> for Utf8 {
+    const ID: &'static str = "utf8";
+
+    fn encode(value: &Secret<String>) -> Result<Zeroizing<Vec<u8>>, CodecError> {
+        Self::encode(value.expose_secret())
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Secret<String>, CodecError> {
+        <Self as Codec<String>>::decode(bytes).map(Secret::new)
+    }
+}
+
 /// Encodes Serde values as JSON.
+///
+/// Available with the `json` feature (which implies `serde`). Its [`Codec::ID`]
+/// is `"json/1"`. Floats decode to exactly the value that was encoded.
+///
+/// The value type's Serde representation is persistent schema. A serde
+/// attribute change such as `rename_all` changes the stored bytes of every seal
+/// that uses the type, and a renamed field fails to decode or silently takes its
+/// default. Pin each seal's bytes with
+/// [`assert_encoding`](crate::testing::assert_encoding).
 #[cfg(feature = "json")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Json;
@@ -137,6 +258,8 @@ impl<T> Codec<T> for Json
 where
     T: serde::Serialize + serde::de::DeserializeOwned,
 {
+    const ID: &'static str = "json/1";
+
     fn encode(value: &T) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         let mut bytes = ZeroizingByteBuffer::new();
 
@@ -150,25 +273,19 @@ where
     }
 }
 
-/// Encodes Serde values with Postcard.
-#[cfg(feature = "postcard")]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Postcard;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[cfg(feature = "postcard")]
-impl<T> Codec<T> for Postcard
-where
-    T: serde::Serialize + serde::de::DeserializeOwned,
-{
-    fn encode(value: &T) -> Result<Zeroizing<Vec<u8>>, CodecError> {
-        let bytes = ZeroizingByteBuffer::new();
+    // These defaults are persistent schema: changing one would silently misread
+    // every value a seal sealed without naming its codec.
+    #[test]
+    fn the_built_in_types_have_permanent_default_codecs() {
+        fn assert_default<T: DefaultCodec<Codec = C>, C>() {}
 
-        postcard::to_extend(value, bytes)
-            .map(ZeroizingByteBuffer::into_bytes)
-            .map_err(|_| CodecError::new(CodecErrorKind::Encoding))
-    }
-
-    fn decode(bytes: &[u8]) -> Result<T, CodecError> {
-        postcard::from_bytes(bytes).map_err(|_| CodecError::new(CodecErrorKind::Decoding))
+        assert_default::<String, Utf8>();
+        assert_default::<Vec<u8>, Raw>();
+        assert_default::<Secret<String>, Utf8>();
+        assert_default::<Secret<Vec<u8>>, Raw>();
     }
 }

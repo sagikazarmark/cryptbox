@@ -5,25 +5,8 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use cryptbox::{Codec, Encrypted, EncryptionProfile, GlobalKeyContext, Raw, Secret, Unbound, Utf8};
+use cryptbox::{Codec, Raw, Secret, Utf8};
 use zeroize::Zeroize;
-
-struct ExampleProfile;
-
-impl EncryptionProfile<String> for ExampleProfile {
-    type Binding = Unbound;
-    type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
-}
-
-#[test]
-fn encrypted_values_require_explicit_plaintext_access() {
-    let value = Encrypted::<_, ExampleProfile>::new("mark@example.com".to_owned());
-
-    assert_eq!(value.expose_secret(), "mark@example.com");
-    assert_eq!(format!("{value:?}"), "Encrypted([REDACTED])");
-}
 
 #[test]
 fn built_in_byte_codecs_round_trip_owned_values() {
@@ -69,20 +52,6 @@ fn json_codec_round_trips_serde_values() {
 
     assert_eq!(
         <Json as Codec<Vec<String>>>::decode(&encoded).unwrap(),
-        value
-    );
-}
-
-#[cfg(feature = "postcard")]
-#[test]
-fn postcard_codec_round_trips_serde_values() {
-    use cryptbox::Postcard;
-
-    let value = vec![1_u32, 2, 3];
-    let encoded = <Postcard as Codec<Vec<u32>>>::encode(&value).unwrap();
-
-    assert_eq!(
-        <Postcard as Codec<Vec<u32>>>::decode(&encoded).unwrap(),
         value
     );
 }

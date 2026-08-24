@@ -1,49 +1,35 @@
-//! Rotates encryption keys without interrupting reads, then rewrites old ciphertext.
+//! Rotates encryption keys without interrupting reads, then reseals old values.
 
-use cryptbox::{
-    Encrypted, EncryptionKey, EncryptionProfile, Field, FieldBound, GlobalKeyContext, KeyId,
-    LocalEncryptionKeyring, Utf8, field_id, inspect_ciphertext, key_id,
-};
+use cryptbox::{EncryptionKey, EncryptionKeyring, KeyId, Seal, Sealed, key_id};
 
-const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
-const CURRENT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
+const OLD_KEY_ID: KeyId = key_id!("2a26018a-d8ef-4942-9519-da7e35bcafbf");
+const CURRENT_KEY_ID: KeyId = key_id!("e5d53b60-9e45-4ef9-9198-9bc88ac7409e");
 
-struct UserEmail;
-
-impl Field for UserEmail {
-    const ID: cryptbox::FieldId = field_id!("30000000-0000-4000-8000-000000000003");
-    const NAME: &'static str = "user-email";
-}
-
-impl EncryptionProfile<String> for UserEmail {
-    type Binding = FieldBound<Self>;
-    type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
-}
+/// A user's email, its own value: stored with exactly the bytes of its `String`.
+#[derive(Debug, PartialEq, Seal)]
+#[cryptbox(id = "9758e010-b78a-43e6-9686-0b0f6790d8eb", transparent)]
+struct UserEmail(String);
 
 fn main() -> Result<(), cryptbox::Error> {
     // Demo-only material. Load independently generated 32-byte secrets in production.
     let old_key = EncryptionKey::new(OLD_KEY_ID, [0x11; 32]);
-    let old_keys = LocalEncryptionKeyring::new(old_key.clone(), [])?;
-    let value = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
-    let stored = value.encrypt_with(&(), &old_keys)?;
+    let old_keys = EncryptionKeyring::new(old_key.clone(), [])?;
+    let value = UserEmail("mark@example.com".to_owned());
+    let stored = Sealed::<UserEmail>::seal(&value, &old_keys)?;
 
     let current_key = EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]);
-    let rotated_keys = LocalEncryptionKeyring::new(current_key, [old_key])?;
+    let rotated_keys = EncryptionKeyring::new(current_key, [old_key])?;
 
-    assert!(stored.needs_reencryption_with(&rotated_keys)?);
+    assert!(stored.needs_reseal(&rotated_keys)?);
     assert_eq!(
-        stored.decrypt_with(&(), &rotated_keys)?.expose_secret(),
-        "mark@example.com"
+        stored.open(&rotated_keys)?,
+        UserEmail("mark@example.com".to_owned())
     );
 
-    let rewritten = stored.reencrypt_with(&(), &rotated_keys)?;
-    assert_eq!(
-        inspect_ciphertext(rewritten.as_bytes())?.key_id(),
-        CURRENT_KEY_ID
-    );
-    assert!(!rewritten.needs_reencryption_with(&rotated_keys)?);
+    let rewritten = stored.reseal(&rotated_keys)?;
+    assert_eq!(rewritten.key_id(), CURRENT_KEY_ID);
+    assert!(!rewritten.needs_reseal(&rotated_keys)?);
 
+    println!("Key rotation and reseal succeeded.");
     Ok(())
 }

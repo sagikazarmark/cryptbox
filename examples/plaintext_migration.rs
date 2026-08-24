@@ -3,48 +3,39 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, EncryptionKey,
-    EncryptionProfile, Field, FieldBound, GlobalKeyContext, IndexId, IndexKeyId, KeyId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, blind_index_probes, field_id, index_id,
-    index_key_id, key_id,
-    migrate::{MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, IndexKeyId, KeyId, Seal, Sealed, index_key_id, key_id,
+    migrate::{MaybeSealed, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
-const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
-const CURRENT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
-const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("30000000-0000-4000-8000-000000000003");
-const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("40000000-0000-4000-8000-000000000004");
+const OLD_KEY_ID: KeyId = key_id!("3e6cec61-5b67-4cb8-91b9-5430362c8e30");
+const CURRENT_KEY_ID: KeyId = key_id!("a35c87a8-9779-48c9-b03d-03972a92bc45");
+const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("0e53698f-f685-44a7-8a2a-925559b303b4");
+const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("d36ea642-619a-4d37-b3d2-1b54298c31b8");
 
+#[derive(Seal)]
+#[cryptbox(id = "fb3669ca-fb43-4111-b8c1-306459fe4222", value = String)]
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
-    const NAME: &'static str = "user-email";
+#[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
+fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    Ok(Zeroizing::new(
+        input.trim().to_ascii_lowercase().into_bytes(),
+    ))
 }
 
-impl EncryptionProfile<String> for UserEmail {
-    type Binding = FieldBound<Self>;
-    type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
-}
-
+#[derive(BlindIndexSpec)]
+#[cryptbox(
+    id = "3b209afe-0a9e-4da7-8f23-13ebd5831149",
+    seal = UserEmail,
+    bits = 128,
+    query = str,
+    normalize = normalize_email,
+    normalizer = "email/1",
+)]
 struct EmailLookup;
-
-impl BlindIndexMetadata for EmailLookup {
-    const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
-    const BITS: usize = 128;
-}
-
-impl BlindIndexSpec<String> for EmailLookup {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(Zeroizing::new(
-            input.trim().to_ascii_lowercase().into_bytes(),
-        ))
-    }
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
     futures_executor::block_on(run())
@@ -78,8 +69,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let current_index_key = BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x44; 32]);
 
     // One row was encrypted before a key rotation, one after it.
-    let old_keys = LocalEncryptionKeyring::new(old_key.clone(), [])?;
-    let old_index_keys = LocalBlindIndexKeyring::new(old_index_key.clone(), [])?;
+    let old_keys = EncryptionKeyring::new(old_key.clone(), [])?;
+    let old_index_keys = BlindIndexKeyring::new(old_index_key.clone(), [])?;
     insert_encrypted(
         &mut connection,
         "third@example.com",
@@ -87,8 +78,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
         &old_index_keys,
     )
     .await?;
-    let keys = LocalEncryptionKeyring::new(current_key, [old_key])?;
-    let index_keys = LocalBlindIndexKeyring::new(current_index_key, [old_index_key])?;
+    let keys = EncryptionKeyring::new(current_key, [old_key])?;
+    let index_keys = BlindIndexKeyring::new(current_index_key, [old_index_key])?;
     insert_encrypted(&mut connection, "fourth@example.com", &keys, &index_keys).await?;
 
     // The steady-state decoding path stays strict: legacy plaintext fails.
@@ -96,26 +87,25 @@ async fn run() -> Result<(), Box<dyn Error>> {
         .fetch_one(&mut connection)
         .await?;
     assert!(matches!(
-        Ciphertext::<String, UserEmail>::from_bytes(legacy),
+        Sealed::<UserEmail>::from_bytes(legacy),
         Err(cryptbox::Error::NotCiphertext),
     ));
 
     // During the bounded migration window, reads are permissive. Writes are
-    // not: MaybeEncrypted has no Encode, so storing always encrypts.
+    // not: MaybeSealed has no Encode, so storing always seals.
     let rows = sqlx::query("SELECT id, email_ciphertext FROM users ORDER BY id")
         .fetch_all(&mut connection)
         .await?;
     for row in rows {
         let id: i64 = row.try_get("id")?;
-        let value: MaybeEncrypted<String, UserEmail> = row.try_get("email_ciphertext")?;
+        let value: MaybeSealed<UserEmail> = row.try_get("email_ciphertext")?;
         assert_eq!(value.is_legacy(), id <= 2);
-        let email = value.decrypt_with(&(), &keys)?;
-        assert!(email.expose_secret().ends_with("@example.com"));
+        let email = value.open(&keys)?;
+        assert!(email.ends_with("@example.com"));
     }
 
     // One sweep encrypts the legacy rows and re-encrypts the stale one.
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-        .with_index_with::<EmailLookup>(&index_keys);
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let table = SweepTable::new("users", "id", "email_ciphertext").with_index_column("email_bidx");
     let mut store = SqliteSweepStore::new(&mut connection, &table);
@@ -127,19 +117,16 @@ async fn run() -> Result<(), Box<dyn Error>> {
     assert_eq!(report.current, 1);
     assert_eq!(report.conflicts, 0);
 
-    // The read-only verification pass proves the terminal state: no legacy,
-    // stale, or malformed rows remain, so the permissive reads and the
-    // `migrate` feature can be removed, and historical keys retired.
+    // A full pass checks structure/generations, not authenticated readability,
+    // decoded-value validity, or index consistency. All writers are current here,
+    // so terminal convergence permits closing permissive reads. Backups and other
+    // stores may still need historical keys: online removal is not destruction.
     let report = sweep.verify(&mut store).await?;
     assert!(report.is_terminal());
     assert_eq!(report.current, 4);
 
-    // Every row now decodes strictly and is reachable through the index.
-    let probes = blind_index_probes::<EmailLookup, String, FieldBound<UserEmail>>(
-        &"first@example.com".to_owned(),
-        &(),
-        &index_keys,
-    )?;
+    // Separately demonstrate strict authenticated reading for this lookup.
+    let probes = BlindIndex::<EmailLookup>::probes("first@example.com", &index_keys)?;
     let mut matched = 0;
     for probe in probes {
         let rows = sqlx::query("SELECT email_ciphertext FROM users WHERE email_bidx = ?")
@@ -147,9 +134,9 @@ async fn run() -> Result<(), Box<dyn Error>> {
             .fetch_all(&mut connection)
             .await?;
         for row in rows {
-            let ciphertext: Ciphertext<String, UserEmail> = row.try_get("email_ciphertext")?;
-            let candidate = ciphertext.decrypt_with(&(), &keys)?;
-            assert_eq!(candidate.expose_secret(), "first@example.com");
+            let ciphertext: Sealed<UserEmail> = row.try_get("email_ciphertext")?;
+            let candidate = ciphertext.open(&keys)?;
+            assert_eq!(candidate, "first@example.com");
             matched += 1;
         }
     }
@@ -163,17 +150,16 @@ async fn run() -> Result<(), Box<dyn Error>> {
 async fn insert_encrypted(
     connection: &mut SqliteConnection,
     email: &str,
-    keys: &LocalEncryptionKeyring,
-    index_keys: &LocalBlindIndexKeyring,
+    keys: &EncryptionKeyring,
+    index_keys: &BlindIndexKeyring,
 ) -> Result<(), Box<dyn Error>> {
-    let value = cryptbox::Encrypted::<_, UserEmail>::new(email.to_owned());
-    let prepared = value
-        .prepare_with(&(), keys)?
-        .with_index_with::<EmailLookup>(index_keys)?;
+    let value = email.to_owned();
+    let sealed = Sealed::<UserEmail>::seal(&value, keys)?;
+    let index = BlindIndex::<EmailLookup>::derive(&value, index_keys)?;
 
     sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
-        .bind(prepared.ciphertext())
-        .bind(prepared.index::<EmailLookup>()?)
+        .bind(&sealed)
+        .bind(&index)
         .execute(connection)
         .await?;
 

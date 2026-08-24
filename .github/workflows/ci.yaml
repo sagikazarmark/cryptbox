@@ -23,15 +23,20 @@ jobs:
         run: rustup update stable
 
       - name: Check formatting
-        run: cargo fmt --all --check
+        run: |
+          cargo fmt --all --check
+          cargo fmt --manifest-path fuzz/Cargo.toml --all --check
 
       - name: Run Clippy
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
-
-      - name: Check SQLx features independently
         run: |
-          cargo check --locked --all-targets --features sqlx-postgres
-          cargo check --locked --all-targets --features sqlx-sqlite
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo clippy --locked -p cryptbox-derive --all-targets -- -D warnings
+
+      - name: Install cargo-hack
+        run: cargo install cargo-hack --version 0.6.45 --locked
+
+      - name: Test feature combinations
+        run: cargo hack test --locked --feature-powerset --depth 2
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.20.2 --locked
@@ -42,27 +47,73 @@ jobs:
       - name: Run tests
         run: cargo test --locked --all-targets --all-features
 
+      - name: Install cargo-expand
+        run: cargo install cargo-expand --version 1.0.126 --locked
+
+      - name: Test derive macros
+        run: cargo test --locked -p cryptbox-derive
+
       - name: Run examples
         run: |
-          cargo run --locked --example key_rotation
-          cargo run --locked --example reencryption_sweep --features sqlx-sqlite
-          cargo run --locked --example plaintext_migration --features migrate,sqlx-sqlite
-          cargo run --locked --example legacy_migration --features migrate,sqlx-sqlite
-          cargo run --locked --example blind_indexes
-          cargo run --locked --example sqlx_sqlite --features sqlx-sqlite
+          cargo run --locked --example key_rotation --features derive
+          cargo run --locked --example reencryption_sweep --features derive,sqlx-sqlite
+          cargo run --locked --example plaintext_migration --features derive,migrate,sqlx-sqlite
+          cargo run --locked --example legacy_migration --features derive,migrate,sqlx-sqlite
+          cargo run --locked --example blind_indexes --features derive
+          cargo run --locked --example stored_values --features derive,serde
+          cargo run --locked --example sqlx_sqlite --features derive,sqlx-sqlite
+          cargo run --locked --example first_seal
+          cargo run --locked --example tenant_seal
+          cargo run --locked --example custom_seal
+          cargo run --locked --example records --features derive,json,sqlx-sqlite
 
       - name: Run documentation tests
-        run: cargo test --locked --doc --all-features
+        run: |
+          cargo test --locked --doc
+          cargo test --locked --doc --all-features
 
       - name: Build API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
         run: |
           cargo doc --locked --no-deps --no-default-features
           cargo doc --locked --no-deps --all-features
+          cargo doc --locked --no-deps -p cryptbox-derive
 
       - name: Check current compatible dependencies
         run: |
           cargo update
           cargo check --all-targets --all-features
+
+  fuzz:
+    name: Fuzz (${{ matrix.target }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - envelope_parse
+          - envelope_round_trip
+          - blind_index_parse
+          - blind_index_round_trip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust nightly
+        run: rustup toolchain install nightly --profile minimal
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --version 0.13.2 --locked
+
+      - name: Fuzz for a minute
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo +nightly fuzz run "$TARGET" -- -max_total_time=60
 
   msrv:
     name: Rust 1.85

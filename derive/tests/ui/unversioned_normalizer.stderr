@@ -1,0 +1,23 @@
+error: `normalizer` must be a versioned name, such as "email/1": a name, `/`, and a version from 1
+  --> tests/ui/unversioned_normalizer.rs:19:18
+   |
+19 |     normalizer = "",
+   |                  ^^
+
+error: `normalizer` must be a versioned name, such as "email/1": a name, `/`, and a version from 1
+  --> tests/ui/unversioned_normalizer.rs:30:18
+   |
+30 |     normalizer = "email",
+   |                  ^^^^^^^
+
+error: `normalizer` must be a versioned name, such as "email/1": a name, `/`, and a version from 1
+  --> tests/ui/unversioned_normalizer.rs:41:18
+   |
+41 |     normalizer = "email/0",
+   |                  ^^^^^^^^^
+
+error: `normalizer` must be a versioned name, such as "email/1": a name, `/`, and a version from 1
+  --> tests/ui/unversioned_normalizer.rs:55:26
+   |
+55 |             normalizer = "email/v1",
+   |                          ^^^^^^^^^^

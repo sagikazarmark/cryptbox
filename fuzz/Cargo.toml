@@ -1,0 +1,54 @@
+[package]
+name = "cryptbox-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1.4.1", features = ["derive"] }
+cryptbox = { path = ".." }
+libfuzzer-sys = "0.4.10"
+zeroize = "1.8.1"
+
+# Its own workspace, not a member of the crate's: the targets build only with
+# nightly and cargo-fuzz.
+[workspace]
+members = ["."]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+[[bin]]
+name = "envelope_parse"
+path = "fuzz_targets/envelope_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "envelope_round_trip"
+path = "fuzz_targets/envelope_round_trip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "blind_index_parse"
+path = "fuzz_targets/blind_index_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "blind_index_round_trip"
+path = "fuzz_targets/blind_index_round_trip.rs"
+test = false
+doc = false
+bench = false

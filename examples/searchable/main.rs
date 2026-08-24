@@ -1,0 +1,623 @@
+//! Searchable storage example; see README.md for setup, commands, and expected output.
+
+use std::{env, error::Error, path::Path};
+
+use cryptbox::envelope::inspect_blind_index;
+use cryptbox::{
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Seal, Sealed, index_key_id, key_id,
+};
+use sqlx::{Connection, QueryBuilder, Row};
+use zeroize::Zeroizing;
+
+#[cfg(feature = "legacy-migration")]
+mod migration;
+
+#[cfg(any(
+    all(feature = "postgres", feature = "sqlite"),
+    not(any(feature = "postgres", feature = "sqlite"))
+))]
+compile_error!("select exactly one of postgres or sqlite");
+
+#[cfg(feature = "postgres")]
+type Db = sqlx::Postgres;
+#[cfg(feature = "sqlite")]
+type Db = sqlx::Sqlite;
+type DbConnection = <Db as sqlx::Database>::Connection;
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+type SealedEmail = Sealed<UserEmail>;
+
+#[derive(Seal)]
+#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
+struct UserEmail;
+
+fn normalize_email(input: &str) -> std::result::Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    // Illustrative ASCII equality policy, not general email canonicalization.
+    let mut bytes = Zeroizing::new(input.trim().as_bytes().to_vec());
+    bytes.make_ascii_lowercase();
+    Ok(bytes)
+}
+
+#[derive(BlindIndexSpec)]
+#[cryptbox(
+    id = "a80824bc-f281-49ee-a2ed-0b6d213d44ce",
+    seal = UserEmail,
+    bits = 128,
+    query = str,
+    normalize = normalize_email,
+    normalizer = "email/1",
+)]
+struct EmailLookup;
+fn validate_email(value: &str) -> Result<()> {
+    // Match the lookup policy's trimming while preserving the original stored value.
+    // Illustrative application syntax only, not general email validation or provenance.
+    let bytes = value.trim().as_bytes();
+    if bytes.len() > 254
+        || !bytes.contains(&b'@')
+        || !bytes.iter().all(|byte| byte.is_ascii_graphic())
+    {
+        return Err("application email validation failed".into());
+    }
+    Ok(())
+}
+
+fn database_url() -> Result<Zeroizing<String>> {
+    env::var("DATABASE_URL")
+        .map(Zeroizing::new)
+        // NotUnicode contains the original bytes, potentially including credentials.
+        .map_err(|_| "database configuration: DATABASE_URL must be valid UTF-8 and present".into())
+}
+
+fn load_root_key(directory: &Path, name: &str) -> Result<Zeroizing<[u8; 32]>> {
+    let text = Zeroizing::new(
+        std::fs::read_to_string(directory.join(name))
+            .map_err(|_| format!("key configuration: cannot read {name}"))?,
+    );
+    let mut bytes = Zeroizing::new([0; 32]);
+    hex::decode_to_slice(text.trim(), bytes.as_mut())
+        .map_err(|_| format!("key configuration: {name} must contain 64 hex digits"))?;
+    Ok(bytes)
+}
+
+fn load_keyrings_from_env() -> Result<(EncryptionKeyring, BlindIndexKeyring)> {
+    let directory =
+        env::var("CRYPTBOX_KEY_DIR").map_err(|_| "key configuration: CRYPTBOX_KEY_DIR required")?;
+    let directory = Path::new(&directory);
+    // These IDs are immutable companions of the provisioned files; never reassign them.
+    let encryption_1 = || -> Result<EncryptionKey> {
+        Ok(EncryptionKey::new(
+            key_id!("a20b59cd-809b-4ff1-9776-4f4199687287"),
+            *load_root_key(directory, "encryption-1.hex")?,
+        ))
+    };
+    let index_1 = || -> Result<BlindIndexKey> {
+        Ok(BlindIndexKey::new(
+            index_key_id!("830040f0-0c49-4ab2-87e6-cb2184981776"),
+            *load_root_key(directory, "index-1.hex")?,
+        ))
+    };
+    let (encryption_state, index_state) =
+        match (env::var("CRYPTBOX_ENCRYPTION"), env::var("CRYPTBOX_INDEX")) {
+            (Ok(encryption), Ok(index)) => (encryption, index),
+            (Err(env::VarError::NotPresent), Err(env::VarError::NotPresent)) => {
+                // Preserve the introductory tutorial's both-readable shorthand.
+                let state = match env::var("CRYPTBOX_GENERATION").as_deref() {
+                    Ok("1") => "staged",
+                    Ok("2") => "2",
+                    _ => return Err("key configuration: CRYPTBOX_GENERATION must be 1 or 2".into()),
+                };
+                (state.to_owned(), state.to_owned())
+            }
+            _ => {
+                return Err(
+                    "key configuration: set both CRYPTBOX_ENCRYPTION and CRYPTBOX_INDEX".into(),
+                );
+            }
+        };
+    // State 1 does not even load generation 2. Staging retains generation 1 for writes.
+    let encryption = match encryption_state.as_str() {
+        "1" => EncryptionKeyring::new(encryption_1()?, [])?,
+        "2-only" => EncryptionKeyring::new(
+            EncryptionKey::new(
+                key_id!("34d4431d-cec6-453c-9a62-bec73c872420"),
+                *load_root_key(directory, "encryption-2.hex")?,
+            ),
+            [],
+        )?,
+        "staged" | "2" | "staged-3" | "3" => {
+            let encryption_1 = encryption_1()?;
+            let encryption_2 = EncryptionKey::new(
+                key_id!("34d4431d-cec6-453c-9a62-bec73c872420"),
+                *load_root_key(directory, "encryption-2.hex")?,
+            );
+            if matches!(encryption_state.as_str(), "staged-3" | "3") {
+                let encryption_3 = EncryptionKey::new(
+                    key_id!("d80e4e43-9173-4dbd-95ce-e880ff054689"),
+                    *load_root_key(directory, "encryption-3.hex")?,
+                );
+                if encryption_state == "staged-3" {
+                    EncryptionKeyring::new(encryption_2, [encryption_1, encryption_3])?
+                } else {
+                    EncryptionKeyring::new(encryption_3, [encryption_1, encryption_2])?
+                }
+            } else if encryption_state == "staged" {
+                EncryptionKeyring::new(encryption_1, [encryption_2])?
+            } else {
+                EncryptionKeyring::new(encryption_2, [encryption_1])?
+            }
+        }
+        _ => {
+            return Err(
+                "key configuration: CRYPTBOX_ENCRYPTION must be 1, staged, 2, 2-only, staged-3 or 3".into(),
+            );
+        }
+    };
+    let indexes = match index_state.as_str() {
+        "1" => BlindIndexKeyring::new(index_1()?, [])?,
+        "2-only" => BlindIndexKeyring::new(
+            BlindIndexKey::new(
+                index_key_id!("bcce33bf-947f-42a5-9a83-0fd3d4c3050f"),
+                *load_root_key(directory, "index-2.hex")?,
+            ),
+            [],
+        )?,
+        "staged" | "2" | "staged-3" | "3" => {
+            let index_1 = index_1()?;
+            let index_2 = BlindIndexKey::new(
+                index_key_id!("bcce33bf-947f-42a5-9a83-0fd3d4c3050f"),
+                *load_root_key(directory, "index-2.hex")?,
+            );
+            if matches!(index_state.as_str(), "staged-3" | "3") {
+                let index_3 = BlindIndexKey::new(
+                    index_key_id!("9acf5222-d606-4d7b-b16f-0277cc947c40"),
+                    *load_root_key(directory, "index-3.hex")?,
+                );
+                if index_state == "staged-3" {
+                    BlindIndexKeyring::new(index_2, [index_1, index_3])?
+                } else {
+                    BlindIndexKeyring::new(index_3, [index_1, index_2])?
+                }
+            } else if index_state == "staged" {
+                BlindIndexKeyring::new(index_1, [index_2])?
+            } else {
+                BlindIndexKeyring::new(index_2, [index_1])?
+            }
+        }
+        _ => {
+            return Err(
+                "key configuration: CRYPTBOX_INDEX must be 1, staged, 2, 2-only, staged-3 or 3"
+                    .into(),
+            );
+        }
+    };
+    Ok((encryption, indexes))
+}
+
+const CANARY: &str = "rotation-canary@example.invalid";
+
+#[cfg(feature = "maintenance")]
+async fn audit_current(
+    connection: &mut DbConnection,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
+) -> Result<usize> {
+    // Operator holds a write/restore pause across the full audit and retirement gate.
+    let mut after: Option<i64> = None;
+    let mut count = 0;
+    loop {
+        let rows = sqlx::query("SELECT id, email, email_lookup FROM users WHERE ($1 IS NULL OR id > $1) ORDER BY id LIMIT 2")
+            .bind(after).fetch_all(&mut *connection).await?;
+        if rows.is_empty() {
+            break;
+        }
+        for row in rows {
+            // This maintenance fixture requires non-NULL values, as does its packaged sweep.
+            let sealed: SealedEmail = row.try_get("email")?;
+            let value = sealed.open(encryption)?;
+            validate_email(&value)?;
+            let expected = BlindIndex::<EmailLookup>::derive(&value, indexes)?;
+            if expected.as_bytes() != row.try_get::<Vec<u8>, _>("email_lookup")? {
+                return Err("index consistency check failed".into());
+            }
+            after = Some(row.try_get("id")?);
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
+#[cfg(feature = "maintenance")]
+async fn maintenance(
+    connection: &mut DbConnection,
+    command: &str,
+    run: &str,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
+) -> Result<()> {
+    #[cfg(feature = "postgres")]
+    use cryptbox::migrate::PostgresSweepStore as Store;
+    #[cfg(feature = "sqlite")]
+    use cryptbox::migrate::SqliteSweepStore as Store;
+    use cryptbox::migrate::{RowPlanner, RowState, Sweep, SweepStore, SweepTable};
+
+    // Run identity belongs to the operator; this store persists only (name, cursor).
+    let table = SweepTable::new("users", "id", "email")
+        .with_index_column("email_lookup")
+        .with_progress("cryptbox_migration_progress", run);
+    let planner = RowPlanner::<UserEmail>::new(encryption).with_index::<EmailLookup>(indexes);
+    #[cfg(feature = "legacy-migration")]
+    let legacy = migration::PreviousEncryption::load()?;
+    #[cfg(feature = "legacy-migration")]
+    let planner = planner.with_legacy(&legacy);
+    let mut store = Store::new(connection, &table);
+    store.ensure_progress_table().await?;
+    match command {
+        "sweep-status" => println!("Checkpoint: {:?}.", store.load_checkpoint().await?),
+        "sweep-conflict" => {
+            // Fixture only: interleave an application write after loading the exact old pair.
+            let rows = store.load_batch(None, 1).await?;
+            let row = rows.first().ok_or("conflict rehearsal needs a stale row")?;
+            let planner =
+                RowPlanner::<UserEmail>::new(encryption).with_index::<EmailLookup>(indexes);
+            let plan = planner.plan_row(&(), &row.ciphertext, &[&row.indexes[0]])?;
+            let replacement = plan.write().ok_or("conflict rehearsal needs a stale row")?;
+            let mut writer = DbConnection::connect(&database_url()?).await?;
+            put(
+                &mut writer,
+                row.cursor,
+                Some("concurrent@example.com".to_owned()),
+                encryption,
+                indexes,
+            )
+            .await?;
+            writer.close().await?;
+            let updated = store.update(row, replacement).await?;
+            if updated {
+                return Err("concurrent application write was overwritten".into());
+            }
+            println!("Conflicts: 1.");
+        }
+        "sweep-batch" | "sweep-uncheckpointed" => {
+            // One step of `Sweep::run`, so the fixture can rehearse process loss
+            // between batches: uncheckpointed writes land, progress is not saved.
+            let after = store.load_checkpoint().await?;
+            let rows = store.load_batch(after.as_ref(), 2).await?;
+            let (mut current, mut stale, mut conflicts) = (0, 0, 0);
+            for row in &rows {
+                let indexes: Vec<&[u8]> = row.indexes.iter().map(Vec::as_slice).collect();
+                let plan = planner.plan_row(&(), &row.ciphertext, &indexes)?;
+                let written = match plan.write() {
+                    Some(replacement) => store.update(row, replacement).await?,
+                    None => true,
+                };
+                match plan.state() {
+                    _ if !written => conflicts += 1,
+                    RowState::Current => current += 1,
+                    RowState::Stale => stale += 1,
+                    _ => {}
+                }
+            }
+            let checkpoint = rows.last().map(|row| row.cursor);
+            if let (Some(cursor), "sweep-batch") = (&checkpoint, command) {
+                store.save_checkpoint(cursor).await?;
+            }
+            println!(
+                "Checkpoint: {checkpoint:?}; current: {current}; stale: {stale}; conflicts: {conflicts}."
+            );
+        }
+        "sweep-verify" => {
+            // A fresh full pass: never resume verification from rewrite progress.
+            let report = Sweep::new(planner)
+                .with_batch_size(2)
+                .verify(&mut store)
+                .await?;
+            println!(
+                "Complete: {}; current: {}; stale: {}; legacy: {}; malformed: {}.",
+                report.is_terminal(),
+                report.current,
+                report.stale,
+                report.legacy,
+                report.malformed
+            );
+        }
+        _ => return Err("unknown maintenance command".into()),
+    }
+    Ok(())
+}
+
+fn rotation_canary(
+    path: &str,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
+) -> Result<()> {
+    let value = CANARY.to_owned();
+    let sealed = Sealed::<UserEmail>::seal(&value, encryption)?;
+    let index = BlindIndex::<EmailLookup>::derive(&value, indexes)?;
+    // Out-of-band synthetic data: never put a future generation in the live users table.
+    std::fs::write(
+        path,
+        format!(
+            "{}\n{}\n",
+            hex::encode(sealed.as_bytes()),
+            hex::encode(index.as_bytes())
+        ),
+    )?;
+    println!("Canary saved.");
+    Ok(())
+}
+
+fn rotation_ready(
+    path: &str,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
+) -> Result<()> {
+    let text = std::fs::read_to_string(path)?;
+    let lines: Vec<_> = text.lines().collect();
+    if lines.len() != 2 {
+        return Err("invalid canary".into());
+    }
+    let sealed = SealedEmail::from_bytes(hex::decode(lines[0])?)?;
+    if sealed.open(encryption)? != CANARY {
+        return Err("canary plaintext mismatch".into());
+    }
+    let token = hex::decode(lines[1])?;
+    let probes = BlindIndex::<EmailLookup>::probes(CANARY, indexes)?;
+    if !probes.iter().any(|probe| probe.as_bytes() == token) {
+        return Err("canary index generation unavailable or mismatched".into());
+    }
+    println!("Ready.");
+    Ok(())
+}
+
+async fn put(
+    connection: &mut DbConnection,
+    id: i64,
+    email: Option<String>,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
+) -> Result<()> {
+    if let Some(email) = &email {
+        validate_email(email)?;
+    }
+    let sealed = email
+        .as_ref()
+        .map(|email| Sealed::<UserEmail>::seal(email, encryption))
+        .transpose()?;
+    let index = email
+        .as_ref()
+        .map(|email| BlindIndex::<EmailLookup>::derive(email, indexes))
+        .transpose()?;
+    // One statement: insert OR update both representations from the same source.
+    sqlx::query("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)
+        ON CONFLICT (id) DO UPDATE SET email = excluded.email, email_lookup = excluded.email_lookup")
+        .bind(id).bind(sealed).bind(index.as_ref().map(BlindIndex::as_bytes))
+        .execute(connection).await?;
+    println!("Stored {id}.");
+    Ok(())
+}
+
+async fn get(connection: &mut DbConnection, id: i64, keys: &EncryptionKeyring) -> Result<()> {
+    let row = sqlx::query("SELECT email FROM users WHERE id = $1")
+        .bind(id)
+        .fetch_one(connection)
+        .await?;
+    // Decode the stored envelope now; choose when to open it later.
+    let stored: Option<SealedEmail> = row.try_get("email")?;
+    match stored {
+        Some(sealed) => println!("{id}: {}", sealed.open(keys)?),
+        None => println!("{id}: NULL"),
+    }
+    Ok(())
+}
+
+async fn search(
+    connection: &mut DbConnection,
+    query: &str,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
+) -> Result<()> {
+    let probes = BlindIndex::<EmailLookup>::probes(query, indexes)?;
+    let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
+    let mut values = sql.separated(", ");
+    for probe in &probes {
+        values.push_bind(probe.as_bytes());
+    }
+    values.push_unseparated(") ORDER BY id");
+    let rows = sql.build().fetch_all(connection).await?;
+    let mut matches = Vec::<i64>::new();
+    let mut rejected = 0;
+    for row in rows {
+        let sealed: SealedEmail = row.try_get("email")?;
+        let candidate = sealed.open(encryption)?;
+        if BlindIndex::<EmailLookup>::verify_candidate(query, &candidate)? {
+            matches.push(row.try_get("id")?);
+        } else {
+            rejected += 1; // A collision is an ordinary non-match, not an assertion failure.
+        }
+    }
+    println!("Matches: {matches:?}; rejected: {rejected}.");
+    Ok(())
+}
+
+#[cfg(feature = "macro-check")]
+async fn macro_put(
+    connection: &mut DbConnection,
+    id: i64,
+    email: String,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
+) -> Result<()> {
+    validate_email(&email)?;
+    let sealed = Sealed::<UserEmail>::seal(&email, encryption)?;
+    let index = BlindIndex::<EmailLookup>::derive(&email, indexes)?;
+    let sealed = &sealed;
+    let index = index.as_bytes();
+    // PostgreSQL's macro sees BYTEA, not the custom wrapper: override input inference.
+    sqlx::query!("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)
+        ON CONFLICT (id) DO UPDATE SET email = excluded.email, email_lookup = excluded.email_lookup",
+        id, sealed as _, index)
+        .execute(connection).await?;
+    println!("Stored {id}.");
+    Ok(())
+}
+
+#[cfg(feature = "macro-check")]
+async fn macro_get(connection: &mut DbConnection, id: i64, keys: &EncryptionKeyring) -> Result<()> {
+    // `?` preserves SQL NULL; the alias selects CryptBox's SQLx Decode implementation.
+    let row = sqlx::query!(
+        r#"SELECT email AS "email?: SealedEmail" FROM users WHERE id = $1"#,
+        id
+    )
+    .fetch_one(connection)
+    .await?;
+    match row.email {
+        Some(sealed) => println!("{id}: {}", sealed.open(keys)?),
+        None => println!("{id}: NULL"),
+    }
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    run().await.map_err(sanitize_database_error)
+}
+
+fn sanitize_database_error(error: Box<dyn Error>) -> Box<dyn Error> {
+    let mut cause: Option<&(dyn Error + 'static)> = Some(error.as_ref());
+    while let Some(current) = cause {
+        // Also covers database errors wrapped in SweepError::Store.
+        if current.is::<sqlx::Error>() {
+            return "database operation failed".into();
+        }
+        cause = current.source();
+    }
+    // Configuration values are sanitized at their read boundary. Other operations
+    // use static categories, sanitized CryptBox errors, or non-value-bearing IO/parse
+    // errors. Review newly introduced upstream errors before passing them through.
+    error
+}
+
+async fn run() -> Result<()> {
+    let (encryption, indexes) = load_keyrings_from_env()?; // Fail before opening storage if key loading fails.
+    let args: Vec<String> = env::args().skip(1).collect();
+    if let [command, path] = args.as_slice() {
+        match command.as_str() {
+            "rotation-canary" => return rotation_canary(path, &encryption, &indexes),
+            "rotation-ready" => return rotation_ready(path, &encryption, &indexes),
+            _ => {}
+        }
+    }
+    let mut connection = DbConnection::connect(&database_url()?).await?;
+    #[cfg(feature = "legacy-migration")]
+    if args
+        .first()
+        .is_some_and(|arg| arg.starts_with("migration-"))
+    {
+        migration::command(&mut connection, &args, &encryption, &indexes).await?;
+        connection.close().await?;
+        return Ok(());
+    }
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        ["init"] => {
+            #[cfg(feature = "postgres")]
+            let schema = include_str!("searchable-postgres.sql");
+            #[cfg(feature = "sqlite")]
+            let schema = include_str!("searchable-sqlite.sql");
+            sqlx::raw_sql(schema).execute(&mut connection).await?;
+            println!("Schema ready.");
+        }
+        ["put", id, email] => {
+            put(
+                &mut connection,
+                id.parse()?,
+                Some((*email).to_owned()),
+                &encryption,
+                &indexes,
+            )
+            .await?
+        }
+        ["put-null", id] => put(&mut connection, id.parse()?, None, &encryption, &indexes).await?,
+        ["get", id] => get(&mut connection, id.parse()?, &encryption).await?,
+        #[cfg(all(feature = "maintenance", feature = "sqlite"))]
+        ["recovery-copy", path] => {
+            // SQLite makes a consistent standalone copy, including any committed WAL data.
+            // Refuse replacement even of an empty artifact; SQL also rejects nonempty targets.
+            if Path::new(path).exists() {
+                return Err("database copy destination already exists".into());
+            }
+            sqlx::query("VACUUM INTO $1")
+                .bind(path)
+                .execute(&mut connection)
+                .await?;
+            println!("Database copy saved.");
+        }
+        #[cfg(feature = "maintenance")]
+        ["audit-current"] => {
+            let count = audit_current(&mut connection, &encryption, &indexes).await?;
+            println!("Audited: {count} authenticated, current-index rows.");
+        }
+        #[cfg(feature = "maintenance")]
+        [
+            command @ ("sweep-status"
+            | "sweep-batch"
+            | "sweep-uncheckpointed"
+            | "sweep-verify"
+            | "sweep-conflict"),
+            run,
+        ] => {
+            maintenance(&mut connection, command, run, &encryption, &indexes).await?;
+        }
+        ["generations", id] => {
+            let row = sqlx::query("SELECT email, email_lookup FROM users WHERE id = $1")
+                .bind(id.parse::<i64>()?)
+                .fetch_one(&mut connection)
+                .await?;
+            let sealed: SealedEmail = row.try_get("email")?;
+            let index: Vec<u8> = row.try_get("email_lookup")?;
+            // Structural metadata only; use get/search for authenticated reads.
+            println!(
+                "Encryption: {}; index: {}.",
+                sealed.key_id(),
+                inspect_blind_index(&index)?.index_key_id()
+            );
+        }
+        #[cfg(feature = "macro-check")]
+        ["macro-get", id] => macro_get(&mut connection, id.parse()?, &encryption).await?,
+        #[cfg(feature = "macro-check")]
+        ["macro-put", id, email] => {
+            macro_put(
+                &mut connection,
+                id.parse()?,
+                (*email).to_owned(),
+                &encryption,
+                &indexes,
+            )
+            .await?
+        }
+        ["search", query] => search(&mut connection, query, &encryption, &indexes).await?,
+        ["demo-false-candidate", target, source] => {
+            // Test fixture ONLY: deliberately break index/plaintext consistency.
+            sqlx::query("UPDATE users SET email_lookup = (SELECT email_lookup FROM users WHERE id = $1) WHERE id = $2")
+                .bind(source.parse::<i64>()?).bind(target.parse::<i64>()?)
+                .execute(&mut connection).await?;
+            println!("False candidate injected.");
+        }
+        _ => {
+            return Err(concat!(
+                "usage: init | put ID EMAIL | put-null ID | get ID | search EMAIL | ",
+                "generations ID | rotation-canary FILE | rotation-ready FILE; ",
+                "with maintenance: sweep-status RUN | sweep-batch RUN | sweep-verify RUN | ",
+                "sweep-uncheckpointed RUN | sweep-conflict RUN | audit-current; ",
+                "with sqlite,maintenance: recovery-copy NEW_FILE"
+            )
+            .into());
+        }
+    }
+    connection.close().await?;
+    Ok(())
+}

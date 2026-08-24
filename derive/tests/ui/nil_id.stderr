@@ -1,0 +1,11 @@
+error: `id` must not be the nil UUID: generate a fresh one, such as with `uuidgen`
+ --> tests/ui/nil_id.rs:2:17
+  |
+2 | #[cryptbox(id = "00000000-0000-0000-0000-000000000000", value = String)]
+  |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `seal` must not be the nil UUID: generate a fresh one, such as with `uuidgen`
+ --> tests/ui/nil_id.rs:9:23
+  |
+9 |     #[cryptbox(seal = "00000000-0000-0000-0000-000000000000")]
+  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

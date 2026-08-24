@@ -1,0 +1,5 @@
+error: blind-index bits must be between 1 and 256
+  --> tests/ui/bad_bits.rs:16:12
+   |
+16 |     bits = 257,
+   |            ^^^

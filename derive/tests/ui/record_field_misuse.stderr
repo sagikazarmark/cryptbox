@@ -1,0 +1,47 @@
+error: `created_at` has no role: mark it `#[cryptbox(seal = "<uuid>")]` to encrypt it, `#[cryptbox(plaintext)]` to store it as it is, or `#[cryptbox(record_id)]`
+ --> tests/ui/record_field_misuse.rs:8:5
+  |
+8 |     created_at: i64,
+  |     ^^^^^^^^^^
+
+error: unknown `cryptbox` key `sael` on a record field; expected `record_id`, `seal`, `plaintext`, `codec`, `padding`, `name`, `blind_index`, or `stored`
+  --> tests/ui/record_field_misuse.rs:16:16
+   |
+16 |     #[cryptbox(sael = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
+   |                ^^^^
+
+error: `id` has more than one role: a field is exactly one of `record_id`, `seal`, or `plaintext`
+  --> tests/ui/record_field_misuse.rs:23:27
+   |
+23 |     #[cryptbox(record_id, seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
+   |                           ^^^^
+
+error: unknown `cryptbox` key `bound` on a record field; expected `record_id`, `seal`, `plaintext`, `codec`, `padding`, `name`, `blind_index`, or `stored`
+  --> tests/ui/record_field_misuse.rs:34:16
+   |
+34 |     #[cryptbox(bound)]
+   |                ^^^^^
+
+error: `seal` must be a hyphenated UUID, such as "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64"
+  --> tests/ui/record_field_misuse.rs:45:23
+   |
+45 |     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319")]
+   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: `codec` configures a field's seal; `handle` is not sealed
+  --> tests/ui/record_field_misuse.rs:61:27
+   |
+61 |     #[cryptbox(plaintext, codec = cryptbox::Json)]
+   |                           ^^^^^
+
+error: `handle` is not sealed, so it has no blind index: seal it to index it
+  --> tests/ui/record_field_misuse.rs:62:16
+   |
+62 |     #[cryptbox(blind_index(
+   |                ^^^^^^^^^^^
+
+error: `email` has more than one `blind_index`: a field takes one, stored in `email_index`; derive any other outside the record, with its own `BlindIndexSpec` over the field's seal
+  --> tests/ui/record_field_misuse.rs:83:16
+   |
+83 |     #[cryptbox(blind_index(
+   |                ^^^^^^^^^^^

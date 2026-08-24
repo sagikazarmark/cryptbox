@@ -7,10 +7,7 @@ use sqlx::{
     sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef},
 };
 
-use crate::{
-    Binding, BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted,
-    EncryptionProfile,
-};
+use crate::{BlindIndex, BlindIndexSpec, ContextKind, Seal, Sealed};
 
 fn blob_type_info() -> SqliteTypeInfo {
     <Vec<u8> as Type<Sqlite>>::type_info()
@@ -20,17 +17,7 @@ fn blob_compatible(ty: &SqliteTypeInfo) -> bool {
     <Vec<u8> as Type<Sqlite>>::compatible(ty)
 }
 
-impl<T, Profile> Type<Sqlite> for Encrypted<T, Profile> {
-    fn type_info() -> SqliteTypeInfo {
-        blob_type_info()
-    }
-
-    fn compatible(ty: &SqliteTypeInfo) -> bool {
-        blob_compatible(ty)
-    }
-}
-
-impl<T, Profile> Type<Sqlite> for Ciphertext<T, Profile> {
+impl<F: Seal, C: ContextKind> Type<Sqlite> for Sealed<F, C> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -50,39 +37,7 @@ impl<Spec> Type<Sqlite> for BlindIndex<Spec> {
     }
 }
 
-impl<Spec> Type<Sqlite> for BlindIndexRef<'_, Spec> {
-    fn type_info() -> SqliteTypeInfo {
-        blob_type_info()
-    }
-
-    fn compatible(ty: &SqliteTypeInfo) -> bool {
-        blob_compatible(ty)
-    }
-}
-
-impl<'q, T, Profile> Encode<'q, Sqlite> for Encrypted<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-    Profile::Binding: Binding<Context = ()>,
-{
-    fn encode_by_ref(
-        &self,
-        buffer: &mut Vec<SqliteArgumentValue<'q>>,
-    ) -> Result<IsNull, BoxDynError> {
-        let ciphertext = self.encrypt()?;
-        buffer.push(SqliteArgumentValue::Blob(Cow::Owned(
-            ciphertext.into_bytes(),
-        )));
-
-        Ok(IsNull::No)
-    }
-
-    fn size_hint(&self) -> usize {
-        0
-    }
-}
-
-impl<'q, T, Profile> Encode<'q, Sqlite> for Ciphertext<T, Profile> {
+impl<'q, F: Seal, C: ContextKind> Encode<'q, Sqlite> for Sealed<F, C> {
     fn encode_by_ref(
         &self,
         buffer: &mut Vec<SqliteArgumentValue<'q>>,
@@ -116,37 +71,7 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndex<Spec> {
     }
 }
 
-impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
-    fn encode_by_ref(
-        &self,
-        buffer: &mut Vec<SqliteArgumentValue<'q>>,
-    ) -> Result<IsNull, BoxDynError> {
-        buffer.push(SqliteArgumentValue::Blob(Cow::Owned(
-            self.as_bytes().to_vec(),
-        )));
-
-        Ok(IsNull::No)
-    }
-
-    fn size_hint(&self) -> usize {
-        self.as_bytes().len()
-    }
-}
-
-impl<'row, T, Profile> Decode<'row, Sqlite> for Encrypted<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-    Profile::Binding: Binding<Context = ()>,
-{
-    fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
-        let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
-        let ciphertext = Ciphertext::<T, Profile>::from_bytes(bytes)?;
-
-        Ok(ciphertext.decrypt()?)
-    }
-}
-
-impl<'row, T, Profile> Decode<'row, Sqlite> for Ciphertext<T, Profile> {
+impl<'row, F: Seal, C: ContextKind> Decode<'row, Sqlite> for Sealed<F, C> {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
 
@@ -156,7 +81,7 @@ impl<'row, T, Profile> Decode<'row, Sqlite> for Ciphertext<T, Profile> {
 
 impl<'row, Spec> Decode<'row, Sqlite> for BlindIndex<Spec>
 where
-    Spec: BlindIndexMetadata,
+    Spec: BlindIndexSpec,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
@@ -166,7 +91,7 @@ where
 }
 
 #[cfg(feature = "migrate")]
-impl<T, Profile> Type<Sqlite> for crate::migrate::MaybeEncrypted<T, Profile> {
+impl<F: Seal> Type<Sqlite> for crate::migrate::MaybeSealed<F> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -178,13 +103,11 @@ impl<T, Profile> Type<Sqlite> for crate::migrate::MaybeEncrypted<T, Profile> {
 
 // Migration-window reads only. Decoding classifies bytes without CryptBox or
 // legacy keys; recovery and decryption stay explicit calls. There is no
-// `Encode` counterpart: writes always encrypt through `Encrypted` or
-// `Prepared`.
+// `Encode` counterpart: writes always encrypt through `Sealed`.
 #[cfg(feature = "migrate")]
-impl<'row, T, Profile> Decode<'row, Sqlite> for crate::migrate::MaybeEncrypted<T, Profile>
+impl<'row, F> Decode<'row, Sqlite> for crate::migrate::MaybeSealed<F>
 where
-    Profile: EncryptionProfile<T>,
-    Profile::Binding: Binding<Context = ()>,
+    F: Seal,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;

@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::fmt;
 
 macro_rules! identifier {
     ($name:ident, $description:literal) => {
@@ -8,9 +8,26 @@ macro_rules! identifier {
 
         impl $name {
             /// Creates an identifier from its canonical 16-byte representation.
+            ///
+            /// The bytes are not checked: stored IDs are read through it, and
+            /// the format does not reserve the nil UUID. Declare an ID with
+            /// [`Self::from_u128`] or its macro, which reject the nil UUID.
             #[must_use]
             pub const fn from_bytes(bytes: [u8; 16]) -> Self {
                 Self(bytes)
+            }
+
+            /// Creates an identifier from a UUID's 128 bits, most significant first.
+            ///
+            /// `0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64` names the same identifier
+            /// as the literal `"0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64"`.
+            ///
+            /// # Panics
+            ///
+            /// Panics for the nil UUID, which fails the build in a `const`.
+            #[must_use]
+            pub const fn from_u128(value: u128) -> Self {
+                Self($crate::id::non_nil(value.to_be_bytes()))
             }
 
             /// Returns the canonical 16-byte representation.
@@ -18,28 +35,16 @@ macro_rules! identifier {
             pub const fn as_bytes(&self) -> &[u8; 16] {
                 &self.0
             }
+        }
 
-            /// Parses a UUID literal and can be evaluated at compile time.
-            ///
-            /// # Panics
-            ///
-            /// Panics during constant evaluation when `value` is not a
-            /// hyphenated UUID string.
-            #[doc(hidden)]
-            #[must_use]
-            pub const fn from_uuid_literal(value: &str) -> Self {
-                Self(parse_uuid_literal(value))
+        impl ::std::fmt::Display for $name {
+            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                ::std::fmt::Display::fmt(&::uuid::Uuid::from_bytes(self.0).hyphenated(), formatter)
             }
         }
 
-        impl fmt::Display for $name {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write_uuid(formatter, &self.0)
-            }
-        }
-
-        impl fmt::Debug for $name {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        impl ::std::fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 formatter
                     .debug_tuple(stringify!($name))
                     .field(&format_args!("{}", self))
@@ -47,176 +52,112 @@ macro_rules! identifier {
             }
         }
 
-        impl FromStr for $name {
-            type Err = InvalidIdentifier;
+        impl ::std::str::FromStr for $name {
+            type Err = $crate::InvalidIdentifier;
 
+            /// Parses the hyphenated form, rejecting the nil UUID as the ID macros do.
             fn from_str(value: &str) -> Result<Self, Self::Err> {
-                parse_uuid(value).map(Self)
+                match $crate::id::parse_uuid(value) {
+                    Ok(bytes) if !$crate::id::is_nil(&bytes) => Ok(Self(bytes)),
+                    _ => Err($crate::InvalidIdentifier),
+                }
             }
         }
     };
 }
 
-identifier!(FieldId, "A stable logical encrypted-field identifier.");
-identifier!(KeyId, "An opaque encryption-key generation identifier.");
-identifier!(IndexId, "A stable logical blind-index identifier.");
-identifier!(
-    IndexKeyId,
-    "An opaque blind-index-key generation identifier."
-);
+// Each module declares its identifiers next to what they identify.
+pub(crate) use identifier;
 
-/// Identifies a complete encryption-suite construction.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SuiteId(u8);
-
-impl SuiteId {
-    /// Creates a suite identifier from its wire value.
-    #[must_use]
-    pub const fn new(value: u8) -> Self {
-        Self(value)
-    }
-
-    /// Returns the suite's wire value.
-    #[must_use]
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
-
-impl fmt::Display for SuiteId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
-/// The supplied text is not a canonical hyphenated UUID.
+/// The supplied text is not a hyphenated UUID, or is the nil UUID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct InvalidIdentifier;
 
 impl fmt::Display for InvalidIdentifier {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("identifier must be a hyphenated UUID")
+        formatter.write_str("identifier must be a hyphenated, non-nil UUID")
     }
 }
 
 impl std::error::Error for InvalidIdentifier {}
 
-const fn parse_uuid_literal(value: &str) -> [u8; 16] {
-    let input = value.as_bytes();
+/// Returns `bytes`, failing const evaluation for the nil UUID. Not public API:
+/// the ID macros call it, so a nil literal fails the build.
+#[doc(hidden)]
+#[must_use]
+pub const fn non_nil(bytes: [u8; 16]) -> [u8; 16] {
+    assert!(
+        !is_nil(&bytes),
+        "an ID must not be the nil UUID: generate a fresh one"
+    );
 
-    assert!(input.len() == 36, "identifier must be a hyphenated UUID");
+    bytes
+}
 
-    let mut output = [0_u8; 16];
-    let mut input_index = 0;
-    let mut output_index = 0;
-
-    while input_index < 36 {
-        if input_index == 8 || input_index == 13 || input_index == 18 || input_index == 23 {
-            assert!(input[input_index] == b'-', "identifier has invalid hyphens");
-            input_index += 1;
-        } else {
-            let high = hex_nibble(input[input_index]);
-            let low = hex_nibble(input[input_index + 1]);
-            output[output_index] = (high << 4) | low;
-            input_index += 2;
-            output_index += 1;
+/// Reports whether `bytes` is the nil UUID. Not public API: `assert_unique_ids!`
+/// calls it.
+#[doc(hidden)]
+#[must_use]
+pub const fn is_nil(bytes: &[u8; 16]) -> bool {
+    let mut index = 0;
+    while index < 16 {
+        if bytes[index] != 0 {
+            return false;
         }
+        index += 1;
     }
 
-    output
+    true
 }
 
-const fn hex_nibble(value: u8) -> u8 {
-    match value {
-        b'0'..=b'9' => value - b'0',
-        b'a'..=b'f' => value - b'a' + 10,
-        b'A'..=b'F' => value - b'A' + 10,
-        _ => panic!("identifier contains non-hexadecimal characters"),
-    }
-}
-
-fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
-    let input = value.as_bytes();
-
-    if input.len() != 36 {
+// Accepts only the hyphenated form: `try_parse` also takes simple, braced, and URN
+// forms, which all differ from it in length.
+pub(crate) fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
+    if value.len() != 36 {
         return Err(InvalidIdentifier);
     }
 
-    let mut output = [0_u8; 16];
-    let mut input_index = 0;
-    let mut output_index = 0;
+    uuid::Uuid::try_parse(value)
+        .map(uuid::Uuid::into_bytes)
+        .map_err(|_| InvalidIdentifier)
+}
 
-    while input_index < input.len() {
-        if matches!(input_index, 8 | 13 | 18 | 23) {
-            if input[input_index] != b'-' {
-                return Err(InvalidIdentifier);
-            }
-            input_index += 1;
-        } else {
-            let high = parse_hex_nibble(input[input_index])?;
-            let low = parse_hex_nibble(input[input_index + 1])?;
-            output[output_index] = (high << 4) | low;
-            input_index += 2;
-            output_index += 1;
+#[cfg(test)]
+mod tests {
+    use super::InvalidIdentifier;
+    use crate::SealId;
+
+    const HYPHENATED: &str = "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64";
+
+    #[test]
+    fn parses_and_displays_the_hyphenated_form() {
+        let id: SealId = HYPHENATED.parse().unwrap();
+
+        assert_eq!(id, crate::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64"));
+        assert_eq!(
+            id,
+            SealId::from_u128(0x0b6f_3c2a_8e41_4d57_a9c3_5e1f_2d7b_8a64)
+        );
+        assert_eq!(id.to_string(), HYPHENATED);
+        assert_eq!(
+            "0B6F3C2A-8E41-4D57-A9C3-5E1F2D7B8A64".parse::<SealId>(),
+            Ok(id)
+        );
+    }
+
+    #[test]
+    fn rejects_every_other_form() {
+        for input in [
+            "0b6f3c2a8e414d57a9c35e1f2d7b8a64",
+            "{0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64}",
+            "urn:uuid:0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64",
+            "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a6z",
+            "0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64",
+            "00000000-0000-0000-0000-000000000000",
+            "",
+        ] {
+            assert_eq!(input.parse::<SealId>(), Err(InvalidIdentifier), "{input}");
         }
     }
-
-    Ok(output)
-}
-
-fn parse_hex_nibble(value: u8) -> Result<u8, InvalidIdentifier> {
-    match value {
-        b'0'..=b'9' => Ok(value - b'0'),
-        b'a'..=b'f' => Ok(value - b'a' + 10),
-        b'A'..=b'F' => Ok(value - b'A' + 10),
-        _ => Err(InvalidIdentifier),
-    }
-}
-
-fn write_uuid(formatter: &mut fmt::Formatter<'_>, bytes: &[u8; 16]) -> fmt::Result {
-    for (index, byte) in bytes.iter().enumerate() {
-        if matches!(index, 4 | 6 | 8 | 10) {
-            formatter.write_str("-")?;
-        }
-        write!(formatter, "{byte:02x}")?;
-    }
-
-    Ok(())
-}
-
-/// Creates a [`FieldId`](crate::FieldId) from a UUID literal.
-#[macro_export]
-macro_rules! field_id {
-    ($value:literal) => {{
-        const ID: $crate::FieldId = $crate::FieldId::from_uuid_literal($value);
-        ID
-    }};
-}
-
-/// Creates a [`KeyId`](crate::KeyId) from a UUID literal.
-#[macro_export]
-macro_rules! key_id {
-    ($value:literal) => {{
-        const ID: $crate::KeyId = $crate::KeyId::from_uuid_literal($value);
-        ID
-    }};
-}
-
-/// Creates an [`IndexId`](crate::IndexId) from a UUID literal.
-#[macro_export]
-macro_rules! index_id {
-    ($value:literal) => {{
-        const ID: $crate::IndexId = $crate::IndexId::from_uuid_literal($value);
-        ID
-    }};
-}
-
-/// Creates an [`IndexKeyId`](crate::IndexKeyId) from a UUID literal.
-#[macro_export]
-macro_rules! index_key_id {
-    ($value:literal) => {{
-        const ID: $crate::IndexKeyId = $crate::IndexKeyId::from_uuid_literal($value);
-        ID
-    }};
 }

@@ -1,100 +1,72 @@
 use std::{fmt, marker::PhantomData};
 
-use zeroize::{Zeroize, Zeroizing};
-
 use crate::{
-    Binding, Codec, EncryptionKeyProvider, EncryptionProfile, Error, KeyContext, Padding, decrypt,
-    encrypt, needs_reencryption,
+    Codec, Context, ContextKind, EncryptionKeys, Error, KeyId, Seal, bound,
+    envelope::validated_key_id,
+    seal_context::{self, SealContext},
 };
 
-/// The runtime binding context selected by an encryption profile.
-pub type ProfileContext<T, Profile> =
-    <<Profile as EncryptionProfile<T>>::Binding as Binding>::Context;
-
-/// A plaintext application value that must be encrypted at storage boundaries.
+/// A value sealed with seal `F` in context `C`: an encrypted envelope bound to
+/// the seal and, in a [`Context`], to the context's value.
 ///
-/// This type contains plaintext while it is in application memory. It redacts
-/// `Debug`, does not implement `Display` or `Deref`, and requires explicit
-/// access through [`Self::expose_secret`]. It does not zeroize arbitrary `T`;
-/// use [`Secret`] when the application value supports [`Zeroize`].
+/// This is what applications store. [`Self::seal`] encodes, pads, and encrypts a
+/// value; [`Self::open`] authenticates and decrypts it, and returns the bare
+/// [`Seal::Value`]. Plaintext
+/// hygiene comes from the value type, such as [`Secret`](crate::Secret).
 ///
-/// Plaintext comparison must also be explicit:
+/// `C` is the context besides the seal ID: `()`, the default, for a standalone
+/// value, or a [`Context`], such as [`InRecord`](crate::InRecord) for a record's
+/// field. A value in a context is sealed with [`Self::seal_in`] and opened with
+/// [`Self::open_in`], which take the context's value, such as the record ID;
+/// `#[derive(Record)]` calls them for its sealed fields. A value fails to open in
+/// another context, with [`Error::ContextMismatch`], or with another value.
 ///
-/// ```compile_fail
-/// use cryptbox::Encrypted;
+/// Construction from bytes validates only the envelope structure. Authenticity
+/// is established by opening. Neither `F` nor `C` is encoded in the envelope, so
+/// the type parameters express caller intent rather than proving that stored
+/// bytes were sealed with that seal. With the `serde` feature, this type
+/// serializes only the binary envelope; deserialization performs the same
+/// structural checks as [`Self::from_bytes`], uses no keys, and leaves the bytes
+/// unauthenticated.
 ///
-/// struct Profile;
-/// let left = Encrypted::<_, Profile>::new("secret");
-/// let right = Encrypted::<_, Profile>::new("secret");
-/// let _ = left == right;
+/// # Examples
+///
 /// ```
-pub struct Encrypted<T, Profile> {
-    value: T,
-    profile: PhantomData<fn() -> Profile>,
-}
-
-impl<T, Profile> Encrypted<T, Profile> {
-    /// Wraps a plaintext application value.
-    pub const fn new(value: T) -> Self {
-        Self {
-            value,
-            profile: PhantomData,
-        }
-    }
-
-    /// Explicitly exposes the plaintext application value.
-    #[must_use]
-    pub const fn expose_secret(&self) -> &T {
-        &self.value
-    }
-
-    /// Consumes the wrapper and returns the plaintext application value.
-    #[must_use]
-    pub fn into_secret(self) -> T {
-        self.value
-    }
-}
-
-impl<T: Clone, Profile> Clone for Encrypted<T, Profile> {
-    fn clone(&self) -> Self {
-        Self::new(self.value.clone())
-    }
-}
-
-impl<T, Profile> From<T> for Encrypted<T, Profile> {
-    fn from(value: T) -> Self {
-        Self::new(value)
-    }
-}
-
-impl<T, Profile> fmt::Debug for Encrypted<T, Profile> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Encrypted([REDACTED])")
-    }
-}
-
-/// An encrypted envelope with phantom plaintext and profile types.
+/// use cryptbox::{
+///     EncryptionKey, Seal, SealId, EncryptionKeyring, Padding, Sealed, Utf8,
+/// };
 ///
-/// Construction validates only the envelope structure. Authenticity is
-/// established by decryption. `T` and `Profile` are not encoded in the envelope,
-/// so the type parameters express caller intent rather than proving that stored
-/// bytes were created for that profile.
-pub struct Ciphertext<T, Profile> {
+/// struct UserEmail;
+///
+/// impl Seal for UserEmail {
+///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+///     const PADDING: Padding = Padding::NONE;
+///     type Value = String;
+///     type Codec = Utf8;
+/// }
+///
+/// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+///
+/// let sealed = Sealed::<UserEmail>::seal(&"user@example.com".into(), &keys)?;
+/// assert_eq!(sealed.open(&keys)?, "user@example.com");
+/// # Ok::<(), cryptbox::Error>(())
+/// ```
+pub struct Sealed<F: Seal, C: ContextKind = ()> {
     bytes: Vec<u8>,
-    marker: PhantomData<fn() -> (T, Profile)>,
+    marker: PhantomData<fn() -> (F, C)>,
 }
 
-impl<T, Profile> Ciphertext<T, Profile> {
+impl<F: Seal, C: ContextKind> Sealed<F, C> {
     /// Validates and wraps a binary `CryptBox` envelope.
     ///
     /// # Errors
     ///
     /// Returns an error when the bytes are not a supported, structurally valid
-    /// `CryptBox` envelope. Authentication, profile binding, and codec
-    /// compatibility are deferred until decryption.
+    /// `CryptBox` envelope. Authentication, context, and codec compatibility are
+    /// deferred until the value is opened.
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
         let bytes = bytes.into();
-        crate::inspect_ciphertext(&bytes)?;
+        crate::envelope::inspect_ciphertext(&bytes)?;
 
         Ok(Self::from_validated_bytes(bytes))
     }
@@ -106,7 +78,7 @@ impl<T, Profile> Ciphertext<T, Profile> {
         }
     }
 
-    /// Returns the binary ciphertext envelope.
+    /// Returns the binary envelope.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
@@ -117,9 +89,221 @@ impl<T, Profile> Ciphertext<T, Profile> {
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
+
+    /// Returns the encryption-key generation named by the envelope.
+    ///
+    /// The ID is unauthenticated until the value is opened.
+    #[must_use]
+    pub fn key_id(&self) -> KeyId {
+        validated_key_id(&self.bytes)
+    }
+
+    fn seal_under(
+        value: &F::Value,
+        context: &SealContext,
+        keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<Self, Error> {
+        let plaintext = F::Codec::encode(value)?;
+        let sealed = bound::seal(context, F::PADDING, &plaintext, keys.encryption_keyring())?;
+
+        Ok(Self::from_validated_bytes(sealed))
+    }
+
+    fn open_under(
+        &self,
+        context: &SealContext,
+        keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<F::Value, Error> {
+        let plaintext = bound::open(context, &self.bytes, keys.encryption_keyring())?;
+
+        Ok(F::Codec::decode(&plaintext)?)
+    }
+
+    fn reseal_under(
+        &self,
+        context: &SealContext,
+        from_keys: &(impl EncryptionKeys + ?Sized),
+        to_keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<Self, Error> {
+        let (_, sealed) = bound::reseal(
+            (context, from_keys.encryption_keyring()),
+            (context, to_keys.encryption_keyring()),
+            F::PADDING,
+            &self.bytes,
+        )?;
+
+        Ok(Self::from_validated_bytes(sealed))
+    }
 }
 
-impl<T, Profile> TryFrom<Vec<u8>> for Ciphertext<T, Profile> {
+impl<F: Seal, C: ContextKind> Sealed<F, C> {
+    /// Reports whether this envelope differs from what `F` currently writes.
+    ///
+    /// That is a non-current suite or key, or a padding flag that disagrees
+    /// with [`Seal::PADDING`]. It needs no context value: it compares the
+    /// context's kind, never its value.
+    ///
+    /// Envelope metadata is unauthenticated until the value is opened. A `false`
+    /// result does not establish authenticated readability or codec validity.
+    /// See the complete [key-rotation example] and [maintenance sweep example].
+    ///
+    #[doc = concat!(
+        "[key-rotation example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/key_rotation.rs\n",
+        "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/reencryption_sweep.rs",
+    )]
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ContextMismatch`] for a value sealed under another
+    /// kind of context, or an error for unavailable keys.
+    pub fn needs_reseal(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<bool, Error> {
+        bound::needs_reseal(
+            seal_context::fingerprint(C::RECORD),
+            F::PADDING,
+            &self.bytes,
+            keys.encryption_keyring(),
+        )
+    }
+}
+
+impl<F: Seal> Sealed<F> {
+    /// Encodes and encrypts `value`, bound to the seal.
+    ///
+    /// The value is standalone: it opens with [`Self::open`], and not in a
+    /// [`Context`]. A record field's value is sealed by its record, with
+    /// [`Record::seal`](crate::Record::seal), or with [`Self::seal_in`]; sealed
+    /// here, it fails to open as the record's.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when encoding, padding, key lookup, randomness, or
+    /// encryption fails.
+    pub fn seal(value: &F::Value, keys: &(impl EncryptionKeys + ?Sized)) -> Result<Self, Error> {
+        Self::seal_under(value, &SealContext::standalone::<F>(), keys)
+    }
+
+    /// Authenticates, decrypts, and decodes this value.
+    ///
+    /// Success establishes authenticity under the supplied key and the seal `F`,
+    /// valid padding, and successful decoding with the seal's codec. Apply
+    /// application-level validation separately. This does not establish
+    /// freshness or consistency with a separately stored blind index. A record
+    /// field's value is opened by its record, with
+    /// [`Record::open`](crate::Record::open), or with [`Self::open_in`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::AuthenticationFailed`] for another seal or modified
+    /// bytes, and [`Error::ContextMismatch`] for a value sealed in a
+    /// [`Context`], such as a record field's. Also returns an error for unknown
+    /// keys, unavailable keys, invalid padding, or codec failure.
+    pub fn open(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<F::Value, Error> {
+        self.open_under(&SealContext::standalone::<F>(), keys)
+    }
+
+    /// Opens and reseals this value as `F` currently writes it, with the same
+    /// keys.
+    ///
+    /// The rewrite uses the current suite, key, and [`Seal::PADDING`],
+    /// so a sweep can enable or disable padding. This authenticates the value
+    /// and checks padding, but does not decode it with the seal's codec or
+    /// check any stored blind indexes. Use [`Self::open`] when decoded-value
+    /// readability is required.
+    ///
+    /// # Errors
+    ///
+    /// Returns any opening, padding, or encryption error.
+    pub fn reseal(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<Self, Error> {
+        self.reseal_across(keys, keys)
+    }
+
+    /// Opens this value with `from_keys` and reseals it with `to_keys`.
+    ///
+    /// Use this to move a value to other keys, such as a tenant's data moving
+    /// to another residency's keyring. Like [`Self::reseal`], it authenticates
+    /// and checks padding without decoding the value.
+    ///
+    /// # Errors
+    ///
+    /// Returns any opening error with `from_keys`, or padding or encryption
+    /// error with `to_keys`.
+    pub fn reseal_across(
+        &self,
+        from_keys: &(impl EncryptionKeys + ?Sized),
+        to_keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<Self, Error> {
+        self.reseal_under(&SealContext::standalone::<F>(), from_keys, to_keys)
+    }
+}
+
+impl<F: Seal, C: Context> Sealed<F, C> {
+    /// Encodes and encrypts `value`, bound to the seal and to `context`, the
+    /// value of context `C`, such as a record ID.
+    ///
+    /// `#[derive(Record)]` seals its fields with this, under the record's ID:
+    /// prefer [`Record::seal`](crate::Record::seal) for a whole record.
+    ///
+    /// ```
+    /// use cryptbox::{
+    ///     EncryptionKey, EncryptionKeyring, Error, InRecord, Padding, Seal, SealId, Sealed, Utf8,
+    /// };
+    ///
+    /// struct CustomerEmail;
+    ///
+    /// impl Seal for CustomerEmail {
+    ///     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
+    ///     const PADDING: Padding = Padding::NONE;
+    ///     type Value = String;
+    ///     type Codec = Utf8;
+    /// }
+    ///
+    /// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+    /// let email = "ada@example.com".to_owned();
+    ///
+    /// // The field of the record whose ID is 7.
+    /// let sealed = Sealed::<CustomerEmail, InRecord<i64>>::seal_in(&email, &7, &keys)?;
+    ///
+    /// assert_eq!(sealed.open_in(&7, &keys)?, email);
+    /// assert!(matches!(sealed.open_in(&8, &keys), Err(Error::AuthenticationFailed)));
+    /// # Ok::<(), cryptbox::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when encoding, padding, key lookup, randomness, or
+    /// encryption fails.
+    pub fn seal_in(
+        value: &F::Value,
+        context: &C::Value,
+        keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<Self, Error> {
+        Self::seal_under(value, &SealContext::of::<F, C>(context), keys)
+    }
+
+    /// Authenticates, decrypts, and decodes this value under `context`, the
+    /// value of context `C`, such as the record ID the row stores.
+    ///
+    /// Read `context` from where the value is stored, never from the request
+    /// that asks for it: opening proves the value was sealed with it, not that
+    /// the caller may read it. [`Record::open`](crate::Record::open) opens a
+    /// whole record.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::AuthenticationFailed`] for another seal, another
+    /// context value, or modified bytes, and [`Error::ContextMismatch`] for a
+    /// value sealed in another kind of context, such as a standalone value.
+    /// Also returns any error of [`Sealed::open`].
+    pub fn open_in(
+        &self,
+        context: &C::Value,
+        keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<F::Value, Error> {
+        self.open_under(&SealContext::of::<F, C>(context), keys)
+    }
+}
+
+impl<F: Seal, C: ContextKind> TryFrom<Vec<u8>> for Sealed<F, C> {
     type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
@@ -127,170 +311,35 @@ impl<T, Profile> TryFrom<Vec<u8>> for Ciphertext<T, Profile> {
     }
 }
 
-impl<T, Profile> AsRef<[u8]> for Ciphertext<T, Profile> {
+// Stores the envelope through `Vec<u8>`, as an ORM's `serialize_as` does.
+impl<F: Seal, C: ContextKind> From<Sealed<F, C>> for Vec<u8> {
+    fn from(sealed: Sealed<F, C>) -> Self {
+        sealed.into_bytes()
+    }
+}
+
+impl<F: Seal, C: ContextKind> AsRef<[u8]> for Sealed<F, C> {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
     }
 }
 
-impl<T, Profile> Clone for Ciphertext<T, Profile> {
+impl<F: Seal, C: ContextKind> Clone for Sealed<F, C> {
     fn clone(&self) -> Self {
         Self::from_validated_bytes(self.bytes.clone())
     }
 }
 
-impl<T, Profile> PartialEq for Ciphertext<T, Profile> {
+impl<F: Seal, C: ContextKind> PartialEq for Sealed<F, C> {
     fn eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
 
-impl<T, Profile> Eq for Ciphertext<T, Profile> {}
+impl<F: Seal, C: ContextKind> Eq for Sealed<F, C> {}
 
-impl<T, Profile> fmt::Debug for Ciphertext<T, Profile> {
+impl<F: Seal, C: ContextKind> fmt::Debug for Sealed<F, C> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Ciphertext([REDACTED])")
-    }
-}
-
-impl<T, Profile> Encrypted<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-{
-    /// Encodes and encrypts this value with an explicitly injected provider.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when encoding, padding, key lookup, randomness, or
-    /// encryption fails.
-    pub fn encrypt_with(
-        &self,
-        context: &ProfileContext<T, Profile>,
-        keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Ciphertext<T, Profile>, Error> {
-        let plaintext = Profile::Codec::encode(&self.value)?;
-        let plaintext = Profile::Padding::pad(plaintext)?;
-        let ciphertext = encrypt::<Profile::Binding>(&plaintext, context, keys)?;
-
-        Ok(Ciphertext::from_validated_bytes(ciphertext))
-    }
-}
-
-impl<T, Profile> Encrypted<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-    Profile::Binding: Binding<Context = ()>,
-{
-    /// Encodes and encrypts this value with the profile's global key context.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when providers are uninitialized or when encoding or
-    /// encryption fails.
-    pub fn encrypt(&self) -> Result<Ciphertext<T, Profile>, Error> {
-        self.encrypt_with(&(), Profile::Keys::encryption_keys()?)
-    }
-}
-
-impl<T, Profile> Ciphertext<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-{
-    /// Authenticates, decrypts, and decodes this value with an injected provider.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for invalid envelopes, unknown keys, authentication
-    /// failure, unavailable providers, invalid padding, or codec failure.
-    pub fn decrypt_with(
-        &self,
-        context: &ProfileContext<T, Profile>,
-        keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Encrypted<T, Profile>, Error> {
-        let plaintext = decrypt::<Profile::Binding>(&self.bytes, context, keys)?;
-        let plaintext = Profile::Padding::unpad(plaintext)?;
-        let value = Profile::Codec::decode(&plaintext)?;
-
-        Ok(Encrypted::new(value))
-    }
-
-    /// Reports whether this envelope uses a non-current suite or key.
-    ///
-    /// Envelope metadata is unauthenticated until decryption succeeds.
-    /// See the complete [key-rotation example] and [maintenance sweep example].
-    ///
-    /// [key-rotation example]: https://docs.rs/crate/cryptbox/latest/source/examples/key_rotation.rs
-    /// [maintenance sweep example]: https://docs.rs/crate/cryptbox/latest/source/examples/reencryption_sweep.rs
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for a malformed or unsupported envelope, or unavailable
-    /// provider.
-    pub fn needs_reencryption_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<bool, Error> {
-        needs_reencryption(&self.bytes, keys)
-    }
-
-    /// Decrypts and rewrites this envelope with the active suite and current key.
-    ///
-    /// # Errors
-    ///
-    /// Returns any decryption, padding, or encryption error.
-    pub fn reencrypt_with(
-        &self,
-        context: &ProfileContext<T, Profile>,
-        keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Self, Error> {
-        let plaintext = decrypt::<Profile::Binding>(&self.bytes, context, keys)?;
-        let plaintext = Profile::Padding::unpad(plaintext)?;
-        let plaintext = Profile::Padding::pad(plaintext)?;
-
-        encrypt::<Profile::Binding>(&plaintext, context, keys).map(Self::from_validated_bytes)
-    }
-}
-
-impl<T, Profile> Ciphertext<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-    Profile::Binding: Binding<Context = ()>,
-{
-    /// Decrypts this value with the profile's global key context.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when providers are uninitialized or decryption fails.
-    pub fn decrypt(&self) -> Result<Encrypted<T, Profile>, Error> {
-        self.decrypt_with(&(), Profile::Keys::encryption_keys()?)
-    }
-}
-
-/// Plaintext with zeroization on drop and explicit access semantics.
-pub struct Secret<T: Zeroize> {
-    value: Zeroizing<T>,
-}
-
-impl<T: Zeroize> Secret<T> {
-    /// Wraps plaintext that will be zeroized on drop.
-    pub fn new(value: T) -> Self {
-        Self {
-            value: Zeroizing::new(value),
-        }
-    }
-
-    /// Explicitly exposes the plaintext value.
-    #[must_use]
-    pub fn expose_secret(&self) -> &T {
-        &self.value
-    }
-}
-
-impl<T: Clone + Zeroize> Clone for Secret<T> {
-    fn clone(&self) -> Self {
-        Self::new((*self.value).clone())
-    }
-}
-
-impl<T: Zeroize> fmt::Debug for Secret<T> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Secret([REDACTED])")
+        formatter.write_str("Sealed([REDACTED])")
     }
 }

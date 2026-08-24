@@ -1,5 +1,7 @@
 /// Identifies the table, cursor, and columns a `SQLx` sweep operates on.
 ///
+/// Available with `migrate` and either `sqlx-postgres` or `sqlx-sqlite`.
+///
 /// Identifiers are operator configuration: they are interpolated into SQL
 /// after double-quote escaping, while every value goes through bind
 /// parameters. Never derive identifiers from untrusted input.
@@ -23,6 +25,8 @@ impl SweepTable {
     ///
     /// The progress table defaults to `cryptbox_migration_progress` and the
     /// migration name to `table.ciphertext_column`.
+    /// That default identifies a column, not a rotation: use [`Self::with_progress`]
+    /// with a fresh name for each new target or recovery pass from the beginning.
     #[must_use]
     pub fn new(table: &str, cursor_column: &str, ciphertext_column: &str) -> Self {
         Self {
@@ -37,10 +41,10 @@ impl SweepTable {
 
     /// Registers the next blind-index column.
     ///
-    /// Order must match the [`RowPlanner::with_index_with`] registration
+    /// Order must match the [`RowPlanner::with_index`] registration
     /// order.
     ///
-    /// [`RowPlanner::with_index_with`]: super::RowPlanner::with_index_with
+    /// [`RowPlanner::with_index`]: super::RowPlanner::with_index
     #[must_use]
     pub fn with_index_column(mut self, column: &str) -> Self {
         self.index_columns.push(column.to_owned());
@@ -49,6 +53,11 @@ impl SweepTable {
     }
 
     /// Overrides the progress table and this sweep's durable checkpoint name.
+    ///
+    /// Resume with the same name and fixed target generations. Use a fresh name
+    /// to revisit rows behind a completed checkpoint or start another rotation.
+    /// Only the name and cursor are persisted: the application owns target
+    /// configuration and exclusive progress ownership, including across restarts.
     #[must_use]
     pub fn with_progress(mut self, table: &str, migration_name: &str) -> Self {
         table.clone_into(&mut self.progress_table);
@@ -91,7 +100,7 @@ impl SweepTable {
         predicates.extend(
             columns
                 .iter()
-                .map(|column| format!("{column} = {}", params.next())),
+                .map(|column| style.guard(column, &params.next())),
         );
         let update = format!(
             "UPDATE {table} SET {} WHERE {}",
@@ -133,8 +142,10 @@ impl SweepTable {
 #[derive(Clone, Copy)]
 pub(crate) enum ParamStyle {
     /// SQLite-style `?` placeholders.
+    #[cfg(any(feature = "sqlx-sqlite", test))]
     Question,
     /// PostgreSQL-style `$n` placeholders.
+    #[cfg(any(feature = "sqlx-postgres", test))]
     Dollar,
 }
 
@@ -143,6 +154,19 @@ impl ParamStyle {
         Params {
             style: self,
             count: 0,
+        }
+    }
+
+    /// Compares a stored column with the bytes the sweep loaded from it.
+    ///
+    /// `SQLite` loads TEXT values as their bytes, but a TEXT value never equals
+    /// the BLOB bound back here, so the stored value is compared as a BLOB.
+    fn guard(self, column: &str, param: &str) -> String {
+        match self {
+            #[cfg(any(feature = "sqlx-sqlite", test))]
+            Self::Question => format!("CAST({column} AS BLOB) = {param}"),
+            #[cfg(any(feature = "sqlx-postgres", test))]
+            Self::Dollar => format!("{column} = {param}"),
         }
     }
 }
@@ -156,7 +180,9 @@ impl Params {
     fn next(&mut self) -> String {
         self.count += 1;
         match self.style {
+            #[cfg(any(feature = "sqlx-sqlite", test))]
             ParamStyle::Question => "?".to_owned(),
+            #[cfg(any(feature = "sqlx-postgres", test))]
             ParamStyle::Dollar => format!("${}", self.count),
         }
     }
@@ -197,7 +223,8 @@ mod tests {
         assert_eq!(
             sql.update,
             "UPDATE \"users\" SET \"email_ciphertext\" = ?, \"email_bidx\" = ? \
-             WHERE \"id\" = ? AND \"email_ciphertext\" = ? AND \"email_bidx\" = ?",
+             WHERE \"id\" = ? AND CAST(\"email_ciphertext\" AS BLOB) = ? \
+             AND CAST(\"email_bidx\" AS BLOB) = ?",
         );
         assert_eq!(sql.migration_name, "users.email_ciphertext");
         assert_eq!(sql.index_count, 1);

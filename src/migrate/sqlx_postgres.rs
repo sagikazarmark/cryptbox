@@ -7,6 +7,8 @@ use super::{
 
 /// A [`SweepStore`] over one `PostgreSQL` table with an integer cursor column.
 ///
+/// Available with both `migrate` and `sqlx-postgres` features.
+///
 /// Checkpoints are stored in the progress table configured on the
 /// [`SweepTable`]; call [`Self::ensure_progress_table`] once before the first
 /// sweep. Applications with a different cursor shape implement [`SweepStore`]
@@ -42,6 +44,7 @@ impl<'a> PostgresSweepStore<'a> {
 
 impl SweepStore for PostgresSweepStore<'_> {
     type Cursor = i64;
+    type Columns = ();
     type Error = sqlx::Error;
 
     async fn load_checkpoint(&mut self) -> Result<Option<i64>, sqlx::Error> {
@@ -84,6 +87,7 @@ impl SweepStore for PostgresSweepStore<'_> {
 
             batch.push(SweepRow {
                 cursor,
+                columns: (),
                 ciphertext,
                 indexes,
             });
