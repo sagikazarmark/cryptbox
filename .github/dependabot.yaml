@@ -6,7 +6,7 @@ updates:
     schedule:
       interval: daily
     groups:
-      cargo-dependencies:
+      cargo:
         patterns:
           - "*"
 
@@ -19,4 +19,4 @@ updates:
         patterns:
           - "*"
     exclude-paths:
-      - .github/workflows/release.yml
+      - .github/workflows/dagger.yaml
