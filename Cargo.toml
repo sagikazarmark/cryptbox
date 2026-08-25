@@ -18,7 +18,7 @@ sqlx-postgres = ["dep:sqlx", "sqlx/postgres"]
 sqlx-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 
 [dependencies]
-base64 = { version = "0.22.1", default-features = false }
+base64 = { version = "0.23.1", default-features = false }
 chacha20poly1305 = { version = "0.11.0", features = ["alloc"], default-features = false }
 getrandom = "0.4.3"
 hex = { version = "0.4.3", default-features = false }
