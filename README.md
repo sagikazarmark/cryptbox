@@ -24,6 +24,7 @@ plaintext while in application memory and requires explicit plaintext access.
 - **Explicit searchable projections.** Separately keyed, intentionally truncated blind indexes support equality candidate lookup.
 - **Storage preparation.** `Prepared` derives ciphertext and blind indexes from the same source value.
 - **Explicit migration facility.** The opt-in `migrate` feature adds permissive reads and a resumable sweep for migrating plaintext or a previous encryption solution to CryptBox; the default decoding path stays strict.
+- **Explicit Serde storage.** The opt-in `serde` feature serializes typed ciphertext and blind-index bytes, never plaintext `Encrypted` values.
 - **SQLx integration.** Backend-specific features map encrypted values and blind indexes to PostgreSQL `BYTEA` or SQLite `BLOB` columns.
 - **Secret hygiene.** Keys and CryptBox-owned plaintext buffers are zeroized; `Debug` output is redacted.
 
@@ -222,11 +223,37 @@ Encryption keys and blind-index keys use independent providers and must be
 generated independently. During blind-index key rotation, query with every
 probe returned by `blind_index_probes`, then rewrite stored indexes separately.
 
+## Serde Ciphertext Storage
+
+Enable the `serde` feature to serialize the explicit stored representations in
+Serde-backed document stores, message queues, caches, or files:
+
+```rust,ignore
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredUser {
+    email: cryptbox::Ciphertext<String, UserEmail>,
+    email_lookup: cryptbox::BlindIndex<UserEmailExact>,
+}
+```
+
+`Ciphertext<T, Profile>` serializes only its binary ciphertext envelope, and
+`BlindIndex<Spec>` serializes only its complete stored bytes. The Serde format
+decides how bytes are represented; for example, JSON emits an integer array,
+while binary formats can preserve a byte string.
+
+`Encrypted<T, Profile>` contains plaintext and deliberately does **not**
+implement `Serialize` or `Deserialize`. Encrypt it to `Ciphertext` before
+serialization, then deserialize and decrypt explicitly when reading. Serde
+deserialization validates stored structure, not authenticity: authentication
+occurs during decryption, and blind-index candidates still require plaintext
+verification.
+
 ## Feature Flags
 
 - `json` enables the Serde JSON codec.
 - `migrate` enables explicit migration from plaintext or a previous encryption solution, intended for a bounded migration window only.
 - `postcard` enables the Serde Postcard codec.
+- `serde` enables explicit stored-byte serialization for `Ciphertext` and `BlindIndex`; it never serializes plaintext `Encrypted` values.
 - `sqlx-postgres` enables SQLx 0.8 `BYTEA` support for PostgreSQL.
 - `sqlx-sqlite` enables SQLx 0.8 `BLOB` support for SQLite.
 
@@ -235,9 +262,9 @@ Both SQLx adapters support automatic encryption and decryption only for
 unit-context profiles; typed ciphertext and blind indexes remain available for
 profiles with explicit binding contexts. The SQLx features activate their
 database backends but do not select an application async runtime or TLS stack.
-CryptBox intentionally does not implement blanket Serde serialization for
+CryptBox intentionally does not implement Serde serialization for
 `Encrypted<T, Profile>` because plaintext-versus-ciphertext semantics must be
-explicit.
+explicit. The `serde` feature applies only to the explicit stored-value types.
 
 The [crate documentation](https://docs.rs/cryptbox/latest/cryptbox/#features)
 is the authoritative reference for feature semantics and constraints.

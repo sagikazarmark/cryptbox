@@ -60,6 +60,9 @@
 //!   migration window only; the default decoding path stays strict.
 //! - `postcard` adds the `Postcard` codec. Its serialized representation is
 //!   part of the persistent schema.
+//! - `serde` adds explicit serialization of [`Ciphertext`] and [`BlindIndex`]
+//!   stored bytes. It never adds serialization for plaintext [`Encrypted`]
+//!   values.
 //! - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
 //! - `sqlx-sqlite` adds `SQLx` 0.8 `BLOB` storage for `SQLite`.
 //!
@@ -67,9 +70,12 @@
 //! unit-context profiles, using [`EncryptionProfile::Keys`]. [`Ciphertext`] and
 //! blind-index storage work with explicit-context profiles. These features do
 //! not choose an async runtime or TLS implementation for the application.
-//! `CryptBox` deliberately provides no blanket Serde implementation for
-//! [`Encrypted`], because plaintext and ciphertext serialization must remain
-//! explicit.
+//! `CryptBox` deliberately provides no Serde implementation for [`Encrypted`],
+//! because it contains plaintext. With the `serde` feature, serialize an
+//! explicitly encrypted [`Ciphertext`] or derived [`BlindIndex`] instead. Their
+//! deserializers validate stored structure but do not establish authenticity;
+//! ciphertext is authenticated only when it is decrypted, and a blind-index
+//! candidate must still be verified against decrypted plaintext.
 //!
 //! This is a standard-library crate requiring Rust 1.85 or newer. Encryption
 //! requires a target on which `getrandom` can obtain operating-system entropy.
@@ -146,6 +152,8 @@ pub mod migrate;
 mod padding;
 mod prepare;
 mod profile;
+#[cfg(feature = "serde")]
+mod serde_impl;
 #[cfg(feature = "sqlx-postgres")]
 mod sqlx_postgres;
 #[cfg(feature = "sqlx-sqlite")]

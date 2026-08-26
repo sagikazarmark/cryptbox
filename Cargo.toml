@@ -11,9 +11,10 @@ categories = ["cryptography", "database"]
 
 [features]
 default = []
-json = ["dep:serde", "dep:serde_json"]
+json = ["serde", "dep:serde_json"]
 migrate = []
-postcard = ["dep:postcard", "dep:serde"]
+postcard = ["dep:postcard", "serde"]
+serde = ["dep:serde"]
 sqlx-postgres = ["dep:sqlx", "sqlx/postgres"]
 sqlx-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 

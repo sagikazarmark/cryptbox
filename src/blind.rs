@@ -91,7 +91,8 @@ pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
 /// low-cardinality or highly skewed sensitive values, never use a truncated
 /// index as a uniqueness constraint, and always verify candidate plaintext.
 /// `Spec` is phantom and its [`BlindIndexMetadata::ID`] is not stored in the
-/// representation.
+/// representation. With the `serde` feature, this type serializes only its
+/// complete stored binary representation.
 pub struct BlindIndex<Spec> {
     bytes: Vec<u8>,
     marker: PhantomData<fn() -> Spec>,

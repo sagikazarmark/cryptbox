@@ -78,7 +78,9 @@ impl<T, Profile> fmt::Debug for Encrypted<T, Profile> {
 /// Construction validates only the envelope structure. Authenticity is
 /// established by decryption. `T` and `Profile` are not encoded in the envelope,
 /// so the type parameters express caller intent rather than proving that stored
-/// bytes were created for that profile.
+/// bytes were created for that profile. With the `serde` feature, this type
+/// serializes only the binary envelope. [`Encrypted`] deliberately has no Serde
+/// implementation because it contains plaintext.
 pub struct Ciphertext<T, Profile> {
     bytes: Vec<u8>,
     marker: PhantomData<fn() -> (T, Profile)>,
