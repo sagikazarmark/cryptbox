@@ -1,9 +1,16 @@
 ignore = [".devenv", "target"]
 
+[modules.cryptbox]
+source = "."
+
+[modules.cryptbox.settings]
+rustVersion = "1.98-slim-trixie"
+
 [modules.rust]
 source = "github.com/sagikazarmark/daggerverse-beta/rust"
 
-settings.version = "1.98-slim-trixie"
+[modules.rust.settings]
+version = "1.98-slim-trixie"
 
 [modules.dagger-gha]
 source = "github.com/sagikazarmark/daggerverse-beta/dagger-gha"

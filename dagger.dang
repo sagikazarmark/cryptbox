@@ -1,0 +1,160 @@
+type Cryptbox {
+  let rust: Rust!
+  let postgresVersion: String!
+
+  new(
+    ws: Workspace!,
+    """
+    Version (image tag) to use from the official Rust image repository as a base container.
+    """
+    rustVersion: String!,
+    """
+    Version (image tag) to use from the official PostgreSQL image repository.
+    """
+    postgresVersion: String! = "18-trixie",
+  ) {
+    self.rust = Dagger.rust(ws: ws, version: rustVersion)
+    self.postgresVersion = postgresVersion
+
+    self
+  }
+
+  """
+  Tests and examples from the CI workflow that the Rust module's own checks do not cover.
+  """
+  test: Test! {
+    Test(self.rust.container, self.postgresVersion)
+  }
+}
+
+"""
+Tests and examples from the CI workflow that the Rust module's own checks do not cover.
+
+The Rust module's `test` check compiles and runs the test targets with default features
+only, so the all-feature and documentation test runs live here, as do the examples: the
+Rust module builds them, but never runs them. The PostgreSQL round-trip needs a server,
+which GitHub Actions does not provide but Dagger can bind as a service.
+"""
+type Test {
+  let container: Container!
+  let postgresVersion: String!
+
+  new(
+    """
+    Container with the Rust toolchain and the project source.
+    """
+    container: Container!,
+    """
+    Version (image tag) to use from the official PostgreSQL image repository.
+    """
+    postgresVersion: String!,
+  ) {
+    self.container = container
+    self.postgresVersion = postgresVersion
+
+    self
+  }
+
+  """
+  Execute all unit and integration tests with every feature enabled.
+  """
+  allFeatures: String! @check {
+    self.run(["cargo", "test", "--locked", "--all-targets", "--all-features"])
+  }
+
+  """
+  Execute the documentation tests with every feature enabled.
+  """
+  doc: String! @check {
+    self.run(["cargo", "test", "--locked", "--doc", "--all-features"])
+  }
+
+  """
+  Execute the SQLx PostgreSQL tests against a live PostgreSQL server.
+  """
+  postgres: String! @check {
+    let server = Dagger
+      .container
+      .from("postgres:" + self.postgresVersion)
+      .withEnvVariable("POSTGRES_USER", "cryptbox")
+      .withEnvVariable("POSTGRES_PASSWORD", "cryptbox")
+      .withEnvVariable("POSTGRES_DB", "cryptbox")
+      .withExposedPort(5432)
+      .asService(useEntrypoint: true)
+
+    self
+      .container
+      .withServiceBinding("postgres", server)
+      .withEnvVariable("DATABASE_URL", "postgres://cryptbox:cryptbox@postgres:5432/cryptbox")
+      .withExec([
+        "cargo", "test", "--locked",
+        "--test", "sqlx_postgres",
+        "--features", "sqlx-postgres",
+        "--", "--ignored",
+      ])
+      .combinedOutput
+  }
+
+  """
+  Run the key rotation example.
+  """
+  keyRotation: String! @check {
+    self.example("key_rotation")
+  }
+
+  """
+  Run the re-encryption sweep example.
+  """
+  reencryptionSweep: String! @check {
+    self.example("reencryption_sweep", feature: ["sqlx-sqlite"])
+  }
+
+  """
+  Run the plaintext migration example.
+  """
+  plaintextMigration: String! @check {
+    self.example("plaintext_migration", feature: ["migrate", "sqlx-sqlite"])
+  }
+
+  """
+  Run the legacy migration example.
+  """
+  legacyMigration: String! @check {
+    self.example("legacy_migration", feature: ["migrate", "sqlx-sqlite"])
+  }
+
+  """
+  Run the blind indexes example.
+  """
+  blindIndexes: String! @check {
+    self.example("blind_indexes")
+  }
+
+  """
+  Run the SQLx SQLite example.
+  """
+  sqlxSqlite: String! @check {
+    self.example("sqlx_sqlite", feature: ["sqlx-sqlite"])
+  }
+
+  let example(
+    """
+    Name of the example target to run.
+    """
+    name: String!,
+    """
+    List of features to activate.
+    """
+    feature: [String!]! = [],
+  ): String! {
+    let args = ["cargo", "run", "--locked", "--example", name]
+
+    feature.each { f => args += ["--features", f] }
+
+    self.run(args)
+  }
+
+  let run(args: [String!]!): String! {
+    self.container.withExec(args).combinedOutput
+  }
+}
