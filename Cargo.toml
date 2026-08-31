@@ -39,6 +39,9 @@ zeroize = { version = "1.8.1", features = ["alloc"], default-features = false }
 [dev-dependencies]
 futures-executor = "0.3.34"
 hex = "0.4.3"
+# The live PostgreSQL round-trip needs an async runtime; the library itself stays runtime-agnostic.
+sqlx = { version = "0.8.6", features = ["runtime-tokio"], default-features = false }
+tokio = { version = "1", features = ["net", "rt", "time"], default-features = false }
 
 [lints.rust]
 missing_docs = "warn"

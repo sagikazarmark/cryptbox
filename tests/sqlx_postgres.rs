@@ -1,4 +1,4 @@
-//! Compile and encoding tests for the optional `SQLx` `PostgreSQL` adapter.
+//! Public-boundary tests for the optional `SQLx` `PostgreSQL` adapter.
 
 #![cfg(feature = "sqlx-postgres")]
 
@@ -10,8 +10,8 @@ use cryptbox::{
     LocalEncryptionKeyring, Unbound, Utf8, encrypt, index_id, key_id,
 };
 use sqlx::{
-    Decode, Encode, Postgres, Type,
-    postgres::{PgArgumentBuffer, PgTypeInfo},
+    Connection, Decode, Encode, Postgres, Row, Type,
+    postgres::{PgArgumentBuffer, PgConnection, PgTypeInfo},
 };
 
 const KEY_ID: KeyId = key_id!("c0000000-0000-4000-8000-00000000000c");
@@ -126,4 +126,45 @@ fn typed_ciphertext_encoding_preserves_the_binary_envelope() {
 
     assert!(!result.is_null());
     assert_eq!(buffer.as_slice(), bytes.as_slice());
+}
+
+/// Round-trips a value through a live `PostgreSQL` server.
+///
+/// Ignored by default because it needs a server: set `DATABASE_URL` and run with
+/// `--ignored`. The Dagger `cryptbox:test:postgres` check binds one and does exactly that.
+#[test]
+#[ignore = "requires a PostgreSQL server; set DATABASE_URL and run with --ignored"]
+fn postgres_round_trips_ciphertext_and_decrypts_encrypted_values() {
+    let url = std::env::var("DATABASE_URL")
+        .expect("DATABASE_URL must point at a PostgreSQL server to run this test");
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+
+    runtime.block_on(async {
+        let mut connection = PgConnection::connect(&url).await.unwrap();
+        sqlx::query("CREATE TEMPORARY TABLE secrets (value BYTEA NOT NULL)")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        let value = Encrypted::<_, Profile>::new("mark@example.com".to_owned());
+        sqlx::query("INSERT INTO secrets (value) VALUES ($1)")
+            .bind(&value)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        let row = sqlx::query("SELECT value FROM secrets")
+            .fetch_one(&mut connection)
+            .await
+            .unwrap();
+        let ciphertext: Ciphertext<String, Profile> = row.try_get("value").unwrap();
+        let decrypted: Encrypted<String, Profile> = row.try_get("value").unwrap();
+
+        assert!(ciphertext.as_bytes().starts_with(b"CBX\0"));
+        assert_eq!(decrypted.expose_secret(), "mark@example.com");
+    });
 }
