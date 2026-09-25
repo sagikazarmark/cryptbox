@@ -76,6 +76,116 @@ Set `type Keys = TestKeys` on profiles used by those tests and call
 process, so tests that replace it must be serialized. Add a second locked
 provider when automatic blind-index operations also need test-specific keys.
 
+## Live PostgreSQL sweep checks
+
+**Development checkout tooling.** From the repository root, run:
+
+```sh
+dagger check cryptbox:test:postgres
+dagger check cryptbox:test:sqlx-features
+```
+
+Prerequisites: the Dagger version pinned by the repository's generated
+[GitHub Actions workflow](../.github/workflows/dagger.yaml), a working Dagger
+container engine (for example Docker), and network access to pull the configured
+Rust and PostgreSQL images and Cargo dependencies. No host Rust installation or
+existing database is required for these Dagger checks.
+
+The PostgreSQL check reuses the service in [dagger.dang](../dagger.dang), by
+default `postgres:18-trixie`. Dagger binds it as `postgres:5432`, sets
+`DATABASE_URL=postgres://cryptbox:cryptbox@postgres:5432/cryptbox`, and runs:
+
+```sh
+cargo test --locked --test sqlx_postgres --test migrate_sqlx_postgres \
+  --no-default-features --features migrate,sqlx-postgres -- --include-ignored
+```
+
+The expected result is **six passing tests and zero ignored tests**: four SQLx
+adapter tests (including the existing live round trip) and two packaged-sweep
+scenarios. The live cases are ignored in ordinary `cargo test` because they need
+a server. `--include-ignored` explicitly executes them in this check. The
+GitHub Actions Dagger workflow runs `dagger check` on PRs and pushes to `main`,
+so this live check is part of the effective CI gate, not compilation-only coverage.
+
+### Use an existing local test server
+
+Alternatively, install Rust **1.85 or newer** and provide a reachable PostgreSQL
+test database. Version 18 is the configured Dagger baseline. Set `DATABASE_URL`
+to your test connection and run the same Cargo command above, for example:
+
+```sh
+export DATABASE_URL='postgres://cryptbox:cryptbox@127.0.0.1:5432/cryptbox'
+cargo test --locked --test sqlx_postgres --test migrate_sqlx_postgres \
+  --no-default-features --features migrate,sqlx-postgres -- --include-ignored
+```
+
+The example credentials are disposable development credentials. These repository
+tests select Tokio through **dev-dependencies**, with no TLS feature selected.
+Use a local non-TLS test connection for this command. Consumers still choose
+their own runtime, TLS, credentials, and trust configuration as described in the
+[feature reference](features.md); enabling a CryptBox backend does not choose them.
+
+Use a dedicated test database, never application data. The test role needs
+`CONNECT`, `CREATE` (schemas) and `TEMPORARY` privileges on that database. Each
+sweep case creates a randomly named `cryptbox_sweep_*` schema with its own
+`users` and `cryptbox_migration_progress` tables. This permits parallel runs,
+independent connections, and reconnecting to stored progress. It drops its schema
+after success or an assertion panic. A killed process can leave a schema behind;
+remove that test-owned schema or recreate the disposable database before reusing
+it. The adapter round trip uses a connection-local temporary table. Dagger owns
+the service lifecycle and does not use an application database or a persistent
+database volume.
+
+### What the scenarios establish
+
+[`tests/migrate_sqlx_postgres.rs`](../tests/migrate_sqlx_postgres.rs) exercises
+public `RowPlanner`, `Sweep`, `SweepStore`, and `PostgresSweepStore` APIs and
+observes SQLx-decoded values and database results:
+
+- Plaintext, a toy `legacy:` representation, historical ciphertext/indexes,
+  current ciphertext with a historical index, and fully current rows.
+- Strict rejection of legacy bytes, permissive recovery, and authenticated
+  strict reads of the converted values.
+- All-readable-generation lookup before and after migration, with normalized
+  candidate comparison rejecting a deliberately injected false index hit.
+  Unindexed legacy rows are absent from probe lookup until backfilled; this is
+  not a transitional full-search strategy.
+- One-row batches over a non-contiguous `BIGINT` primary-key cursor, stored
+  checkpoints, resume after closing/reopening the connection, exhaustion, and
+  a fresh full generation-verification pass.
+- Independent-connection writes to either ciphertext or the index causing a
+  guarded-update conflict while preserving both stored columns. A successful
+  update replaces both columns; replay of a stale snapshot conflicts.
+  PostgreSQL counts a matching update even if assigned bytes are unchanged,
+  and the store reports that case as success.
+
+The terminal report checks **migration-state convergence**, not authentication
+or stored-index consistency. Separate authenticated reads and candidate
+comparisons are asserted explicitly; the injected current-generation false
+index survives the sweep and is still rejected by candidate comparison. The toy
+legacy handler supplies no authenticity. Connection restart checks persisted
+progress, not cross-process key provisioning or backup recovery.
+
+### Backend feature matrix and future stores
+
+Both GitHub Actions and Dagger run the shared feature check:
+
+```sh
+sh scripts/check-sqlx-features.sh
+cargo test --locked --test migrate_sqlx_sqlite --features migrate,sqlx-sqlite
+```
+
+The script checks all targets with each of `sqlx-postgres`, `sqlx-sqlite`,
+`migrate,sqlx-postgres`, and `migrate,sqlx-sqlite` independently and without default
+features, in addition to the existing default/all-feature checks. The second
+command is the focused SQLite regression check; it needs no database service.
+
+Every future packaged sweep store must have live-backend public-boundary tests
+in the effective CI run, including pagination, checkpoints, and its backend's
+guarded-update/affected-row behavior. Shared SQL construction and SQLite tests
+alone cannot establish another backend's correctness. MySQL integration remains
+separately tracked in [#33](https://github.com/sagikazarmark/cryptbox/issues/33).
+
 ## Diagnostics
 
 `Field::ID` is the stable machine identifier; `Field::NAME` is a human-readable

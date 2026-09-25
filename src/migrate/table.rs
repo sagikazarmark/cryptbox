@@ -135,8 +135,10 @@ impl SweepTable {
 #[derive(Clone, Copy)]
 pub(crate) enum ParamStyle {
     /// SQLite-style `?` placeholders.
+    #[cfg(any(feature = "sqlx-sqlite", test))]
     Question,
     /// PostgreSQL-style `$n` placeholders.
+    #[cfg(any(feature = "sqlx-postgres", test))]
     Dollar,
 }
 
@@ -158,7 +160,9 @@ impl Params {
     fn next(&mut self) -> String {
         self.count += 1;
         match self.style {
+            #[cfg(any(feature = "sqlx-sqlite", test))]
             ParamStyle::Question => "?".to_owned(),
+            #[cfg(any(feature = "sqlx-postgres", test))]
             ParamStyle::Dollar => format!("${}", self.count),
         }
     }

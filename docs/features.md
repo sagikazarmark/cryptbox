@@ -69,9 +69,12 @@ The complete production target review is not yet finished.
 
 The repository CI checks Rust 1.85 with locked all-target/all-feature compilation
 on Ubuntu, and stable Rust with all-feature tests, independent `SQLx` feature
-compilation, and default/all-feature rustdoc. Dagger uses the configured Rust
-Linux container, runs examples, and supplies PostgreSQL for the ignored live
-test. These are tested configurations, not a reviewed target allowlist; no macOS,
+compilation (each backend with and without `migrate`), and default/all-feature
+rustdoc. Dagger uses the configured Rust Linux container, runs examples, and
+supplies PostgreSQL to execute the live round-trip and packaged-sweep tests,
+including the otherwise ignored cases. See the development
+[live-backend check instructions](https://github.com/sagikazarmark/cryptbox/blob/main/docs/testing.md#live-postgresql-sweep-checks).
+These are tested configurations, not a reviewed target allowlist; no macOS,
 Windows, browser, or embedded CI matrix is claimed.
 
 Next: use the development [task index](https://github.com/sagikazarmark/cryptbox/blob/main/docs/README.md)

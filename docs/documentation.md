@@ -13,6 +13,7 @@ From the repository root, with Rust and Lychee **0.24.2** available:
 ```sh
 cargo fmt --all --check
 cargo check --locked --all-targets --all-features
+sh scripts/check-sqlx-features.sh
 cargo clippy --locked --all-targets --all-features -- -D warnings
 sh scripts/check-rustdoc.sh
 sh scripts/check-links.sh local
@@ -73,7 +74,8 @@ dagger -c 'cryptbox 1.98-slim-trixie | docs | external-links'
 ```
 
 `dagger check` also includes the existing Rust checks, doctests, runnable examples,
-and live PostgreSQL test. The network-dependent external check is an explicit
+and [live PostgreSQL round-trip and sweep checks](testing.md#live-postgresql-sweep-checks).
+The network-dependent external check is an explicit
 function, not an `@check`, so it does not make every PR depend on remote sites.
 Investigate failures rather than broadening exclusions to silence them.
 
