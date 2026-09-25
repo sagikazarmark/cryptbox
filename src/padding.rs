@@ -85,6 +85,8 @@ impl<const N: usize> Padding for PadToLength<N> {
 }
 
 fn pad_to_length(plaintext: &Zeroizing<Vec<u8>>, target: usize) -> Zeroizing<Vec<u8>> {
+    // Preallocate before copying so growth cannot abandon a plaintext-bearing allocation.
+    // See ../docs/wire-format.md#key-and-buffer-lifetime.
     let mut padded = Zeroizing::new(Vec::with_capacity(target));
     padded.extend_from_slice(plaintext);
     padded.push(0x80);

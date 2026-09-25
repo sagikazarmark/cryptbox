@@ -48,7 +48,7 @@ Outstanding production review gates include:
 - Accepted operational key-usage policy and an application enforcement strategy.
   The [numeric policy](suite-1-usage-policy.md) remains **proposed**; closing its
   authoring issue did not approve it. CryptBox does not enforce its proposed
-  message-count, age, or deployment failure budgets.
+  padded-message size, message-count, age, or deployment failure budgets.
 - Parser fuzzing ([#11](https://github.com/sagikazarmark/cryptbox/issues/11)),
   supported-target/entropy review, and pilot use before format freeze
   ([#12](https://github.com/sagikazarmark/cryptbox/issues/12)). Passing CI is not
@@ -77,18 +77,20 @@ Read these in order:
 2. The [crate reference](https://docs.rs/cryptbox/0.5.0/cryptbox/): features,
    platform constraints, persistent schema, and public trait contracts.
 3. The [wire-format reference](wire-format.md): current layout and provisional
-   vectors. Formats remain experimental.
+   vectors, including self-contained encryption and blind-index derivation recipes.
+   Formats remain experimental.
 4. The [suite evaluation](suite-evaluation.md): dated research, primitive
    rationale, alternatives, and review gates, not production authorization.
 5. The [proposed usage policy](suite-1-usage-policy.md): recommendations and open
-   review questions. Padding-aware policy clarification is tracked in
-   [#52](https://github.com/sagikazarmark/cryptbox/issues/52).
+   review questions, with [padding-aware size definitions and examples](suite-1-usage-policy.md#plaintext-maximum).
 6. The [stored-value assurance procedure](stored-values.md#obtain-additional-assurance)
    and [maintenance verification](reencryption-sweep.md#verification-and-retirement):
    parsing/generation classification versus authenticated readability and index consistency.
 
 The [original v0.1 design](spec.md) supplies historical rationale only. Its API
 sketches and future extension plans are not current instructions.
+The [security-reference cold walk](adoption-walk.md#security-reference-follow-up)
+records recipe and padded-size task completion, separately from assurance gates.
 
 Next: choose a configuration in the crate reference, or try the
 [ephemeral first round trip](../README.md#quick-start) before durable integration.

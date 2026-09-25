@@ -9,10 +9,9 @@ by issue 15.[issue-15]
 
 **Role: proposed policy reference, not an approved production contract.** Issue
 closure records the authoring work, not policy acceptance. The library does not
-enforce these proposed operational budgets. Padding-aware size clarification
-and complete derivation documentation are tracked in
-[#52](https://github.com/sagikazarmark/cryptbox/issues/52); do not infer a
-library-enforced field-size limit from the table. See the
+enforce these proposed operational budgets, including the padded-message cap.
+The [wire-format reference](wire-format.md) specifies current derivations and
+padding. See the
 [current security review path](security.md#security-review-path) and
 [document authority](README.md#document-authority-and-versions).
 
@@ -22,7 +21,7 @@ For Suite 1, an application should apply all of these limits:
 
 | Quantity | Warning threshold | Hard limit or action |
 |---|---:|---:|
-| Plaintext in one database field | application-defined below the limit | `1,048,576` bytes (`1 MiB`) |
+| AEAD plaintext in one field, **after encoding and padding** | application-defined below the limit | `1,048,576` bytes (`1 MiB`) |
 | Encryptions for one `(KeyId, binding)` | 75% of `2^32` | fewer than `2^32` |
 | Encryptions for one root `KeyId`, summed across bindings | 75% of `2^36` | fewer than `2^36` |
 | Age of a current root key | 9 months | replace for new writes before 1 year |
@@ -116,27 +115,76 @@ remain accepted.
 
 ### Plaintext maximum
 
-Set the database-field plaintext maximum to:
+Distinguish these quantities before applying a size limit:
+
+| Quantity | Definition |
+|---|---|
+| Application value | The typed value before encoding, such as a Rust string or JSON object. Character count, Rust memory size, and serialized byte length are not interchangeable. |
+| Encoded bytes (`E`) | Bytes emitted by the profile's codec, before padding. For `Utf8`, `E` counts UTF-8 bytes, not characters. |
+| AEAD plaintext (`P`) | The bytes passed to XChaCha20-Poly1305 **after** the profile's padding policy. With `NoPadding`, `P = E`; padded profiles include the marker and zero fill. |
+| Envelope bytes (`W`) | Complete stored binary ciphertext: 46-byte prefix, `P` ciphertext bytes, and 16-byte tag. `W = P + 62`. Base64/hex, database framing, and separate blind indexes are not included. |
+
+Set the maximum **AEAD plaintext**, including padding, to:
 
 ```text
 P_policy = 2^20 = 1,048,576 bytes
 ```
 
-This is about `2^18` times smaller than RFC 8439's functional maximum. A Suite
-1 envelope then occupies at most `1,048,638` bytes because the format adds 62
-bytes.[wire-envelope]
+This interpretation preserves the proposed calculation's message-size input;
+it does not approve the policy or enlarge the budget to accommodate padding.
+It is about `2^18` times smaller than RFC 8439's functional maximum. A Suite 1
+envelope within policy occupies at most `1,048,638` bytes because the format
+adds 62 bytes.[wire-envelope]
+
+#### Padding boundary examples
+
+All lengths below are bytes. Example values are ASCII strings encoded with
+`Utf8`, so each `x` contributes one encoded byte. Padding always reserves one
+`80` marker byte before zero fill:
+
+- `NoPadding`: `P = E`; the largest policy-compliant `E` is `1,048,576`.
+- `PadToBlock<N>`: `P = N * ceil((E + 1) / N)`. The largest compliant `E` is
+  `N * floor(1,048,576 / N) - 1`, provided at least one block fits. For `N=16`,
+  this is `1,048,575`; aligned input still needs a whole additional block.
+- `PadToLength<N>`: `P = N`, with `E <= N - 1`; larger encoded inputs return
+  `PaddingOverflow`. For compliant writes, also require `N <= 1,048,576`.
+
+| Padding policy | `E` | Padding bytes (marker included) | `P` | `W` | Policy / current library result |
+|---|---:|---:|---:|---:|---|
+| `NoPadding` | 0 | 0 | 0 | 62 | Within proposed cap |
+| `NoPadding` | 1,048,576 | 0 | 1,048,576 | 1,048,638 | At cap |
+| `NoPadding` | 1,048,577 | 0 | 1,048,577 | 1,048,639 | Over cap; library accepts |
+| `PadToBlock<16>` | 0 | 16 | 16 | 78 | Empty value still padded |
+| `PadToBlock<16>` | 15 | 1 | 16 | 78 | Marker fills block |
+| `PadToBlock<16>` | 16 | 16 | 32 | 94 | Marker starts next block |
+| `PadToBlock<16>` | 1,048,575 | 1 | 1,048,576 | 1,048,638 | At cap |
+| `PadToBlock<16>` | 1,048,576 | 16 | 1,048,592 | 1,048,654 | Over cap; library accepts |
+| `PadToLength<1048576>` | 0 | 1,048,576 | 1,048,576 | 1,048,638 | Empty value uses entire target |
+| `PadToLength<1048576>` | 1,048,575 | 1 | 1,048,576 | 1,048,638 | Largest fitting value |
+| `PadToLength<1048576>` | 1,048,576 | — | — | — | Library rejects: no room for marker |
+
+These cases are checked through typed encryption/decryption in
+[`tests/padding.rs`](../tests/padding.rs). For a non-ASCII example, `"é"` is one
+character but two UTF-8 bytes; measure the codec output rather than counting
+characters. Fixed-length padding larger than the cap is outside this proposed
+policy even for empty values. On reads, current padding parameters do not bound
+historical messages: unpadding accepts the marker independently of the original
+block/target size, so enforce the incoming `W` limit separately.
+
+#### Size enforcement and bound input
 
 The limit is a policy judgment with three benefits:
 
 - It is large enough for ordinary scalar, JSON, and modest binary database
   fields without presenting the 256 GiB primitive limit as normal usage.
 - It bounds per-operation allocation and authentication work. The current
-  implementation copies plaintext into a working buffer and then copies the
+  implementation copies AEAD plaintext into a working buffer and then copies the
   resulting ciphertext into the returned envelope; decryption similarly copies
   the payload before authentication.[crypto-seal][crypto-open]
 - It gives a concrete maximum `L'` for the integrity calculation. Suite 1 AAD
   is at most 88 bytes for a field-bound value: the 25-byte AAD label, 46-byte
-  envelope prefix, and 17-byte binding. Therefore:
+  envelope prefix, and 17-byte binding. Unbound AAD is 72 bytes. Padding is
+  already included in `P_policy`; the tag is not plaintext or AAD. Therefore:
 
 ```text
 L' = ceil(1,048,576 / 16) + ceil(88 / 16)
@@ -144,17 +192,31 @@ L' = ceil(1,048,576 / 16) + ceil(88 / 16)
    = 65,542 Poly1305 blocks
 ```
 
-Applications should choose a smaller profile-specific maximum where their data
-model permits it. Both encryption and decryption must reject the policy limit
-before allocating attacker-controlled sizes. The implementation currently
-enforces only RFC 8439's functional maximum, so this recommendation still
-requires an application or library enforcement point.[crypto-limit]
+The formula counts separately rounded AAD and plaintext blocks; the additional
+`+ 1` in the integrity bound below accounts for the AEAD length block. At the
+same padded cap, an unbound profile uses `65,536 + 5 = 65,541` blocks, so the
+field-bound calculation covers both current bindings.
+
+Applications adopting this proposal should choose smaller profile-specific
+limits where possible. Reject **over-limit** messages before allocating
+attacker-controlled sizes: on writes, bound encoding and calculate padded size
+with checked arithmetic before padding/encryption; on reads, bound incoming
+binary envelopes to `W <= 1,048,638` before copying/decrypting them. A structural
+size check is not authentication. Also bound any decoding/application memory
+expansion separately; a cap on `P` is not a universal allocation cap.
+
+CryptBox currently enforces RFC 8439's `274,877,906,880`-byte functional limit on
+AEAD plaintext/payload size, checked size arithmetic, and fixed-padding fit. It
+does **not** enforce this `1 MiB` recommendation, counts, age, or failure budget.
+The byte-level `encrypt` API treats its input as AEAD plaintext directly and
+does not apply profile padding. A production enforcement point remains to be
+chosen; a successful library call alone does not show policy compliance.[crypto-limit]
 
 ### Failed-decryption budget
 
 Limit the deployment to at most `2^20 - 1 = 1,048,575` failed Suite 1 AEAD
 decryptions. The draft defines `v` as failures plus one, so this keeps
-`v <= 2^20`. With the maximum field size:
+`v <= 2^20`. With the maximum padded AEAD plaintext size:
 
 ```text
 IA <= v * (L' + 1) / 2^103
@@ -170,6 +232,8 @@ returns an authentication failure consumes one unit, including repeated checks
 of the same ciphertext. Parse failures, unsupported suites, and unknown
 `KeyId`s do not enter this cryptographic `v`, because no AEAD verification
 occurs, but they still require ordinary denial-of-service rate limits.
+Padding or codec errors after successful authentication are not failed AEAD
+verifications either. Application counters must distinguish these outcomes.
 
 Operational handling should be stricter than the lifetime ceiling:
 
@@ -232,6 +296,10 @@ reencryption, retries whose output is discarded, and operations lost to a
 crash. In a multi-process deployment, counters must be durable and shared.
 Range leasing is acceptable only if the entire leased range is charged when
 issued, so a crash can overcount but never undercount.
+Count shared key generations across every process and storage adapter using
+them; process restarts, profile renames, and copying a key to another deployment
+do not create independent budgets. These encryption budgets concern Suite 1,
+not blind-index derivations under their independently provisioned roots.
 
 ### Rotation triggers
 
@@ -274,6 +342,13 @@ primitives.
 
 ## Caveats and review questions
 
+The boundary checks and format vectors establish implementation consistency,
+not independent cryptographic certification. Accepting or enforcing these
+limits, changing the capped quantity, or changing any reduction/accounting
+assumption requires separately reviewable policy work. The illustrative
+`2^32` root generations, `q <= 2^68`, and `o <= 2^128` in the combined check
+are assumptions for that calculation, not measurements or library guarantees.
+
 - The AEAD-limits document is an active Internet-Draft, not an RFC, and its
   bounds can change. The policy should be recalculated when the draft changes
   or becomes an RFC.[aead-status]
@@ -313,10 +388,10 @@ repository were used for substantive claims.
 [aead-intro]: https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-aead-limits-12#section-1
 [aead-single-examples]: https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-aead-limits-12#section-6.6
 [aead-status]: https://datatracker.ietf.org/doc/draft-irtf-cfrg-aead-limits/12/
-[crypto-kdf]: ../src/crypto.rs#L224-L247
-[crypto-limit]: ../src/crypto.rs#L249-L256
-[crypto-open]: ../src/crypto.rs#L326-L351
-[crypto-seal]: ../src/crypto.rs#L259-L293
+[crypto-kdf]: wire-format.md#encryption-recipe
+[crypto-limit]: wire-format.md#envelope
+[crypto-open]: wire-format.md#key-and-buffer-lifetime
+[crypto-seal]: wire-format.md#key-and-buffer-lifetime
 [issue-15]: https://github.com/sagikazarmark/cryptbox/issues/15
 [nist-cryptoperiod]: https://doi.org/10.6028/NIST.SP.800-57pt1r5
 [rfc5869-info]: https://www.rfc-editor.org/rfc/rfc5869.html#section-3.2

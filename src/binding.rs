@@ -75,6 +75,8 @@ pub struct BindingDomain {
 }
 
 impl BindingDomain {
+    // Tags and UUID bytes are persistent KDF/AAD inputs, independent of diagnostic names.
+    // See ../docs/wire-format.md#binding.
     const fn unbound() -> Self {
         Self {
             encoded: [0_u8; 17],

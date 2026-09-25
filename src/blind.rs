@@ -12,6 +12,7 @@ use crate::{
 const INDEX_FORMAT_VERSION: u8 = 1;
 const INDEX_HEADER_LEN: usize = 19;
 const MAX_INDEX_BITS: usize = 256;
+// NUL-terminated labels separate key and value roles: ../docs/wire-format.md#blind-index-recipe.
 const INDEX_KEY_LABEL: &[u8] = b"cryptbox/blind-index-key/v1\0";
 const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 
@@ -401,6 +402,8 @@ fn derive_normalized<Spec: BlindIndexMetadata>(
     header[1..17].copy_from_slice(key.id().as_bytes());
     header[17..19].copy_from_slice(&bits.to_be_bytes());
 
+    // Both HKDF and HMAC commit to this canonical order; changing it breaks stored lookups.
+    // See ../docs/wire-format.md#blind-index-recipe.
     let mut context = Vec::with_capacity(header.len() + domain.as_bytes().len() + 16);
     context.extend_from_slice(&header);
     context.extend_from_slice(domain.as_bytes());
@@ -425,6 +428,8 @@ fn derive_normalized<Spec: BlindIndexMetadata>(
     stored.extend_from_slice(&digest[..digest_len]);
 
     if Spec::BITS % 8 != 0 {
+        // One encoding per retained bit string; unused bits must not leak extra precision.
+        // Parsing enforces the same rule: ../docs/wire-format.md#blind-index-recipe.
         let retained_bits = Spec::BITS % 8;
         let mask = u8::MAX << (8 - retained_bits);
         let final_byte = stored.last_mut().ok_or(Error::InvalidBlindIndex)?;

@@ -67,6 +67,44 @@ configuration, authority, and next-step destinations within two links from
 either entry point. A full fresh-agent rescore is reserved for #61; the initial
 scores above have not been silently upgraded after editing.
 
+## Security-reference follow-up
+
+**2026-09-25 · #52 development documentation.** A fresh reviewer completed a
+docs-only walk before examining implementation, tests, manifests, or the diff.
+The task was to reconstruct both cryptographic recipes and interpret padded
+sizes and the proposed usage policy, recording missing inputs or unsafe guesses.
+
+Discovery: README → [security review path](security.md#security-review-path) →
+[wire-format reference](wire-format.md) → [proposed policy](suite-1-usage-policy.md).
+The reviewer also followed reader-facing concepts, features, suite research, and
+stored-value assurance links.
+
+| Task | Observed result |
+| --- | --- |
+| Reconstruct encryption | Resolved root/derived lengths, both HKDF stages, salt, all label terminators, UUID bytes, context order, OS nonce, prefix, AAD, full tag, and authentication before unpadding/decoding |
+| Reconstruct blind index | Resolved independent root, normalization input, length encoding, both HKDF stages, HMAC input, most-significant-bit truncation, and canonical stored representation |
+| Check literal label lengths | Independently counted 24/27/25/28/30 bytes for salt/encryption/AAD/index-key/index-value labels, including NULs; all matched |
+| Interpret padded boundaries | Distinguished application value, encoded `E`, padded `P`, and envelope `W`; reproduced empty, aligned, at-cap, over-cap, and fixed-padding overflow examples |
+| Interpret policy status/accounting | Identified `P <= 1,048,576` as proposed and unenforced; resolved shared/historical-key counters, failed AEAD versus parse/codec failures, and unfinished reduction assumptions |
+
+No missing facts, corrective guesses, or outside implementation help were needed.
+Qualitative **task completeness: 3/3; safety: 3/3**, using the scale above.
+The reviewer explicitly rejected interpretations that omit NULs, hash UUID text,
+let stored metadata choose binding, reuse vector nonces, cap character counts,
+ignore padding markers, or treat successful calls as policy approval.
+
+Subsequent implementation review found the recipes consistent with current code.
+Existing format/vector checks and the public padding suite pass, including the
+new literal envelope-size cases. The full all-feature suite and doctests pass;
+the existing server-dependent PostgreSQL test remains ignored. Rustdoc,
+formatting, Clippy, typechecking, and local links also pass. The separate
+standards review requested the table heading “Padding policy” rather than
+“Profile”; that terminology correction was applied.
+
+This is documentation-consistency evidence, not independent vector certification,
+cryptographic review, policy acceptance, or completion of all four #51 journeys.
+The outstanding security gates remain in the [security explanation](security.md#experimental-maturity).
+
 ## Remaining journeys
 
 | Gap observed or explicitly deferred | Owner |
@@ -75,7 +113,6 @@ scores above have not been silently upgraded after editing.
 | Durable key loading, consistent field-bound SQLite, full PostgreSQL dependencies/runtime/TLS/schema, restart and search path | [#19](https://github.com/sagikazarmark/cryptbox/issues/19) |
 | Complete adapter-test/diagnostics consumer recipe | [#56](https://github.com/sagikazarmark/cryptbox/issues/56) |
 | Clear custom normalizer obligations (including the ambiguous “not include secrets” wording) and plaintext ownership | [#57](https://github.com/sagikazarmark/cryptbox/issues/57) |
-| Padding-aware proposed policy and complete derivation reference | [#52](https://github.com/sagikazarmark/cryptbox/issues/52) |
 | Fleet rollout, durable repeated sweeps, legacy search continuity, backup recovery | [#58](https://github.com/sagikazarmark/cryptbox/issues/58), [#55](https://github.com/sagikazarmark/cryptbox/issues/55), [#59](https://github.com/sagikazarmark/cryptbox/issues/59), [#60](https://github.com/sagikazarmark/cryptbox/issues/60) |
 | Final live execution and all four fresh docs-only journeys | [#61](https://github.com/sagikazarmark/cryptbox/issues/61); coordinate PostgreSQL sweeps with [#42](https://github.com/sagikazarmark/cryptbox/issues/42) |
 
