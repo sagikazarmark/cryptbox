@@ -7,10 +7,17 @@ Underlying contracts remain owned by the [canonical references](README.md#canoni
 
 ## Result and scope
 
-All four fresh readers completed their assigned tasks. Every journey scored **3
+At the recorded input snapshot, all four fresh readers completed their assigned tasks. Every journey scored **3
 for completeness and safety**, with no unresolved unsafe-use or task-blocking
 documentation finding. One non-blocking public-reference wording finding was
 repaired and rechecked. Usability weaknesses remain visible in the scores below.
+
+Those are historical trial observations, not a guarantee that later adversarial
+review finds no gaps. The subsequent full-branch review reproduced inconsistent
+writer/migration validation and a credential-bearing configuration error, and
+found incomplete closure/preflight instructions and missing isolated Serde
+coverage. See [review follow-up](#full-branch-review-follow-up). The initial scores
+are retained as evidence rather than retroactively changed.
 
 **#61 remains incomplete at the publication gate:** the external-link check
 returns 404 for development pages not yet on GitHub `main`. Publish the branch
@@ -419,6 +426,43 @@ violation and one low-severity scorecard-labeling ambiguity: the table said
 names the initial acceptance trial; the corrected 3/3 remains separately recorded.
 Spec found no actionable omissions or incorrect behavior and confirmed that
 published acceptance is honestly left pending. No runtime behavior changed.
+
+## Full-branch review follow-up
+
+The later review compared the full documentation effort (`efd810e` through
+`ddb19d1`), rather than only the acceptance-record commit. Its corrections are:
+
+- Missing/non-UTF-8 database configuration is mapped to a static category before
+  connection, with a process-level regression containing a synthetic password.
+- Writers, transitional recovery/reads, and closure share one whitespace-aware
+  application validator. Regression cases cover accepted padded/case-varied
+  values, rejection before invalid writes, and continued search/closure.
+- Migration closure and maintenance use one paginated authenticated/application/
+  index audit. The linked closure summary requires all quarantine, discriminator,
+  inventory, provenance, consistency, and strict-reader cutover gates.
+- Recovery preflight now has executable key-copy and separate restore commands.
+  The checker exercises recovery before online removal and a fresh restore after
+  removal while preserving the original backup.
+- The stored-values manifest is shared with its guide and exercised in an
+  isolated checkout-only consumer, without repository development dependencies.
+
+These targeted regressions supplement the historical fresh-reader trials; they
+do not by themselves constitute a new four-agent evaluation. Publication remains
+pending: after this branch and its fixes reach `main`, run the external-link check,
+repeat the affected reader briefs against the published destinations, and record
+the actual results before closing #61. Do not remap remote failures or weaken the
+link gate to turn a development rehearsal into published acceptance.
+
+Follow-up verification on the corrected working tree:
+
+| Check | Result |
+| --- | --- |
+| Shared snippet synchronization and standalone consumer Rust formatting | Passed |
+| Focused checkout SQLite migration regression | Passed, including accepted whitespace-preserving writes and rejected invalid writes |
+| Focused checkout SQLite recovery regression | Passed, including pre-removal preflight and a fresh post-removal restore |
+| Isolated checkout stored-values consumer | Typecheck, execution, and Clippy passed using the guide's exact manifest |
+| `dagger check cryptbox:docs cryptbox:test:postgres` | All five checks passed, including checkout/published consumers, diagrams, local links, rustdoc, and live PostgreSQL scenarios |
+| `sh scripts/check-links.sh external` with Lychee 0.24.2 | Still blocked: 30 occurrences of unpublished development destinations on `main` return 404; 481 total, 182 unique, 112 OK, 339 excluded |
 
 Next: rerun the [briefs](acceptance.md) with fresh readers after future changes,
 preserving failures and limitations even when other checks pass.

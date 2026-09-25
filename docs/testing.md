@@ -395,6 +395,13 @@ Custom codecs, normalizers, and providers must preserve their sanitized error
 contracts; application-level SQLx errors can carry additional context, so map
 them to approved categories before emitting them too.
 
+Configuration errors also need sanitization at their read boundary. In particular,
+`std::env::VarError::NotUnicode` retains the original environment bytes: printing
+it for `DATABASE_URL` can expose credentials. The searchable consumer maps missing
+or non-UTF-8 database configuration to a static category before connecting, and
+its process-level checks assert empty stdout and exact sanitized stderr for both
+cases, including a synthetic secret in a non-UTF-8 environment value.
+
 To run a complete example:
 
 1. Run `cargo new testing-diagnostics-consumer` and enter that directory.

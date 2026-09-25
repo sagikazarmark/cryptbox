@@ -95,6 +95,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       writeFileSync(join(env.CRYPTBOX_KEY_DIR, `${role}-${generation}.hex`), randomBytes(32).toString('hex') + '\n', { mode: 0o600 });
     }
   }
+  const configurationError = 'Error: "database configuration: DATABASE_URL must be valid UTF-8 and present"';
+  assert.equal(cli(['init'], { DATABASE_URL: undefined }, false).stderr.trim(), configurationError);
+  // The supported macOS/Linux shells can pass raw environment bytes that Node strings cannot.
+  const invalidUnicode = command('bash', ['-c',
+    String.raw`export DATABASE_URL=$'postgres://user:SYNTHETIC_PASSWORD\xff@localhost/db'; exec "$1" init`,
+    'invalid-database-configuration', join(target, 'debug/searchable-consumer')], {}, false);
+  assert.equal(invalidUnicode.stdout, '');
+  assert.equal(invalidUnicode.stderr.trim(), configurationError);
   assert.equal(cli(['init']).stdout.trim(), 'Schema ready.');
   if (scenario === 'migration') {
     checkMigration(cli);
@@ -170,6 +178,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert.equal(cli(['macro-get', '2']).stdout.trim(), '2: NULL');
     assert.equal(cli(['macro-get', '3']).stdout.trim(), '3: alice@example.com');
     assert.equal(cli(['macro-put', '5', 'macro@example.com']).stdout.trim(), 'Stored 5.');
+    assert.equal(cli(['macro-put', '5', 'invalid address'], {}, false).stderr.trim(),
+      'Error: "application email validation failed"');
     assert.equal(cli(['get', '5']).stdout.trim(), '5: macro@example.com');
     assert.equal(cli(['search', 'MACRO@example.com']).stdout.trim(), 'Matches: [5]; rejected: 0.');
     command('cargo', ['clippy', '--locked', '--no-default-features', '--features', `${backend},macro-check`, '--', '-D', 'warnings']);

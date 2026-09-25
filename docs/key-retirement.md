@@ -97,9 +97,36 @@ Record this backup's dependency mapping:
 Never generate replacement material under these IDs. Retain the original E1/I1
 pairs, profile `ca274e85-63c4-4f7d-a255-2dfecbfe5e25`, index
 `80000000-0000-4000-8000-000000000008`, and the consumer's unchanged schema policy.
-Before an actual online removal, rehearse section 4 on an isolated copy using
-your retained recovery material while online history is still available. Repeat
-it after removal as demonstrated here to verify separation.
+
+### Preflight recovery before changing online access
+
+Prove recovery works **while the historical files are still online**. Create a
+separate recovery directory, copy (do not move) the exact historical pairs, and
+restore to a dedicated preflight destination. Stop if any command fails; all
+destinations must be new. Run from the same consumer directory:
+
+```sh
+(umask 077; mkdir recovery-keys) &&
+  cp keys/encryption-1.hex keys/index-1.hex recovery-keys/ &&
+  chmod 600 recovery-keys/*.hex
+test ! -e preflight-recovery.db && cp before-rotation.db preflight-recovery.db
+preflight() {
+  DATABASE_URL="sqlite://$PWD/preflight-recovery.db?mode=rw" \
+    CRYPTBOX_KEY_DIR="$PWD/recovery-keys" \
+    CRYPTBOX_ENCRYPTION=1 CRYPTBOX_INDEX=1 consumer "$@"
+}
+preflight rotation-ready baseline.canary
+preflight get 10
+preflight get 20
+preflight audit-current
+preflight search ' RECOVERY@EXAMPLE.COM '
+```
+
+Expect `Ready.`, the two original plaintext values, an audit of two rows, and
+`Matches: [10, 20]; rejected: 0.`. The live `keys/` directory and database are
+unchanged. Restrict access to the preflight database as well as the backup and
+key copies. Keep the retained pairs in `recovery-keys` for the second rehearsal;
+section 4 uses a **different**, new database destination after online removal.
 
 ## 2. Complete compatible promotion and live convergence
 
@@ -142,8 +169,9 @@ Audited: 4 authenticated, current-index rows.
 The first is a fresh structural/generation pass. `audit-current` separately
 pages from the beginning (two rows at a time), authenticates/decrypts and UTF-8
 decodes each value, and recomputes/compares the **complete** stored token under
-the current index key. This demo accepts any UTF-8 `String`; add application
-domain validation where your profile requires it. Neither command tolerates
+the current index key. It applies the same illustrative trimmed-ASCII email
+validation as writers and migration reads; this is not proof of provenance or
+general email validity. Neither command tolerates
 NULL maintenance rows; this is the [sweep fixture's policy](reencryption-sweep.md#prepare-the-consumer).
 Count expected rows against your inventory as well as checking command success.
 
@@ -176,13 +204,14 @@ as proof that a running process dropped its historical provider.
 
 Both selectors now support `2-only`: current/readable E2 or I2, loading only that
 role's generation-2 file. Ordinary `2` still loads 1 and 2 for compatible rollout.
-This demo models separate recovery custody by moving files out of the online
-directory after every CLI process has exited:
+This demo models separate recovery custody by removing the online copies after
+every CLI process has exited. First compare them with the exact pairs already
+retained and exercised in the preflight. Stop if either comparison fails:
 
 ```sh
-(umask 077; mkdir recovery-keys)
-mv keys/encryption-1.hex recovery-keys/
-mv keys/index-1.hex recovery-keys/
+cmp keys/encryption-1.hex recovery-keys/encryption-1.hex &&
+  cmp keys/index-1.hex recovery-keys/index-1.hex &&
+  rm keys/encryption-1.hex keys/index-1.hex
 online audit-current
 online search RECOVERY@example.com
 online rotation-ready baseline.canary
@@ -191,7 +220,7 @@ online rotation-ready baseline.canary
 The audit reports four rows and search still returns `[10, 20, 30]`. The final
 baseline readiness command **must fail**: the online provider cannot decrypt E1.
 Starting the old `current` helper also fails key loading because files 1 are
-absent. Use `online` for normal service from here onward. Moving files is a
+absent. Use `online` for normal service from here onward. Removing online copies is a
 fixture for custody separation, **not** secure erasure or a secret-storage
 recommendation. The application owns recovery storage, credentials, access and
 retention durations. This rehearsal deliberately retains the historical material.
@@ -300,7 +329,8 @@ node scripts/check-searchable-consumer.mjs published sqlite recovery
 
 The [consumer-level database test](../scripts/check-recovery-consumer.mjs)
 checks the same commands with independent temporary keys and separate OS
-processes. It captures a SQLite database, converges live data, detects a
+processes. It captures a SQLite database, rehearses recovery before changing
+online access, converges live data, detects a
 generation-current inconsistent token, physically removes historical files from
 the online directory, and restores into a separate database. It asserts
 authenticated values, the pre-rotation row set, correct historical search,

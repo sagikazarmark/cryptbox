@@ -44,7 +44,7 @@ without requiring unstable rustdoc features.
 ### Shared consumer examples and diagrams
 
 Edit `examples/first_field.rs` or `examples/custom_profile.rs` (the marked regions),
-`examples/sqlx_sqlite.rs`, or
+`examples/sqlx_sqlite.rs`, the stored-values manifest under `docs/snippets/`, or
 the durable consumer source/schema/manifests under `docs/snippets/searchable*`, or
 the application-testing sources/manifests under `docs/snippets/testing-*`. Run
 `node scripts/doc-snippets.mjs --write` to update the landing/tutorial snippets.
@@ -52,7 +52,12 @@ The crate landing includes the generated Markdown directly. The check mode
 rejects drift; no required example is marked `ignore`.
 
 `check-consumers.mjs` creates isolated temporary Cargo projects using only those
-manifests and public example sources. `checkout` patches the advertised
+manifests and public example sources. The checkout-only stored-values recipe
+uses its exact path-dependency manifest in a sibling-checkout layout; run
+`node scripts/check-consumers.mjs checkout stored-values` to focus it. It checks,
+runs, and lints the program with just `serde` enabled on CryptBox and the declared
+consumer dependencies. Published mode excludes this unreleased feature.
+For the release-compatible recipes, `checkout` patches the advertised
 dependency to this checkout, while `published` downloads exact 0.5.0. Both check
 and execute the examples; the first-field tests also check cross-field rejection.
 The custom-profile tests check codec/normalizer behavior, sanitized failures,
@@ -93,11 +98,14 @@ Append `migration` for `scripts/check-migration-consumer.mjs` and the optional
 `docs/snippets/migration.rs` module. This extends the same database infrastructure
 through mixed-format search, failed recovery, exceptional-row repair and strict
 closure, including a rebuild without the legacy handler/key or migration features.
+It also checks that whitespace-preserving writes remain readable/searchable during
+migration and closure, while invalid application values are rejected before writes.
 The [migration guide](legacy-migration.md) owns the procedure; keep its commands
 and expected outcomes aligned with this CLI acceptance check.
 Append `recovery` with the `sqlite` backend for
-`scripts/check-recovery-consumer.mjs`: a pre-rotation database copy, online key
-removal and isolated historical-key restore/search. It uses SQLite `VACUUM INTO`
+`scripts/check-recovery-consumer.mjs`: a pre-rotation database copy, a recovery
+rehearsal before online removal, and a second isolated historical-key restore/search
+after online key removal. It uses SQLite `VACUUM INTO`
 through SQLx and needs no additional backup utility. Both dependency modes run
 in the full consumer checks; [key retirement](key-retirement.md) owns this procedure.
 

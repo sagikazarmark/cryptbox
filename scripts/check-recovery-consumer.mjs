@@ -1,6 +1,6 @@
 // Consumer boundary: closed-process database backup/restore and independent key directories.
 import assert from 'node:assert/strict';
-import { copyFileSync, mkdirSync, renameSync } from 'node:fs';
+import { constants, copyFileSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
 export function checkRecovery(cli, scratch, onlineDirectory) {
@@ -14,6 +14,22 @@ export function checkRecovery(cli, scratch, onlineDirectory) {
   assert.equal(output(['recovery-copy', backup], historical), 'Database copy saved.');
   // An existing recovery artifact must never be overwritten by another copy.
   cli(['recovery-copy', backup], historical, false);
+  const backupBytes = readFileSync(backup);
+  const recoveryDirectory = join(scratch, 'recovery-keys');
+  mkdirSync(recoveryDirectory, { mode: 0o700 });
+  for (const role of ['encryption', 'index']) {
+    copyFileSync(join(onlineDirectory, `${role}-1.hex`), join(recoveryDirectory, `${role}-1.hex`), constants.COPYFILE_EXCL);
+  }
+  const preflightPath = join(scratch, 'preflight-recovery.db');
+  copyFileSync(backup, preflightPath, constants.COPYFILE_EXCL);
+  const preflight = { ...historical, DATABASE_URL: `sqlite://${preflightPath}?mode=rw`, CRYPTBOX_KEY_DIR: recoveryDirectory };
+  assert.equal(output(['rotation-ready', 'baseline.canary'], preflight), 'Ready.');
+  for (const id of [10, 20]) {
+    assert.equal(output(['get', String(id)], preflight), `${id}: recovery@example.com`);
+  }
+  assert.equal(output(['audit-current'], preflight), 'Audited: 2 authenticated, current-index rows.');
+  assert.equal(output(['search', ' RECOVERY@EXAMPLE.COM '], preflight), 'Matches: [10, 20]; rejected: 0.');
+  assert.equal(output(['rotation-ready', 'baseline.canary'], historical), 'Ready.');
   cli(['rotation-canary', 'target.canary'], compatible);
   for (const instance of ['A', 'B']) {
     assert.equal(output(['rotation-ready', 'target.canary'], {
@@ -34,11 +50,11 @@ export function checkRecovery(cli, scratch, onlineDirectory) {
   cli(['put', '40', 'different@example.com'], compatible);
   assert.equal(output(['audit-current'], compatible), 'Audited: 4 authenticated, current-index rows.');
 
-  const recoveryDirectory = join(scratch, 'recovery-keys');
-  mkdirSync(recoveryDirectory);
   // Historical material is now absent from online storage, not merely unselected.
   for (const role of ['encryption', 'index']) {
-    renameSync(join(onlineDirectory, `${role}-1.hex`), join(recoveryDirectory, `${role}-1.hex`));
+    const original = join(onlineDirectory, `${role}-1.hex`);
+    assert.deepEqual(readFileSync(original), readFileSync(join(recoveryDirectory, `${role}-1.hex`)));
+    rmSync(original);
   }
   assert.equal(output(['audit-current'], online), 'Audited: 4 authenticated, current-index rows.');
   assert.equal(output(['search', 'RECOVERY@example.com'], online), 'Matches: [10, 20, 30]; rejected: 0.');
@@ -46,9 +62,10 @@ export function checkRecovery(cli, scratch, onlineDirectory) {
   cli(['get', '10'], compatible, false); // A stale deployment config cannot silently restore old access.
 
   const restored = join(scratch, 'isolated-recovery.db');
-  copyFileSync(backup, restored); // Closed SQLite copy, new location; the original backup remains intact.
+  copyFileSync(backup, restored, constants.COPYFILE_EXCL); // A second, fresh restore after online removal.
   const restoredUrl = `sqlite://${restored}?mode=rw`;
   const recovery = { ...historical, DATABASE_URL: restoredUrl, CRYPTBOX_KEY_DIR: recoveryDirectory };
+  assert.equal(output(['rotation-ready', 'baseline.canary'], recovery), 'Ready.');
   cli(['get', '10'], { ...online, DATABASE_URL: restoredUrl }, false);
   for (const id of [10, 20]) {
     assert.equal(output(['get', String(id)], recovery), `${id}: recovery@example.com`);
@@ -65,5 +82,6 @@ export function checkRecovery(cli, scratch, onlineDirectory) {
   // Recovery never changes the live database or its current-only keyset.
   assert.equal(output(['get', '30'], online), '30: recovery@example.com');
   assert.equal(output(['search', 'RECOVERY@example.com'], online), 'Matches: [10, 20, 30]; rejected: 0.');
-  console.log('Pre-rotation copy, live convergence, online removal and isolated historical read/search recovery passed.');
+  assert.deepEqual(readFileSync(backup), backupBytes);
+  console.log('Pre-removal recovery rehearsal, live convergence, online removal and fresh historical restore/search passed.');
 }

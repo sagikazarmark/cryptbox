@@ -54,5 +54,18 @@ export function checkMigration(cli) {
   assert.match(cli(['migration-close'], keys, false).stderr, /index consistency/);
   output(['put', '70', 'other@example.com']);
   assert.equal(output(['migration-close']), 'Closure verified: 7 authenticated, validated, indexed rows.');
+  // Every value accepted by a normal writer must remain readable during migration and closure.
+  output(['put', '40', ' MiXeD@example.com ']);
+  assert.equal(output(['migration-get', '40']), '40:  MiXeD@example.com');
+  assert.equal(output(['migration-search', 'mixed@example.com']),
+    'Matches: [10, 20, 30, 40, 50, 60]; rejected: 0.');
+  assert.equal(output(['migration-close']), 'Closure verified: 7 authenticated, validated, indexed rows.');
+  for (const invalid of ['missing-at', 'inner space@example.com', 'é@example.com', `${'x'.repeat(254)}@example.com`]) {
+    const rejected = cli(['put', '40', invalid], keys, false);
+    assert.equal(rejected.stdout, '');
+    assert.equal(rejected.stderr.trim(), 'Error: "application email validation failed"');
+    assert.equal(output(['migration-get', '40']), '40:  MiXeD@example.com');
+  }
+  output(['put', '40', 'mixed@example.com']);
   console.log('Mixed-format lookup, failure/quarantine/resume, manual exceptional-row repairs and closure gates passed.');
 }

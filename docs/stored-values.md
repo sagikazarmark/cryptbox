@@ -17,6 +17,8 @@ in the consumer. The path dependency is deliberate: published `cryptbox = "0.5"`
 does not yet provide the `serde` feature. Use a checkout containing the Serde
 support added after v0.5.0, such as the branch containing this guide.
 
+<!-- BEGIN SHARED: stored-values-manifest -->
+
 ```toml
 [package]
 name = "stored-values-consumer"
@@ -30,12 +32,25 @@ serde_json = "1"
 zeroize = "1"
 ```
 
+<!-- END SHARED: stored-values-manifest -->
+
 Copy [the complete worked program](../examples/stored_values.rs) into `src/main.rs`
 and run `cargo run`. In this repository, the same program runs with:
 
 ```sh
 cargo run --locked --example stored_values --features serde
 ```
+
+The isolated consumer check compiles and runs this exact manifest/program without
+repository development dependencies:
+
+```sh
+node scripts/check-consumers.mjs checkout stored-values
+```
+
+It is included in checkout-mode CI and Dagger consumer checks. Published mode
+intentionally excludes this unreleased recipe; it never substitutes registry
+0.5.0 for the checkout-only Serde dependency.
 
 `serde_json` is the consumer's storage format, so CryptBox's `json` codec feature
 is not needed. The profile uses `Utf8` for the plaintext encoding. The `serde`

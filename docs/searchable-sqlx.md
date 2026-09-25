@@ -240,6 +240,26 @@ impl BlindIndexSpec<String> for EmailLookup {
     }
 }
 
+fn validate_email(value: &str) -> Result<()> {
+    // Match the lookup policy's trimming while preserving the original stored value.
+    // Illustrative application syntax only, not general email validation or provenance.
+    let bytes = value.trim().as_bytes();
+    if bytes.len() > 254
+        || !bytes.contains(&b'@')
+        || !bytes.iter().all(|byte| byte.is_ascii_graphic())
+    {
+        return Err("application email validation failed".into());
+    }
+    Ok(())
+}
+
+fn database_url() -> Result<Zeroizing<String>> {
+    env::var("DATABASE_URL")
+        .map(Zeroizing::new)
+        // NotUnicode contains the original bytes, potentially including credentials.
+        .map_err(|_| "database configuration: DATABASE_URL must be valid UTF-8 and present".into())
+}
+
 fn load_root_key(directory: &Path, name: &str) -> Result<Zeroizing<[u8; 32]>> {
     let text = Zeroizing::new(
         std::fs::read_to_string(directory.join(name))
@@ -372,7 +392,7 @@ async fn audit_current(
     connection: &mut DbConnection,
     encryption: &LocalEncryptionKeyring,
     indexes: &LocalBlindIndexKeyring,
-) -> Result<()> {
+) -> Result<usize> {
     // Operator holds a write/restore pause across the full audit and retirement gate.
     let mut after: Option<i64> = None;
     let mut count = 0;
@@ -386,6 +406,7 @@ async fn audit_current(
             // This maintenance fixture requires non-NULL values, as does its packaged sweep.
             let ciphertext: EmailCiphertext = row.try_get("email")?;
             let value = ciphertext.decrypt_with(&(), encryption)?;
+            validate_email(value.expose_secret())?;
             let expected = cryptbox::derive_blind_index::<
                 EmailLookup,
                 String,
@@ -398,8 +419,7 @@ async fn audit_current(
             count += 1;
         }
     }
-    println!("Audited: {count} authenticated, current-index rows.");
-    Ok(())
+    Ok(count)
 }
 
 #[cfg(feature = "maintenance")]
@@ -439,7 +459,7 @@ async fn maintenance(
                 .with_index_with::<EmailLookup>(indexes);
             let plan = planner.plan_row(&row.ciphertext, &[&row.indexes[0]])?;
             let replacement = plan.write().ok_or("conflict rehearsal needs a stale row")?;
-            let mut writer = DbConnection::connect(&env::var("DATABASE_URL")?).await?;
+            let mut writer = DbConnection::connect(&database_url()?).await?;
             put(
                 &mut writer,
                 row.cursor,
@@ -550,6 +570,9 @@ async fn put(
     encryption: &LocalEncryptionKeyring,
     indexes: &LocalBlindIndexKeyring,
 ) -> Result<()> {
+    if let Some(email) = &email {
+        validate_email(email)?;
+    }
     let value = email.map(Encrypted::<_, UserEmail>::new);
     let prepared = value
         .as_ref()
@@ -628,6 +651,7 @@ async fn macro_put(
     encryption: &LocalEncryptionKeyring,
     indexes: &LocalBlindIndexKeyring,
 ) -> Result<()> {
+    validate_email(&email)?;
     let value = Encrypted::<_, UserEmail>::new(email);
     let prepared = value
         .prepare_with(&(), encryption)?
@@ -680,8 +704,9 @@ fn sanitize_database_error(error: Box<dyn Error>) -> Box<dyn Error> {
         }
         cause = current.source();
     }
-    // Other errors in this consumer are static application categories or CryptBox's
-    // sanitized errors. Revisit this allowlist before adding other upstream errors.
+    // Configuration values are sanitized at their read boundary. Other operations
+    // use static categories, sanitized CryptBox errors, or non-value-bearing IO/parse
+    // errors. Review newly introduced upstream errors before passing them through.
     error
 }
 
@@ -695,7 +720,7 @@ async fn run() -> Result<()> {
             _ => {}
         }
     }
-    let mut connection = DbConnection::connect(&env::var("DATABASE_URL")?).await?;
+    let mut connection = DbConnection::connect(&database_url()?).await?;
     #[cfg(feature = "legacy-migration")]
     if args
         .first()
@@ -745,7 +770,10 @@ async fn run() -> Result<()> {
             println!("Database copy saved.");
         }
         #[cfg(feature = "maintenance")]
-        ["audit-current"] => audit_current(&mut connection, &encryption, &indexes).await?,
+        ["audit-current"] => {
+            let count = audit_current(&mut connection, &encryption, &indexes).await?;
+            println!("Audited: {count} authenticated, current-index rows.");
+        }
         #[cfg(feature = "maintenance")]
         [
             command @ ("sweep-status"
@@ -931,8 +959,14 @@ Normalization and precision are **application choices**. Here trimming whitespac
 and ASCII lowercasing illustrate case-insensitive lookup. They are not a general
 email canonicalization algorithm: local parts may be case-sensitive, Unicode and
 internationalized domains need policy, and provider-specific dot/plus rules are
-not universal. Validate addresses separately. Indexing and final comparison use
-the same normalization implementation.
+not universal. Indexing and final comparison use the same normalization
+implementation. The example's separate `validate_email` policy requires the
+trimmed value to contain `@`, contain only ASCII graphic bytes, and fit in 254
+bytes. Normal and macro writes, legacy recovery/transitional reads, and the
+shared closing/retirement audit enforce that same policy. Stored text retains its
+original case and surrounding whitespace. This minimal syntax rule does not
+establish real-world address validity or legacy provenance; replace it consistently
+at every boundary when adopting a different application policy.
 
 128 retained bits make accidental collisions rare, but reveal equality and
 frequency within a generation. Fewer bits increase false candidates; they do not

@@ -1,5 +1,5 @@
 // Run consumer-owned manifests without inheriting the library's dev-dependencies.
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -8,8 +8,9 @@ const checkout = resolve('.');
 const mode = process.argv[2] ?? 'checkout';
 const selected = process.argv[3];
 const recipes = [['first-field', 'first_field'], ['sqlite', 'sqlx_sqlite'], ['custom-profile', 'custom_profile']];
+if (mode === 'checkout') recipes.push(['stored-values', 'stored_values']);
 if (!['checkout', 'published'].includes(mode) || (selected && !recipes.some(([name]) => name === selected))) {
-  throw new Error('usage: check-consumers.mjs [checkout|published] [first-field|sqlite|custom-profile]');
+  throw new Error('usage: check-consumers.mjs [checkout|published] [first-field|sqlite|custom-profile|stored-values (checkout only)]');
 }
 const scratch = mkdtempSync(join(tmpdir(), 'cryptbox-consumers-'));
 const run = (args, cwd) => execFileSync('cargo', args, {
@@ -17,11 +18,13 @@ const run = (args, cwd) => execFileSync('cargo', args, {
   env: { ...process.env, CARGO_TARGET_DIR: resolve(process.env.CARGO_TARGET_DIR ?? 'target', 'consumers', mode) },
 });
 try {
+  // Preserve the Serde guide's sibling-checkout layout and manifest verbatim.
+  if (mode === 'checkout') symlinkSync(checkout, join(scratch, 'cryptbox'), 'dir');
   for (const [name, source] of recipes.filter(([name]) => !selected || name === selected)) {
     const directory = join(scratch, name);
     mkdirSync(join(directory, 'src'), { recursive: true });
     let manifest = readFileSync(`docs/snippets/${name}.toml`, 'utf8');
-    if (mode === 'checkout') {
+    if (mode === 'checkout' && name !== 'stored-values') {
       // Cargo's patch keeps the advertised dependency/features but selects this checkout.
       manifest += `\n[patch.crates-io]\ncryptbox = { path = ${JSON.stringify(checkout)} }\n`;
     }

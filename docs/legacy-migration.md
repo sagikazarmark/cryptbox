@@ -189,6 +189,14 @@ False candidates are rejected. Recovery failures fail the **whole** lookup with
 no partial success response. Unresolved quarantine also blocks lookup so taking a
 row out of the live table cannot silently make search incomplete.
 
+Normal writes, legacy recovery, transitional reads, and closure all use the same
+`validate_email` policy: after trimming surrounding whitespace, the value must be
+at most 254 bytes, contain `@`, and contain only ASCII graphic bytes. Storage
+preserves the original whitespace/case, and lookup trims and lowercases it. This
+is illustrative application syntax, not general email validation or proof of
+legacy provenance. In particular, a successful `put` of ` MiXeD@example.com `
+must remain readable and searchable during migration and pass the closing audit.
+
 Prerequisite: each populated index is a valid projection under a readable key;
 every unfilled/untrusted projection is marked empty under a guarded write. Audit
 that invariant before enabling this strategy. Arbitrary wrong nonempty indexes
@@ -476,22 +484,37 @@ only for migration-state convergence.
 
 ## Verification And Closing The Window
 
-`Sweep::verify` performs a fresh, full, read-only pass. It classifies legacy
-rows without the legacy handler and returns a `SweepReport`. Close the window
-only when a complete pass reports `is_terminal()`: zero `legacy`, zero `stale`,
-and zero `malformed` rows. If writes continue during verification, repeat until
-one complete pass is clean.
+Use the complete [closing rehearsal](#verify-and-close-the-rehearsal), including
+all the gates below. A terminal generation report is necessary but insufficient.
+Confirm every writer uses the target generations, fence old binaries/imports/
+restore paths, and pause and drain writes through validation and strict-reader
+cutover (or provide an equivalent application-owned consistency boundary).
 
-This checks **structure and generation state only**. It does not decrypt current
+`Sweep::verify` checks **structure and generation state only**. It does not decrypt current
 rows, establish authenticated readability or decoded-value validity, or recompute
 indexes to check consistency. Its metadata remains unauthenticated. For stepped
 verification, start without a cursor, merge every batch, and continue until the
 returned checkpoint is `None`; a clean partial or default report is insufficient.
-Use the [separate authenticated-read and index-recomputation procedure](stored-values.md#obtain-additional-assurance)
-when those checks are required. Successful re-encryption cannot retroactively
-establish the provenance of unauthenticated legacy plaintext.
+Before removing permissive reads or switching to blind-index-only lookup:
 
-After the terminal state, with every writer using the target generations:
+1. Resolve every quarantine case and trusted legacy discriminator under the
+   documented recovery/disposition policy. Removing a row from the live table
+   does not resolve its case or establish complete lookup.
+2. Run a fresh **complete** migration-state pass with zero legacy, stale, and
+   malformed rows. Do not reuse rewrite progress as verification progress.
+3. Complete the [authenticated-read, application-validation, and index-recomputation procedure](stored-values.md#obtain-additional-assurance)
+   over every row. A wrong current-generation token can pass step 2 while hiding
+   a matching row from searches. Any failure blocks closure; repair through an
+   approved guarded write and repeat the full gates.
+4. Account for expected row/search coverage against the migration inventory.
+   Preserve the provenance evidence required for unauthenticated legacy values;
+   successful re-encryption cannot retroactively authenticate their origin.
+
+The consumer's `migration-close` checks quarantine/discriminators, full generation
+convergence, and the shared paginated authenticated/application/index audit.
+The operator supplies the write pause, inventory, and provenance evidence.
+
+Only after **all** these gates pass:
 
 **A clean live-data pass does not establish that backups or other stores no longer
 need historical or legacy keys.** Online removal, recovery retention, and key
@@ -503,12 +526,14 @@ as well when a pre-migration artifact needs them.
 1. Replace `MaybeEncrypted` reads with strict `Encrypted`/`Ciphertext` reads.
 2. Delete the legacy handler and confirm no references to its type remain.
 3. Disable the `migrate` feature.
-4. Remove historical CryptBox keys and probes from converged online stores following the
+4. Rebuild/restart strict readers and verify authenticated reads, complete searches,
+   and a prepared write/read/search round trip before reopening traffic.
+5. Remove historical CryptBox keys and probes from converged online stores following the
     [re-encryption sweep guide](reencryption-sweep.md).
-5. Retain historical CryptBox and previous-solution keys, index keys, and recovery
+6. Retain historical CryptBox and previous-solution keys, index keys, and recovery
    schema/handlers for backups and rollback artifacts that still require them.
    Test restoration, including historical probes or re-indexing for lookup.
-6. Destroy key material only after all dependent artifacts expire, are migrated,
+7. Destroy key material only after all dependent artifacts expire, are migrated,
    or are deliberately made unrecoverable under the retention policy.
 
 [SQLite legacy migration example]: ../examples/legacy_migration.rs

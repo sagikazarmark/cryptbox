@@ -14,7 +14,10 @@ pub(super) struct PreviousEncryption(Zeroizing<[u8; 32]>);
 impl PreviousEncryption {
     pub(super) fn load() -> Result<Self> {
         Ok(Self(load_root_key(
-            Path::new(&env::var("CRYPTBOX_KEY_DIR")?),
+            Path::new(
+                &env::var("CRYPTBOX_KEY_DIR")
+                    .map_err(|_| "key configuration: CRYPTBOX_KEY_DIR required")?,
+            ),
             "legacy.hex",
         )?))
     }
@@ -63,19 +66,11 @@ impl LegacyFormat for PreviousEncryption {
             Zeroizing::new(bytes.to_vec())
         };
         // Application syntax policy only: this does NOT establish legacy provenance.
-        validate(&plaintext).map_err(|_| LegacyError::new(LegacyErrorKind::Malformed))?;
+        let text = std::str::from_utf8(&plaintext)
+            .map_err(|_| LegacyError::new(LegacyErrorKind::Malformed))?;
+        validate_email(text).map_err(|_| LegacyError::new(LegacyErrorKind::Malformed))?;
         Ok(plaintext)
     }
-}
-
-fn validate(bytes: &[u8]) -> Result<()> {
-    if bytes.len() > 254
-        || !bytes.contains(&b'@')
-        || !bytes.iter().all(|byte| byte.is_ascii_graphic())
-    {
-        return Err("application email validation failed".into());
-    }
-    Ok(())
 }
 
 fn recover(
@@ -91,7 +86,7 @@ fn recover(
         MaybeEncrypted::from_bytes(bytes)?
     };
     let value = stored.decrypt_with_legacy(&(), keys, legacy)?;
-    validate(value.expose_secret().as_bytes())?;
+    validate_email(value.expose_secret())?;
     Ok(value)
 }
 
@@ -123,7 +118,8 @@ async fn seed(
     sqlx::query("INSERT INTO migration_formats VALUES (60, 'legacy-collision')")
         .execute(&mut *db)
         .await?;
-    let directory = env::var("CRYPTBOX_KEY_DIR")?;
+    let directory =
+        env::var("CRYPTBOX_KEY_DIR").map_err(|_| "key configuration: CRYPTBOX_KEY_DIR required")?;
     let old_keys = LocalEncryptionKeyring::new(
         EncryptionKey::new(
             key_id!("10000000-0000-4000-8000-000000000001"),
@@ -299,30 +295,7 @@ async fn close(
     if !report.is_terminal() {
         return Err("migration-state convergence required".into());
     }
-    let mut after: Option<i64> = None;
-    let mut count = 0;
-    loop {
-        let rows = sqlx::query("SELECT id, email, email_lookup FROM users WHERE ($1 IS NULL OR id > $1) ORDER BY id LIMIT 2")
-            .bind(after).fetch_all(&mut *db).await?;
-        if rows.is_empty() {
-            break;
-        }
-        for row in rows {
-            let ciphertext: EmailCiphertext = row.try_get("email")?;
-            let value = ciphertext.decrypt_with(&(), keys)?;
-            validate(value.expose_secret().as_bytes())?;
-            let expected = cryptbox::derive_blind_index::<
-                EmailLookup,
-                String,
-                FieldBound<UserEmail>,
-            >(value.expose_secret(), &(), indexes)?;
-            if expected.as_bytes() != row.try_get::<Vec<u8>, _>("email_lookup")? {
-                return Err("index consistency check failed".into());
-            }
-            after = Some(row.try_get("id")?);
-            count += 1;
-        }
-    }
+    let count = audit_current(db, keys, indexes).await?;
     println!("Closure verified: {count} authenticated, validated, indexed rows.");
     Ok(())
 }
