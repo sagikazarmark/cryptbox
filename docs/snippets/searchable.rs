@@ -3,7 +3,8 @@ use std::{env, error::Error, path::Path};
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
     EncryptionKey, FieldBound, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
-    blind_index_probes, index_id, index_key_id, key_id, verify_blind_index_candidate,
+    blind_index_probes, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    verify_blind_index_candidate,
 };
 use sqlx::{Connection, QueryBuilder, Row};
 use zeroize::Zeroizing;
@@ -70,30 +71,108 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
         key_id!("10000000-0000-4000-8000-000000000001"),
         *load_root_key(directory, "encryption-1.hex")?,
     );
-    let encryption_2 = EncryptionKey::new(
-        key_id!("20000000-0000-4000-8000-000000000002"),
-        *load_root_key(directory, "encryption-2.hex")?,
-    );
     let index_1 = BlindIndexKey::new(
         index_key_id!("30000000-0000-4000-8000-000000000003"),
         *load_root_key(directory, "index-1.hex")?,
     );
-    let index_2 = BlindIndexKey::new(
-        index_key_id!("40000000-0000-4000-8000-000000000004"),
-        *load_root_key(directory, "index-2.hex")?,
-    );
-    // Both generations are readable before either is promoted for writes.
-    match env::var("CRYPTBOX_GENERATION").as_deref() {
-        Ok("1") => Ok((
-            LocalEncryptionKeyring::new(encryption_1, [encryption_2])?,
-            LocalBlindIndexKeyring::new(index_1, [index_2])?,
-        )),
-        Ok("2") => Ok((
-            LocalEncryptionKeyring::new(encryption_2, [encryption_1])?,
-            LocalBlindIndexKeyring::new(index_2, [index_1])?,
-        )),
-        _ => Err("key configuration: CRYPTBOX_GENERATION must be 1 or 2".into()),
+    let (encryption_state, index_state) =
+        match (env::var("CRYPTBOX_ENCRYPTION"), env::var("CRYPTBOX_INDEX")) {
+            (Ok(encryption), Ok(index)) => (encryption, index),
+            (Err(env::VarError::NotPresent), Err(env::VarError::NotPresent)) => {
+                // Preserve the introductory tutorial's both-readable shorthand.
+                let state = match env::var("CRYPTBOX_GENERATION").as_deref() {
+                    Ok("1") => "staged",
+                    Ok("2") => "2",
+                    _ => return Err("key configuration: CRYPTBOX_GENERATION must be 1 or 2".into()),
+                };
+                (state.to_owned(), state.to_owned())
+            }
+            _ => {
+                return Err(
+                    "key configuration: set both CRYPTBOX_ENCRYPTION and CRYPTBOX_INDEX".into(),
+                );
+            }
+        };
+    // State 1 does not even load generation 2. Staging retains generation 1 for writes.
+    let encryption = match encryption_state.as_str() {
+        "1" => LocalEncryptionKeyring::new(encryption_1, [])?,
+        "staged" | "2" => {
+            let encryption_2 = EncryptionKey::new(
+                key_id!("20000000-0000-4000-8000-000000000002"),
+                *load_root_key(directory, "encryption-2.hex")?,
+            );
+            if encryption_state == "staged" {
+                LocalEncryptionKeyring::new(encryption_1, [encryption_2])?
+            } else {
+                LocalEncryptionKeyring::new(encryption_2, [encryption_1])?
+            }
+        }
+        _ => return Err("key configuration: CRYPTBOX_ENCRYPTION must be 1, staged or 2".into()),
+    };
+    let indexes = match index_state.as_str() {
+        "1" => LocalBlindIndexKeyring::new(index_1, [])?,
+        "staged" | "2" => {
+            let index_2 = BlindIndexKey::new(
+                index_key_id!("40000000-0000-4000-8000-000000000004"),
+                *load_root_key(directory, "index-2.hex")?,
+            );
+            if index_state == "staged" {
+                LocalBlindIndexKeyring::new(index_1, [index_2])?
+            } else {
+                LocalBlindIndexKeyring::new(index_2, [index_1])?
+            }
+        }
+        _ => return Err("key configuration: CRYPTBOX_INDEX must be 1, staged or 2".into()),
+    };
+    Ok((encryption, indexes))
+}
+
+const CANARY: &str = "rotation-canary@example.invalid";
+
+fn rotation_canary(
+    path: &str,
+    encryption: &LocalEncryptionKeyring,
+    indexes: &LocalBlindIndexKeyring,
+) -> Result<()> {
+    let value = Encrypted::<_, UserEmail>::new(CANARY.to_owned());
+    let prepared = value
+        .prepare_with(&(), encryption)?
+        .with_index_with::<EmailLookup>(indexes)?;
+    // Out-of-band synthetic data: never put a future generation in the live users table.
+    std::fs::write(
+        path,
+        format!(
+            "{}\n{}\n",
+            hex::encode(prepared.ciphertext().as_bytes()),
+            hex::encode(prepared.index::<EmailLookup>()?.as_bytes())
+        ),
+    )?;
+    println!("Canary saved.");
+    Ok(())
+}
+
+fn rotation_ready(
+    path: &str,
+    encryption: &LocalEncryptionKeyring,
+    indexes: &LocalBlindIndexKeyring,
+) -> Result<()> {
+    let text = std::fs::read_to_string(path)?;
+    let lines: Vec<_> = text.lines().collect();
+    if lines.len() != 2 {
+        return Err("invalid canary".into());
     }
+    let ciphertext = EmailCiphertext::from_bytes(hex::decode(lines[0])?)?;
+    if ciphertext.decrypt_with(&(), encryption)?.expose_secret() != CANARY {
+        return Err("canary plaintext mismatch".into());
+    }
+    let token = hex::decode(lines[1])?;
+    let probes =
+        blind_index_probes::<EmailLookup, str, FieldBound<UserEmail>>(CANARY, &(), indexes)?;
+    if !probes.iter().any(|probe| probe.as_bytes() == token) {
+        return Err("canary index generation unavailable or mismatched".into());
+    }
+    println!("Ready.");
+    Ok(())
 }
 
 async fn put(
@@ -222,8 +301,15 @@ async fn macro_get(
 #[tokio::main]
 async fn main() -> Result<()> {
     let (encryption, indexes) = load_keyrings_from_env()?; // Fail before opening storage if key loading fails.
-    let mut connection = DbConnection::connect(&env::var("DATABASE_URL")?).await?;
     let args: Vec<String> = env::args().skip(1).collect();
+    if let [command, path] = args.as_slice() {
+        match command.as_str() {
+            "rotation-canary" => return rotation_canary(path, &encryption, &indexes),
+            "rotation-ready" => return rotation_ready(path, &encryption, &indexes),
+            _ => {}
+        }
+    }
+    let mut connection = DbConnection::connect(&env::var("DATABASE_URL")?).await?;
     match args
         .iter()
         .map(String::as_str)
@@ -250,6 +336,20 @@ async fn main() -> Result<()> {
         }
         ["put-null", id] => put(&mut connection, id.parse()?, None, &encryption, &indexes).await?,
         ["get", id] => get(&mut connection, id.parse()?, &encryption).await?,
+        ["generations", id] => {
+            let row = sqlx::query("SELECT email, email_lookup FROM users WHERE id = $1")
+                .bind(id.parse::<i64>()?)
+                .fetch_one(&mut connection)
+                .await?;
+            let ciphertext: EmailCiphertext = row.try_get("email")?;
+            let index: Vec<u8> = row.try_get("email_lookup")?;
+            // Structural metadata only; use get/search for authenticated reads.
+            println!(
+                "Encryption: {}; index: {}.",
+                inspect_ciphertext(ciphertext.as_bytes())?.key_id(),
+                inspect_blind_index(&index)?.index_key_id()
+            );
+        }
         #[cfg(feature = "macro-check")]
         ["macro-get", id] => macro_get(&mut connection, id.parse()?, &encryption).await?,
         #[cfg(feature = "macro-check")]
@@ -271,7 +371,13 @@ async fn main() -> Result<()> {
                 .execute(&mut connection).await?;
             println!("False candidate injected.");
         }
-        _ => return Err("usage: init | put ID EMAIL | put-null ID | get ID | search EMAIL".into()),
+        _ => {
+            return Err(concat!(
+                "usage: init | put ID EMAIL | put-null ID | get ID | search EMAIL | ",
+                "generations ID | rotation-canary FILE | rotation-ready FILE"
+            )
+            .into());
+        }
     }
     connection.close().await?;
     Ok(())

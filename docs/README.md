@@ -12,7 +12,7 @@ including stored-byte Serde support. See [document authority and versions](#docu
 | Encrypt a first field | [Fresh-project tutorial](first-field.md) | [Field-bound SQLite](first-field-sqlite.md), [concepts](concepts.md) |
 | Store and search durable SQLx data | [PostgreSQL / SQLite consumer](searchable-sqlx.md) | [Testing](testing.md#durable-searchable-consumer), [integration trial](searchable-sqlx-walk.md) |
 | Serialize stored values | [Stored-value tutorial (unreleased Serde support)](stored-values.md) | [Stored-value assurance](stored-values.md#obtain-additional-assurance) |
-| Rotate keys and rewrite data | [Key rotation example](../examples/key_rotation.rs) | [Maintenance sweep how-to](reencryption-sweep.md) |
+| Rotate keys and rewrite data | [Staggered fleet rotation](key-rotation.md) | [Maintenance sweep how-to](reencryption-sweep.md) |
 | Adopt encryption over existing data | [Legacy migration how-to](legacy-migration.md) | [Legacy example](../examples/legacy_migration.rs), [plaintext example](../examples/plaintext_migration.rs) |
 | Review security | [Review path and gates](security.md#security-review-path) | [Wire-format reference](wire-format.md), [suite research](suite-evaluation.md), [proposed policy](suite-1-usage-policy.md) |
 | Test and diagnose an integration | [Testing and diagnostics how-to](testing.md) | [Stored-value assurance procedure](stored-values.md#obtain-additional-assurance) |
@@ -20,7 +20,7 @@ including stored-byte Serde support. See [document authority and versions](#docu
 | Maintain documentation | [Documentation checks](documentation.md) | [Adoption walk](adoption-walk.md), [first-field docs-only walk](first-field-walk.md) |
 
 The first-field and SQLx tutorials use published 0.5.0 with explicit local
-providers. Fleet rotation continues in [#58].
+providers. The [fleet rotation continuation](key-rotation.md) uses the same consumer.
 
 ### Integration caveat
 
@@ -66,6 +66,7 @@ and profile schema. No production approval follows from any version number.
 | [Security explanation](security.md) | Adoption threat model, unsuitable use cases, review path and unfinished gates |
 | [First-field tutorial](first-field.md) and [SQLite continuation](first-field-sqlite.md) | Complete published-release consumer setup and first success; snippets shared with executed examples |
 | [Searchable SQLx tutorial](searchable-sqlx.md) | Durable key loading, PostgreSQL/SQLite CRUD, nullable/deferred reads, macro prerequisites and verified lookup |
+| [Fleet rotation how-to](key-rotation.md) | Independent key staging, readiness, writer promotion, provider lifecycle and compatible rollback |
 | [Stored-value tutorial](stored-values.md) | Unreleased explicit Serde consumer path using a checkout dependency, plus assurance steps |
 | [Maintenance](reencryption-sweep.md) and [legacy migration](legacy-migration.md) how-tos | Existing bounded maintenance procedures; operational extensions remain tracked downstream |
 | [Plaintext migration redirect](plaintext-migration.md) | Preserves the old entry point; canonical procedure is legacy migration |

@@ -1,7 +1,8 @@
 # Re-encryption Maintenance Sweeps
 
 **How-to · current 0.5.0 API.** Run bounded maintenance over stored values.
-[All tasks](README.md) · [Rotation concepts](concepts.md#generations-and-lookup).
+[All tasks](README.md) · [Fleet rotation procedure](key-rotation.md) ·
+[Rotation concepts](concepts.md#generations-and-lookup).
 
 Key rotation makes a new encryption key current while retaining historical keys
 for reads. It does not require an immediate table rewrite. A maintenance sweep

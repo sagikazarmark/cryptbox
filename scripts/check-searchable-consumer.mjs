@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { checkRotation } from './check-rotation-consumer.mjs';
 
 const [mode = 'checkout', backend = 'sqlite'] = process.argv.slice(2);
 assert.ok(['checkout', 'published'].includes(mode));
@@ -20,6 +21,8 @@ const env = {
   DATABASE_URL: backend === 'sqlite' ? `sqlite://${scratch}/users.db?mode=rwc` : process.env.DATABASE_URL,
   CRYPTBOX_KEY_DIR: join(scratch, 'keys'),
   CRYPTBOX_GENERATION: '1',
+  CRYPTBOX_ENCRYPTION: undefined,
+  CRYPTBOX_INDEX: undefined,
 };
 function command(program, args, overrides = {}, success = true) {
   const result = spawnSync(program, args, { cwd: scratch, env: { ...env, ...overrides }, encoding: 'utf8' });
@@ -80,6 +83,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
   }
   assert.equal(cli(['init']).stdout.trim(), 'Schema ready.');
+  // Begin the generation-1 rehearsal on empty storage, as the runbook requires.
+  checkRotation(cli);
   assert.equal(cli(['put', '1', ' Alice@Example.com ']).stdout.trim(), 'Stored 1.');
   assert.equal(cli(['get', '1']).stdout.trim(), '1:  Alice@Example.com');
   assert.equal(cli(['search', 'alice@example.com']).stdout.trim(), 'Matches: [1]; rejected: 0.');
@@ -109,6 +114,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   }
   writeFileSync(keyFile, original);
   assert.equal(cli(['get', '1']).stdout.trim(), '1:  Alice@Example.com');
+  for (const role of ['encryption', 'index']) {
+    const file = join(env.CRYPTBOX_KEY_DIR, `${role}-2.hex`);
+    const original = readFileSync(file);
+    writeFileSync(file, randomBytes(32).toString('hex'));
+    cli(['rotation-ready', 'index.canary'], {}, false);
+    writeFileSync(file, original);
+    assert.equal(cli(['rotation-ready', 'index.canary']).stdout.trim(), 'Ready.');
+  }
+  assert.match(cli(['get', '1'], { CRYPTBOX_ENCRYPTION: '2' }, false).stderr, /set both/);
+  assert.match(cli(['get', '1'], { CRYPTBOX_ENCRYPTION: 'invalid', CRYPTBOX_INDEX: '1' }, false).stderr, /key configuration/);
   command('cargo', ['check', '--locked', '--no-default-features', '--features', `${backend},macro-check`]);
   command('cargo', ['build', '--locked', '--no-default-features', '--features', `${backend},macro-check`]);
   assert.equal(cli(['macro-get', '1']).stdout.trim(), '1:  Alice@Example.com');

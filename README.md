@@ -30,7 +30,7 @@ equality/frequency; every hit requires decrypted, normalized comparison.
 - **Configure:** [feature/platform reference](docs/features.md), shared with the crate landing page.
 - **Start:** [encrypt your first field in a fresh Rust project](docs/first-field.md).
 - **Integrate:** [durable, searchable PostgreSQL / SQLite application](docs/searchable-sqlx.md) and [stored-value tutorial (unreleased Serde support)](docs/stored-values.md).
-- **Operate:** [key rotation](examples/key_rotation.rs), [maintenance sweeps](docs/reencryption-sweep.md), and [legacy migration](docs/legacy-migration.md).
+- **Operate:** [staggered key rotation](docs/key-rotation.md), [maintenance sweeps](docs/reencryption-sweep.md), and [legacy migration](docs/legacy-migration.md).
 - **Review security:** [review reading path](docs/security.md#security-review-path).
 - **Browse:** [all documentation, examples, and document authority](docs/README.md).
 

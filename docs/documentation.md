@@ -78,9 +78,12 @@ The same script runs the durable SQLite consumer. Its focused runner is
 Use `postgres` with a disposable `DATABASE_URL` for live PostgreSQL; Dagger's
 existing PostgreSQL check runs both modes. See [execution coverage](testing.md#durable-searchable-consumer).
 Format the standalone consumer with `rustfmt --edition 2024 docs/snippets/searchable.rs`
-before updating shared blocks. The lookup diagram's canonical source is
-`docs/diagrams/lookup.mmd`, embedded by the snippet script; it is Markdown-only
-and needs no separate rustdoc SVG.
+before updating shared blocks. The lookup and fleet-rotation diagrams' canonical
+sources are `docs/diagrams/lookup.mmd` and `docs/diagrams/rotation.mmd`, embedded
+by the snippet script; they are Markdown-only and need no separate rustdoc SVG.
+The diagram check still renders both to validate their Mermaid syntax.
+The searchable runner includes the staggered rollout/rollback fixture on both
+backends through the same existing CI/Dagger entry points.
 
 The lifecycle's canonical source is `docs/diagrams/lifecycle.mmd`. The snippet
 script embeds it in Markdown, and pinned Mermaid CLI produces the committed SVG

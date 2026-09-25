@@ -193,6 +193,15 @@ against the live schema and executes both nullable and non-null reads, plus a
 prepared macro write with a custom ciphertext input override followed by lookup. Errors
 from authentication are not classified as ordinary false candidates.
 
+The same runner includes `scripts/check-rotation-consumer.mjs`, exercising the
+[fleet rotation procedure](key-rotation.md) on both backends: two independently
+configured instances stage and promote encryption and index keys separately,
+acknowledge trusted canaries, retain all-generation lookup with candidate
+filtering, and roll back current selection without losing historical access.
+Every request restarts the CLI. Checks cover mismatched material under stable
+IDs, premature readiness failure, independent stored generations without a sweep,
+and the read failures/search omissions caused by an incompatible rollback.
+
 `check-consumers.mjs` includes the SQLite route in the existing GitHub Actions and
 Dagger docs checks. `dagger check cryptbox:test:postgres` runs both consumer modes
 against its existing PostgreSQL service before the round-trip/sweep tests below.
