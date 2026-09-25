@@ -20,6 +20,8 @@ export function checkMigration(cli) {
   assert.match(cli(['migration-search', 'mixed@example.com'], keys, false).stderr, /unresolved quarantine/);
   assert.match(cli(['migration-close'], keys, false).stderr, /unresolved quarantine/);
   assert.equal(output(['migration-restore']), 'Restored 20 from approved fixture source.');
+  // A duplicate restoration raises SQLx's database error, never server detail on stderr.
+  assert.equal(cli(['migration-restore'], keys, false).stderr.trim(), 'Error: "database operation failed"');
   assert.equal(output(['sweep-batch', 'legacy-2']),
     'Checkpoint: Some(20); current: 2; stale: 0; conflicts: 0.');
   assert.equal(output(['sweep-uncheckpointed', 'legacy-2']),

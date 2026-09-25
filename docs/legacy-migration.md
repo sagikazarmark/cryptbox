@@ -300,6 +300,9 @@ investigation must supply approved replacement data or an explicitly authorized
 business deletion. The fixture's `migration-restore` uses the known synthetic
 source, inserts a prepared E2/I2 pair without overwriting a concurrent recreation,
 and resolves the case in the same transaction. It retains the damaged evidence.
+The CLI maps SQLx errors (including nested sweep-store errors) to the static
+`database operation failed` category. The acceptance check attempts a duplicate
+restore and asserts that no database detail reaches stderr.
 
 The resumed batch reports checkpoint 20/current 2. The uncheckpointed batch
 rewrites row 30, observes row 40 current, and exits with returned checkpoint 40

@@ -426,6 +426,24 @@ async fn macro_get(
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    run().await.map_err(sanitize_database_error)
+}
+
+fn sanitize_database_error(error: Box<dyn Error>) -> Box<dyn Error> {
+    let mut cause: Option<&(dyn Error + 'static)> = Some(error.as_ref());
+    while let Some(current) = cause {
+        // Also covers database errors wrapped in SweepError::Store.
+        if current.is::<sqlx::Error>() {
+            return "database operation failed".into();
+        }
+        cause = current.source();
+    }
+    // Other errors in this consumer are static application categories or CryptBox's
+    // sanitized errors. Revisit this allowlist before adding other upstream errors.
+    error
+}
+
+async fn run() -> Result<()> {
     let (encryption, indexes) = load_keyrings_from_env()?; // Fail before opening storage if key loading fails.
     let args: Vec<String> = env::args().skip(1).collect();
     if let [command, path] = args.as_slice() {
