@@ -95,6 +95,11 @@ through mixed-format search, failed recovery, exceptional-row repair and strict
 closure, including a rebuild without the legacy handler/key or migration features.
 The [migration guide](legacy-migration.md) owns the procedure; keep its commands
 and expected outcomes aligned with this CLI acceptance check.
+Append `recovery` with the `sqlite` backend for
+`scripts/check-recovery-consumer.mjs`: a pre-rotation database copy, online key
+removal and isolated historical-key restore/search. It uses SQLite `VACUUM INTO`
+through SQLx and needs no additional backup utility. Both dependency modes run
+in the full consumer checks; [key retirement](key-retirement.md) owns this procedure.
 
 The lifecycle's canonical source is `docs/diagrams/lifecycle.mmd`. The snippet
 script embeds it in Markdown, and pinned Mermaid CLI produces the committed SVG

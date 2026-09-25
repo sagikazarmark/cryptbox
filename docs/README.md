@@ -14,6 +14,7 @@ including stored-byte Serde support. See [document authority and versions](#docu
 | Serialize stored values | [Stored-value tutorial (unreleased Serde support)](stored-values.md) | [Stored-value assurance](stored-values.md#obtain-additional-assurance) |
 | Rotate keys and rewrite data | [Staggered fleet rotation](key-rotation.md) | [Maintenance sweep how-to](reencryption-sweep.md) |
 | Interrupt, resume, and repeat maintenance | [Durable sweep walkthrough](reencryption-sweep.md#durable-postgresql-and-sqlite-walkthrough) | [Run ownership](reencryption-sweep.md#run-identity-and-progress-ownership), [verification and retirement](reencryption-sweep.md#verification-and-retirement) |
+| Retire online keys and recover backups | [Retirement and isolated restore](key-retirement.md) | [Recovery cutover](key-retirement.md#returning-recovered-data-to-service), [destruction evidence](key-retirement.md#evidence-before-eventual-destruction) |
 | Adopt encryption over existing data | [Mixed-format migration and search](legacy-migration.md) | [Durable walkthrough](legacy-migration.md#durable-mixed-format-walkthrough), [maintenance cutover](legacy-migration.md#coordinated-maintenance-cutover) |
 | Review security | [Review path and gates](security.md#security-review-path) | [Wire-format reference](wire-format.md), [suite research](suite-evaluation.md), [proposed policy](suite-1-usage-policy.md) |
 | Test and diagnose an integration | [Testing and diagnostics how-to](testing.md) | [Stored-value assurance procedure](stored-values.md#obtain-additional-assurance) |
@@ -70,6 +71,7 @@ and profile schema. No production approval follows from any version number.
 | [Fleet rotation how-to](key-rotation.md) | Independent key staging, readiness, writer promotion, provider lifecycle and compatible rollback |
 | [Stored-value tutorial](stored-values.md) | Unreleased explicit Serde consumer path using a checkout dependency, plus assurance steps |
 | [Maintenance how-to](reencryption-sweep.md) | Run identity, durable checkpoints, bounded rewrite/verification, recovery and repeat rotations |
+| [Key-retirement how-to](key-retirement.md) | Online removal, recovery inventory/retention, isolated backup restore and eventual destruction evidence |
 | [Legacy migration how-to](legacy-migration.md) | Reader-first rollout, transitional search, legacy provenance, exceptional-row recovery, maintenance cutover and verified strict closure |
 | [Plaintext migration redirect](plaintext-migration.md) | Preserves the old entry point; canonical procedure is legacy migration |
 | [Testing how-to](testing.md) | Local providers, automatic-adapter isolation, diagnostic metadata |

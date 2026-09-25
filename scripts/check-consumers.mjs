@@ -37,6 +37,7 @@ try {
     execFileSync(process.execPath, ['scripts/check-searchable-consumer.mjs', mode, 'sqlite'], { stdio: 'inherit' });
     execFileSync(process.execPath, ['scripts/check-searchable-consumer.mjs', mode, 'sqlite', 'sweep'], { stdio: 'inherit' });
     execFileSync(process.execPath, ['scripts/check-searchable-consumer.mjs', mode, 'sqlite', 'migration'], { stdio: 'inherit' });
+    execFileSync(process.execPath, ['scripts/check-searchable-consumer.mjs', mode, 'sqlite', 'recovery'], { stdio: 'inherit' });
   }
 } finally {
   rmSync(scratch, { recursive: true, force: true });

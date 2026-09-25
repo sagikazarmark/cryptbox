@@ -8,11 +8,13 @@ import { randomBytes } from 'node:crypto';
 import { checkRotation } from './check-rotation-consumer.mjs';
 import { checkSweep } from './check-sweep-consumer.mjs';
 import { checkMigration } from './check-migration-consumer.mjs';
+import { checkRecovery } from './check-recovery-consumer.mjs';
 
 const [mode = 'checkout', backend = 'sqlite', scenario = 'searchable'] = process.argv.slice(2);
-assert.ok(['searchable', 'sweep', 'migration'].includes(scenario));
+assert.ok(['searchable', 'sweep', 'migration', 'recovery'].includes(scenario));
+assert.ok(scenario !== 'recovery' || backend === 'sqlite', 'recovery uses a SQLite database copy');
 const features = scenario === 'migration' ? `${backend},legacy-migration`
-  : scenario === 'sweep' ? `${backend},maintenance` : backend;
+  : ['sweep', 'recovery'].includes(scenario) ? `${backend},maintenance` : backend;
 assert.ok(['checkout', 'published'].includes(mode));
 assert.ok(['sqlite', 'postgres'].includes(backend));
 if (backend === 'postgres' && !process.env.DATABASE_URL) {
@@ -114,6 +116,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert.equal(cli(['search', 'STRICT@example.com'], strict).stdout.trim(), 'Matches: [80]; rejected: 0.');
     cli(['migration-search', 'mixed@example.com'], strict, false);
     console.log(`${mode}/${backend}: strict rebuild without legacy handler/key or migration features passed.`);
+  } else if (scenario === 'recovery') {
+    checkRecovery(cli, scratch, env.CRYPTBOX_KEY_DIR);
+    command('cargo', ['clippy', '--locked', '--no-default-features', '--features', features, '--', '-D', 'warnings']);
   } else if (scenario === 'sweep') {
     checkSweep(cli);
     command('cargo', ['clippy', '--locked', '--no-default-features', '--features', features, '--', '-D', 'warnings']);

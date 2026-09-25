@@ -70,14 +70,18 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
         env::var("CRYPTBOX_KEY_DIR").map_err(|_| "key configuration: CRYPTBOX_KEY_DIR required")?;
     let directory = Path::new(&directory);
     // These IDs are immutable companions of the provisioned files; never reassign them.
-    let encryption_1 = EncryptionKey::new(
-        key_id!("10000000-0000-4000-8000-000000000001"),
-        *load_root_key(directory, "encryption-1.hex")?,
-    );
-    let index_1 = BlindIndexKey::new(
-        index_key_id!("30000000-0000-4000-8000-000000000003"),
-        *load_root_key(directory, "index-1.hex")?,
-    );
+    let encryption_1 = || -> Result<EncryptionKey> {
+        Ok(EncryptionKey::new(
+            key_id!("10000000-0000-4000-8000-000000000001"),
+            *load_root_key(directory, "encryption-1.hex")?,
+        ))
+    };
+    let index_1 = || -> Result<BlindIndexKey> {
+        Ok(BlindIndexKey::new(
+            index_key_id!("30000000-0000-4000-8000-000000000003"),
+            *load_root_key(directory, "index-1.hex")?,
+        ))
+    };
     let (encryption_state, index_state) =
         match (env::var("CRYPTBOX_ENCRYPTION"), env::var("CRYPTBOX_INDEX")) {
             (Ok(encryption), Ok(index)) => (encryption, index),
@@ -98,8 +102,16 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
         };
     // State 1 does not even load generation 2. Staging retains generation 1 for writes.
     let encryption = match encryption_state.as_str() {
-        "1" => LocalEncryptionKeyring::new(encryption_1, [])?,
+        "1" => LocalEncryptionKeyring::new(encryption_1()?, [])?,
+        "2-only" => LocalEncryptionKeyring::new(
+            EncryptionKey::new(
+                key_id!("20000000-0000-4000-8000-000000000002"),
+                *load_root_key(directory, "encryption-2.hex")?,
+            ),
+            [],
+        )?,
         "staged" | "2" | "staged-3" | "3" => {
+            let encryption_1 = encryption_1()?;
             let encryption_2 = EncryptionKey::new(
                 key_id!("20000000-0000-4000-8000-000000000002"),
                 *load_root_key(directory, "encryption-2.hex")?,
@@ -122,13 +134,21 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
         }
         _ => {
             return Err(
-                "key configuration: CRYPTBOX_ENCRYPTION must be 1, staged, 2, staged-3 or 3".into(),
+                "key configuration: CRYPTBOX_ENCRYPTION must be 1, staged, 2, 2-only, staged-3 or 3".into(),
             );
         }
     };
     let indexes = match index_state.as_str() {
-        "1" => LocalBlindIndexKeyring::new(index_1, [])?,
+        "1" => LocalBlindIndexKeyring::new(index_1()?, [])?,
+        "2-only" => LocalBlindIndexKeyring::new(
+            BlindIndexKey::new(
+                index_key_id!("40000000-0000-4000-8000-000000000004"),
+                *load_root_key(directory, "index-2.hex")?,
+            ),
+            [],
+        )?,
         "staged" | "2" | "staged-3" | "3" => {
+            let index_1 = index_1()?;
             let index_2 = BlindIndexKey::new(
                 index_key_id!("40000000-0000-4000-8000-000000000004"),
                 *load_root_key(directory, "index-2.hex")?,
@@ -151,7 +171,8 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
         }
         _ => {
             return Err(
-                "key configuration: CRYPTBOX_INDEX must be 1, staged, 2, staged-3 or 3".into(),
+                "key configuration: CRYPTBOX_INDEX must be 1, staged, 2, 2-only, staged-3 or 3"
+                    .into(),
             );
         }
     };
@@ -159,6 +180,41 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
 }
 
 const CANARY: &str = "rotation-canary@example.invalid";
+
+#[cfg(feature = "maintenance")]
+async fn audit_current(
+    connection: &mut DbConnection,
+    encryption: &LocalEncryptionKeyring,
+    indexes: &LocalBlindIndexKeyring,
+) -> Result<()> {
+    // Operator holds a write/restore pause across the full audit and retirement gate.
+    let mut after: Option<i64> = None;
+    let mut count = 0;
+    loop {
+        let rows = sqlx::query("SELECT id, email, email_lookup FROM users WHERE ($1 IS NULL OR id > $1) ORDER BY id LIMIT 2")
+            .bind(after).fetch_all(&mut *connection).await?;
+        if rows.is_empty() {
+            break;
+        }
+        for row in rows {
+            // This maintenance fixture requires non-NULL values, as does its packaged sweep.
+            let ciphertext: EmailCiphertext = row.try_get("email")?;
+            let value = ciphertext.decrypt_with(&(), encryption)?;
+            let expected = cryptbox::derive_blind_index::<
+                EmailLookup,
+                String,
+                FieldBound<UserEmail>,
+            >(value.expose_secret(), &(), indexes)?;
+            if expected.as_bytes() != row.try_get::<Vec<u8>, _>("email_lookup")? {
+                return Err("index consistency check failed".into());
+            }
+            after = Some(row.try_get("id")?);
+            count += 1;
+        }
+    }
+    println!("Audited: {count} authenticated, current-index rows.");
+    Ok(())
+}
 
 #[cfg(feature = "maintenance")]
 async fn maintenance(
@@ -489,6 +545,21 @@ async fn run() -> Result<()> {
         }
         ["put-null", id] => put(&mut connection, id.parse()?, None, &encryption, &indexes).await?,
         ["get", id] => get(&mut connection, id.parse()?, &encryption).await?,
+        #[cfg(all(feature = "maintenance", feature = "sqlite"))]
+        ["recovery-copy", path] => {
+            // SQLite makes a consistent standalone copy, including any committed WAL data.
+            // Refuse replacement even of an empty artifact; SQL also rejects nonempty targets.
+            if Path::new(path).exists() {
+                return Err("database copy destination already exists".into());
+            }
+            sqlx::query("VACUUM INTO $1")
+                .bind(path)
+                .execute(&mut connection)
+                .await?;
+            println!("Database copy saved.");
+        }
+        #[cfg(feature = "maintenance")]
+        ["audit-current"] => audit_current(&mut connection, &encryption, &indexes).await?,
         #[cfg(feature = "maintenance")]
         [
             command @ ("sweep-status"
@@ -540,7 +611,8 @@ async fn run() -> Result<()> {
                 "usage: init | put ID EMAIL | put-null ID | get ID | search EMAIL | ",
                 "generations ID | rotation-canary FILE | rotation-ready FILE; ",
                 "with maintenance: sweep-status RUN | sweep-batch RUN | sweep-verify RUN | ",
-                "sweep-uncheckpointed RUN | sweep-conflict RUN"
+                "sweep-uncheckpointed RUN | sweep-conflict RUN | audit-current; ",
+                "with sqlite,maintenance: recovery-copy NEW_FILE"
             )
             .into());
         }

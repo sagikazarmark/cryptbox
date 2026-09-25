@@ -11,6 +11,8 @@ an encryption suite.
 Live-data convergence does not show that backups or other stores no longer need
 historical keys: online removal, recovery retention, and destruction are separate
 decisions, as described under [verification and retirement](#verification-and-retirement).
+Continue with the [tested backup-aware retirement and isolated restore](key-retirement.md)
+after the live-data gates pass.
 
 The [durable walkthrough](#durable-postgresql-and-sqlite-walkthrough) below uses
 the searchable consumer and packaged SQLx stores, with real process exits. The

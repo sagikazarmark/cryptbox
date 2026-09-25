@@ -65,8 +65,10 @@ Generate encryption and blind-index roots independently.
 Rotation selects a new current generation; it is not revocation, re-encryption,
 or crypto-shredding. Live-table convergence does not prove that old keys can be
 destroyed: backups, archives, and rollback data may still need them. Start with
-the [maintenance guide](reencryption-sweep.md) and consult the remaining
-[operational journey work](adoption-walk.md#remaining-journeys).
+the [maintenance guide](reencryption-sweep.md), then follow the
+[backup-aware retirement and isolated restore](key-retirement.md). It separates
+online availability from recovery-only retention and the evidence needed for
+eventual material destruction, including historical index dependencies.
 
 ## Security review path
 

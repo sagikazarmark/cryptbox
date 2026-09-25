@@ -25,6 +25,7 @@ Each has these states:
 | `1` | 1 | 1 | `role-1.hex` only |
 | `staged` | 1 | 1 and 2 | `role-1.hex`, `role-2.hex` |
 | `2` | 2 | 1 and 2 | `role-1.hex`, `role-2.hex` |
+| `2-only` | 2 | 2 only | `role-2.hex` only; [retirement gates](key-retirement.md) required |
 | `staged-3` | 2 | 1, 2 and 3 | files 1, 2, 3 for this role |
 | `3` | 3 | 1, 2 and 3 | files 1, 2, 3 for this role |
 
@@ -385,8 +386,8 @@ index/plaintext consistency separately; a generation-only scan is not all three.
 Before removing online keys, inventory every store and retained artifact, preserve
 the historical ID/material pairs for backups/archives/rollback data, and validate
 restoration and historical lookup. Live-table convergence alone is not permission
-to destroy keys. The [recovery continuation (#60)](https://github.com/sagikazarmark/cryptbox/issues/60)
-owns the complete retirement/restore exercise.
+to destroy keys. Follow the [tested retirement and isolated restore continuation](key-retirement.md)
+for the complete recovery lifecycle.
 
 ## Verification and operator task
 

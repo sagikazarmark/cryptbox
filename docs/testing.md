@@ -228,6 +228,23 @@ PostgreSQL uses the same isolated-schema infrastructure. Both published/checkout
 SQLite variants run in the consumer checks, and both PostgreSQL variants run in
 the existing Dagger service check. This supplements the connection-level cases below.
 
+Append `recovery` with SQLite to exercise the
+[backup-aware retirement walkthrough](key-retirement.md):
+
+```sh
+node scripts/check-searchable-consumer.mjs checkout sqlite recovery
+node scripts/check-searchable-consumer.mjs published sqlite recovery
+```
+
+The consumer creates a pre-rotation SQLite database copy with `VACUUM INTO`,
+promotes compatible writers, sweeps and audits live data, then continues online
+with only E2/I2 after E1/I1 files move into a separate recovery directory. A
+separate restored database and processes prove historical authenticated reads
+and verified lookup. Assertions also detect an inconsistent current-generation
+index, missing historical probes, and changes to the captured row set. Both
+modes run through `check-consumers.mjs` in GitHub Actions and Dagger. This tests
+the example's SQLite backup lifecycle, not PostgreSQL backup tooling.
+
 Append `migration` instead for the [mixed-format migration journey](legacy-migration.md#durable-mixed-format-walkthrough):
 
 ```sh

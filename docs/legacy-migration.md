@@ -496,6 +496,9 @@ After the terminal state, with every writer using the target generations:
 **A clean live-data pass does not establish that backups or other stores no longer
 need historical or legacy keys.** Online removal, recovery retention, and key
 destruction are distinct decisions.
+Follow the [tested backup-aware retirement and isolated restore](key-retirement.md)
+for historical CryptBox ciphertext and indexes; retain legacy handlers/material
+as well when a pre-migration artifact needs them.
 
 1. Replace `MaybeEncrypted` reads with strict `Encrypted`/`Ciphertext` reads.
 2. Delete the legacy handler and confirm no references to its type remain.
