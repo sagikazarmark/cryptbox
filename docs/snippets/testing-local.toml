@@ -1,0 +1,8 @@
+[package]
+name = "testing-local-consumer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cryptbox = "=0.5.0"
+zeroize = { version = "1.8.1", features = ["alloc"], default-features = false }

@@ -1,0 +1,10 @@
+[package]
+name = "testing-automatic-consumer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cryptbox = { version = "=0.5.0", features = ["sqlx-sqlite"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["sqlite"] }
+futures-executor = "0.3.34"
+zeroize = { version = "1.8.1", features = ["alloc"], default-features = false }

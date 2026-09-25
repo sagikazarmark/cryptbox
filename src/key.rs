@@ -417,7 +417,10 @@ static GLOBAL_PROVIDERS: OnceLock<GlobalProviders> = OnceLock::new();
 /// through methods such as [`crate::Encrypted::encrypt_with`] and
 /// [`crate::Ciphertext::decrypt_with`]. Tests of automatic storage adapters can
 /// instead define their own [`KeyContext`] backed by synchronized, swappable
-/// providers.
+/// providers. Synchronizing individual provider calls does not isolate a whole
+/// test: cases replacing shared keys must be serialized for their entire
+/// setup/use lifetime or run in separate processes. See the
+/// [testing guide](https://github.com/sagikazarmark/cryptbox/blob/main/docs/testing.md#automatic-adapters).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GlobalKeyContext;
 

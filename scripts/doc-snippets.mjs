@@ -21,6 +21,10 @@ const sources = {
   'searchable-sqlite-schema': ['sql', read('docs/snippets/searchable-sqlite.sql')],
   searchable: ['rust', read('docs/snippets/searchable.rs')],
   lookup: ['mermaid', read('docs/diagrams/lookup.mmd')],
+  'testing-local-manifest': ['toml', read('docs/snippets/testing-local.toml')],
+  'testing-automatic-manifest': ['toml', read('docs/snippets/testing-automatic.toml')],
+  'testing-diagnostics-manifest': ['toml', read('docs/snippets/testing-diagnostics.toml')],
+  'testing-diagnostics': ['rust', read('docs/snippets/testing-diagnostics.rs')],
 };
 const pages = {
   'README.md': ['first-field'],
@@ -28,6 +32,7 @@ const pages = {
   'docs/first-field-sqlite.md': ['sqlite-manifest', 'sqlite'],
   'docs/concepts.md': ['lifecycle'],
   'docs/searchable-sqlx.md': ['searchable-manifest', 'searchable-postgres-schema', 'searchable-sqlite-schema', 'searchable', 'lookup'],
+  'docs/testing.md': ['testing-local-manifest', 'testing-automatic-manifest', 'testing-diagnostics-manifest', 'testing-diagnostics'],
 };
 const write = process.argv.includes('--write');
 for (const [page, expected] of Object.entries(pages)) {

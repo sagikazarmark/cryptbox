@@ -1,80 +1,163 @@
 # Testing and diagnostics
 
-**How-to · current 0.5.0 API.** These are the existing local-provider and
-automatic-adapter patterns, moved from the project landing page. A complete
-consumer testing recipe is tracked in
-[#56](https://github.com/sagikazarmark/cryptbox/issues/56). [All tasks](README.md).
+**How-to · current 0.5.0 API.** Run independent application tests, exercise
+automatic SQLx adapters, and report failures without exposing values or keys.
+These recipes run against both published 0.5.0 and this checkout using their
+own manifests. [All tasks](README.md).
+
+Prerequisites: Rust/Cargo **1.85 or newer** and dependency network access, as in
+the [first-field tutorial](first-field.md). SQLite needs no server or Tokio
+runtime here: SQLx's SQLite feature bundles SQLite and the example selects
+`futures-executor`. No environment variables or external keys are needed.
+All predictable keys below are **public test fixtures**, never durable keys;
+real encryption and blind-index roots must be generated independently and
+[loaded durably](searchable-sqlx.md#2-provision-durable-key-generations-once).
 
 ## Local providers
 
-Applications that use context-less methods or automatic storage adapters should
-install `GlobalKeyContext` once in the binary entry point. Do not install it from
-test setup or reusable library code: it is process-global and cannot be replaced
-or reset. Most tests should keep their keyring local and use the explicit
-`encrypt_with`, `decrypt_with`, `prepare_with`, `with_index_with`,
-`needs_reencryption_with`, and `reencrypt_with` methods. This keeps tests
-independent and safe to run in parallel.
+Use explicit providers for ordinary application tests. `&()` supplies the unit
+**binding context**, while `&keys` supplies a local provider; field binding still
+applies. The profile's default `GlobalKeyContext` is never consulted by these
+explicit operations.
+
+1. Run `cargo new --lib testing-local-consumer` and enter that directory.
+2. Replace `Cargo.toml` with this complete manifest (no CryptBox features needed):
+
+<!-- BEGIN SHARED: testing-local-manifest -->
+
+```toml
+[package]
+name = "testing-local-consumer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cryptbox = "=0.5.0"
+zeroize = { version = "1.8.1", features = ["alloc"], default-features = false }
+```
+
+<!-- END SHARED: testing-local-manifest -->
+
+3. Replace `src/lib.rs` with the complete [local test source](snippets/testing-local.rs).
+4. Run:
+
+```sh
+cargo check --all-targets
+cargo test --lib -- --test-threads=2
+```
+
+Expected: **two passing tests**. One test explicitly launches two simultaneous
+threaded cases, while the second is independent test-runner work. Each owns its
+encryption and blind-index keyrings; none installs a context or mutates shared
+environment. The cases deliberately reuse generation IDs with different fixture
+keys to expose accidental dependence on shared provider state. This ID reuse is
+only for isolated fixtures, not a durable generation-management pattern.
+
+Each case exercises `encrypt_with`, `decrypt_with`, `prepare_with`, and
+`with_index_with`, derives probes with the local index provider, and decrypts
+and compares a candidate. A different query is rejected by candidate comparison.
+The fixture normalizer uses exact UTF-8 bytes and 128-bit indexes; choose your
+application's equality and leakage policy deliberately, as explained in
+[lookup guidance](searchable-sqlx.md#why-lookup-needs-verification).
+Prepared storage borrows its plaintext source. The recipe checks storage
+representations in memory; use the [durable consumer](#durable-searchable-consumer)
+to test database writes and restart behavior.
+
+The explicit `needs_reencryption_with` and `reencrypt_with` methods use the same
+local-provider approach when testing rotation.
 
 ## Automatic adapters
 
-Tests that exercise automatic storage adapters cannot pass a provider directly.
-Such a test binary can select an application-defined `KeyContext` whose provider
-delegates through an `RwLock`:
+Automatic SQLx encoding/decoding cannot take a provider argument. Instead, the
+profile's `Keys` associated type selects a statically reachable `KeyContext`.
+This recipe defines `TestKeys`, selects it with `keys: TestKeys` in `profile!`,
+and stores **both** providers in an application-owned `OnceLock`. It installs
+one immutable fixture per process and uses a separate in-memory SQLite database
+per invocation.
 
-```rust
-use std::sync::{OnceLock, RwLock};
+1. Run `cargo new testing-automatic-consumer` and enter that directory.
+2. Replace `Cargo.toml` with:
 
-use cryptbox::{
-    BlindIndexKeyProvider, EncryptionKey, EncryptionKeyProvider, KeyContext,
-    KeyId, KeyProviderError, LocalEncryptionKeyring,
-};
+<!-- BEGIN SHARED: testing-automatic-manifest -->
 
-struct TestKeys(RwLock<LocalEncryptionKeyring>);
+```toml
+[package]
+name = "testing-automatic-consumer"
+version = "0.1.0"
+edition = "2024"
 
-static TEST_KEYS: OnceLock<TestKeys> = OnceLock::new();
-
-impl TestKeys {
-    fn replace(keys: LocalEncryptionKeyring) -> Result<(), KeyProviderError> {
-        let context = TEST_KEYS.get_or_init(|| Self(RwLock::new(keys.clone())));
-        *context.0.write().map_err(|_| KeyProviderError::Unavailable)? = keys;
-        Ok(())
-    }
-}
-
-impl EncryptionKeyProvider for TestKeys {
-    fn current_key(&self) -> Result<EncryptionKey, KeyProviderError> {
-        self.0
-            .read()
-            .map_err(|_| KeyProviderError::Unavailable)?
-            .current_key()
-    }
-
-    fn key(&self, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
-        self.0
-            .read()
-            .map_err(|_| KeyProviderError::Unavailable)?
-            .key(id)
-    }
-}
-
-impl KeyContext for TestKeys {
-    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, KeyProviderError> {
-        TEST_KEYS
-            .get()
-            .map(|keys| keys as &dyn EncryptionKeyProvider)
-            .ok_or(KeyProviderError::NotInitialized)
-    }
-
-    fn blind_index_keys() -> Result<&'static dyn BlindIndexKeyProvider, KeyProviderError> {
-        Err(KeyProviderError::Unavailable)
-    }
-}
+[dependencies]
+cryptbox = { version = "=0.5.0", features = ["sqlx-sqlite"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["sqlite"] }
+futures-executor = "0.3.34"
+zeroize = { version = "1.8.1", features = ["alloc"], default-features = false }
 ```
 
-Set `type Keys = TestKeys` on profiles used by those tests and call
-`TestKeys::replace` before each case. The context is still shared across the test
-process, so tests that replace it must be serialized. Add a second locked
-provider when automatic blind-index operations also need test-specific keys.
+<!-- END SHARED: testing-automatic-manifest -->
+
+3. Replace `src/main.rs` with the complete [automatic-adapter source](snippets/testing-automatic.rs).
+4. Build once, then run each fixture in its own process. On a POSIX shell:
+
+```sh
+cargo check --all-targets
+cargo build
+./target/debug/testing-automatic-consumer first &
+first_pid=$!
+./target/debug/testing-automatic-consumer second &
+second_pid=$!
+wait "$first_pid"
+wait "$second_pid"
+```
+
+These binary paths assume Cargo's default target directory; if you set
+`CARGO_TARGET_DIR`, use its `debug/` directory instead. Expected: each process
+prints `Automatic adapter round trip succeeded.` and exits successfully.
+
+Binding `Encrypted` exercises automatic encryption; decoding it exercises
+authenticated decryption. The first insert deliberately leaves the separate
+index column null: **automatic encryption does not maintain index columns**.
+Next, context-less `prepare().with_index::<EmailLookup>()` resolves both
+providers through `TestKeys`, and one SQL update writes the ciphertext/index
+pair atomically. The recipe reads back the plaintext and stored index. Full
+candidate lookup is covered by the local recipe and the durable tutorial.
+
+### Why the isolation boundary differs
+
+`GlobalKeyContext::install` accepts providers once for the **remainder of the
+process**. Installation cannot be replaced or reset; a second installation
+returns `KeyProviderAlreadyInitialized`. For profiles using that default context,
+install at the application binary entry point before context-less operations.
+Reusable library code must let its host own installation, and ordinary test
+setup must not compete to install different fixtures. The custom context above
+avoids installation into `GlobalKeyContext`, but its own static still lives for
+the whole process: a new process is what isolates each fixture.
+
+An application-defined context can instead delegate through synchronized,
+swappable providers. **An `RwLock` around individual provider calls does not make
+fixture replacement parallel-safe**: another case can replace keys between
+encryption and decryption, or between ciphertext and index preparation. If you
+choose shared mutable replacement, serialize every participating case across
+its entire setup/operation/cleanup lifetime (including background work), or
+run the cases in isolated processes. Merely using separate database connections
+or serializing the replacement call is insufficient. Multiple cases can share
+an immutable provider only when they intentionally share the same fixture.
+
+### Run the checked consumer recipes
+
+From the repository root, with Node.js **18+** in addition to Rust/Cargo:
+
+```sh
+node scripts/check-testing-consumers.mjs checkout
+node scripts/check-testing-consumers.mjs published
+```
+
+Each mode creates fresh Cargo projects from the manifests and complete sources,
+checks all targets, runs the local test file with two test threads, launches
+the automatic cases in separate concurrent processes, checks the diagnostic
+process's output, and runs Clippy with warnings denied. Add `local`, `automatic`,
+or `diagnostics` as the final argument for a focused check. `checkout` patches
+only CryptBox; `published` resolves crates.io 0.5.0. The shared
+`check-consumers.mjs` runner includes all three in GitHub Actions and Dagger.
 
 ## Durable searchable consumer
 
@@ -232,22 +315,118 @@ separately tracked in [#33](https://github.com/sagikazarmark/cryptbox/issues/33)
 `Field::ID` is the stable machine identifier; `Field::NAME` is a human-readable
 display label that may change without migrating encrypted data. Include both
 when attaching field context to application-owned errors, logs, traces, or
-metrics. This is an illustrative fragment requiring the application's `tracing`
-dependency, field declaration, and sanitized error:
-
-```text
-tracing::warn!(
-    error = %error,
-    field_id = %UserEmail::ID,
-    field_name = UserEmail::NAME,
-    operation = "decrypt",
-    "CryptBox operation failed",
-);
-```
+metrics, when your destination is allowed to see schema metadata.
 
 Field names must not contain plaintext, record-specific data, or key material.
 They may still reveal application schema, so applications decide where to emit
 them. CryptBox does not emit logs or require an observability framework.
+
+Use an allowlist: stable field ID, static diagnostic name, static operation,
+and sanitized error category. Do not emit `expose_secret()` values, encoded or
+normalized plaintext, keys (including hex/base64 forms), ciphertext/index dumps,
+query parameters, or arbitrary upstream error chains. Ciphertext and index
+tokens are sensitive stored artifacts even though they are not plaintext.
+Redacted library `Debug` output does not sanitize surrounding application data.
+Custom codecs, normalizers, and providers must preserve their sanitized error
+contracts; application-level SQLx errors can carry additional context, so map
+them to approved categories before emitting them too.
+
+To run a complete example:
+
+1. Run `cargo new testing-diagnostics-consumer` and enter that directory.
+2. Replace `Cargo.toml` with this manifest. Only CryptBox is a direct dependency;
+   output uses the standard library, with no logging dependency:
+
+<!-- BEGIN SHARED: testing-diagnostics-manifest -->
+
+```toml
+[package]
+name = "testing-diagnostics-consumer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cryptbox = "=0.5.0"
+```
+
+<!-- END SHARED: testing-diagnostics-manifest -->
+
+3. Replace `src/main.rs` with the following [canonical source](snippets/testing-diagnostics.rs):
+
+<!-- BEGIN SHARED: testing-diagnostics -->
+
+```rust
+//! Application-owned diagnostics with an allowlist of observable fields.
+
+use cryptbox::{Ciphertext, Encrypted, EncryptionKey, Error, Field, LocalEncryptionKeyring};
+
+cryptbox::profile! {
+    UserEmail: String {
+        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
+        name: "user-email",
+        codec: cryptbox::Utf8,
+        binding: field_bound,
+    }
+}
+
+fn error_category(error: &Error) -> &'static str {
+    // Allowlisted categories, not arbitrary Display/Debug or error-chain content.
+    match error {
+        Error::AuthenticationFailed => "authentication_failed",
+        Error::UnknownEncryptionKey(_) => "unknown_encryption_key",
+        Error::KeyProviderUnavailable => "key_provider_unavailable",
+        Error::KeyProviderNotInitialized => "key_provider_not_initialized",
+        Error::NotCiphertext | Error::InvalidEnvelope => "invalid_ciphertext",
+        _ => "cryptbox_error", // Error is non-exhaustive; new variants stay sanitized.
+    }
+}
+
+fn main() -> Result<(), Error> {
+    // Public test key only; never use this fixture for real data.
+    let keys = LocalEncryptionKeyring::new(
+        EncryptionKey::new(
+            cryptbox::key_id!("40000000-0000-4000-8000-000000000004"),
+            [0x31; 32],
+        ),
+        [],
+    )?;
+    let email = Encrypted::<_, UserEmail>::new("private-fixture@example.test".to_owned());
+    let ciphertext = email.encrypt_with(&(), &keys)?;
+    let mut damaged = ciphertext.as_bytes().to_vec();
+    // Corrupt the authentication tag while leaving a structurally valid envelope.
+    *damaged.last_mut().ok_or(Error::Internal)? ^= 1;
+    let damaged = Ciphertext::<String, UserEmail>::try_from(damaged)?;
+    let error = match damaged.decrypt_with(&(), &keys) {
+        Err(error) => error,
+        Ok(_) => return Err(Error::Internal),
+    };
+    assert!(matches!(error, Error::AuthenticationFailed));
+    println!(
+        "field_id={} field_name={} operation=decrypt error={}",
+        UserEmail::ID,
+        UserEmail::NAME,
+        error_category(&error),
+    );
+    Ok(())
+}
+```
+
+<!-- END SHARED: testing-diagnostics -->
+
+4. Run `cargo check --all-targets` and `cargo run`. The program deliberately
+   damages a tag and reports the resulting failure; it exits successfully after
+   checking that authentication failed. Program stdout is exactly:
+
+```text
+field_id=ca274e85-63c4-4f7d-a255-2dfecbfe5e25 field_name=user-email operation=decrypt error=authentication_failed
+```
+
+The consumer checker asserts that complete line and empty program stderr,
+excluding the fixture plaintext and all key material from observable output.
+Cargo's own build status is separate. This is representative failure-path
+coverage, not a guarantee about every future application log call. With your
+own tracing/logging framework, attach these same allowlisted fields rather
+than logging a whole request or error chain.
 
 Next: follow the [stored-value assurance procedure](stored-values.md#obtain-additional-assurance)
 or run the [repository checks](documentation.md).

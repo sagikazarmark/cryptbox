@@ -33,8 +33,9 @@ docker run --rm --entrypoint sh -v "$PWD:/work" -w /work \
 ```
 
 `check-rustdoc.sh` builds default and all-feature API documentation with warnings
-denied, then compiles/runs the README, first-field, and testing-guide Rust blocks against a
-default-feature library build. The manifest retains `missing_docs`, Clippy `all`/`pedantic` (including
+denied, then compiles/runs the README and first-field Rust blocks against a
+default-feature library build. Testing-guide sources run through their declared
+consumer manifests below. The manifest retains `missing_docs`, Clippy `all`/`pedantic` (including
 documentation lints), and denied broken intra-doc links, and additionally denies
 `rustdoc::missing_crate_level_docs`. The docs.rs all-feature build exposes gated
 items; availability is documented on their pages and in the crate feature table
@@ -43,7 +44,8 @@ without requiring unstable rustdoc features.
 ### Shared consumer examples and diagrams
 
 Edit `examples/first_field.rs` (the marked region), `examples/sqlx_sqlite.rs`, or
-the durable consumer source/schema/manifests under `docs/snippets/searchable*`. Run
+the durable consumer source/schema/manifests under `docs/snippets/searchable*`, or
+the application-testing sources/manifests under `docs/snippets/testing-*`. Run
 `node scripts/doc-snippets.mjs --write` to update the landing/tutorial snippets.
 The crate landing includes the generated Markdown directly. The check mode
 rejects drift; no required example is marked `ignore`.
@@ -55,6 +57,15 @@ and execute the examples; the first-field tests also check cross-field rejection
 Neither inherits repository dev-dependencies. Temporary projects are removed;
 build artifacts are cached under `target/consumers`. Consumer resolution is fresh,
 so compatible dependency updates are exercised; each run locks before execution.
+
+The same runner checks the local-provider, automatic-adapter, and diagnostics
+recipes with their own dependencies. Run
+`node scripts/check-testing-consumers.mjs checkout` (or `published`), optionally
+followed by `local`, `automatic`, or `diagnostics`, for focused checks. Local
+cases run concurrently; automatic cases each own a process; diagnostics assert
+exact stdout and empty stderr. See the [testing guide](testing.md). Format these
+sources with `rustfmt --edition 2024 docs/snippets/testing-*.rs` before refreshing
+shared blocks.
 
 The same script runs the durable SQLite consumer. Its focused runner is
 `node scripts/check-searchable-consumer.mjs checkout sqlite` (or `published`).
