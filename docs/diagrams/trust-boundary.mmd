@@ -1,0 +1,10 @@
+flowchart TB
+    subgraph trusted["Trusted application boundary"]
+        K["Key providers: independent encryption and index roots"]
+        A["Application: plaintext, profiles, authorization"]
+        C["CryptBox: encode, encrypt, authenticate, decode"]
+        K --> C
+        A <--> C
+    end
+    C -->|"Ciphertext and optional blind indexes"| S["Untrusted storage, snapshots and backups"]
+    S -->|"Untrusted bytes and query candidates"| C

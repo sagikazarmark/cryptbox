@@ -377,6 +377,7 @@ fn rotation_ready(
     Ok(())
 }
 
+// ANCHOR: searchable-put
 async fn put(
     connection: &mut DbConnection,
     id: i64,
@@ -409,7 +410,9 @@ async fn put(
     println!("Stored {id}.");
     Ok(())
 }
+// ANCHOR_END: searchable-put
 
+// ANCHOR: searchable-get
 async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyring) -> Result<()> {
     let row = sqlx::query("SELECT email FROM users WHERE id = $1")
         .bind(id)
@@ -426,7 +429,9 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyri
     }
     Ok(())
 }
+// ANCHOR_END: searchable-get
 
+// ANCHOR: searchable-search
 async fn search(
     connection: &mut DbConnection,
     query: &str,
@@ -456,6 +461,7 @@ async fn search(
     println!("Matches: {matches:?}; rejected: {rejected}.");
     Ok(())
 }
+// ANCHOR_END: searchable-search
 
 #[cfg(feature = "macro-check")]
 async fn macro_put(
@@ -473,10 +479,12 @@ async fn macro_put(
     let ciphertext = prepared.ciphertext();
     let index = prepared.index::<EmailLookup>()?.as_bytes();
     // PostgreSQL's macro sees BYTEA, not the custom wrapper: override input inference.
+    // ANCHOR: searchable-macro-put
     sqlx::query!("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)
         ON CONFLICT (id) DO UPDATE SET email = excluded.email, email_lookup = excluded.email_lookup",
         id, ciphertext as _, index)
         .execute(connection).await?;
+    // ANCHOR_END: searchable-macro-put
     println!("Stored {id}.");
     Ok(())
 }
@@ -488,12 +496,14 @@ async fn macro_get(
     keys: &LocalEncryptionKeyring,
 ) -> Result<()> {
     // `?` preserves SQL NULL; the alias selects CryptBox's SQLx Decode implementation.
+    // ANCHOR: searchable-macro-get
     let row = sqlx::query!(
         r#"SELECT email AS "email?: EmailCiphertext" FROM users WHERE id = $1"#,
         id
     )
     .fetch_one(connection)
     .await?;
+    // ANCHOR_END: searchable-macro-get
     match row.email {
         Some(ciphertext) => println!(
             "{id}: {}",

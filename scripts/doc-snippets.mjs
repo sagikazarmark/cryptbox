@@ -16,33 +16,24 @@ const firstField = anchored('examples/first_field.rs', 'first-field');
 const sources = {
   'first-field': ['rust', firstField],
   'first-field-manifest': ['toml', read('docs/snippets/first-field.toml')],
-  'custom-profile': ['rust', anchored('examples/custom_profile.rs', 'custom-profile')],
-  'custom-profile-manifest': ['toml', read('docs/snippets/custom-profile.toml')],
-  'stored-values-manifest': ['toml', read('docs/snippets/stored-values.toml')],
-  'sqlite-manifest': ['toml', read('docs/snippets/sqlite.toml')],
-  sqlite: ['rust', read('examples/sqlx_sqlite.rs')],
   lifecycle: ['mermaid', read('docs/diagrams/lifecycle.mmd')],
-  'searchable-manifest': ['toml', read('docs/snippets/searchable.toml')],
-  'searchable-postgres-schema': ['sql', read('docs/snippets/searchable-postgres.sql')],
-  'searchable-sqlite-schema': ['sql', read('docs/snippets/searchable-sqlite.sql')],
-  searchable: ['rust', read('docs/snippets/searchable.rs')],
-  lookup: ['mermaid', read('docs/diagrams/lookup.mmd')],
+  ...Object.fromEntries([
+    'searchable-put', 'searchable-get', 'searchable-search',
+    'searchable-macro-get', 'searchable-macro-put',
+  ].map((name) => [name, ['rust', anchored('docs/snippets/searchable.rs', name)]])),
   rotation: ['mermaid', read('docs/diagrams/rotation.mmd')],
-  'testing-local-manifest': ['toml', read('docs/snippets/testing-local.toml')],
-  'testing-automatic-manifest': ['toml', read('docs/snippets/testing-automatic.toml')],
-  'testing-diagnostics-manifest': ['toml', read('docs/snippets/testing-diagnostics.toml')],
-  'testing-diagnostics': ['rust', read('docs/snippets/testing-diagnostics.rs')],
+  'trust-boundary': ['mermaid', read('docs/diagrams/trust-boundary.mmd')],
 };
 const pages = {
   'README.md': ['first-field'],
-  'docs/first-field.md': ['first-field-manifest', 'first-field', 'lifecycle'],
-  'docs/custom-profile.md': ['custom-profile-manifest', 'custom-profile'],
-  'docs/stored-values.md': ['stored-values-manifest'],
-  'docs/first-field-sqlite.md': ['sqlite-manifest', 'sqlite'],
+  'docs/first-field.md': ['first-field-manifest', 'first-field'],
   'docs/concepts.md': ['lifecycle'],
-  'docs/searchable-sqlx.md': ['searchable-manifest', 'searchable-postgres-schema', 'searchable-sqlite-schema', 'searchable', 'lookup'],
+  'docs/searchable-sqlx.md': [
+    'searchable-put', 'searchable-get', 'searchable-search',
+    'searchable-macro-get', 'searchable-macro-put',
+  ],
   'docs/key-rotation.md': ['rotation'],
-  'docs/testing.md': ['testing-local-manifest', 'testing-automatic-manifest', 'testing-diagnostics-manifest', 'testing-diagnostics'],
+  'docs/security.md': ['trust-boundary'],
 };
 const write = process.argv.includes('--write');
 for (const [page, expected] of Object.entries(pages)) {

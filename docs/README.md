@@ -1,92 +1,34 @@
 # CryptBox documentation
 
-**Task index · current development guidance.** Start here to choose a task.
-The latest release is 0.5.0; this checkout includes unreleased code and docs,
-including stored-byte Serde support. See [document authority and versions](#document-authority-and-versions).
+Repository docs describe this checkout. For released APIs, select your dependency
+version on [docs.rs](https://docs.rs/cryptbox/0.5.0/cryptbox/); stored-byte Serde support
+is unreleased even though this checkout still declares 0.5.0.
 
-## Choose a task
+## Understand
 
-| Task | Start here | Continue with |
-| --- | --- | --- |
-| Decide whether to adopt | [Suitability and security](security.md) | [Feature/platform reference](features.md) |
-| Encrypt a first field | [Fresh-project tutorial](first-field.md) | [Field-bound SQLite](first-field-sqlite.md), [concepts](concepts.md) |
-| Store and search durable SQLx data | [PostgreSQL / SQLite consumer](searchable-sqlx.md) | [Testing](testing.md#durable-searchable-consumer), [integration trial](searchable-sqlx-walk.md) |
-| Serialize stored values | [Stored-value tutorial (unreleased Serde support)](stored-values.md) | [Stored-value assurance](stored-values.md#obtain-additional-assurance) |
-| Rotate keys and rewrite data | [Staggered fleet rotation](key-rotation.md) | [Maintenance sweep how-to](reencryption-sweep.md) |
-| Interrupt, resume, and repeat maintenance | [Durable sweep walkthrough](reencryption-sweep.md#durable-postgresql-and-sqlite-walkthrough) | [Run ownership](reencryption-sweep.md#run-identity-and-progress-ownership), [verification and retirement](reencryption-sweep.md#verification-and-retirement) |
-| Retire online keys and recover backups | [Retirement and isolated restore](key-retirement.md) | [Recovery cutover](key-retirement.md#returning-recovered-data-to-service), [destruction evidence](key-retirement.md#evidence-before-eventual-destruction) |
-| Adopt encryption over existing data | [Mixed-format migration and search](legacy-migration.md) | [Durable walkthrough](legacy-migration.md#durable-mixed-format-walkthrough), [maintenance cutover](legacy-migration.md#coordinated-maintenance-cutover) |
-| Review security | [Review path and gates](security.md#security-review-path) | [Wire-format reference](wire-format.md), [suite research](suite-evaluation.md), [proposed policy](suite-1-usage-policy.md) |
-| Test and diagnose an integration | [Testing and diagnostics how-to](testing.md) | [Stored-value assurance procedure](stored-values.md#obtain-additional-assurance) |
-| Extend profiles and providers | [Custom-profile recipe](custom-profile.md) | [Plaintext and key ownership](concepts.md#plaintext-and-key-ownership) |
-| Maintain documentation | [Documentation checks](documentation.md) | [Four-journey acceptance protocol and results](acceptance.md), [adoption walk](adoption-walk.md), [first-field docs-only walk](first-field-walk.md) |
+- [Concepts](concepts.md): components, ownership, binding, generations, and assurance.
+- [Threat model](security.md): protections, assumptions, limitations, and review status.
+- [Wire format](wire-format.md): exact encryption/index recipes, padding, and vectors.
+- [Features and platforms](features.md): configuration and supported constraints.
+- [Glossary](../CONTEXT.md) and [API reference](https://docs.rs/cryptbox/0.5.0/cryptbox/).
 
-The first-field and SQLx tutorials use published 0.5.0 with explicit local
-providers. The [fleet rotation continuation](key-rotation.md) uses the same consumer.
+## Build
 
-### Integration caveat
+- [Encrypt your first field](first-field.md).
+- [Durable SQLx storage and verified search](searchable-sqlx.md).
+- Examples: [minimal SQLite](first-field-sqlite.md), [Serde stored values](stored-values.md),
+  [custom profiles and providers](custom-profile.md).
+- [Application testing and diagnostics](testing.md).
 
-The [SQLite exercise](first-field-sqlite.md) now preserves the first tutorial's
-field binding. Its keys and database are ephemeral; follow the
-[durable-key next step](first-field.md#next-keep-keys-across-restarts) before persisting data.
-Continue with [durable secret loading, runtime/TLS setup and restart](searchable-sqlx.md).
+## Operate
 
-## Document authority and versions
+- [Key lifecycle](key-rotation.md): stage, promote, roll back, retire, and recover.
+- [Maintenance sweeps](reencryption-sweep.md): rewrite and verify existing storage.
+- [Legacy migration](legacy-migration.md): adopt encryption over existing data.
 
-Four independent identifiers appear in this project:
+## Runnable examples
 
-| Identifier | Current value | Meaning |
-| --- | --- | --- |
-| Crate release | **0.5.0** | Rust package/API release; see the [release](https://github.com/sagikazarmark/cryptbox/releases/tag/v0.5.0) and [changelog](../CHANGELOG.md) |
-| Ciphertext / blind-index format | **1 / 1** (`0x01`) | Separate stored-byte layout versions; see [wire format](wire-format.md) |
-| Encryption suite ID | **1** (`0x01`) | HKDF-SHA-256 and XChaCha20-Poly1305 construction, not a crate version |
-| Historical design generation | **v0.1** | The original [design draft](spec.md), not a current API or wire-version label |
-
-A crate release does not automatically change stored formats, and a format
-version does not describe all persistent profile choices. Read the
-[persistent-schema reference](https://docs.rs/cryptbox/0.5.0/cryptbox/#persistent-schema)
-before storing durable data.
-
-**Release users:** use the exact version selector on docs.rs. The
-[0.5.0 API](https://docs.rs/cryptbox/0.5.0/cryptbox/) and
-[0.5.0 source archive](https://docs.rs/crate/cryptbox/0.5.0/source/) are frozen
-release material. They do not contain these later documentation improvements or
-the unreleased `serde` feature. The checkout's unchanged package version alone
-does not establish release parity; see the [feature reference](features.md).
-Repository-relative links describe the checkout you are reading; GitHub `main`
-links describe development. Do not substitute `/latest/` when diagnosing older
-data or API behavior. Match the dependency version first, then check its format
-and profile schema. No production approval follows from any version number.
-
-### Canonical owners
-
-| Surface | Primary role and authority |
-| --- | --- |
-| [Project landing page](../README.md) | Positioning, experimental status, compact demonstration, task discovery |
-| [Crate landing reference](https://docs.rs/cryptbox/0.5.0/cryptbox/) | Type model, persistent schema, concise security boundary, API links; the [feature/platform reference](features.md) is a shared Markdown source included in current rustdoc |
-| [Glossary](../CONTEXT.md) and [concepts explanation](concepts.md) | Canonical terms and their relationships; current versus future binding support |
-| [Security explanation](security.md) | Adoption threat model, unsuitable use cases, review path and unfinished gates |
-| [First-field tutorial](first-field.md) and [SQLite continuation](first-field-sqlite.md) | Complete published-release consumer setup and first success; snippets shared with executed examples |
-| [Searchable SQLx tutorial](searchable-sqlx.md) | Durable key loading, PostgreSQL/SQLite CRUD, nullable/deferred reads, macro prerequisites and verified lookup |
-| [Fleet rotation how-to](key-rotation.md) | Independent key staging, readiness, writer promotion, provider lifecycle and compatible rollback |
-| [Stored-value tutorial](stored-values.md) | Unreleased explicit Serde consumer path using a checkout dependency, plus assurance steps |
-| [Maintenance how-to](reencryption-sweep.md) | Run identity, durable checkpoints, bounded rewrite/verification, recovery and repeat rotations |
-| [Key-retirement how-to](key-retirement.md) | Online removal, recovery inventory/retention, isolated backup restore and eventual destruction evidence |
-| [Legacy migration how-to](legacy-migration.md) | Reader-first rollout, transitional search, legacy provenance, exceptional-row recovery, maintenance cutover and verified strict closure |
-| [Plaintext migration redirect](plaintext-migration.md) | Preserves the old entry point; canonical procedure is legacy migration |
-| [Testing how-to](testing.md) | Local providers, automatic-adapter isolation, diagnostic metadata |
-| [Custom-profile recipe](custom-profile.md) | Executable codec, normalizer and provider extensions; contracts live beside public traits and ownership is explained in concepts |
-| [Wire-format reference](wire-format.md) | Current experimental stored layouts and provisional vectors |
-| [Suite evaluation](suite-evaluation.md) | Dated research and rationale, not an approval or current API tutorial |
-| [Suite usage policy](suite-1-usage-policy.md) | Proposed operational policy; not accepted or library-enforced limits |
-| [Original specification](spec.md) | Historical design and API sketches, superseded by current references |
-| [Documentation maintenance](documentation.md) | Reproducible checks and publication rules |
-| [Four-journey acceptance](acceptance.md) and [results](acceptance-results.md) | Final reader task briefs, page audit, evidence and before/after scorecards; earlier [adoption](adoption-walk.md), [first-field](first-field-walk.md) and [integration](searchable-sqlx-walk.md) records retain their historical scope |
-| [Changelog](../CHANGELOG.md) | Release history, not usage instructions |
-
-### Runnable examples
-
-Run from a checkout with the prerequisites in the crate reference:
+Run from a checkout. SQLx examples need the indicated backend feature.
 
 | Example | Command |
 | --- | --- |
@@ -100,8 +42,6 @@ Run from a checkout with the prerequisites in the crate reference:
 | [Stored values](../examples/stored_values.rs) | `cargo run --locked --example stored_values --features serde` |
 | [SQLite](../examples/sqlx_sqlite.rs) | `cargo run --locked --example sqlx_sqlite --features sqlx-sqlite` |
 
-Next: [evaluate suitability](security.md) or choose a task above.
+## Contribute
 
-[#19]: https://github.com/sagikazarmark/cryptbox/issues/19
-[#54]: https://github.com/sagikazarmark/cryptbox/issues/54
-[#58]: https://github.com/sagikazarmark/cryptbox/issues/58
+[Documentation and development checks](documentation.md).

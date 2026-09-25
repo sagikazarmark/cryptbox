@@ -5,7 +5,7 @@ set -eu
 output=$(mktemp -d)
 trap 'rm -rf "$output"' EXIT
 # Markdown-only diagrams have no committed SVG, but must still parse/render.
-for diagram in lookup rotation; do
+for diagram in trust-boundary rotation; do
     /home/mermaidcli/node_modules/.bin/mmdc -i "docs/diagrams/$diagram.mmd" -o "$output/$diagram.svg" \
         -c docs/diagrams/config.json -p /puppeteer-config.json -b transparent
 done

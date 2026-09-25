@@ -37,7 +37,8 @@ FieldBound(FieldId): 01 || field_id[16]
 ```
 
 The profile supplies the expected binding. The envelope does not select whether
-decryption is bound or unbound.
+decryption is bound or unbound. Codec identity/version is also absent: decoding
+is an application-schema decision after authentication and unpadding.
 
 ### Envelope
 
@@ -55,10 +56,8 @@ offset  size  field
 The minimum envelope is 62 bytes and represents empty AEAD plaintext. For an
 unpadded profile, ciphertext leaks encoded plaintext length exactly plus this
 fixed overhead. A padded profile reveals its padded bucket length instead.
-Suite 1 rejects AEAD plaintext longer than `274,877,906,880` bytes on encryption
-and payloads implying a longer plaintext on parsing/decryption (RFC 8439's
-functional limit). The smaller [proposed operational cap](suite-1-usage-policy.md#plaintext-maximum)
-is not library-enforced.
+See [size semantics and enforcement](#size-semantics-and-enforcement) for exact
+encoded, padded, and stored lengths and the suite's functional limit.
 
 Exact domain labels include the terminating NUL byte:
 
@@ -126,8 +125,6 @@ For encoded length `E`, `NoPadding` passes through `E` bytes;
 because the marker must fit. An aligned block input receives a whole extra
 block, and even an empty padded input contains a marker. The byte-level
 `encrypt`/`decrypt` functions do not apply or remove profile padding.
-See the [size definitions and boundary examples](suite-1-usage-policy.md#plaintext-maximum)
-for the proposed cap on **padded AEAD plaintext**, not application-value size.
 
 The envelope does not record whether padding is enabled or which parameters
 were used, and its format version remains unchanged. Enabling or disabling
@@ -144,20 +141,57 @@ padded plaintext: 6372797074626f7820766563746f7280
 envelope:         43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b9368a9985aacb04ff8f7b6a677d9665a9ba
 ```
 
+### Size semantics and enforcement
+
+All lengths are byte counts, not character counts or Rust memory sizes:
+
+| Quantity | Definition |
+| --- | --- |
+| Application value | The typed value before encoding, such as a string or JSON object. |
+| `E`: encoded bytes | Codec output before padding. `Utf8` counts UTF-8 bytes: `"é"` has `E = 2`. |
+| `P`: AEAD plaintext | Encoded bytes after padding, including the marker and zero fill when enabled. `NoPadding` gives `P = E`. |
+| `W`: envelope bytes | Complete binary ciphertext: 46-byte prefix, `P` ciphertext bytes, 16-byte tag. `W = P + 62`; excludes text encoding, database framing, and separate indexes. |
+
+Padding boundary examples (ASCII input, one encoded byte per character):
+
+| Padding policy | `E` | Padding bytes | `P` | `W` | Current library result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `NoPadding` | 0 | 0 | 0 | 62 | Accepted |
+| `NoPadding` | 1,048,576 | 0 | 1,048,576 | 1,048,638 | Accepted |
+| `NoPadding` | 1,048,577 | 0 | 1,048,577 | 1,048,639 | Accepted |
+| `PadToBlock<16>` | 0 | 16 | 16 | 78 | Empty input still padded |
+| `PadToBlock<16>` | 15 | 1 | 16 | 78 | Marker fills block |
+| `PadToBlock<16>` | 16 | 16 | 32 | 94 | Marker starts next block |
+| `PadToBlock<16>` | 1,048,575 | 1 | 1,048,576 | 1,048,638 | Accepted |
+| `PadToBlock<16>` | 1,048,576 | 16 | 1,048,592 | 1,048,654 | Accepted |
+| `PadToLength<1048576>` | 0 | 1,048,576 | 1,048,576 | 1,048,638 | Empty input uses entire target |
+| `PadToLength<1048576>` | 1,048,575 | 1 | 1,048,576 | 1,048,638 | Largest fitting input |
+| `PadToLength<1048576>` | 1,048,576 | — | — | — | `PaddingOverflow`: marker cannot fit |
+
+These cases are exercised by [`tests/padding.rs`](../tests/padding.rs). The
+1 MiB examples illustrate behavior around a historical **proposed**, unaccepted
+cap; they are not an operational recommendation or enforced threshold. See the
+[historical proposal](security.md#historical-references).
+
+Suite 1 enforces RFC 8439's functional maximum `P <= 274,877,906,880`
+(`(2^32 - 1) * 64`) on encryption and rejects parsed/decrypted payloads implying
+a larger `P`, with `MessageTooLong`. Padding/envelope size arithmetic is checked;
+fixed padding rejects `E >= N` with `PaddingOverflow`. These checks do not enforce
+an operational field-size, encryption-count, key-age, or failed-decryption budget.
+
+For an application-selected padded cap `L`, `NoPadding` permits `E <= L`;
+`PadToBlock<N>` permits `E <= N * floor(L / N) - 1` if at least one block fits;
+`PadToLength<N>` requires `N <= L` and `E <= N - 1`. Bound encoding and compute
+padded size with checked arithmetic before allocating/encrypting. Bound incoming
+binary envelopes to `W <= L + 62` before copying/decrypting, and bound decoding
+expansion separately. Current padding parameters do not cap historical reads:
+unpadding accepts a valid marker independently of the original block/target size.
+A size check is not authentication.
+
 ### Key and buffer lifetime
 
-The implementation uses the RustCrypto HKDF and HMAC crates and enables HMAC,
-SHA-256, and Poly1305 zeroization support. This erases keyed digest state,
-buffered hash input, and direct HMAC outputs on drop. CryptBox also immediately
-erases the HKDF extract output and holds derived keys and returned MACs in
-zeroizing buffers. As with other Rust cryptography implementations, transient
-crate- and compiler-generated stack copies remain part of the targeted
-zeroization and compiler review boundary.
-Working plaintext is held in zeroizing buffers, including on authentication
-failure. Padding allocates its target buffer before copying so growth does not
-abandon a plaintext allocation. Encryption borrows the original application
-value; erasing temporary encoded/padded buffers does not erase that value or
-application-owned copies. See the [security boundary](security.md#threats-and-unsuitable-uses).
+See [plaintext and key ownership](concepts.md#plaintext-and-key-ownership) for
+buffer lifetimes and erasure obligations.
 
 ### Provisional Envelope Vector
 

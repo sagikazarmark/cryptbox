@@ -6,13 +6,9 @@
 //! required. Use `CryptBox` when an application owns encryption policy and key
 //! management but wants storage adapters to enforce ciphertext-at-rest.
 //!
-//! **Reference for this crate's API.** Ciphertext format 1, blind-index format 1,
-//! and suite ID 1 are independent of the crate release (0.5.0) and the historical
-//! “v0.1 design”. The formats and suite are experimental and **not production-ready**.
-//! Independent vectors, composition review, operational-policy acceptance, and
-//! target review remain outstanding; passing tests does not complete these gates.
-//! This checkout still declares 0.5.0 but includes unreleased stored-byte Serde
-//! support. The Features reference distinguishes it from the published release.
+//! **Experimental; not production-ready.** See the [threat model] for assumptions,
+//! limitations, and outstanding review work. This checkout includes unreleased
+//! stored-byte Serde support; the Features reference distinguishes it from 0.5.0.
 //!
 //! # Type model
 //!
@@ -29,11 +25,7 @@
 #![doc = include_str!("../docs/diagrams/lifecycle.svg")]
 #![doc = "</div>"]
 //!
-//! Encryption and preparation retain the original plaintext. Decryption borrows
-//! ciphertext and returns a new plaintext-bearing value. `Prepared` owns stored
-//! representations while borrowing its source; the application persists those
-//! representations atomically. Dropping preparation does not erase the source.
-//! See the development [ownership explanation] for clones, temporary buffers,
+//! See the [ownership explanation] for clones, temporary buffers,
 //! `Secret`, and shared key lifetimes, and the [custom-profile recipe] for public
 //! codec, normalizer, and synchronous provider implementations.
 //!
@@ -46,9 +38,7 @@
 //! context-less operations; explicit-provider methods take keys separately.
 //! [`Padding`] is also sealed to built-in policies.
 //!
-//! The [development task index] links the canonical glossary, suitability,
-//! integration, rotation, and security-review paths. It describes development
-//! documentation, not the frozen release archive linked under Workflows.
+//! The [documentation index] links integration and operational guides.
 //!
 //! # Quick start
 //!
@@ -70,59 +60,28 @@
 //!
 //! # Persistent schema
 //!
-//! A profile's codec, presence or absence of padding, binding policy, stable
-//! field and index IDs, blind-index normalization, and retained precision are
-//! persistent schema decisions. They are not all self-described by stored
-//! bytes. Changing one requires an explicit migration for existing ciphertext
-//! or indexes. Parameters of an already-padded policy may change without a
-//! migration because padding removal is parameter-independent.
+//! Codec compatibility, padding mode, binding, field/index IDs, normalization,
+//! and index precision are persistent schema. Stored bytes do not describe all
+//! of them; changing them requires a migration plan. See [schema rules].
+//!
+//! [schema rules]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#persistent-schema
 //!
 //! # Workflows
 //!
-//! The docs.rs source links below are explicitly the **0.5.0 release archive**. They
-//! predate later documentation improvements. For current navigation and adoption
-//! guidance use the [development task index] and [development security review].
+//! See the [documentation index] for runnable examples, SQLx integration, key
+//! lifecycle, maintenance, and migration. Repository links describe development;
+//! select your dependency version on docs.rs for released API documentation.
 //!
-//! Complete runnable programs demonstrate [key rotation], a [re-encryption
-//! sweep], a [legacy migration], a [plaintext migration], [blind-index lookup],
-//! and [in-memory SQLite storage]. The [maintenance sweep guide] and the
-//! [legacy migration guide] cover the operational patterns, and the
-//! [wire-format guide] records the experimental envelope and index formats.
-//!
-//! [key rotation]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/key_rotation.rs
-//! [re-encryption sweep]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/reencryption_sweep.rs
-//! [legacy migration]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/legacy_migration.rs
-//! [plaintext migration]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/plaintext_migration.rs
-//! [blind-index lookup]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/blind_indexes.rs
-//! [in-memory SQLite storage]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/sqlx_sqlite.rs
-//! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/0.5.0/source/docs/reencryption-sweep.md
-//! [legacy migration guide]: https://docs.rs/crate/cryptbox/0.5.0/source/docs/legacy-migration.md
-//! [wire-format guide]: https://docs.rs/crate/cryptbox/0.5.0/source/docs/wire-format.md
-//! [stored-value walkthrough]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/stored-values.md
-//! [development task index]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/README.md
-//! [development security review]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/security.md#security-review-path
+//! [documentation index]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/README.md
+//! [threat model]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/security.md
 //!
 //! # Security boundaries
 //!
-//! Field binding makes ciphertext authentication fail across fields and
-//! domain-separates blind-index derivation; it does not authenticate stored index
-//! bytes or prevent same-field cross-row substitution. Blind indexes intentionally
-//! leak equality and
-//! frequency; every hit is a candidate that must be decrypted and compared,
-//! regardless of padding. Unpadded profiles reveal the exact encoded plaintext
-//! length. A padding policy coarsens that leakage to a size bucket or hides it
-//! entirely up to a fixed length.
-//!
-//! Authenticated encryption does not prevent replay or rollback of an older
-//! valid ciphertext. Retaining historical keys keeps old ciphertext readable,
-//! so rotation is neither revocation nor crypto-shredding.
-//!
-//! `CryptBox` does not protect plaintext from a compromised application process
-//! while keys are live, or hide database query and access patterns. Treat logs,
-//! tracing data, crash dumps, swap, and other plaintext-bearing artifacts as
-//! sensitive.
-//! For unsuitable use cases and outstanding review gates, follow the
-//! [development security review].
+//! Encryption protects selected stored values while keys remain separate. Field
+//! binding rejects cross-field substitution, but does not bind rows or prevent
+//! replay. Sizes and access patterns remain visible; blind indexes additionally
+//! leak equality/frequency. Verify every candidate against decrypted plaintext.
+//! A compromised application can expose keys and plaintext. See the [threat model].
 //!
 //! Load root keys from a cryptographically secure secret source. Encryption and
 //! blind-index root keys must be generated independently, and a generation ID

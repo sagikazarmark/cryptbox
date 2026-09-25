@@ -73,8 +73,8 @@ impl EncryptionProfile<String> for PolicyFixedLength {
     type Padding = PadToLength<1_048_576>;
 }
 
-// Literal sizes from docs/suite-1-usage-policy.md#padding-boundary-examples.
-// This checks public storage behavior, not enforcement of the proposed cap.
+// Padding/envelope arithmetic from docs/wire-format.md#size-semantics-and-enforcement.
+// The 1 MiB cases test size boundaries, not an enforced operational cap.
 fn assert_stored_sizes<P: EncryptionProfile<String>>(cases: &[(usize, usize)])
 where
     P::Binding: cryptbox::Binding<Context = ()>,

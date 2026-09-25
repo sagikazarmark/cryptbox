@@ -73,7 +73,7 @@ compilation (each backend with and without `migrate`), and default/all-feature
 rustdoc. Dagger uses the configured Rust Linux container, runs examples, and
 supplies PostgreSQL to execute the live round-trip and packaged-sweep tests,
 including the otherwise ignored cases. See the development
-[live-backend check instructions](https://github.com/sagikazarmark/cryptbox/blob/main/docs/testing.md#live-postgresql-sweep-checks).
+[live-backend check instructions](https://github.com/sagikazarmark/cryptbox/blob/main/docs/documentation.md#live-postgresql).
 These are tested configurations, not a reviewed target allowlist; no macOS,
 Windows, browser, or embedded CI matrix is claimed.
 

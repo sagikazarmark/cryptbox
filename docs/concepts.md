@@ -3,6 +3,18 @@
 **Explanation · current development model.** Use the [canonical glossary](../CONTEXT.md)
 for definitions and the [task index](README.md) for procedures.
 
+## Components
+
+- **Profiles** select codecs, padding, binding, and key context for application values.
+- **The crypto core** operates on bytes, independently of codecs and storage adapters.
+- **Providers** resolve local key generations synchronously. Applications fetch and
+  refresh secrets outside encryption/decryption calls.
+- **Storage adapters** carry encrypted envelopes and index tokens across SQLx or
+  Serde boundaries; applications own transactions and database queries.
+
+The [wire format](wire-format.md) defines the byte-level contracts;
+the [threat model](security.md) explains the trust boundary.
+
 ## The value lifecycle
 
 <!-- BEGIN SHARED: lifecycle -->
@@ -58,6 +70,11 @@ copies. The application owns the lifetime of decoded values and any copies it ma
 | `Secret<T>` | Owns `T` through `Zeroizing<T>` and invokes `T::zeroize` on drop. It redacts its own debug output but cannot prevent logging through explicit access or erase earlier copies. The quality of custom `T::zeroize` implementations remains the implementor's responsibility. |
 | `EncryptionKey` / `BlindIndexKey` | Clones share reference-counted root material rather than copying the root into a new allocation. That allocation is zeroized when the **last** handle drops; provider snapshots and outstanding returned handles can keep it alive. |
 | Key inputs and external copies | Encoded secret strings, caller-owned arrays, environment/configuration copies, serializer allocations, logs, swap and crash dumps have their own lifetimes. Dropping a library key cannot erase them. |
+
+The crypto implementation enables HMAC, SHA-256, and Poly1305 zeroization,
+immediately erases the HKDF extract output, and retains derived keys and returned
+MACs in zeroizing buffers. Dependency- and compiler-generated copies remain part
+of the outstanding review boundary.
 
 For a profile whose value is `String`, move a successful decoded value into a
 zeroizing wrapper using `let secret = Secret::new(decrypted.into_secret());`.
@@ -125,7 +142,28 @@ does not rewrite stored indexes either.
 all probes, decrypt every candidate, and compare plaintext using the same
 normalization policy before accepting it. Truncated indexes intentionally allow
 false candidates; do not use them as uniqueness constraints. Candidate comparison
-does not authenticate index metadata. See the [separate assurance procedures](stored-values.md#obtain-additional-assurance).
+does not authenticate index metadata or establish search completeness.
 
-Next: check [persistent-schema rules](https://docs.rs/cryptbox/0.5.0/cryptbox/#persistent-schema),
-then follow the [stored-value tutorial](stored-values.md).
+## Persistent schema
+
+Codec compatibility, padding enabled/disabled, binding, stable field/index IDs,
+normalization, and index precision are persistent schema decisions. Stored bytes
+do not describe all of them. Changing these requires a migration plan; changing
+the parameters of an already-padded policy preserves old readability because
+unpadding is parameter-independent. Rust type names and diagnostic labels are not
+cryptographic identities.
+
+## Assurance
+
+| Check | Establishes | Does not establish |
+| --- | --- | --- |
+| Parse ciphertext or deserialize stored bytes | Supported structure and lengths | Authenticity or readability |
+| Inspect generations / complete sweep verification | Stored values name the intended generations | Authentication, decodability, or index consistency |
+| Decrypt with the expected profile | Authentication, padding removal, and decoding for that value | Row identity, freshness, or index consistency |
+| Verify a lookup candidate | Its normalized plaintext matches the query | Stored-index authenticity or completeness of query results |
+| Recompute a stored index under its recorded generation | Consistency with authenticated plaintext and the expected index policy | Absence of omitted rows or rollback |
+
+A whole-store audit must cover the complete application-owned population, not only
+rows returned by blind-index queries. Follow the
+[verification procedure](reencryption-sweep.md#verification-and-retirement) before
+retiring keys or closing a migration.

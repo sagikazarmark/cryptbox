@@ -1,98 +1,102 @@
-# Evaluate suitability and security
+# Threat model and security boundaries
 
-**Explanation · current 0.5.0 behavior, experimental assurance.** This is the
-adoption and security-review starting point. [All tasks](README.md).
+**Explanation · experimental assurance.** CryptBox encrypts selected application
+values before storage. **It is not production-ready.** Ciphertext format 1,
+blind-index format 1, and suite 1 remain experimental; version numbers and passing
+tests do not indicate security approval. [All tasks](README.md).
 
-CryptBox encrypts selected application values before they cross supported
-storage boundaries. The application owns policy and key provisioning; the
-database stores ciphertext and, optionally, leakier searchable blind indexes.
-The application still holds plaintext while using the value.
+## Trust boundary and assumptions
+
+<!-- BEGIN SHARED: trust-boundary -->
+
+```mermaid
+flowchart TB
+    subgraph trusted["Trusted application boundary"]
+        K["Key providers: independent encryption and index roots"]
+        A["Application: plaintext, profiles, authorization"]
+        C["CryptBox: encode, encrypt, authenticate, decode"]
+        K --> C
+        A <--> C
+    end
+    C -->|"Ciphertext and optional blind indexes"| S["Untrusted storage, snapshots and backups"]
+    S -->|"Untrusted bytes and query candidates"| C
+```
+
+<!-- END SHARED: trust-boundary -->
+
+Confidentiality assumes keys and plaintext-bearing artifacts remain separate from
+compromised storage. Trust the application, providers, dependencies, and operating
+system: root keys must be cryptographically random, encryption and index roots
+independently generated, and each generation ID permanently paired with the same
+material. IDs are public metadata; generate them independently of key bytes.
+Profiles supply trusted expected bindings and persistent schema. Secure OS
+randomness and a compatible target are required; see [platform constraints](features.md#platforms-and-tested-configurations).
 
 ## Threats and unsuitable uses
 
-| Situation | Boundary |
+| Attacker capability | Protection or limitation |
 | --- | --- |
-| An attacker reads a database dump, snapshot, backup, or detached volume | Selected encrypted values remain confidential **if keys and plaintext-bearing artifacts are kept separately and uncompromised**. Other columns and metadata remain visible. |
-| Stored ciphertext is modified | Authenticated decryption rejects tampering; structural parsing alone does not. Unknown formats or keys can fail before authentication. |
-| A ciphertext is copied to a different logical field | `FieldBound` rejects it at authentication; `Unbound` opts out. |
-| A ciphertext is copied to another row in the same field | Current binding does not prevent substitution. Row/tenant binding is unavailable. |
-| An older authentic ciphertext is restored | No replay or rollback protection is provided. |
-| The application process is compromised while keys are live | Plaintext and keys can be exposed. CryptBox is not a process-isolation boundary. |
-| An observer sees ciphertext sizes, queries, or index values | Unpadded sizes reveal encoded length; padding changes size leakage, not access patterns. Blind indexes reveal equality/frequency and return candidates, not authoritative matches. |
+| Read dumps, snapshots, backups, or detached volumes | Selected values remain confidential under the assumptions above. Other columns, IDs, and metadata remain visible. |
+| Modify stored ciphertext | Authenticated decryption rejects tampering. Parsing alone does not authenticate; malformed formats or unknown keys may fail earlier. |
+| Copy ciphertext to another logical field | `FieldBound` rejects a different field at authentication; `Unbound` explicitly opts out. |
+| Copy ciphertext between rows of the same field | Substitution can succeed. Row/tenant binding is unavailable. |
+| Restore an older authentic value | No replay, rollback, or freshness protection. |
+| Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency; access patterns remain visible. |
+| Alter indexes or omit query results | Candidate comparison rejects false matches, but cannot detect omitted matches. Search completeness is not guaranteed. |
+| Compromise the live application | Plaintext and keys can be exposed. CryptBox supplies no process-isolation boundary. |
 
-CryptBox is unsuitable when the requirement is production-approved cryptography
+CryptBox is unsuitable for requirements such as production-approved cryptography
 today, FIPS-validated AES, transparent whole-database encryption, arbitrary
-encrypted queries, built-in row/tenant isolation, replay prevention, or secrecy
-from the application itself. Current adapters cover PostgreSQL and SQLite with
-SQLx; other storage integrations need application code or separately tracked work.
+encrypted queries, or secrecy from the application itself. Blind indexes support
+equality-style candidate lookup, not ordering, ranges, or full-text search.
 
-Avoid blind indexes for low-cardinality or highly skewed sensitive values. Never
-use a truncated index as a uniqueness constraint. Decrypt candidates and compare
-normalized plaintext. Logs, traces, crash dumps, swap, application copies, and
-OS-retained secret configuration require application-level handling: zeroizing
-CryptBox-owned keys/buffers does not erase all plaintext everywhere.
+## Application responsibilities
 
-## Experimental maturity
+- Own authorization, key provisioning, stable profile/index schema, and operational
+  limits. Bound encoded/padded sizes, incoming envelopes, decoding expansion, and
+  repeated authentication attempts; the [functional size limit](wire-format.md#size-semantics-and-enforcement)
+  is not an operational budget.
+- Store ciphertext and indexes atomically. Query every readable index generation,
+  authenticate/decrypt candidates, and compare identically normalized plaintext.
+  Never use truncated indexes as uniqueness constraints. Avoid indexing
+  low-cardinality or highly skewed sensitive values; truncation does not remove
+  their leakage. Detecting missing rows requires application-owned evidence.
+- Protect logs, traces, crash dumps, swap, configuration, and application copies.
+  CryptBox-owned zeroization cannot erase every copy; see
+  [plaintext and key ownership](concepts.md#plaintext-and-key-ownership).
+- Treat rotation as selection of a new current generation, not revocation,
+  re-encryption, or crypto-shredding. Follow [key lifecycle and recovery](key-rotation.md)
+  and the [whole-store audit](reencryption-sweep.md#verification-and-retirement).
+  Generation convergence alone establishes neither authenticated readability nor
+  index consistency, and live-table convergence does not retire backup dependencies.
 
-**Do not treat CryptBox as production-ready.** Crate 0.5.0 uses experimental
-ciphertext format 1, blind-index format 1, and suite 1. These numbers do not
-indicate security approval. An audit of an underlying primitive implementation
-does not review CryptBox's composition or its use in your application.
+## Why these constructions
 
-Outstanding production review gates include:
-
-- Independently generated and cross-checked suite/envelope/index vectors
-  ([#10](https://github.com/sagikazarmark/cryptbox/issues/10)). Existing vectors are provisional.
-- Focused review of HKDF/HMAC domain separation, authenticated data, binding,
-  parser failures, and key/plaintext lifetime, including compiler-generated copies.
-- Accepted operational key-usage policy and an application enforcement strategy.
-  The [numeric policy](suite-1-usage-policy.md) remains **proposed**; closing its
-  authoring issue did not approve it. CryptBox does not enforce its proposed
-  padded-message size, message-count, age, or deployment failure budgets.
-- Parser fuzzing ([#11](https://github.com/sagikazarmark/cryptbox/issues/11)),
-  supported-target/entropy review, and pilot use before format freeze
-  ([#12](https://github.com/sagikazarmark/cryptbox/issues/12)). Passing CI is not
-  completion of these gates.
-
-## Configuration decision
-
-Read the [authoritative feature/platform reference](features.md), also included
-in the crate landing, before choosing a target or adapter. The published 0.5.0
-archive predates these documentation additions. Your application must provide stable key/ID
-pairs, a compatible target/entropy source, and any database runtime/TLS choices.
-Generate encryption and blind-index roots independently.
-
-Rotation selects a new current generation; it is not revocation, re-encryption,
-or crypto-shredding. Live-table convergence does not prove that old keys can be
-destroyed: backups, archives, and rollback data may still need them. Start with
-the [maintenance guide](reencryption-sweep.md), then follow the
-[backup-aware retirement and isolated restore](key-retirement.md). It separates
-online availability from recovery-only retention and the evidence needed for
-eventual material destruction, including historical index dependencies.
+HKDF-SHA-256 separates operational keys by version, suite, generation, and binding.
+XChaCha20-Poly1305 uses fresh OS-random 192-bit nonces, avoiding coordinated counters
+across processes. It is **not nonce-misuse-resistant**: repeating a complete nonce
+under one operational key is unsafe. Its specification is an expired IETF draft,
+not a final standard. Separately keyed, domain-separated HMAC-SHA-256 indexes
+permit deterministic lookup and independent rotation; truncation trades precision
+for false candidates, without eliminating equality leakage.
 
 ## Security review path
 
-Read these in order:
+Read the [wire recipes and provisional vectors](wire-format.md), then the
+[current model](concepts.md) and [API reference](https://docs.rs/cryptbox/0.5.0/cryptbox/).
+Outstanding gates include independent vectors ([#10](https://github.com/sagikazarmark/cryptbox/issues/10)),
+HKDF/HMAC/AAD composition and failure-path review, parser fuzzing
+([#11](https://github.com/sagikazarmark/cryptbox/issues/11)), target/entropy and
+compiler/zeroization review, accepted usage policy with an enforcement strategy,
+and pilot use before format freeze ([#12](https://github.com/sagikazarmark/cryptbox/issues/12)).
+A primitive implementation's audit does not audit CryptBox's composition.
 
-1. This threat model and the [current concepts](concepts.md), especially sealed
-   bindings and the difference between plaintext, ciphertext, and candidates.
-2. The [crate reference](https://docs.rs/cryptbox/0.5.0/cryptbox/): features,
-   platform constraints, persistent schema, and public trait contracts.
-3. The [wire-format reference](wire-format.md): current layout and provisional
-   vectors, including self-contained encryption and blind-index derivation recipes.
-   Formats remain experimental.
-4. The [suite evaluation](suite-evaluation.md): dated research, primitive
-   rationale, alternatives, and review gates, not production authorization.
-5. The [proposed usage policy](suite-1-usage-policy.md): recommendations and open
-   review questions, with [padding-aware size definitions and examples](suite-1-usage-policy.md#plaintext-maximum).
-6. The [stored-value assurance procedure](stored-values.md#obtain-additional-assurance)
-   and [maintenance verification](reencryption-sweep.md#verification-and-retirement):
-   parsing/generation classification versus authenticated readability and index consistency.
+## Historical references
 
-The [original v0.1 design](spec.md) supplies historical rationale only. Its API
-sketches and future extension plans are not current instructions.
-The [security-reference cold walk](adoption-walk.md#security-reference-follow-up)
-records recipe and padded-size task completion, separately from assurance gates.
-
-Next: choose a configuration in the crate reference, or try the
-[ephemeral first round trip](../README.md#quick-start) before durable integration.
+The frozen [suite research (2026-08-21)](https://github.com/sagikazarmark/cryptbox/blob/0c3627e1817b88cfdc681efec20335fde525c526/docs/suite-evaluation.md),
+[usage proposal (2026-08-21)](https://github.com/sagikazarmark/cryptbox/blob/0c3627e1817b88cfdc681efec20335fde525c526/docs/suite-1-usage-policy.md)
+([#15](https://github.com/sagikazarmark/cryptbox/issues/15)), and
+[v0.1 design](https://github.com/sagikazarmark/cryptbox/blob/0c3627e1817b88cfdc681efec20335fde525c526/docs/spec.md)
+retain rationale and deferred plans. The numeric policy remains **proposed**;
+issue closure recorded authoring, not acceptance. Its message-size, count, age,
+and deployment failure budgets are not library-enforced.

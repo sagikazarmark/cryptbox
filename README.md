@@ -1,4 +1,4 @@
-# cryptbox
+# CryptBox
 
 [![ci](https://img.shields.io/github/actions/workflow/status/sagikazarmark/cryptbox/ci.yaml?style=flat-square)](https://github.com/sagikazarmark/cryptbox/actions/workflows/ci.yaml)
 [![openssf scorecard](https://api.securityscorecards.dev/projects/github.com/sagikazarmark/cryptbox/badge?style=flat-square)](https://securityscorecards.dev/viewer/?uri=github.com/sagikazarmark/cryptbox)
@@ -26,31 +26,19 @@ flowchart LR
 > [!WARNING]
 > CryptBox is early in development and **not yet production-ready**.
 >
-> Its [encryption suite](docs/suite-evaluation.md) uses **XChaCha20-Poly1305**,
-> but CryptBox’s cryptographic construction and implementation still require focused review,
-> independent test vectors, an accepted usage policy, and supported-target review.
->
-> Read [suitability and security](docs/security.md) before adoption.
+> Read the [threat model](docs/security.md) for its security boundaries and
+> outstanding review work.
 
 It can protect encrypted fields in a stolen database dump when keys stay
 separate. It does not protect a compromised application, prevent replay or
 same-field cross-row substitution, or hide query patterns. Blind indexes leak
 equality/frequency; every hit requires decrypted, normalized comparison.
 
-## Find your task
+[Get started](docs/first-field.md) · [Documentation](docs/README.md) ·
+[Threat model](docs/security.md) · [API](https://docs.rs/cryptbox/0.5.0/cryptbox/)
 
-- **Evaluate:** [suitability, unsuitable uses, and review gates](docs/security.md).
-- **Configure:** [feature/platform reference](docs/features.md), shared with the crate landing page.
-- **Start:** [encrypt your first field in a fresh Rust project](docs/first-field.md).
-- **Integrate:** [durable, searchable PostgreSQL / SQLite application](docs/searchable-sqlx.md) and [stored-value tutorial (unreleased Serde support)](docs/stored-values.md).
-- **Operate:** [staggered key rotation](docs/key-rotation.md), [maintenance sweeps](docs/reencryption-sweep.md), and [legacy migration](docs/legacy-migration.md).
-- **Review security:** [review reading path](docs/security.md#security-review-path).
-- **Browse:** [all documentation, examples, and document authority](docs/README.md).
-
-The [0.5.0 published API](https://docs.rs/cryptbox/0.5.0/cryptbox/) describes that
-release. Repository links describe this development checkout, including unreleased
-stored-byte Serde support and later documentation improvements; see the
-[version guide](docs/README.md#document-authority-and-versions).
+Repository docs describe development; select your dependency version on docs.rs.
+Stored-byte Serde support is unreleased.
 
 ## Features
 
@@ -105,39 +93,8 @@ the original plaintext remains in memory. See [concepts and terminology](docs/co
 
 For durable data, load the same key/ID pairs after every restart; generate
 encryption and blind-index roots independently. Before storing anything, review
-the [schema and durable-key next steps](docs/first-field.md#4-freeze-schema-decisions-before-durable-storage),
+the [schema and durable-key next steps](docs/first-field.md#3-freeze-schema-decisions-before-durable-storage),
 then follow the [durable SQLx tutorial](docs/searchable-sqlx.md).
-
-## Testing
-
-Use local providers for parallel-independent tests. See the
-[testing and diagnostics guide](docs/testing.md) for automatic-adapter isolation.
-
-## Diagnostics
-
-See [diagnostic metadata](docs/testing.md#diagnostics) for stable field IDs,
-safe labels, and application-owned logging.
-
-## Examples
-
-The [example index](docs/README.md#runnable-examples) lists runnable commands.
-
-## Blind Indexes
-
-See [lookup concepts](docs/concepts.md#generations-and-lookup) and the
-[blind-index example](examples/blind_indexes.rs). Never use truncated indexes
-as uniqueness constraints.
-
-## Serde Ciphertext Storage
-
-The [stored-value tutorial](docs/stored-values.md) explains explicit ciphertext
-serialization, structural parsing, authentication, and index consistency.
-
-## Feature Flags
-
-Feature/platform semantics have one owner: the
-[feature/platform reference](docs/features.md), included in the crate landing
-page. No features are enabled by default.
 
 ## Development
 
