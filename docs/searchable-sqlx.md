@@ -36,9 +36,12 @@ postgres = ["cryptbox/sqlx-postgres", "sqlx/postgres"]
 sqlite = ["cryptbox/sqlx-sqlite", "sqlx/sqlite"]
 macro-check = ["sqlx/macros"]
 maintenance = ["cryptbox/migrate"]
+legacy-migration = ["maintenance", "dep:chacha20poly1305", "dep:getrandom"]
 
 [dependencies]
 cryptbox = "=0.5.0"
+chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"], optional = true }
+getrandom = { version = "0.4", optional = true }
 hex = "0.4"
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
@@ -191,6 +194,9 @@ use cryptbox::{
 };
 use sqlx::{Connection, QueryBuilder, Row};
 use zeroize::Zeroizing;
+
+#[cfg(feature = "legacy-migration")]
+mod migration;
 
 #[cfg(any(
     all(feature = "postgres", feature = "sqlite"),
@@ -360,6 +366,10 @@ async fn maintenance(
         .with_progress("cryptbox_migration_progress", run);
     let planner = RowPlanner::<String, UserEmail>::new(&(), encryption)
         .with_index_with::<EmailLookup>(indexes);
+    #[cfg(feature = "legacy-migration")]
+    let legacy = migration::PreviousEncryption::load()?;
+    #[cfg(feature = "legacy-migration")]
+    let planner = planner.with_legacy(&legacy);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = Store::new(connection, &table);
     store.ensure_progress_table().await?;
@@ -612,6 +622,15 @@ async fn main() -> Result<()> {
         }
     }
     let mut connection = DbConnection::connect(&env::var("DATABASE_URL")?).await?;
+    #[cfg(feature = "legacy-migration")]
+    if args
+        .first()
+        .is_some_and(|arg| arg.starts_with("migration-"))
+    {
+        migration::command(&mut connection, &args, &encryption, &indexes).await?;
+        connection.close().await?;
+        return Ok(());
+    }
     match args
         .iter()
         .map(String::as_str)
@@ -896,6 +915,11 @@ selectors. Leave those unset for this introductory tutorial's
 commands support that continuation. Promotion does not rewrite old ciphertext or
 indexes; retain historical keys/probes and recovery pairs even after live convergence.
 Use the [maintenance sweep guide](reencryption-sweep.md) for later rewriting.
+For existing plaintext or previous-solution ciphertext, continue with the
+[mixed-format migration procedure](legacy-migration.md), including transitional
+search and strict closure. Its optional `legacy-migration` feature additionally
+requires copying [migration.rs](snippets/migration.rs) to `src/migration.rs`;
+the ordinary consumer and `maintenance`-only build do not need that module.
 
 Check startup failures without changing the real key files (use the `consumer`
 helper for your selected backend):

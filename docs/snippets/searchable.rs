@@ -9,6 +9,9 @@ use cryptbox::{
 use sqlx::{Connection, QueryBuilder, Row};
 use zeroize::Zeroizing;
 
+#[cfg(feature = "legacy-migration")]
+mod migration;
+
 #[cfg(any(
     all(feature = "postgres", feature = "sqlite"),
     not(any(feature = "postgres", feature = "sqlite"))
@@ -177,6 +180,10 @@ async fn maintenance(
         .with_progress("cryptbox_migration_progress", run);
     let planner = RowPlanner::<String, UserEmail>::new(&(), encryption)
         .with_index_with::<EmailLookup>(indexes);
+    #[cfg(feature = "legacy-migration")]
+    let legacy = migration::PreviousEncryption::load()?;
+    #[cfg(feature = "legacy-migration")]
+    let planner = planner.with_legacy(&legacy);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = Store::new(connection, &table);
     store.ensure_progress_table().await?;
@@ -429,6 +436,15 @@ async fn main() -> Result<()> {
         }
     }
     let mut connection = DbConnection::connect(&env::var("DATABASE_URL")?).await?;
+    #[cfg(feature = "legacy-migration")]
+    if args
+        .first()
+        .is_some_and(|arg| arg.starts_with("migration-"))
+    {
+        migration::command(&mut connection, &args, &encryption, &indexes).await?;
+        connection.close().await?;
+        return Ok(());
+    }
     match args
         .iter()
         .map(String::as_str)

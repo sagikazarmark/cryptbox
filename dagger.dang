@@ -171,6 +171,8 @@ type Test {
       .withExec(["node", "scripts/check-searchable-consumer.mjs", "published", "postgres"])
       .withExec(["node", "scripts/check-searchable-consumer.mjs", "checkout", "postgres", "sweep"])
       .withExec(["node", "scripts/check-searchable-consumer.mjs", "published", "postgres", "sweep"])
+      .withExec(["node", "scripts/check-searchable-consumer.mjs", "checkout", "postgres", "migration"])
+      .withExec(["node", "scripts/check-searchable-consumer.mjs", "published", "postgres", "migration"])
       .withExec([
         "cargo", "test", "--locked",
         "--test", "sqlx_postgres",

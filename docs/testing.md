@@ -228,6 +228,25 @@ PostgreSQL uses the same isolated-schema infrastructure. Both published/checkout
 SQLite variants run in the consumer checks, and both PostgreSQL variants run in
 the existing Dagger service check. This supplements the connection-level cases below.
 
+Append `migration` instead for the [mixed-format migration journey](legacy-migration.md#durable-mixed-format-walkthrough):
+
+```sh
+node scripts/check-searchable-consumer.mjs checkout sqlite migration
+node scripts/check-searchable-consumer.mjs published sqlite migration
+node scripts/check-searchable-consumer.mjs checkout postgres migration
+node scripts/check-searchable-consumer.mjs published postgres migration
+```
+
+This selects `legacy-migration`, checks candidate-verified lookup across plaintext,
+authenticated illustrative legacy formats, historical/current CryptBox ciphertext
+and missing projections, then exercises authentication failure, quarantine,
+resume/replay, manual discriminator/missing-index repairs and separate closure
+assurance. Finally it removes the online legacy module/key and builds without
+migration features, checking strict reads, searches and new writes. Both SQLite
+modes run in documentation consumer checks; both PostgreSQL modes reuse the
+Dagger service below. These are public-consumer acceptance checks, not proof of
+an application's legacy provenance or fleet coordination.
+
 ## Live PostgreSQL sweep checks
 
 **Development checkout tooling.** From the repository root, run:

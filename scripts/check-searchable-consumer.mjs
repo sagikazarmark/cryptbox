@@ -7,10 +7,12 @@ import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { checkRotation } from './check-rotation-consumer.mjs';
 import { checkSweep } from './check-sweep-consumer.mjs';
+import { checkMigration } from './check-migration-consumer.mjs';
 
 const [mode = 'checkout', backend = 'sqlite', scenario = 'searchable'] = process.argv.slice(2);
-assert.ok(['searchable', 'sweep'].includes(scenario));
-const features = scenario === 'sweep' ? `${backend},maintenance` : backend;
+assert.ok(['searchable', 'sweep', 'migration'].includes(scenario));
+const features = scenario === 'migration' ? `${backend},legacy-migration`
+  : scenario === 'sweep' ? `${backend},maintenance` : backend;
 assert.ok(['checkout', 'published'].includes(mode));
 assert.ok(['sqlite', 'postgres'].includes(backend));
 if (backend === 'postgres' && !process.env.DATABASE_URL) {
@@ -45,6 +47,9 @@ try {
   if (mode === 'checkout') manifest += `\n[patch.crates-io]\ncryptbox = { path = ${JSON.stringify(resolve('.'))} }\n`;
   writeFileSync(join(scratch, 'Cargo.toml'), manifest);
   writeFileSync(join(scratch, 'src/main.rs'), readFileSync('docs/snippets/searchable.rs'));
+  if (scenario === 'migration') {
+    writeFileSync(join(scratch, 'src/migration.rs'), readFileSync('docs/snippets/migration.rs'));
+  }
   for (const db of ['sqlite', 'postgres']) {
     writeFileSync(join(scratch, `src/${db}.sql`), readFileSync(`docs/snippets/searchable-${db}.sql`));
   }
@@ -80,13 +85,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   }
   assert.match(cli(['init'], {}, false).stderr, /key configuration/);
   mkdirSync(env.CRYPTBOX_KEY_DIR);
+  if (scenario === 'migration') {
+    writeFileSync(join(env.CRYPTBOX_KEY_DIR, 'legacy.hex'), randomBytes(32).toString('hex') + '\n', { mode: 0o600 });
+  }
   for (const role of ['encryption', 'index']) {
     for (const generation of scenario === 'sweep' ? [1, 2, 3] : [1, 2]) {
       writeFileSync(join(env.CRYPTBOX_KEY_DIR, `${role}-${generation}.hex`), randomBytes(32).toString('hex') + '\n', { mode: 0o600 });
     }
   }
   assert.equal(cli(['init']).stdout.trim(), 'Schema ready.');
-  if (scenario === 'sweep') {
+  if (scenario === 'migration') {
+    checkMigration(cli);
+    command('cargo', ['clippy', '--locked', '--no-default-features', '--features', features, '--', '-D', 'warnings']);
+    // Physically remove the online legacy handler and secret, then build without migration features.
+    rmSync(join(scratch, 'src/migration.rs'));
+    rmSync(join(env.CRYPTBOX_KEY_DIR, 'legacy.hex'));
+    command('cargo', ['check', '--locked', '--no-default-features', '--features', backend]);
+    command('cargo', ['build', '--locked', '--no-default-features', '--features', backend]);
+    const strict = { CRYPTBOX_ENCRYPTION: '2', CRYPTBOX_INDEX: '2' };
+    for (const id of [10, 20, 30, 40, 50, 60]) {
+      assert.equal(cli(['get', String(id)], strict).stdout.trim(), `${id}: mixed@example.com`);
+    }
+    assert.equal(cli(['search', 'MIXED@example.com'], strict).stdout.trim(),
+      'Matches: [10, 20, 30, 40, 50, 60]; rejected: 0.');
+    assert.equal(cli(['search', 'OTHER@example.com'], strict).stdout.trim(), 'Matches: [70]; rejected: 0.');
+    cli(['put', '80', 'strict@example.com'], strict);
+    assert.equal(cli(['get', '80'], strict).stdout.trim(), '80: strict@example.com');
+    assert.equal(cli(['search', 'STRICT@example.com'], strict).stdout.trim(), 'Matches: [80]; rejected: 0.');
+    cli(['migration-search', 'mixed@example.com'], strict, false);
+    console.log(`${mode}/${backend}: strict rebuild without legacy handler/key or migration features passed.`);
+  } else if (scenario === 'sweep') {
     checkSweep(cli);
     command('cargo', ['clippy', '--locked', '--no-default-features', '--features', features, '--', '-D', 'warnings']);
   } else {

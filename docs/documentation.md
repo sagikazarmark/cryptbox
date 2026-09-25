@@ -89,6 +89,12 @@ Append `sweep` to that focused command for the durable maintenance scenario in
 batches, durable progress, replay, fresh verification/recovery and a second
 rotation. The full consumer checks include it on SQLite; Dagger's PostgreSQL
 check executes it against the same service for both dependency modes.
+Append `migration` for `scripts/check-migration-consumer.mjs` and the optional
+`docs/snippets/migration.rs` module. This extends the same database infrastructure
+through mixed-format search, failed recovery, exceptional-row repair and strict
+closure, including a rebuild without the legacy handler/key or migration features.
+The [migration guide](legacy-migration.md) owns the procedure; keep its commands
+and expected outcomes aligned with this CLI acceptance check.
 
 The lifecycle's canonical source is `docs/diagrams/lifecycle.mmd`. The snippet
 script embeds it in Markdown, and pinned Mermaid CLI produces the committed SVG

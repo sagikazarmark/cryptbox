@@ -22,6 +22,9 @@ feature packages the same invariants as library code in
 `cryptbox::migrate::{RowPlanner, Sweep, SweepStore}` and additionally
 handles migration from plaintext or a previous encryption solution; see the
 [legacy migration guide](legacy-migration.md).
+Its [durable mixed-format continuation](legacy-migration.md#durable-mixed-format-walkthrough)
+uses the same consumer and run ownership, adding transitional search, quarantine,
+manual magic-collision/missing-index repairs and a strict rebuild.
 
 ## Preconditions
 
