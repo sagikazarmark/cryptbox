@@ -95,6 +95,9 @@ pub fn is_ciphertext(bytes: &[u8]) -> bool {
 
 /// Parses supported envelope metadata without authenticating it.
 ///
+/// The bytes and returned metadata remain untrusted until authenticated
+/// decryption succeeds. Parsing does not look up keys or validate a codec.
+///
 /// # Errors
 ///
 /// Returns a structured error when the envelope is malformed or unsupported.
@@ -128,6 +131,9 @@ pub fn encrypt<B: Binding>(
 /// Authenticates and decrypts opaque ciphertext bytes.
 ///
 /// The provider is asked only for the exact key ID named by the envelope.
+/// Success authenticates the envelope under the supplied key and binding;
+/// it does not establish freshness, row identity, padding, or codec validity.
+/// Use [`crate::Ciphertext::decrypt_with`] to also unpad and decode a typed value.
 ///
 /// # Errors
 ///
@@ -151,6 +157,8 @@ pub fn decrypt<B: Binding>(
 /// Reports whether an envelope does not use the active suite or current key.
 ///
 /// This reads unauthenticated metadata and does not decrypt the payload.
+/// A `false` result means only that the parsed suite and key IDs are current,
+/// not that the ciphertext can be authenticated or decoded.
 ///
 /// # Errors
 ///

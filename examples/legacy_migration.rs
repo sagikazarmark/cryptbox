@@ -185,14 +185,14 @@ async fn run() -> Result<(), Box<dyn Error>> {
     assert_eq!(report.current, 1);
     assert_eq!(report.conflicts, 0);
 
-    // Only a fresh, complete verification pass is authoritative. It needs no
-    // legacy recovery because classification is enough to count legacy rows.
+    // Only a fresh, complete pass establishes migration-state convergence.
+    // It does not decrypt, validate decoded values, or check index consistency.
     let report = sweep.verify(&mut store).await?;
     assert!(report.is_terminal());
     assert_eq!(report.current, 4);
     drop(store);
 
-    // Every row is now strict CryptBox ciphertext and has a usable blind index.
+    // Separately demonstrate strict authenticated reading for this lookup.
     let probes = blind_index_probes::<EmailLookup, String, FieldBound<UserEmail>>(
         &"foreign@example.com".to_owned(),
         &(),
@@ -214,8 +214,10 @@ async fn run() -> Result<(), Box<dyn Error>> {
     assert_eq!(matches, 1);
 
     // Closing checklist: replace MaybeEncrypted reads with strict reads, delete
-    // the handler, disable `migrate`, and retire historical CryptBox keys. Only
-    // then, subject to rollback and retention policy, destroy the legacy key.
+    // the online handler, and disable `migrate`. A clean live-data pass does not
+    // cover backups or other stores: remove online keys only after convergence,
+    // retain recovery keys/handlers separately, and destroy them only when every
+    // dependent artifact and retention requirement permits it.
     drop(sweep);
     drop(legacy); // Zeroizing erases this process-owned key buffer.
 

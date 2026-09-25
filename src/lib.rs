@@ -75,7 +75,10 @@
 //! explicitly encrypted [`Ciphertext`] or derived [`BlindIndex`] instead. Their
 //! deserializers validate stored structure but do not establish authenticity;
 //! ciphertext is authenticated only when it is decrypted, and a blind-index
-//! candidate must still be verified against decrypted plaintext.
+//! candidate must still be compared against decrypted plaintext. That comparison
+//! does not authenticate index metadata; checking stored-index consistency requires
+//! separate recomputation. The [stored-value walkthrough] provides a complete
+//! consumer manifest, runnable Serde example, and procedure for each check.
 //!
 //! This is a standard-library crate requiring Rust 1.85 or newer. Encryption
 //! requires a target on which `getrandom` can obtain operating-system entropy.
@@ -110,11 +113,14 @@
 //! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/latest/source/docs/reencryption-sweep.md
 //! [legacy migration guide]: https://docs.rs/crate/cryptbox/latest/source/docs/legacy-migration.md
 //! [wire-format guide]: https://docs.rs/crate/cryptbox/latest/source/docs/wire-format.md
+//! [stored-value walkthrough]: https://docs.rs/crate/cryptbox/latest/source/docs/stored-values.md
 //!
 //! # Security boundaries
 //!
-//! Field binding prevents cross-field substitution, but not same-field
-//! cross-row substitution. Blind indexes intentionally leak equality and
+//! Field binding makes ciphertext authentication fail across fields and
+//! domain-separates blind-index derivation; it does not authenticate stored index
+//! bytes or prevent same-field cross-row substitution. Blind indexes intentionally
+//! leak equality and
 //! frequency; every hit is a candidate that must be decrypted and compared,
 //! regardless of padding. Unpadded profiles reveal the exact encoded plaintext
 //! length. A padding policy coarsens that leakage to a size bucket or hides it

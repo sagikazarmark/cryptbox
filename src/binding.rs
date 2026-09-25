@@ -45,8 +45,11 @@ pub trait Field: Sized + 'static {
 
 /// Binds ciphertext and blind indexes to the [`Field::ID`] declared by `F`.
 ///
-/// This prevents values from authenticating under another logical field, but
-/// does not prevent substitution between rows of the same field.
+/// Ciphertext authentication fails under a different logical field. For blind
+/// indexes, the field domain-separates derivation; it does not authenticate the
+/// stored index representation. Neither property prevents substitution between
+/// rows of the same field. Compare decrypted candidate plaintext for lookup, and
+/// recompute indexes separately when stored-index consistency is required.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FieldBound<F>(PhantomData<fn() -> F>);
 

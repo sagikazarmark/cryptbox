@@ -1617,7 +1617,7 @@ Classification keys on the 4-byte envelope magic alone. Legacy data that begins 
 
 The legacy handler MUST be application-owned, explicitly injected, synchronous, and responsible for zeroizing its own key material and intermediate buffers. It MUST return plaintext in a zeroizing buffer and sanitized errors that retain neither input nor keys. Authenticated legacy formats are strongly preferred; unauthenticated formats require out-of-band integrity checks because successful recovery and codec decoding do not prove the plaintext is correct.
 
-**Terminal state.** The migration window MAY end only after a full verification pass over all rows observes zero legacy, zero stale, and zero malformed values. If writes continue during verification, the pass MUST be repeated until one complete pass is clean. Then permissive readers and the handler are removed, the `migrate` feature is dropped, historical CryptBox keys are retired per the maintenance sweep rules, and legacy keys are destroyed when rollback and retention requirements permit.
+**Terminal state.** The migration window MAY end only after a full verification pass over all rows observes zero legacy, zero stale, and zero malformed values. This establishes structure/generation convergence only, not authenticated readability, decoded-value validity, or ciphertext/index consistency; use separate decryption and index recomputation for those checks, as described in the [stored-value guide](stored-values.md#obtain-additional-assurance). Every writer must use the target generations; if writes continue during verification, repeat until one complete pass is clean. Then remove permissive readers and the online handler and drop the `migrate` feature. A clean live-data pass does not establish that backups or other stores no longer need historical or legacy keys: distinguish online removal, recovery retention, and destruction under the [maintenance sweep rules](reencryption-sweep.md#verification-and-retirement).
 
 ---
 
@@ -1636,11 +1636,11 @@ The library sweep driver generalizes the maintenance sweep pattern to re-encrypt
 
 Sweep writes are operator-initiated maintenance, not read-triggered mutation, so §13.6 and §42.6 are preserved: a read remains a read.
 
-The driver reports metadata-only tallies (current, stale, legacy, malformed, conflicts) consistent with §33. A sweep run stops at the first malformed or unrecoverable row so the operator can investigate; verification counts malformed rows and completes so its report is total.
+The driver reports metadata-only tallies (current, stale, legacy, malformed, conflicts) consistent with §33. A sweep run stops at the first malformed or unrecoverable row so the operator can investigate; verification counts unclassifiable rows as malformed. Storage or configuration failures abort the pass. Current rows are not decrypted, and current indexes are not recomputed; parsed metadata remains unauthenticated.
 
 **Stepped execution.** The driver MUST expose single-batch execution alongside the run-to-exhaustion loop, in two forms: one that uses the store's durable checkpoint, and one that takes and returns the cursor without checkpoint IO so an external orchestrator (a scheduler, queue consumer, or durable-execution runtime) owns progress durability. Progress ownership is caller policy, not adapter policy.
 
-Batch replay MUST remain idempotent: current rows are skipped and compare-and-swap rejects duplicated rewrites, so stepped execution composes with at-least-once runtimes without additional fencing. Under replay, per-batch tallies MAY overcount conflicts; summed reports are advisory and the verification pass remains the authoritative terminal-state check.
+Batch replay MUST remain idempotent: current rows are skipped and compare-and-swap rejects duplicated rewrites, so stepped execution composes with at-least-once runtimes without additional fencing. Under replay, per-batch tallies MAY overcount conflicts; summed run reports are advisory and a full verification pass remains the migration-state check. Stepped verification must begin without a cursor and merge every batch through exhaustion before interpreting `is_terminal`; a clean partial or default report is insufficient.
 
 ---
 

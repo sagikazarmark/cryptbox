@@ -49,6 +49,7 @@ jobs:
           cargo run --locked --example plaintext_migration --features migrate,sqlx-sqlite
           cargo run --locked --example legacy_migration --features migrate,sqlx-sqlite
           cargo run --locked --example blind_indexes
+          cargo run --locked --example stored_values --features serde
           cargo run --locked --example sqlx_sqlite --features sqlx-sqlite
 
       - name: Run documentation tests

@@ -93,6 +93,10 @@ pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
 /// `Spec` is phantom and its [`BlindIndexMetadata::ID`] is not stored in the
 /// representation. With the `serde` feature, this type serializes only its
 /// complete stored binary representation.
+/// Deserialization uses [`Self::from_bytes`] for structural and precision checks,
+/// without keys. Neither operation authenticates stored metadata or establishes
+/// consistency with a ciphertext. Candidate plaintext comparison is a separate
+/// operation; see [`verify_blind_index_candidate`].
 pub struct BlindIndex<Spec> {
     bytes: Vec<u8>,
     marker: PhantomData<fn() -> Spec>,
@@ -224,7 +228,7 @@ impl BlindIndexInfo {
         self.format_version
     }
 
-    /// Returns the index-key generation used to produce the value.
+    /// Returns the unauthenticated index-key generation named by the value.
     #[must_use]
     pub const fn index_key_id(self) -> IndexKeyId {
         self.index_key_id
@@ -240,7 +244,12 @@ impl BlindIndexInfo {
 /// Parses and structurally validates a stored blind-index representation.
 ///
 /// This does not authenticate the returned key ID, precision, or digest. Treat
-/// all metadata as untrusted until the candidate is recomputed and verified.
+/// all metadata as untrusted. To check index consistency, decrypt the associated
+/// ciphertext, recompute with the intended specification, binding, and an allowed
+/// key generation, and compare the complete stored representation. A match is
+/// consistency at the configured precision, not proof of provenance or freshness.
+/// [`verify_blind_index_candidate`] only compares plaintexts; it does not perform
+/// this recomputation or authenticate stored index metadata.
 ///
 /// # Errors
 ///
@@ -332,6 +341,11 @@ where
 }
 
 /// Compares normalized query and candidate plaintext after candidate lookup.
+///
+/// Decrypt and authenticate the candidate ciphertext before calling this.
+/// This function receives no stored index, keys, or binding context: it rejects
+/// false plaintext matches but does not authenticate index metadata or establish
+/// index/ciphertext consistency.
 ///
 /// Equal-length normalized values are compared in constant time. A normalized
 /// length mismatch returns early, so callers must treat normalized lengths as

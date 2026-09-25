@@ -710,6 +710,31 @@ fn sweep_migrates_plaintext_and_stale_rows_to_a_terminal_state() {
 }
 
 #[test]
+fn terminal_verification_does_not_establish_authenticated_readability() {
+    let keys = rotated_keys();
+    let mut bytes = encrypt_email("mark@example.com", &keys);
+    // Corrupt the stored payload without depending on private envelope offsets.
+    *bytes.last_mut().unwrap() ^= 1;
+    let ciphertext = Ciphertext::<String, UserEmail>::from_bytes(bytes.clone()).unwrap();
+    assert!(!ciphertext.needs_reencryption_with(&keys).unwrap());
+
+    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys);
+    assert_eq!(
+        planner.classify_row(&bytes, &[]).unwrap(),
+        RowState::Current
+    );
+    let sweep = Sweep::new(planner);
+    let mut store = MemoryStore::new(vec![(1, bytes, vec![])]);
+    let report = futures_executor::block_on(sweep.verify(&mut store)).unwrap();
+    assert!(report.is_terminal());
+    assert_eq!(report.current, 1);
+    assert_eq!(
+        ciphertext.decrypt_with(&(), &keys).unwrap_err(),
+        Error::AuthenticationFailed
+    );
+}
+
+#[test]
 fn sweep_replay_after_a_lost_checkpoint_is_idempotent() {
     let keys = rotated_keys();
     let index_keys = rotated_index_keys();

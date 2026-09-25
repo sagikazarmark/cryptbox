@@ -4,6 +4,9 @@ Key rotation makes a new encryption key current while retaining historical keys
 for reads. It does not require an immediate table rewrite. A maintenance sweep
 is useful when an application later wants to retire historical keys or migrate
 an encryption suite.
+Live-data convergence does not show that backups or other stores no longer need
+historical keys: online removal, recovery retention, and destruction are separate
+decisions, as described under [verification and retirement](#verification-and-retirement).
 
 The runnable [SQLite sweep example] shows the complete pattern with SQLx. The
 same control flow applies to PostgreSQL and other stores.
@@ -18,8 +21,8 @@ handles migration from plaintext or a previous encryption solution; see the
 
 Before starting a sweep, deploy the current-plus-historical keyring to every
 application instance. Confirm that every writer uses the current encryption and
-blind-index keys. Keep all historical keys available until final verification
-passes.
+blind-index keys. Keep all historical keys available during the sweep and final
+verification; retain recovery copies separately for older backups and other stores.
 
 Choose a unique, immutable, indexed cursor such as a monotonically increasing
 primary key. Uniqueness is required, not just recommended: paging resumes
@@ -77,14 +80,59 @@ guard and candidate-verification rules.
 
 ## Verification And Retirement
 
+**A clean live-data pass does not establish that retained backups or other stores
+no longer need historical keys.** Separate online provider removal from recovery
+retention and eventual destruction.
+
 After the keyset scan completes, perform a fresh full verification pass from the
 start. Every ciphertext must return `false` from `needs_reencryption_with`, and
 every blind index must name the current `IndexKeyId`. Treat malformed values as
 errors rather than skipping them.
 
-Only after verification succeeds may the application remove historical
-encryption keys from its providers and stop generating historical blind-index
-probes. If writes continue during verification, repeat verification until a
-complete pass observes no historical generations.
+This is **migration-state verification**: it checks parsed structure and generation
+metadata, which remain unauthenticated. It does not establish authenticated
+readability, decoded-value validity, or ciphertext/index consistency. Current
+rows are skipped without decryption; current index bytes are preserved without
+recomputation even when another component is rewritten. Re-encryption authenticates
+and checks padding, but does not by itself decode with the profile's codec.
+
+With `migrate`, `Sweep::verify` performs this fresh full pass, ignoring the rewrite
+checkpoint. `SweepReport::is_terminal()` only checks zero legacy, stale, and
+malformed counts; it cannot tell whether a pass is complete. For `verify_batch`,
+start with no cursor, merge each report, and follow returned checkpoints until
+`None` before checking the aggregate. A clean batch, default report, or rewrite
+report is insufficient. Classification may stop on a stale component before
+inspecting later columns; fix the reported state and verify again.
+
+For **authenticated readability**, separately parse and `decrypt_with` every
+ciphertext using the intended profile/context, validate the decoded application
+value, and account for every failure. For **index consistency**, recompute each
+index from that authenticated plaintext using the intended specification,
+normalization, binding, precision, and allowed generation, then compare complete
+stored bytes. Use the [step-by-step assurance procedure](stored-values.md#obtain-additional-assurance)
+for current or mixed-generation stores and concurrency-safe repair. Candidate
+plaintext comparison alone does not check stored index metadata.
+
+Ensure every writer uses the target generations. Verification observes loaded
+rows, not a library-provided snapshot. If writes continue, repeat verification
+until a complete pass is clean; use your store's consistency guarantees for any
+stronger point-in-time claim. Revisit stale rows behind the rewrite checkpoint
+with a fresh sweep or targeted repair before another fresh verification pass.
+
+After convergence, make three distinct decisions:
+
+1. **Online removal:** once all relevant live stores and readers have converged,
+   remove historical encryption keys from online providers and stop historical
+   blind-index probes for those stores. A clean pass over one table is not an
+   inventory of other tables, caches, queues, replicas, or offline stores.
+2. **Recovery retention:** keep securely managed historical encryption keys,
+   index keys, and the required profile/index schema for retained backups,
+   archives, snapshots, and rollback data. Test restoration with that recovery
+   keyset. Restored historical indexes require historical probes or an explicit
+   re-indexing pass before current-only lookup is complete.
+3. **Destruction:** destroy key material only when every artifact that needs it
+   has expired, been migrated, or been deliberately made unrecoverable under the
+   application's retention policy. Removing a key from an online provider does
+   not destroy recovery copies, and live convergence alone is not this condition.
 
 [SQLite sweep example]: ../examples/reencryption_sweep.rs

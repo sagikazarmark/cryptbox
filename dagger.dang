@@ -137,6 +137,13 @@ type Test {
     self.example("sqlx_sqlite", feature: ["sqlx-sqlite"])
   }
 
+  """
+  Run the explicit Serde stored-value example.
+  """
+  storedValues: String! @check {
+    self.example("stored_values", feature: ["serde"])
+  }
+
   let example(
     """
     Name of the example target to run.

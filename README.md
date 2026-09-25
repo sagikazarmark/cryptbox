@@ -203,6 +203,7 @@ them. CryptBox does not emit logs or require an observability framework.
 - [Legacy migration](examples/legacy_migration.rs): `cargo run --example legacy_migration --features migrate,sqlx-sqlite`
 - [Plaintext migration](examples/plaintext_migration.rs): `cargo run --example plaintext_migration --features migrate,sqlx-sqlite`
 - [Blind-index lookup](examples/blind_indexes.rs): `cargo run --example blind_indexes`
+- [Serde stored values](docs/stored-values.md): `cargo run --example stored_values --features serde`
 - [In-memory SQLite storage](examples/sqlx_sqlite.rs): `cargo run --example sqlx_sqlite --features sqlx-sqlite`
 
 The [maintenance sweep guide](docs/reencryption-sweep.md) covers batching,
@@ -225,16 +226,9 @@ probe returned by `blind_index_probes`, then rewrite stored indexes separately.
 
 ## Serde Ciphertext Storage
 
-Enable the `serde` feature to serialize the explicit stored representations in
-Serde-backed document stores, message queues, caches, or files:
-
-```rust,ignore
-#[derive(serde::Serialize, serde::Deserialize)]
-struct StoredUser {
-    email: cryptbox::Ciphertext<String, UserEmail>,
-    email_lookup: cryptbox::BlindIndex<UserEmailExact>,
-}
-```
+Follow the [stored-value walkthrough](docs/stored-values.md) for a complete
+consumer manifest and runnable program using `serde`, Serde derives, and
+`serde_json` for a document containing ciphertext and a blind index.
 
 `Ciphertext<T, Profile>` serializes only its binary ciphertext envelope, and
 `BlindIndex<Spec>` serializes only its complete stored bytes. The Serde format
@@ -245,8 +239,11 @@ while binary formats can preserve a byte string.
 implement `Serialize` or `Deserialize`. Encrypt it to `Ciphertext` before
 serialization, then deserialize and decrypt explicitly when reading. Serde
 deserialization validates stored structure, not authenticity: authentication
-occurs during decryption, and blind-index candidates still require plaintext
-verification.
+occurs during decryption. Candidate plaintext comparison rejects false lookup
+matches but does not authenticate stored index metadata. For stored-index
+consistency, separately recompute indexes from authenticated plaintext and compare
+the complete bytes. A terminal migration sweep report checks structure and
+generation state, not these additional guarantees; the walkthrough shows each step.
 
 ## Feature Flags
 

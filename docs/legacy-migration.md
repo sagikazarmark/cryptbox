@@ -87,8 +87,8 @@ legacy rows may still appear. `MaybeEncrypted::from_bytes` and its SQLx
 `Decode` implementations classify bytes without accessing either CryptBox or
 legacy keys:
 
-- Valid CryptBox envelopes use normal authenticated decryption and ignore the
-  legacy handler.
+- Structurally valid CryptBox envelopes are retained without authentication;
+  explicit decryption later authenticates them and ignores the legacy handler.
 - Bytes without the envelope magic are retained in a zeroizing legacy buffer.
   `decrypt_with` treats them as plaintext; `decrypt_with_legacy` first invokes
   the handler and then the profile codec.
@@ -160,7 +160,8 @@ batch at a time:
 
 Batch replay is idempotent: current rows are skipped and updates compare the
 originally read bytes. Under replay, summed reports may overcount conflicts, so
-treat run reports as advisory and terminal verification as authoritative.
+treat run reports as advisory and a full terminal verification pass as authoritative
+only for migration-state convergence.
 
 ## Verification And Closing The Window
 
@@ -170,15 +171,31 @@ only when a complete pass reports `is_terminal()`: zero `legacy`, zero `stale`,
 and zero `malformed` rows. If writes continue during verification, repeat until
 one complete pass is clean.
 
-After the terminal state:
+This checks **structure and generation state only**. It does not decrypt current
+rows, establish authenticated readability or decoded-value validity, or recompute
+indexes to check consistency. Its metadata remains unauthenticated. For stepped
+verification, start without a cursor, merge every batch, and continue until the
+returned checkpoint is `None`; a clean partial or default report is insufficient.
+Use the [separate authenticated-read and index-recomputation procedure](stored-values.md#obtain-additional-assurance)
+when those checks are required. Successful re-encryption cannot retroactively
+establish the provenance of unauthenticated legacy plaintext.
+
+After the terminal state, with every writer using the target generations:
+
+**A clean live-data pass does not establish that backups or other stores no longer
+need historical or legacy keys.** Online removal, recovery retention, and key
+destruction are distinct decisions.
 
 1. Replace `MaybeEncrypted` reads with strict `Encrypted`/`Ciphertext` reads.
 2. Delete the legacy handler and confirm no references to its type remain.
 3. Disable the `migrate` feature.
-4. Retire historical CryptBox keys and probes following the
-   [re-encryption sweep guide](reencryption-sweep.md).
-5. Destroy the previous solution's keys only after all rollback and retention
-   requirements permit it.
+4. Remove historical CryptBox keys and probes from converged online stores following the
+    [re-encryption sweep guide](reencryption-sweep.md).
+5. Retain historical CryptBox and previous-solution keys, index keys, and recovery
+   schema/handlers for backups and rollback artifacts that still require them.
+   Test restoration, including historical probes or re-indexing for lookup.
+6. Destroy key material only after all dependent artifacts expire, are migrated,
+   or are deliberately made unrecoverable under the retention policy.
 
 [SQLite legacy migration example]: ../examples/legacy_migration.rs
 [plaintext-only example]: ../examples/plaintext_migration.rs

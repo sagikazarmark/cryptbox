@@ -127,14 +127,15 @@ async fn run() -> Result<(), Box<dyn Error>> {
     assert_eq!(report.current, 1);
     assert_eq!(report.conflicts, 0);
 
-    // The read-only verification pass proves the terminal state: no legacy,
-    // stale, or malformed rows remain, so the permissive reads and the
-    // `migrate` feature can be removed, and historical keys retired.
+    // A full pass checks structure/generations, not authenticated readability,
+    // decoded-value validity, or index consistency. All writers are current here,
+    // so terminal convergence permits closing permissive reads. Backups and other
+    // stores may still need historical keys: online removal is not destruction.
     let report = sweep.verify(&mut store).await?;
     assert!(report.is_terminal());
     assert_eq!(report.current, 4);
 
-    // Every row now decodes strictly and is reachable through the index.
+    // Separately demonstrate strict authenticated reading for this lookup.
     let probes = blind_index_probes::<EmailLookup, String, FieldBound<UserEmail>>(
         &"first@example.com".to_owned(),
         &(),

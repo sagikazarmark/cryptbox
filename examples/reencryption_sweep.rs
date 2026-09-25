@@ -127,7 +127,9 @@ async fn run() -> Result<(), Box<dyn Error>> {
             .await?;
     assert_eq!(current_after, current_before);
 
-    // Only after verification may deployments remove the historical keys and old probe.
+    // This verifies live structure/generations, not authentication or index consistency.
+    // Online removal is separate from retaining recovery keys: backups and other
+    // stores may still require historical keys. A clean pass does not justify destruction.
     let current_keys = LocalEncryptionKeyring::new(current_key, [])?;
     let current_index_keys = LocalBlindIndexKeyring::new(current_index_key, [])?;
     assert!(verify_sweep(&mut connection, &current_keys, &current_index_keys).await?);

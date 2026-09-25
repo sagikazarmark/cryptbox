@@ -17,6 +17,8 @@ pub type ProfileContext<T, Profile> =
 /// `Debug`, does not implement `Display` or `Deref`, and requires explicit
 /// access through [`Self::expose_secret`]. It does not zeroize arbitrary `T`;
 /// use [`Secret`] when the application value supports [`Zeroize`].
+/// It deliberately has no Serde implementation: encrypt to [`Ciphertext`] before
+/// serialization, then deserialize and decrypt explicitly when reading.
 ///
 /// Plaintext comparison must also be explicit:
 ///
@@ -81,6 +83,8 @@ impl<T, Profile> fmt::Debug for Encrypted<T, Profile> {
 /// bytes were created for that profile. With the `serde` feature, this type
 /// serializes only the binary envelope. [`Encrypted`] deliberately has no Serde
 /// implementation because it contains plaintext.
+/// Deserialization performs the same structural checks as [`Self::from_bytes`];
+/// it uses no keys and leaves the bytes and their metadata unauthenticated.
 pub struct Ciphertext<T, Profile> {
     bytes: Vec<u8>,
     marker: PhantomData<fn() -> (T, Profile)>,
@@ -200,6 +204,11 @@ where
 {
     /// Authenticates, decrypts, and decodes this value with an injected provider.
     ///
+    /// Success establishes ciphertext authenticity under the supplied key and
+    /// binding, valid padding, and successful decoding with the selected codec.
+    /// Apply application-level validation separately. This does not establish
+    /// freshness, row identity, or consistency with a separately stored blind index.
+    ///
     /// # Errors
     ///
     /// Returns an error for invalid envelopes, unknown keys, authentication
@@ -219,6 +228,7 @@ where
     /// Reports whether this envelope uses a non-current suite or key.
     ///
     /// Envelope metadata is unauthenticated until decryption succeeds.
+    /// A `false` result does not establish authenticated readability or codec validity.
     /// See the complete [key-rotation example] and [maintenance sweep example].
     ///
     /// [key-rotation example]: https://docs.rs/crate/cryptbox/latest/source/examples/key_rotation.rs
@@ -233,6 +243,10 @@ where
     }
 
     /// Decrypts and rewrites this envelope with the active suite and current key.
+    ///
+    /// This authenticates the ciphertext and checks padding, but does not decode
+    /// the value with the profile's codec or check any stored blind indexes.
+    /// Use [`Self::decrypt_with`] when decoded-value readability is required.
     ///
     /// # Errors
     ///

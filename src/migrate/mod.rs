@@ -8,14 +8,18 @@
 //! and [`Sweep`] drives the batched rewrite documented in the [legacy migration
 //! guide] until a verification pass reports a terminal state through
 //! [`SweepReport::is_terminal`].
+//! A successful full pass checks structure and generation convergence only, not
+//! authenticated readability, decoded-value validity, or index consistency.
+//! Obtain those assurances with separate decryption and index recomputation.
 //!
 //! Reads are permissive; writes never are. [`MaybeEncrypted`] implements no
 //! storage `Encode`, and its only forward path is an [`Encrypted`] value,
 //! which always encrypts. Once verification passes, remove `MaybeEncrypted`
 //! usages, delete the legacy handler, and disable the `migrate` feature. Only
-//! then retire historical `CryptBox` keys following the [maintenance sweep
-//! guide] and destroy the previous solution's keys according to the
-//! application's retention requirements.
+//! then consider online historical-key removal following the [maintenance sweep
+//! guide]. A clean live-data pass says nothing about keys needed by backups or
+//! other stores. Retain historical and legacy recovery keys separately; destroy
+//! them only when all dependent artifacts and retention requirements permit it.
 //!
 //! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/latest/source/docs/reencryption-sweep.md
 //! [legacy migration guide]: https://docs.rs/crate/cryptbox/latest/source/docs/legacy-migration.md
