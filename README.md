@@ -10,15 +10,18 @@
 CryptBox encrypts sensitive data before you store it in a database.
 
 ```mermaid
+---
+config:
+  flowchart:
+    curve: step
+---
 flowchart LR
-    subgraph Application
-        values[Readable values]
-        cryptbox[CryptBox]
-        keys[Encryption keys]
-        values -->|Encrypt| cryptbox
-        cryptbox -->|Decrypt| values
-        keys -.-> cryptbox
-    end
+    values[Readable values]
+    cryptbox[CryptBox]
+    keys[Encryption keys]
+    values -->|Encrypt| cryptbox
+    cryptbox -->|Decrypt| values
+    keys -.-> cryptbox
     cryptbox -->|Store encrypted data| database[(Database)]
     database -->|Load encrypted data| cryptbox
 ```
