@@ -5,18 +5,31 @@
 [![crates.io](https://img.shields.io/crates/v/cryptbox?style=flat-square)](https://crates.io/crates/cryptbox)
 [![docs.rs](https://img.shields.io/docsrs/cryptbox?style=flat-square)](https://docs.rs/cryptbox/0.5.0/cryptbox/)
 
-**Strongly typed application-layer encryption for Rust values.**
+**Type-safe encryption for sensitive data in Rust.**
 
-Encrypt selected values before storage, keeping keys outside the database.
-`Encrypted<T, Profile>` contains **plaintext** in application memory;
-`Ciphertext<T, Profile>` contains stored encrypted bytes. CryptBox separates
-serialization, cryptography, key providers, and storage adapters.
+CryptBox encrypts sensitive data before you store it in a database.
+
+```mermaid
+flowchart LR
+    subgraph Application
+        values[Readable values]
+        cryptbox[CryptBox]
+        keys[Encryption keys]
+        values -->|Encrypt| cryptbox
+        cryptbox -->|Decrypt| values
+        keys -.-> cryptbox
+    end
+    cryptbox -->|Store encrypted data| database[(Database)]
+    database -->|Load encrypted data| cryptbox
+```
 
 > [!WARNING]
-> CryptBox is experimental and **not production-ready**. Crate 0.5.0 uses
-> ciphertext/index format 1 and suite 1 (XChaCha20-Poly1305); the historical
-> “v0.1 design” is a separate label. Focused cryptographic review, independent
-> vectors, accepted usage policy, and target review remain outstanding.
+> CryptBox is early in development and **not yet production-ready**.
+>
+> Its [encryption suite](docs/suite-evaluation.md) uses **XChaCha20-Poly1305**,
+> but CryptBox’s cryptographic construction and implementation still require focused review,
+> independent test vectors, an accepted usage policy, and supported-target review.
+>
 > Read [suitability and security](docs/security.md) before adoption.
 
 It can protect encrypted fields in a stolen database dump when keys stay
