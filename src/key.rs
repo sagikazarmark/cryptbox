@@ -16,6 +16,10 @@ struct KeyMaterial<Id> {
 /// Key bytes must come from a cryptographically secure source. The ID is
 /// non-secret, must uniquely and permanently identify these exact bytes, and
 /// must never be reused for different material.
+/// Cloning shares the reference-counted allocation; material is zeroized when
+/// the last handle drops, not when any one provider or handle drops. Caller-owned
+/// input copies and operating-system copies are outside this guarantee. See the
+/// development [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
 #[derive(Clone)]
 pub struct EncryptionKey(Arc<KeyMaterial<KeyId>>);
 
@@ -93,7 +97,10 @@ impl fmt::Debug for EncryptionKey {
 ///
 /// Key bytes must come from a cryptographically secure source and must be
 /// generated independently from encryption keys. The ID must uniquely and
-/// permanently identify these exact bytes.
+/// permanently identify these exact bytes and must never be reused for different
+/// material. Cloning shares the allocation; its key bytes are zeroized only after
+/// the last handle drops. Caller-owned input and OS copies are separate. See the
+/// development [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
 #[derive(Clone)]
 pub struct BlindIndexKey(Arc<KeyMaterial<IndexKeyId>>);
 
@@ -212,6 +219,26 @@ fn initialize_key_material<Id>(
 }
 
 /// Resolves current and historical root encryption keys synchronously.
+///
+/// # Implementor obligations
+///
+/// This interface is extensible and intended for local, synchronous access.
+/// Fetch and refresh remote secrets outside these calls; encryption and automatic
+/// storage adapters cannot await an asynchronous KMS. Publish a coherent local
+/// snapshot using application-owned synchronization and fail closed if unavailable.
+///
+/// Select one current generation for writes and resolve all readable generations
+/// (current, retained, or staged) by exact ID. Never substitute the current key
+/// for an unknown ID or try unrelated keys. Keep the ID permanently paired with
+/// the same material, including across refreshes/restarts. Generate encryption
+/// roots independently from blind-index roots. Retain historical access while
+/// ciphertext or recovery artifacts need it; promotion alone does not rewrite data.
+/// Returned key clones share ownership and can outlive the provider snapshot.
+///
+/// See the development [custom-profile recipe] and canonical [ownership explanation].
+///
+/// [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
+/// [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
 pub trait EncryptionKeyProvider: Send + Sync {
     /// Returns the sole key used for new encryption.
     ///
@@ -222,6 +249,10 @@ pub trait EncryptionKeyProvider: Send + Sync {
 
     /// Resolves exactly one key generation for decryption.
     ///
+    /// Return `Ok(Some(key))` only if `key.id() == id`; return `Ok(None)` when a
+    /// healthy provider does not know that ID. An unavailable provider must return
+    /// an error, not pretend that the ID is unknown.
+    ///
     /// # Errors
     ///
     /// Returns an error when local key material is unavailable.
@@ -229,6 +260,27 @@ pub trait EncryptionKeyProvider: Send + Sync {
 }
 
 /// Resolves current and historical root blind-index keys synchronously.
+///
+/// # Implementor obligations
+///
+/// Like [`EncryptionKeyProvider`], this extensible interface provides local,
+/// synchronous access; fetch/refresh remote secrets outside storage operations.
+/// Maintain a coherent snapshot of current and readable generations. Pair every
+/// ID permanently with the same material across refreshes/restarts; never reuse
+/// it for different bytes. Generate roots independently from encryption roots.
+/// Resolve only the requested ID, never fall back to the current key.
+///
+/// Readable generations include the current generation, retained historical keys,
+/// and keys staged before promotion. Enumerate the current key first, then every
+/// other readable generation once, so queries cover still-stored indexes during
+/// rotation. Do not silently omit generations when the provider is unavailable.
+/// Retention must account for recovery artifacts as well as live data. Returned
+/// key clones share ownership and may outlive the provider snapshot.
+///
+/// See the development [custom-profile recipe] and canonical [ownership explanation].
+///
+/// [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
+/// [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
 pub trait BlindIndexKeyProvider: Send + Sync {
     /// Returns the sole key used for new stored indexes.
     ///
@@ -239,12 +291,15 @@ pub trait BlindIndexKeyProvider: Send + Sync {
 
     /// Resolves exactly one index-key generation.
     ///
+    /// Return `Ok(Some(key))` only if `key.id() == id`, `Ok(None)` for an unknown
+    /// ID in a healthy provider, and an error when local resolution is unavailable.
+    ///
     /// # Errors
     ///
     /// Returns an error when local key material is unavailable.
     fn key(&self, id: IndexKeyId) -> Result<Option<BlindIndexKey>, KeyProviderError>;
 
-    /// Returns the current key first, followed by readable historical keys.
+    /// Returns the current key first, followed by every other readable key once.
     ///
     /// # Errors
     ///

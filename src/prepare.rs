@@ -16,6 +16,9 @@ struct PreparedIndex {
 /// A prepared value borrows its plaintext source so each index is derived from
 /// the same value that was encrypted. Keep it short-lived, copy its ciphertext
 /// and index bytes into the storage operation, then let it drop.
+/// Dropping preparation releases its borrow, not the source plaintext. The
+/// application owns persistence and atomicity. See the development
+/// [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
 pub struct Prepared<'a, T, Profile>
 where
     Profile: EncryptionProfile<T>,

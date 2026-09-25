@@ -43,6 +43,47 @@ blind indexes derived from that value. The application must write the ciphertext
 and each index atomically. Merely using an automatic SQLx encrypted column does
 not maintain a separate index column.
 
+## Plaintext and key ownership
+
+The lifecycle above describes representations, not automatic erasure of all
+copies. The application owns the lifetime of decoded values and any copies it makes.
+
+| Object or buffer | Ownership and end of lifetime |
+| --- | --- |
+| `Encrypted<T, Profile>` | Owns plaintext `T`. Encryption/preparation borrows it and retains it. Drop drops `T`; it does not invoke zeroization for arbitrary application types. |
+| Plaintext clones | `Encrypted::clone` clones `T`, and `Secret::clone` clones its inner value. A `String` clone owns another plaintext allocation. Each copy has an independent lifetime; erasing one does not erase the others. |
+| Encoded, padded, normalized and decrypted temporary bytes | CryptBox-owned plaintext buffers use zeroizing storage. Custom codecs and normalizers must protect their own intermediate allocations, including error paths and superseded buffers during growth. The trait's return type alone cannot enforce that. |
+| `Prepared` | Owns ciphertext and optional indexes while borrowing the plaintext source. Drop releases the borrow but does not erase the source. Persist the derived representations atomically before dropping preparation. |
+| Decrypted application `T` | Decoding creates a new owned value without consuming ciphertext. A plain `String` result has ordinary application-owned storage; dropping the temporary decryption bytes does not wipe this result. |
+| `Secret<T>` | Owns `T` through `Zeroizing<T>` and invokes `T::zeroize` on drop. It redacts its own debug output but cannot prevent logging through explicit access or erase earlier copies. The quality of custom `T::zeroize` implementations remains the implementor's responsibility. |
+| `EncryptionKey` / `BlindIndexKey` | Clones share reference-counted root material rather than copying the root into a new allocation. That allocation is zeroized when the **last** handle drops; provider snapshots and outstanding returned handles can keep it alive. |
+| Key inputs and external copies | Encoded secret strings, caller-owned arrays, environment/configuration copies, serializer allocations, logs, swap and crash dumps have their own lifetimes. Dropping a library key cannot erase them. |
+
+For a profile whose value is `String`, move a successful decoded value into a
+zeroizing wrapper using `let secret = Secret::new(decrypted.into_secret());`.
+`into_secret()` consumes `Encrypted` and returns its `T`; despite the name it
+does **not** construct a `Secret` or clone the value. The original encryption
+source and any prior clones still exist independently.
+
+To keep the profile value wrapped throughout its application lifetime, use
+`Encrypted<Secret<String>, Profile>` with a custom `Codec<Secret<String>>`.
+The built-in `Utf8` implements `Codec<String>`, not every wrapper type. The
+[custom-profile recipe](custom-profile.md) decodes directly into `Secret<String>`;
+its `decrypted.into_secret()` therefore already yields a `Secret`. Normalizers
+also need an implementation for the exact wrapped input type.
+
+Preallocate before writing sensitive bytes whenever possible. Growing a
+`Zeroizing<Vec<u8>>` with ordinary reserve/push operations can release an old
+plaintext-bearing allocation without wiping it. When growth is unavoidable,
+copy into a new zeroizing allocation, then wipe the old allocation before release.
+Zeroizing only the final returned buffer does not fix abandoned intermediates.
+
+These are ownership and hygiene obligations, not a proof that plaintext never
+resides elsewhere. Zeroization does not promise erasure of compiler-generated
+copies, registers, OS copies, or arbitrary application allocations. Behavioral
+tests can verify public outcomes and sanitized failures; they cannot certify
+compiler/operating-system memory wiping. See [security boundaries](security.md).
+
 ## Binding context is not key context
 
 The currently available bindings are **sealed** (applications cannot add their
@@ -59,7 +100,8 @@ implement a new `Binding`; row and tenant binding are future work in
 [#23](https://github.com/sagikazarmark/cryptbox/issues/23) and
 [#24](https://github.com/sagikazarmark/cryptbox/issues/24). Generic context-shaped
 APIs do not imply those policies are currently available. Padding is also sealed
-to the built-in policies; codecs, profiles, and key providers are extensible.
+to the built-in policies; codecs, index normalizers, profiles, and key providers
+are extensible. The [custom-profile recipe](custom-profile.md) demonstrates them.
 
 Context-less operations and automatic adapters obtain providers through the
 profile's `KeyContext`. `GlobalKeyContext` is installed once per process and

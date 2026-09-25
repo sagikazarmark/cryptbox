@@ -81,6 +81,28 @@ impl std::io::Write for ZeroizingByteBuffer {
 /// A profile's codec is part of its persistent schema: ciphertext does not
 /// contain a codec identifier or codec version. Changing the emitted bytes or
 /// decode compatibility requires migrating existing data.
+///
+/// # Implementor obligations
+///
+/// This interface is extensible; [`crate::Binding`] and [`crate::Padding`] are
+/// sealed policies. Encode only the intended value, and decode into an owned
+/// value that does not borrow the temporary input. Returned encoding buffers
+/// must be [`Zeroizing<Vec<u8>>`]; protect intermediate plaintext allocations on
+/// success and error paths too. Wrapping a growable buffer does not erase an old
+/// allocation abandoned by reallocation. Preallocate before writing sensitive
+/// bytes, or copy into a new zeroizing allocation and wipe the old one before
+/// releasing it. Avoid third-party serializers that leave unprotected copies.
+///
+/// Discard parser/serializer errors that retain input; return only a sanitized
+/// [`CodecError`] category without logging plaintext. The decoded `T` belongs to
+/// the application: [`crate::Encrypted`] does not zeroize arbitrary `T`. A profile
+/// over [`crate::Secret<String>`] needs a codec for that exact type; [`Utf8`]
+/// implements only `Codec<String>`, not arbitrary secret wrappers.
+///
+/// See the development [custom-profile recipe] and canonical [ownership explanation].
+///
+/// [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
+/// [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
 pub trait Codec<T>: Sized + 'static {
     /// Encodes `value` into an owned, zeroizing plaintext buffer.
     ///

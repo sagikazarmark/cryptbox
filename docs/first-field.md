@@ -201,3 +201,5 @@ impl cryptbox::EncryptionProfile<String> for UserEmail {
 Use [testing and diagnostics](testing.md) when adding application tests or
 automatic adapters. Local explicit providers keep tests independent; advanced
 global-provider isolation is a separate concern from first success.
+To implement a codec, normalizer, or synchronous provider, follow the
+[custom-profile recipe](custom-profile.md) and its ownership guidance.

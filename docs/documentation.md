@@ -43,7 +43,8 @@ without requiring unstable rustdoc features.
 
 ### Shared consumer examples and diagrams
 
-Edit `examples/first_field.rs` (the marked region), `examples/sqlx_sqlite.rs`, or
+Edit `examples/first_field.rs` or `examples/custom_profile.rs` (the marked regions),
+`examples/sqlx_sqlite.rs`, or
 the durable consumer source/schema/manifests under `docs/snippets/searchable*`, or
 the application-testing sources/manifests under `docs/snippets/testing-*`. Run
 `node scripts/doc-snippets.mjs --write` to update the landing/tutorial snippets.
@@ -54,6 +55,11 @@ rejects drift; no required example is marked `ignore`.
 manifests and public example sources. `checkout` patches the advertised
 dependency to this checkout, while `published` downloads exact 0.5.0. Both check
 and execute the examples; the first-field tests also check cross-field rejection.
+The custom-profile tests check codec/normalizer behavior, sanitized failures,
+exact-generation lookup, historical reads, unavailable providers, and `Secret`
+ownership paths. Run `node scripts/check-consumers.mjs checkout custom-profile`
+(or `published`) for a focused typecheck, execution, tests, and Clippy pass.
+Its direct `zeroize` dependency is declared in `docs/snippets/custom-profile.toml`.
 Neither inherits repository dev-dependencies. Temporary projects are removed;
 build artifacts are cached under `target/consumers`. Consumer resolution is fresh,
 so compatible dependency updates are exercised; each run locks before execution.

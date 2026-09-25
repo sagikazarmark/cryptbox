@@ -2,17 +2,22 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(path, 'utf8').trimEnd();
-const example = read('examples/first_field.rs');
-const start = '// ANCHOR: first-field\n';
-const end = '// ANCHOR_END: first-field';
-if (example.split(start).length !== 2 || example.split(end).length !== 2
-    || example.indexOf(start) >= example.indexOf(end)) {
-  throw new Error('examples/first_field.rs: expected one ordered first-field anchor pair');
-}
-const firstField = example.split(start)[1].split(end)[0].trimEnd();
+const anchored = (path, name) => {
+  const example = read(path);
+  const start = `// ANCHOR: ${name}\n`;
+  const end = `// ANCHOR_END: ${name}`;
+  if (example.split(start).length !== 2 || example.split(end).length !== 2
+      || example.indexOf(start) >= example.indexOf(end)) {
+    throw new Error(`${path}: expected one ordered ${name} anchor pair`);
+  }
+  return example.split(start)[1].split(end)[0].trimEnd();
+};
+const firstField = anchored('examples/first_field.rs', 'first-field');
 const sources = {
   'first-field': ['rust', firstField],
   'first-field-manifest': ['toml', read('docs/snippets/first-field.toml')],
+  'custom-profile': ['rust', anchored('examples/custom_profile.rs', 'custom-profile')],
+  'custom-profile-manifest': ['toml', read('docs/snippets/custom-profile.toml')],
   'sqlite-manifest': ['toml', read('docs/snippets/sqlite.toml')],
   sqlite: ['rust', read('examples/sqlx_sqlite.rs')],
   lifecycle: ['mermaid', read('docs/diagrams/lifecycle.mmd')],
@@ -29,6 +34,7 @@ const sources = {
 const pages = {
   'README.md': ['first-field'],
   'docs/first-field.md': ['first-field-manifest', 'first-field', 'lifecycle'],
+  'docs/custom-profile.md': ['custom-profile-manifest', 'custom-profile'],
   'docs/first-field-sqlite.md': ['sqlite-manifest', 'sqlite'],
   'docs/concepts.md': ['lifecycle'],
   'docs/searchable-sqlx.md': ['searchable-manifest', 'searchable-postgres-schema', 'searchable-sqlite-schema', 'searchable', 'lookup'],

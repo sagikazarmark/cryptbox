@@ -33,6 +33,12 @@
 //! ciphertext and returns a new plaintext-bearing value. `Prepared` owns stored
 //! representations while borrowing its source; the application persists those
 //! representations atomically. Dropping preparation does not erase the source.
+//! See the development [ownership explanation] for clones, temporary buffers,
+//! `Secret`, and shared key lifetimes, and the [custom-profile recipe] for public
+//! codec, normalizer, and synchronous provider implementations.
+//!
+//! [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
+//! [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
 //!
 //! [`Binding`] is sealed to [`Unbound`] and [`FieldBound`], both with unit context
 //! `()`. Thus `&()` is not an opt-out from field binding and does not supply keys.

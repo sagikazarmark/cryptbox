@@ -19,6 +19,9 @@ pub type ProfileContext<T, Profile> =
 /// use [`Secret`] when the application value supports [`Zeroize`].
 /// It deliberately has no Serde implementation: encrypt to [`Ciphertext`] before
 /// serialization, then deserialize and decrypt explicitly when reading.
+/// Encryption/preparation borrows and retains this source. Cloning clones `T`,
+/// potentially creating another plaintext allocation; decryption creates another
+/// owned `T`. See the development [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
 ///
 /// Plaintext comparison must also be explicit:
 ///
@@ -51,6 +54,9 @@ impl<T, Profile> Encrypted<T, Profile> {
     }
 
     /// Consumes the wrapper and returns the plaintext application value.
+    ///
+    /// The name does not mean it creates a [`Secret`]. For a decoded `String`,
+    /// use `Secret::new(decrypted.into_secret())` to move it into zeroizing ownership.
     #[must_use]
     pub fn into_secret(self) -> T {
         self.value
@@ -282,6 +288,15 @@ where
 }
 
 /// Plaintext with zeroization on drop and explicit access semantics.
+///
+/// Drop invokes `T`'s [`Zeroize`] implementation. Cloning creates a separate `T`
+/// with its own lifetime; it does not share a single erasure boundary. This cannot
+/// erase previous copies, superseded allocations, or OS copies. For a decrypted
+/// `Encrypted<String, Profile>`, use `Secret::new(decrypted.into_secret())`.
+/// If the profile value itself is `Secret<String>`, supply `Codec<Secret<String>>`;
+/// [`crate::Utf8`] implements only `Codec<String>`.
+/// See the development [custom-profile recipe](https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md)
+/// and canonical [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
 pub struct Secret<T: Zeroize> {
     value: Zeroizing<T>,
 }

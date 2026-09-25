@@ -3,6 +3,13 @@ use std::marker::PhantomData;
 use crate::FieldId;
 
 /// Supplies stable cryptographic context for an encrypted value.
+///
+/// This trait is sealed: applications select [`Unbound`] or [`FieldBound<F>`],
+/// both with unit context `()`, rather than implementing it externally. Row/tenant
+/// binding is future work; generic context parameters do not make it available.
+/// Codecs, index normalizers, profiles, and key providers are extensible instead.
+/// See the development [custom-profile recipe](https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md)
+/// and [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
 pub trait Binding: private::Sealed + Sized + 'static {
     /// Runtime context required to construct the binding domain.
     type Context: ?Sized;

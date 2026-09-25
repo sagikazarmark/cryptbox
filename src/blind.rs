@@ -76,7 +76,28 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
 ///
 /// Normalization is persistent schema and must be identical for writes,
 /// queries, and candidate verification. Return only the bytes relevant to
-/// equality; do not include secrets or unstable formatting state.
+/// equality. The indexed value may itself be sensitive; do not incorporate
+/// unrelated secrets, key material, randomness, or unstable formatting state.
+/// Changes to normalization, index ID, binding, or precision require a migration
+/// and compatible queries while old projections remain stored.
+///
+/// # Implementor obligations
+///
+/// This interface is extensible. Return a zeroizing buffer and protect all
+/// intermediate normalized/plaintext allocations on success and error paths.
+/// `Zeroizing<Vec<u8>>` alone does not wipe superseded allocations during growth:
+/// preallocate before copying sensitive bytes, or copy into a new zeroizing
+/// allocation and wipe the old one before releasing it. Normalize deterministically
+/// with stable application-defined equality rules, independent of locale or process
+/// configuration. Return only sanitized [`BlindIndexError`] values; do not log or
+/// retain the input in third-party errors. Candidate verification must use the
+/// same normalization after authenticated decryption, not accept an index hit alone.
+///
+/// See the development [custom-profile recipe] and canonical [ownership explanation].
+/// Bindings and padding remain sealed; a custom normalizer does not add row binding.
+///
+/// [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
+/// [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
 pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
     /// Returns normalized bytes owned by a zeroizing buffer.
     ///

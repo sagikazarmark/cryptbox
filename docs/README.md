@@ -16,6 +16,7 @@ including stored-byte Serde support. See [document authority and versions](#docu
 | Adopt encryption over existing data | [Legacy migration how-to](legacy-migration.md) | [Legacy example](../examples/legacy_migration.rs), [plaintext example](../examples/plaintext_migration.rs) |
 | Review security | [Review path and gates](security.md#security-review-path) | [Wire-format reference](wire-format.md), [suite research](suite-evaluation.md), [proposed policy](suite-1-usage-policy.md) |
 | Test and diagnose an integration | [Testing and diagnostics how-to](testing.md) | [Stored-value assurance procedure](stored-values.md#obtain-additional-assurance) |
+| Extend profiles and providers | [Custom-profile recipe](custom-profile.md) | [Plaintext and key ownership](concepts.md#plaintext-and-key-ownership) |
 | Maintain documentation | [Documentation checks](documentation.md) | [Adoption walk](adoption-walk.md), [first-field docs-only walk](first-field-walk.md) |
 
 The first-field and SQLx tutorials use published 0.5.0 with explicit local
@@ -69,6 +70,7 @@ and profile schema. No production approval follows from any version number.
 | [Maintenance](reencryption-sweep.md) and [legacy migration](legacy-migration.md) how-tos | Existing bounded maintenance procedures; operational extensions remain tracked downstream |
 | [Plaintext migration redirect](plaintext-migration.md) | Preserves the old entry point; canonical procedure is legacy migration |
 | [Testing how-to](testing.md) | Local providers, automatic-adapter isolation, diagnostic metadata |
+| [Custom-profile recipe](custom-profile.md) | Executable codec, normalizer and provider extensions; contracts live beside public traits and ownership is explained in concepts |
 | [Wire-format reference](wire-format.md) | Current experimental stored layouts and provisional vectors |
 | [Suite evaluation](suite-evaluation.md) | Dated research and rationale, not an approval or current API tutorial |
 | [Suite usage policy](suite-1-usage-policy.md) | Proposed operational policy; not accepted or library-enforced limits |
@@ -83,6 +85,7 @@ Run from a checkout with the prerequisites in the crate reference:
 | Example | Command |
 | --- | --- |
 | [First field](../examples/first_field.rs) | `cargo run --locked --example first_field` |
+| [Custom profile](../examples/custom_profile.rs) | `cargo run --locked --example custom_profile` |
 | [Key rotation](../examples/key_rotation.rs) | `cargo run --locked --example key_rotation` |
 | [Maintenance sweep](../examples/reencryption_sweep.rs) | `cargo run --locked --example reencryption_sweep --features sqlx-sqlite` |
 | [Legacy migration](../examples/legacy_migration.rs) | `cargo run --locked --example legacy_migration --features migrate,sqlx-sqlite` |
