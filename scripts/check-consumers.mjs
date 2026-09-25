@@ -27,6 +27,7 @@ try {
     run(['run', '--locked'], directory);
     if (name === 'first-field') run(['test', '--locked'], directory);
   }
+  execFileSync(process.execPath, ['scripts/check-searchable-consumer.mjs', mode, 'sqlite'], { stdio: 'inherit' });
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

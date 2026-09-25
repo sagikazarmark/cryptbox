@@ -29,7 +29,7 @@ equality/frequency; every hit requires decrypted, normalized comparison.
 - **Evaluate:** [suitability, unsuitable uses, and review gates](docs/security.md).
 - **Configure:** [feature/platform reference](docs/features.md), shared with the crate landing page.
 - **Start:** [encrypt your first field in a fresh Rust project](docs/first-field.md).
-- **Integrate:** [field-bound SQLite tutorial](docs/first-field-sqlite.md) and [stored-value tutorial (unreleased Serde support)](docs/stored-values.md).
+- **Integrate:** [durable, searchable PostgreSQL / SQLite application](docs/searchable-sqlx.md) and [stored-value tutorial (unreleased Serde support)](docs/stored-values.md).
 - **Operate:** [key rotation](examples/key_rotation.rs), [maintenance sweeps](docs/reencryption-sweep.md), and [legacy migration](docs/legacy-migration.md).
 - **Review security:** [review reading path](docs/security.md#security-review-path).
 - **Browse:** [all documentation, examples, and document authority](docs/README.md).
@@ -93,7 +93,7 @@ the original plaintext remains in memory. See [concepts and terminology](docs/co
 For durable data, load the same key/ID pairs after every restart; generate
 encryption and blind-index roots independently. Before storing anything, review
 the [schema and durable-key next steps](docs/first-field.md#4-freeze-schema-decisions-before-durable-storage),
-then follow the [SQLite tutorial](docs/first-field-sqlite.md).
+then follow the [durable SQLx tutorial](docs/searchable-sqlx.md).
 
 ## Testing
 

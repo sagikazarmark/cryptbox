@@ -42,8 +42,8 @@ without requiring unstable rustdoc features.
 
 ### Shared consumer examples and diagrams
 
-Edit `examples/first_field.rs` (the marked region) or `examples/sqlx_sqlite.rs`,
-and the consumer manifests under `docs/snippets/`. Run
+Edit `examples/first_field.rs` (the marked region), `examples/sqlx_sqlite.rs`, or
+the durable consumer source/schema/manifests under `docs/snippets/searchable*`. Run
 `node scripts/doc-snippets.mjs --write` to update the landing/tutorial snippets.
 The crate landing includes the generated Markdown directly. The check mode
 rejects drift; no required example is marked `ignore`.
@@ -55,6 +55,15 @@ and execute the examples; the first-field tests also check cross-field rejection
 Neither inherits repository dev-dependencies. Temporary projects are removed;
 build artifacts are cached under `target/consumers`. Consumer resolution is fresh,
 so compatible dependency updates are exercised; each run locks before execution.
+
+The same script runs the durable SQLite consumer. Its focused runner is
+`node scripts/check-searchable-consumer.mjs checkout sqlite` (or `published`).
+Use `postgres` with a disposable `DATABASE_URL` for live PostgreSQL; Dagger's
+existing PostgreSQL check runs both modes. See [execution coverage](testing.md#durable-searchable-consumer).
+Format the standalone consumer with `rustfmt --edition 2024 docs/snippets/searchable.rs`
+before updating shared blocks. The lookup diagram's canonical source is
+`docs/diagrams/lookup.mmd`, embedded by the snippet script; it is Markdown-only
+and needs no separate rustdoc SVG.
 
 The lifecycle's canonical source is `docs/diagrams/lifecycle.mmd`. The snippet
 script embeds it in Markdown, and pinned Mermaid CLI produces the committed SVG
@@ -129,8 +138,8 @@ Keep useful old headings/redirect pages when moving procedures.
 Before publishing, repeat the [cold adoption walk](adoption-walk.md). Check both
 entry points, including the rendered crate page, and record any inference or
 outside help needed. Repeat the [first-field docs-only task](first-field-walk.md)
-when editing onboarding. Further durable integration is owned by
-[#19](https://github.com/sagikazarmark/cryptbox/issues/19); this link gate does not
+when editing onboarding and the [integration trial](searchable-sqlx-walk.md) when
+editing durable SQLx guidance. This link gate does not
 claim to compile every Markdown code block. Existing doctests and examples stay
 enabled. The four final docs-only journeys are owned by
 [#61](https://github.com/sagikazarmark/cryptbox/issues/61).

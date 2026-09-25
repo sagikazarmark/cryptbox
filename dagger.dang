@@ -150,7 +150,7 @@ type Test {
   }
 
   """
-  Execute the SQLx round-trip and packaged sweep tests against live PostgreSQL.
+   Execute SQLx tests and the durable consumer against live PostgreSQL.
   """
   postgres: String! @check {
     let server = Dagger
@@ -166,6 +166,9 @@ type Test {
       .container
       .withServiceBinding("postgres", server)
       .withEnvVariable("DATABASE_URL", "postgres://cryptbox:cryptbox@postgres:5432/cryptbox")
+      .withExec(["sh", "-c", "apt-get update && apt-get install -y --no-install-recommends nodejs"])
+      .withExec(["node", "scripts/check-searchable-consumer.mjs", "checkout", "postgres"])
+      .withExec(["node", "scripts/check-searchable-consumer.mjs", "published", "postgres"])
       .withExec([
         "cargo", "test", "--locked",
         "--test", "sqlx_postgres",

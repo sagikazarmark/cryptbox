@@ -76,6 +76,47 @@ Set `type Keys = TestKeys` on profiles used by those tests and call
 process, so tests that replace it must be serialized. Add a second locked
 provider when automatic blind-index operations also need test-specific keys.
 
+## Durable searchable consumer
+
+The [SQLx tutorial](searchable-sqlx.md) is checked at its public CLI seam. Run from
+the repository root with Rust/Cargo, Node.js 18+, and dependency network access:
+
+```sh
+node scripts/check-searchable-consumer.mjs checkout sqlite
+node scripts/check-searchable-consumer.mjs published sqlite
+```
+
+For PostgreSQL, use the disposable PostgreSQL 18 setup in the tutorial, export
+its `DATABASE_URL`, and run:
+
+```sh
+node scripts/check-searchable-consumer.mjs checkout postgres
+node scripts/check-searchable-consumer.mjs published postgres
+```
+
+The database role must be able to create/drop schemas. Each run owns an isolated
+`cryptbox_consumer_*` schema and drops it in cleanup; a killed process may leave
+its schema behind. SQLite uses a temporary on-disk database. Both routes create
+isolated Cargo projects with the exact tutorial manifest, patching only CryptBox
+in `checkout` mode. `published` resolves crates.io 0.5.0. They typecheck, build,
+execute the commands, and check macro-enabled builds with Clippy. They do not
+inherit the library's dev-dependencies.
+
+Assertions observe separate CLI processes: fail-closed key loading, inserts,
+updates removing stale lookup tokens, null-to-value and value-to-null transitions,
+deferred reads, both encryption/index generations after restart, normalized
+lookup, and deterministic rejection of a false candidate. SQLx `query!` compiles
+against the live schema and executes both nullable and non-null reads, plus a
+prepared macro write with a custom ciphertext input override followed by lookup. Errors
+from authentication are not classified as ordinary false candidates.
+
+`check-consumers.mjs` includes the SQLite route in the existing GitHub Actions and
+Dagger docs checks. `dagger check cryptbox:test:postgres` runs both consumer modes
+against its existing PostgreSQL service before the round-trip/sweep tests below.
+This is actual database execution, including process exit/reload, not a
+compile-only guarantee. The [docs-only reader trial](searchable-sqlx-walk.md)
+separately evaluates whether the instructions supply enough information.
+
 ## Live PostgreSQL sweep checks
 
 **Development checkout tooling.** From the repository root, run:

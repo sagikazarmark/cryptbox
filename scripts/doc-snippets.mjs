@@ -16,12 +16,18 @@ const sources = {
   'sqlite-manifest': ['toml', read('docs/snippets/sqlite.toml')],
   sqlite: ['rust', read('examples/sqlx_sqlite.rs')],
   lifecycle: ['mermaid', read('docs/diagrams/lifecycle.mmd')],
+  'searchable-manifest': ['toml', read('docs/snippets/searchable.toml')],
+  'searchable-postgres-schema': ['sql', read('docs/snippets/searchable-postgres.sql')],
+  'searchable-sqlite-schema': ['sql', read('docs/snippets/searchable-sqlite.sql')],
+  searchable: ['rust', read('docs/snippets/searchable.rs')],
+  lookup: ['mermaid', read('docs/diagrams/lookup.mmd')],
 };
 const pages = {
   'README.md': ['first-field'],
   'docs/first-field.md': ['first-field-manifest', 'first-field', 'lifecycle'],
   'docs/first-field-sqlite.md': ['sqlite-manifest', 'sqlite'],
   'docs/concepts.md': ['lifecycle'],
+  'docs/searchable-sqlx.md': ['searchable-manifest', 'searchable-postgres-schema', 'searchable-sqlite-schema', 'searchable', 'lookup'],
 };
 const write = process.argv.includes('--write');
 for (const [page, expected] of Object.entries(pages)) {

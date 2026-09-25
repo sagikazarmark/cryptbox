@@ -100,5 +100,5 @@ statement. When adding blind indexes, derive them from the same preparation and
 write them with ciphertext atomically; an automatic encrypted column does not
 maintain an index column for you.
 
-Next: load [stable keys](first-field.md#next-keep-keys-across-restarts) before
-switching to a persistent database, then explore [blind-index lookup](../examples/blind_indexes.rs).
+Next: build the [durable, searchable SQLx application](searchable-sqlx.md) with
+stable keys, a persistent database, prepared updates, and verified blind-index lookup.

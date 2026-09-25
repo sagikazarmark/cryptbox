@@ -164,8 +164,8 @@ them. Provision blind-index roots independently from encryption roots.
 The current [durable-key and generation guidance](concepts.md#generations-and-lookup)
 and [`EncryptionKey::new` contract](https://docs.rs/cryptbox/0.5.0/cryptbox/struct.EncryptionKey.html#method.new)
 explain the stable pairing; [key rotation](../examples/key_rotation.rs) demonstrates
-current and retained generations. Full secret-loading and restart recipes are
-tracked in [#19](https://github.com/sagikazarmark/cryptbox/issues/19).
+current and retained generations. Follow the [durable SQLx application](searchable-sqlx.md)
+for complete secret-loading, PostgreSQL/SQLite storage, verified search and restart.
 
 You can now continue with the [field-bound SQLite exercise](first-field-sqlite.md).
 For explicit Serde storage, use the [stored-value tutorial](stored-values.md),
