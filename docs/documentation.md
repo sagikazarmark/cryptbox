@@ -177,7 +177,8 @@ outside help needed. Repeat the [first-field docs-only task](first-field-walk.md
 when editing onboarding and the [integration trial](searchable-sqlx-walk.md) when
 editing durable SQLx guidance. This link gate does not
 claim to compile every Markdown code block. Existing doctests and examples stay
-enabled. The four final docs-only journeys are owned by
-[#61](https://github.com/sagikazarmark/cryptbox/issues/61).
+enabled. Repeat the [four-journey acceptance protocol](acceptance.md) for the final
+gate in [#61](https://github.com/sagikazarmark/cryptbox/issues/61); preserve individual
+outcomes and limitations as in the [recorded results](acceptance-results.md).
 
 Next: use the [task index](README.md) to verify discovery after an edit.

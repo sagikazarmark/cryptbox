@@ -19,7 +19,7 @@ including stored-byte Serde support. See [document authority and versions](#docu
 | Review security | [Review path and gates](security.md#security-review-path) | [Wire-format reference](wire-format.md), [suite research](suite-evaluation.md), [proposed policy](suite-1-usage-policy.md) |
 | Test and diagnose an integration | [Testing and diagnostics how-to](testing.md) | [Stored-value assurance procedure](stored-values.md#obtain-additional-assurance) |
 | Extend profiles and providers | [Custom-profile recipe](custom-profile.md) | [Plaintext and key ownership](concepts.md#plaintext-and-key-ownership) |
-| Maintain documentation | [Documentation checks](documentation.md) | [Adoption walk](adoption-walk.md), [first-field docs-only walk](first-field-walk.md) |
+| Maintain documentation | [Documentation checks](documentation.md) | [Four-journey acceptance protocol and results](acceptance.md), [adoption walk](adoption-walk.md), [first-field docs-only walk](first-field-walk.md) |
 
 The first-field and SQLx tutorials use published 0.5.0 with explicit local
 providers. The [fleet rotation continuation](key-rotation.md) uses the same consumer.
@@ -80,7 +80,8 @@ and profile schema. No production approval follows from any version number.
 | [Suite evaluation](suite-evaluation.md) | Dated research and rationale, not an approval or current API tutorial |
 | [Suite usage policy](suite-1-usage-policy.md) | Proposed operational policy; not accepted or library-enforced limits |
 | [Original specification](spec.md) | Historical design and API sketches, superseded by current references |
-| [Documentation maintenance](documentation.md) and [adoption walk](adoption-walk.md) | Reproducible checks, publication rules, reader-evaluation evidence |
+| [Documentation maintenance](documentation.md) | Reproducible checks and publication rules |
+| [Four-journey acceptance](acceptance.md) and [results](acceptance-results.md) | Final reader task briefs, page audit, evidence and before/after scorecards; earlier [adoption](adoption-walk.md), [first-field](first-field-walk.md) and [integration](searchable-sqlx-walk.md) records retain their historical scope |
 | [Changelog](../CHANGELOG.md) | Release history, not usage instructions |
 
 ### Runnable examples

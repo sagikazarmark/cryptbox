@@ -2,10 +2,12 @@ use crate::{Binding, Codec, KeyContext, Padding};
 
 /// Selects the codec, binding, padding, and global key context for a value.
 ///
-/// These associated types define persistent schema. The ciphertext envelope
-/// does not store a profile or codec identifier, so changing them can make
-/// existing values undecodable or alter their authenticated binding. Make such
-/// changes through an explicit data migration.
+/// The codec representation, binding, and presence or absence of padding define
+/// persistent schema. The ciphertext envelope does not store a profile or codec
+/// identifier, so incompatible changes require an explicit data migration.
+/// Changing the key-context implementation alone does not change stored schema;
+/// it must still resolve the same immutable key-ID/material pairs needed by stored
+/// data. Explicit-provider APIs do not use the profile's key context.
 ///
 /// Applications can implement this trait, [`Codec`], index normalizers, and key
 /// providers. [`Binding`] and [`Padding`] are sealed to built-in policies;
