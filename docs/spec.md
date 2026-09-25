@@ -2,9 +2,19 @@
 
 **Project:** CryptBox
 **Primary Rust crate:** `cryptbox`
-**Status:** Draft
+**Status:** Historical design draft — not current API instructions
 **Scope:** Core encrypted-value abstraction, key management model, blind equality indexes, codecs, and initial SQLx integration
 **Audience:** Library implementers, security reviewers, adapter authors, and application developers
+
+> **Applicability:** “v0.1” names the original design generation, not today's
+> crate release (0.5.0), ciphertext/index format versions (1/1), or suite ID (1).
+> All API signatures, dependency examples, and future extension sketches below
+> are historical design illustrations, not copyable current instructions.
+> Current contracts supersede them: [crate API](https://docs.rs/cryptbox/0.5.0/cryptbox/),
+> [concepts and sealed binding support](concepts.md), [wire format](wire-format.md),
+> and [security boundaries](security.md). Use the [task index](README.md) to
+> find current tutorials and procedures. This archive retains its original
+> headings for existing citations.
 
 ## 1. Purpose
 

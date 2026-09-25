@@ -231,8 +231,10 @@ where
     /// A `false` result does not establish authenticated readability or codec validity.
     /// See the complete [key-rotation example] and [maintenance sweep example].
     ///
-    /// [key-rotation example]: https://docs.rs/crate/cryptbox/latest/source/examples/key_rotation.rs
-    /// [maintenance sweep example]: https://docs.rs/crate/cryptbox/latest/source/examples/reencryption_sweep.rs
+    /// Example links describe the 0.5.0 release archive.
+    ///
+    /// [key-rotation example]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/key_rotation.rs
+    /// [maintenance sweep example]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/reencryption_sweep.rs
     ///
     /// # Errors
     ///

@@ -1,8 +1,15 @@
 # Experimental Wire Format
 
-This document records the provisional v0.1 formats implemented by CryptBox.
+**Reference · current experimental formats.** [All tasks and versions](README.md).
+
+This document records ciphertext format **1**, blind-index format **1**, and
+encryption suite ID **1**, implemented by crate **0.5.0**. The original design
+generation called “v0.1” is a separate historical label.
 They are not stable protocol commitments and must receive focused cryptographic
 review plus independently generated vectors before a production release.
+
+Next: follow the [security review path](security.md#security-review-path) for
+suite research, proposed policy, and outstanding gates.
 
 All identifiers use their 16-byte RFC UUID network-order representation. All
 multibyte integers are unsigned big-endian values.

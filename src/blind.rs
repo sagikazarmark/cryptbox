@@ -316,7 +316,9 @@ where
 /// normalized plaintext with [`verify_blind_index_candidate`].
 /// See the complete [blind-index example].
 ///
-/// [blind-index example]: https://docs.rs/crate/cryptbox/latest/source/examples/blind_indexes.rs
+/// The example link describes the 0.5.0 release archive.
+///
+/// [blind-index example]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/blind_indexes.rs
 ///
 /// # Errors
 ///

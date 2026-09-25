@@ -1,5 +1,7 @@
 /// Identifies the table, cursor, and columns a `SQLx` sweep operates on.
 ///
+/// Available with `migrate` and either `sqlx-postgres` or `sqlx-sqlite`.
+///
 /// Identifiers are operator configuration: they are interpolated into SQL
 /// after double-quote escaping, while every value goes through bind
 /// parameters. Never derive identifiers from untrusted input.

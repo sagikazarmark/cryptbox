@@ -7,6 +7,8 @@ use super::{
 
 /// A [`SweepStore`] over one `PostgreSQL` table with an integer cursor column.
 ///
+/// Available with both `migrate` and `sqlx-postgres` features.
+///
 /// Checkpoints are stored in the progress table configured on the
 /// [`SweepTable`]; call [`Self::ensure_progress_table`] once before the first
 /// sweep. Applications with a different cursor shape implement [`SweepStore`]

@@ -128,6 +128,8 @@ impl Codec<String> for Utf8 {
 }
 
 /// Encodes Serde values as JSON.
+///
+/// Available with the `json` feature (which implies `serde`).
 #[cfg(feature = "json")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Json;
@@ -151,6 +153,8 @@ where
 }
 
 /// Encodes Serde values with Postcard.
+///
+/// Available with the `postcard` feature (which implies `serde`).
 #[cfg(feature = "postcard")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Postcard;

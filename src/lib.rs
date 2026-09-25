@@ -6,9 +6,34 @@
 //! required. Use `CryptBox` when an application owns encryption policy and key
 //! management but wants storage adapters to enforce ciphertext-at-rest.
 //!
-//! The v0.1 wire formats and built-in XChaCha20-Poly1305 suite are experimental
-//! and must not be treated as stable until the published test vectors and
-//! cryptographic review are complete.
+//! **Reference for this crate's API.** Ciphertext format 1, blind-index format 1,
+//! and suite ID 1 are independent of the crate release (0.5.0) and the historical
+//! “v0.1 design”. The formats and suite are experimental and **not production-ready**.
+//! Independent vectors, composition review, operational-policy acceptance, and
+//! target review remain outstanding; passing tests does not complete these gates.
+//! This checkout still declares 0.5.0 but includes unreleased stored-byte Serde
+//! support. The Features reference distinguishes it from the published release.
+//!
+//! # Type model
+//!
+//! - [`Encrypted<T, Profile>`] and [`Secret<T>`] contain plaintext.
+//! - [`Ciphertext<T, Profile>`] contains stored encrypted bytes. Parsing checks
+//!   structure; decryption authenticates. Encryption borrows and retains the source.
+//! - [`EncryptionProfile`] chooses codec, padding, binding, and key context.
+//! - [`Prepared`] borrows a source value and derives ciphertext/indexes for an
+//!   application-owned atomic write; it does not persist them.
+//! - A [`BlindIndex`] is a candidate selector. Use every [`blind_index_probes`]
+//!   result, decrypt candidates, and compare normalized plaintext.
+//!
+//! [`Binding`] is sealed to [`Unbound`] and [`FieldBound`], both with unit context
+//! `()`. Thus `&()` is not an opt-out from field binding and does not supply keys.
+//! Row/tenant binding is future work. [`KeyContext`] selects providers for
+//! context-less operations; explicit-provider methods take keys separately.
+//! [`Padding`] is also sealed to built-in policies.
+//!
+//! The [development task index] links the canonical glossary, suitability,
+//! integration, rotation, and security-review paths. It describes development
+//! documentation, not the frozen release archive linked under Workflows.
 //!
 //! # Quick start
 //!
@@ -48,44 +73,7 @@
 //! # Ok::<(), cryptbox::Error>(())
 //! ```
 //!
-//! # Features
-//!
-//! No features are enabled by default, and all features are additive:
-//!
-//! - `json` adds the `Json` codec. Its serialized representation is part of
-//!   the persistent schema.
-//! - `migrate` adds the explicit `migrate` module for adopting `CryptBox` over
-//!   plaintext or data encrypted by a previous solution: permissive reads, a
-//!   legacy recovery handler, and a resumable sweep. Intended for a bounded
-//!   migration window only; the default decoding path stays strict.
-//! - `postcard` adds the `Postcard` codec. Its serialized representation is
-//!   part of the persistent schema.
-//! - `serde` adds explicit serialization of [`Ciphertext`] and [`BlindIndex`]
-//!   stored bytes. It never adds serialization for plaintext [`Encrypted`]
-//!   values.
-//! - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
-//! - `sqlx-sqlite` adds `SQLx` 0.8 `BLOB` storage for `SQLite`.
-//!
-//! The `SQLx` adapters automatically encrypt and decrypt [`Encrypted`] only for
-//! unit-context profiles, using [`EncryptionProfile::Keys`]. [`Ciphertext`] and
-//! blind-index storage work with explicit-context profiles. These features do
-//! not choose an async runtime or TLS implementation for the application.
-//! `CryptBox` deliberately provides no Serde implementation for [`Encrypted`],
-//! because it contains plaintext. With the `serde` feature, serialize an
-//! explicitly encrypted [`Ciphertext`] or derived [`BlindIndex`] instead. Their
-//! deserializers validate stored structure but do not establish authenticity;
-//! ciphertext is authenticated only when it is decrypted, and a blind-index
-//! candidate must still be compared against decrypted plaintext. That comparison
-//! does not authenticate index metadata; checking stored-index consistency requires
-//! separate recomputation. The [stored-value walkthrough] provides a complete
-//! consumer manifest, runnable Serde example, and procedure for each check.
-//!
-//! This is a standard-library crate requiring Rust 1.85 or newer. Encryption
-//! requires a target on which `getrandom` can obtain operating-system entropy.
-//! The portable `RustCrypto` backends assume constant-time integer multiplication;
-//! targets where multiplication is variable-time, including certain 32-bit
-//! PowerPC CPUs and some non-ARM microcontrollers, are not supported for secret
-//! operations. The complete production target review is not yet finished.
+#![doc = include_str!("../docs/features.md")]
 //!
 //! # Persistent schema
 //!
@@ -98,22 +86,28 @@
 //!
 //! # Workflows
 //!
+//! The docs.rs source links below are explicitly the **0.5.0 release archive**. They
+//! predate later documentation improvements. For current navigation and adoption
+//! guidance use the [development task index] and [development security review].
+//!
 //! Complete runnable programs demonstrate [key rotation], a [re-encryption
 //! sweep], a [legacy migration], a [plaintext migration], [blind-index lookup],
 //! and [in-memory SQLite storage]. The [maintenance sweep guide] and the
 //! [legacy migration guide] cover the operational patterns, and the
 //! [wire-format guide] records the experimental envelope and index formats.
 //!
-//! [key rotation]: https://docs.rs/crate/cryptbox/latest/source/examples/key_rotation.rs
-//! [re-encryption sweep]: https://docs.rs/crate/cryptbox/latest/source/examples/reencryption_sweep.rs
-//! [legacy migration]: https://docs.rs/crate/cryptbox/latest/source/examples/legacy_migration.rs
-//! [plaintext migration]: https://docs.rs/crate/cryptbox/latest/source/examples/plaintext_migration.rs
-//! [blind-index lookup]: https://docs.rs/crate/cryptbox/latest/source/examples/blind_indexes.rs
-//! [in-memory SQLite storage]: https://docs.rs/crate/cryptbox/latest/source/examples/sqlx_sqlite.rs
-//! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/latest/source/docs/reencryption-sweep.md
-//! [legacy migration guide]: https://docs.rs/crate/cryptbox/latest/source/docs/legacy-migration.md
-//! [wire-format guide]: https://docs.rs/crate/cryptbox/latest/source/docs/wire-format.md
-//! [stored-value walkthrough]: https://docs.rs/crate/cryptbox/latest/source/docs/stored-values.md
+//! [key rotation]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/key_rotation.rs
+//! [re-encryption sweep]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/reencryption_sweep.rs
+//! [legacy migration]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/legacy_migration.rs
+//! [plaintext migration]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/plaintext_migration.rs
+//! [blind-index lookup]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/blind_indexes.rs
+//! [in-memory SQLite storage]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/sqlx_sqlite.rs
+//! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/0.5.0/source/docs/reencryption-sweep.md
+//! [legacy migration guide]: https://docs.rs/crate/cryptbox/0.5.0/source/docs/legacy-migration.md
+//! [wire-format guide]: https://docs.rs/crate/cryptbox/0.5.0/source/docs/wire-format.md
+//! [stored-value walkthrough]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/stored-values.md
+//! [development task index]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/README.md
+//! [development security review]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/security.md#security-review-path
 //!
 //! # Security boundaries
 //!
@@ -134,6 +128,8 @@
 //! while keys are live, or hide database query and access patterns. Treat logs,
 //! tracing data, crash dumps, swap, and other plaintext-bearing artifacts as
 //! sensitive.
+//! For unsuitable use cases and outstanding review gates, follow the
+//! [development security review].
 //!
 //! Load root keys from a cryptographically secure secret source. Encryption and
 //! blind-index root keys must be generated independently, and a generation ID

@@ -56,9 +56,7 @@ jobs:
         run: cargo test --locked --doc --all-features
 
       - name: Build API documentation
-        run: |
-          cargo doc --locked --no-deps --no-default-features
-          cargo doc --locked --no-deps --all-features
+        run: sh scripts/check-rustdoc.sh
 
       - name: Check current compatible dependencies
         run: |

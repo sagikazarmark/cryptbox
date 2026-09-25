@@ -1,5 +1,8 @@
 # Migrating Legacy Data To CryptBox
 
+**How-to · current 0.5.0 API.** Adopt encryption over existing stored data.
+[All tasks](README.md) · [Concepts](concepts.md).
+
 Deployments may adopt CryptBox over columns that contain plaintext, ciphertext
 from a previous application encryption solution, or a mixture of both. The
 `migrate` Cargo feature provides an explicit facility for this bounded window: a

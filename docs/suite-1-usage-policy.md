@@ -7,6 +7,15 @@ document are CryptBox recommendations, not limits prescribed by the cited
 standards. This document addresses the operational-policy review gate tracked
 by issue 15.[issue-15]
 
+**Role: proposed policy reference, not an approved production contract.** Issue
+closure records the authoring work, not policy acceptance. The library does not
+enforce these proposed operational budgets. Padding-aware size clarification
+and complete derivation documentation are tracked in
+[#52](https://github.com/sagikazarmark/cryptbox/issues/52); do not infer a
+library-enforced field-size limit from the table. See the
+[current security review path](security.md#security-review-path) and
+[document authority](README.md#document-authority-and-versions).
+
 ## Executive policy
 
 For Suite 1, an application should apply all of these limits:

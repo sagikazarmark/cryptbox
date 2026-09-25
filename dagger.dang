@@ -25,6 +25,55 @@ type Cryptbox {
   test: Test! {
     Test(self.rust.container, self.postgresVersion)
   }
+
+  """
+  Deterministic documentation checks and an explicit network link check.
+  """
+  docs: Docs! {
+    Docs(self.rust.container)
+  }
+}
+
+"""
+Documentation checks shared with GitHub Actions through repository scripts.
+"""
+type Docs {
+  let container: Container!
+
+  new(container: Container!) {
+    self.container = container
+    self
+  }
+
+  """
+  Build default and all-feature API docs with warnings denied.
+  """
+  rustdoc: String! @check {
+    self.container.withExec(["sh", "scripts/check-rustdoc.sh"]).combinedOutput
+  }
+
+  """
+  Check local Markdown paths and fragments without network access.
+  """
+  localLinks: String! @check {
+    self.links("local")
+  }
+
+  """
+  Check external URLs and fragments. Explicit/scheduled only, not a PR check.
+  """
+  externalLinks: String! {
+    self.links("external")
+  }
+
+  let links(mode: String!): String! {
+    Dagger.container
+      .from("lycheeverse/lychee:0.24.2")
+      .withDirectory("/work", self.container.directory("."))
+      .withWorkdir("/work")
+      .withExec(["sh", "scripts/check-links.sh", mode])
+      .combinedOutput
+  }
 }
 
 """

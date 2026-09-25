@@ -1,5 +1,8 @@
 //! Explicit migration facility for adopting encryption over existing data.
 //!
+//! Available with the `migrate` feature. Packaged `SQLx` stores additionally
+//! require their backend feature; see each store's availability documentation.
+//!
 //! Everything in this module is intended for a bounded migration window and
 //! deliberately kept out of the crate root. The steady-state decoding path
 //! stays strict: legacy data or invalid envelopes fail to decode. During the
@@ -21,8 +24,11 @@
 //! other stores. Retain historical and legacy recovery keys separately; destroy
 //! them only when all dependent artifacts and retention requirements permit it.
 //!
-//! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/latest/source/docs/reencryption-sweep.md
-//! [legacy migration guide]: https://docs.rs/crate/cryptbox/latest/source/docs/legacy-migration.md
+//! These guide links describe the 0.5.0 release archive. Later documentation
+//! improvements are available through the crate's development task index.
+//!
+//! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/0.5.0/source/docs/reencryption-sweep.md
+//! [legacy migration guide]: https://docs.rs/crate/cryptbox/0.5.0/source/docs/legacy-migration.md
 //! [`Encrypted`]: crate::Encrypted
 
 mod legacy;

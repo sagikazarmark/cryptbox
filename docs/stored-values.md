@@ -1,5 +1,8 @@
 # Serialize And Read Stored Values
 
+**Tutorial · unreleased development API, not published 0.5.0.** Learn explicit Serde storage and the assurance
+boundaries. [All tasks](README.md) · [Concepts](concepts.md).
+
 This walkthrough describes the current public API. It serializes ciphertext and
 blind indexes, parses them, deliberately decrypts the ciphertext, and checks the
 separate lookup and consistency guarantees. CryptBox remains experimental; these
@@ -8,7 +11,11 @@ checks do not constitute independent cryptographic review.
 ## Run The Consumer Example
 
 Create a Rust binary project (Rust 1.85 or newer, on a target with OS entropy),
-then use this complete `Cargo.toml`:
+alongside this checkout: the directories should be `cryptbox/` (this repository)
+and `stored-values-consumer/` (your binary). Then use this complete `Cargo.toml`
+in the consumer. The path dependency is deliberate: published `cryptbox = "0.5"`
+does not yet provide the `serde` feature. Use a checkout containing the Serde
+support added after v0.5.0, such as the branch containing this guide.
 
 ```toml
 [package]
@@ -17,7 +24,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-cryptbox = { version = "0.5", features = ["serde"] }
+cryptbox = { path = "../cryptbox", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 zeroize = "1"

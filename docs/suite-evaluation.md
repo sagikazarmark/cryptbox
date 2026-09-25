@@ -1,5 +1,13 @@
 # CryptBox Encryption-Suite Evaluation
 
+**Status: dated research / explanation, not production approval or an API guide.**
+The conclusions below record the research snapshot, including citations to the
+historical design and then-current source. For current behavior use the
+[wire-format reference](wire-format.md), [security review path](security.md#security-review-path),
+and [crate reference](https://docs.rs/cryptbox/0.5.0/cryptbox/).
+The [operational policy](suite-1-usage-policy.md) remains proposed.
+[Document authority and tasks](README.md).
+
 **Research date:** 2026-08-21
 
 **Question:** Is CryptBox Suite 1, HKDF-SHA-256 per-binding key derivation plus
