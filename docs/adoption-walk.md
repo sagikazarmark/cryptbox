@@ -107,10 +107,13 @@ The outstanding security gates remain in the [security explanation](security.md#
 
 ## Remaining journeys
 
+The subsequent [#54 docs-only first-field walk](first-field-walk.md) completed
+the fresh-project and field-bound SQLite onboarding exercises. The historical
+observations above describe the pre-#54 examples.
+
 | Gap observed or explicitly deferred | Owner |
 | --- | --- |
-| Complete first external-project tutorial and executable snippet coverage | [#54](https://github.com/sagikazarmark/cryptbox/issues/54) |
-| Durable key loading, consistent field-bound SQLite, full PostgreSQL dependencies/runtime/TLS/schema, restart and search path | [#19](https://github.com/sagikazarmark/cryptbox/issues/19) |
+| Durable key loading, full PostgreSQL dependencies/runtime/TLS/schema, restart and search path | [#19](https://github.com/sagikazarmark/cryptbox/issues/19) |
 | Complete adapter-test/diagnostics consumer recipe | [#56](https://github.com/sagikazarmark/cryptbox/issues/56) |
 | Clear custom normalizer obligations (including the ambiguous “not include secrets” wording) and plaintext ownership | [#57](https://github.com/sagikazarmark/cryptbox/issues/57) |
 | Fleet rollout, durable repeated sweeps, legacy search continuity, backup recovery | [#58](https://github.com/sagikazarmark/cryptbox/issues/58), [#55](https://github.com/sagikazarmark/cryptbox/issues/55), [#59](https://github.com/sagikazarmark/cryptbox/issues/59), [#60](https://github.com/sagikazarmark/cryptbox/issues/60) |

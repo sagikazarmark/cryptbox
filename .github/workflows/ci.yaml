@@ -56,6 +56,18 @@ jobs:
       - name: Build API documentation
         run: sh scripts/check-rustdoc.sh
 
+      - name: Check shared snippets and isolated consumers
+        run: |
+          node scripts/doc-snippets.mjs
+          node scripts/check-consumers.mjs checkout
+          node scripts/check-consumers.mjs published
+
+      - name: Check generated lifecycle diagram
+        run: |
+          docker run --rm --entrypoint sh -v "$PWD:/data" -w /data \
+            ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.12.0@sha256:bad64c9d9ad917c8dfbe9d9e9c162b96f6615ff019b37058638d16eb27ce7783 \
+            scripts/check-diagrams.sh
+
       - name: Check current compatible dependencies
         run: |
           cargo update

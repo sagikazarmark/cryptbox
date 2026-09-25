@@ -9,24 +9,24 @@ including stored-byte Serde support. See [document authority and versions](#docu
 | Task | Start here | Continue with |
 | --- | --- | --- |
 | Decide whether to adopt | [Suitability and security](security.md) | [Feature/platform reference](features.md) |
-| Encrypt a first field | [Project quick start](../README.md#quick-start) | [Concepts](concepts.md), then [stored-value tutorial](stored-values.md) |
+| Encrypt a first field | [Fresh-project tutorial](first-field.md) | [Field-bound SQLite](first-field-sqlite.md), [concepts](concepts.md) |
 | Integrate storage | [Stored-value tutorial (unreleased Serde support)](stored-values.md) | [SQLite example](../examples/sqlx_sqlite.rs), [blind-index lookup](../examples/blind_indexes.rs) |
 | Rotate keys and rewrite data | [Key rotation example](../examples/key_rotation.rs) | [Maintenance sweep how-to](reencryption-sweep.md) |
 | Adopt encryption over existing data | [Legacy migration how-to](legacy-migration.md) | [Legacy example](../examples/legacy_migration.rs), [plaintext example](../examples/plaintext_migration.rs) |
 | Review security | [Review path and gates](security.md#security-review-path) | [Wire-format reference](wire-format.md), [suite research](suite-evaluation.md), [proposed policy](suite-1-usage-policy.md) |
 | Test and diagnose an integration | [Testing and diagnostics how-to](testing.md) | [Stored-value assurance procedure](stored-values.md#obtain-additional-assurance) |
-| Maintain documentation | [Documentation checks](documentation.md) | [Adoption walk and remaining gaps](adoption-walk.md) |
+| Maintain documentation | [Documentation checks](documentation.md) | [Adoption walk](adoption-walk.md), [first-field docs-only walk](first-field-walk.md) |
 
-These are existing destinations, not a claim that every consumer journey is
-complete. The first external-project tutorial is tracked in [#54], durable
-PostgreSQL/SQLite integration in [#19], and fleet rotation in [#58].
+The first-field and SQLite exercises use published 0.5.0 with explicit local
+providers. Durable PostgreSQL/SQLite integration remains in [#19], and fleet
+rotation in [#58].
 
 ### Integration caveat
 
-The existing SQLite example uses `Unbound`: it demonstrates the adapter without
-cross-field substitution protection. Preserve the README's `FieldBound` policy
-when adapting it for confidential fields. Consistent field-bound examples,
-durable keys, and a full PostgreSQL runtime/TLS recipe belong to [#19].
+The [SQLite exercise](first-field-sqlite.md) now preserves the first tutorial's
+field binding. Its keys and database are ephemeral; follow the
+[durable-key next step](first-field.md#next-keep-keys-across-restarts) before persisting data.
+Full secret-loading/restart and PostgreSQL runtime/TLS recipes belong to [#19].
 
 ## Document authority and versions
 
@@ -63,6 +63,7 @@ and profile schema. No production approval follows from any version number.
 | [Crate landing reference](https://docs.rs/cryptbox/0.5.0/cryptbox/) | Type model, persistent schema, concise security boundary, API links; the [feature/platform reference](features.md) is a shared Markdown source included in current rustdoc |
 | [Glossary](../CONTEXT.md) and [concepts explanation](concepts.md) | Canonical terms and their relationships; current versus future binding support |
 | [Security explanation](security.md) | Adoption threat model, unsuitable use cases, review path and unfinished gates |
+| [First-field tutorial](first-field.md) and [SQLite continuation](first-field-sqlite.md) | Complete published-release consumer setup and first success; snippets shared with executed examples |
 | [Stored-value tutorial](stored-values.md) | Unreleased explicit Serde consumer path using a checkout dependency, plus assurance steps |
 | [Maintenance](reencryption-sweep.md) and [legacy migration](legacy-migration.md) how-tos | Existing bounded maintenance procedures; operational extensions remain tracked downstream |
 | [Plaintext migration redirect](plaintext-migration.md) | Preserves the old entry point; canonical procedure is legacy migration |
@@ -80,6 +81,7 @@ Run from a checkout with the prerequisites in the crate reference:
 
 | Example | Command |
 | --- | --- |
+| [First field](../examples/first_field.rs) | `cargo run --locked --example first_field` |
 | [Key rotation](../examples/key_rotation.rs) | `cargo run --locked --example key_rotation` |
 | [Maintenance sweep](../examples/reencryption_sweep.rs) | `cargo run --locked --example reencryption_sweep --features sqlx-sqlite` |
 | [Legacy migration](../examples/legacy_migration.rs) | `cargo run --locked --example legacy_migration --features migrate,sqlx-sqlite` |

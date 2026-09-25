@@ -5,6 +5,26 @@ for definitions and the [task index](README.md) for procedures.
 
 ## The value lifecycle
 
+<!-- BEGIN SHARED: lifecycle -->
+
+```mermaid
+flowchart TB
+    E["Encrypted&lt;T, Profile&gt;: owns plaintext"]
+    C["Ciphertext&lt;T, Profile&gt;: owns encrypted envelope"]
+    D["New Encrypted&lt;T, Profile&gt;: owns decrypted plaintext"]
+    P["Prepared: owns ciphertext and optional indexes"]
+    S["Storage: encrypted envelope and optional indexes"]
+    E -->|"encrypt_with borrows; source retained"| C
+    C -->|"decrypt_with borrows; authenticates and decodes"| D
+    E -->|"prepare_with borrows; source retained"| P
+    P -.->|"borrows plaintext source for its lifetime"| E
+    P -->|"application writes representations atomically"| S
+    C -->|"application writes bytes"| S
+    S -->|"parse structure; not authentication"| C
+```
+
+<!-- END SHARED: lifecycle -->
+
 `Encrypted<T, Profile>` contains **plaintext** in application memory, despite
 its name. `expose_secret()` makes plaintext access deliberate. `Secret<T>` is
 also a plaintext wrapper, without an encryption profile. Neither type is a
@@ -15,7 +35,8 @@ binding (expected cryptographic domain), and key context. `profile!` declares
 that policy; `EncryptionProfile` is its expanded trait form. Encoding and
 encryption produce `Ciphertext<T, Profile>`, the stored encrypted envelope.
 Encrypting borrows the original value; it does not consume or erase it.
-Parsing a ciphertext establishes structure, while decryption authenticates it.
+Parsing a ciphertext establishes structure, while decryption authenticates it
+and returns a new plaintext-bearing value without consuming the ciphertext.
 
 `Prepared` borrows its source `Encrypted` value and holds ciphertext and optional
 blind indexes derived from that value. The application must write the ciphertext

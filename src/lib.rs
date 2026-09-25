@@ -25,6 +25,15 @@
 //! - A [`BlindIndex`] is a candidate selector. Use every [`blind_index_probes`]
 //!   result, decrypt candidates, and compare normalized plaintext.
 //!
+#![doc = "<div>"]
+#![doc = include_str!("../docs/diagrams/lifecycle.svg")]
+#![doc = "</div>"]
+//!
+//! Encryption and preparation retain the original plaintext. Decryption borrows
+//! ciphertext and returns a new plaintext-bearing value. `Prepared` owns stored
+//! representations while borrowing its source; the application persists those
+//! representations atomically. Dropping preparation does not erase the source.
+//!
 //! [`Binding`] is sealed to [`Unbound`] and [`FieldBound`], both with unit context
 //! `()`. Thus `&()` is not an opt-out from field binding and does not supply keys.
 //! Row/tenant binding is future work. [`KeyContext`] selects providers for
@@ -37,41 +46,19 @@
 //!
 //! # Quick start
 //!
-//! ```
-//! use cryptbox::{
-//!     Encrypted, EncryptionKey, EncryptionProfile, Field, FieldBound,
-//!     GlobalKeyContext, LocalEncryptionKeyring, Utf8, field_id, key_id,
-//! };
+//! **Ephemeral keys, in-memory demonstration only.** The [first-field tutorial]
+//! supplies a complete fresh-project manifest and execution instructions.
 //!
-//! struct UserEmail;
-//! impl Field for UserEmail {
-//!     const ID: cryptbox::FieldId =
-//!         field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-//!     const NAME: &'static str = "user-email";
-//! }
-//! impl EncryptionProfile<String> for UserEmail {
-//!     type Codec = Utf8;
-//!     type Binding = FieldBound<Self>;
-//!     type Keys = GlobalKeyContext;
-//!     type Padding = cryptbox::NoPadding;
-//! }
+#![doc = include_str!("../docs/snippets/first-field.md")]
 //!
-//! // Fixed key material is for this doctest only; load production keys securely.
-//! let keys = LocalEncryptionKeyring::new(
-//!     EncryptionKey::new(
-//!         key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"),
-//!         [0x42; 32],
-//!     ),
-//!     [],
-//! )?;
-//! let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
-//! let ciphertext = email.encrypt_with(&(), &keys)?;
-//! assert_eq!(
-//!     ciphertext.decrypt_with(&(), &keys)?.expose_secret(),
-//!     "mark@example.com",
-//! );
-//! # Ok::<(), cryptbox::Error>(())
-//! ```
+//! The macro selects UTF-8 encoding, field binding, no padding, and the default
+//! key context. `Encrypted` contains plaintext; `Ciphertext` contains the encrypted
+//! envelope. `&()` supplies no runtime binding data, while `&keys` supplies the
+//! provider explicitly: no global installation is needed. Before durable storage,
+//! settle the persistent schema below and load stable key material and generation
+//! IDs across restarts; see the [first-field tutorial]'s durable-key next step.
+//!
+//! [first-field tutorial]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/first-field.md
 //!
 #![doc = include_str!("../docs/features.md")]
 //!

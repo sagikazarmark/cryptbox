@@ -53,6 +53,30 @@ type Docs {
   }
 
   """
+  Check shared snippets and run isolated consumers against checkout and release.
+  """
+  consumers: String! @check {
+    self.container
+      .withExec(["sh", "-c", "apt-get update && apt-get install -y --no-install-recommends nodejs"])
+      .withExec(["node", "scripts/doc-snippets.mjs"])
+      .withExec(["node", "scripts/check-consumers.mjs", "checkout"])
+      .withExec(["node", "scripts/check-consumers.mjs", "published"])
+      .combinedOutput
+  }
+
+  """
+  Re-render the canonical Mermaid diagram and compare the committed rustdoc SVG.
+  """
+  diagrams: String! @check {
+    Dagger.container
+      .from("ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.12.0@sha256:bad64c9d9ad917c8dfbe9d9e9c162b96f6615ff019b37058638d16eb27ce7783")
+      .withDirectory("/data", self.container.directory("."))
+      .withWorkdir("/data")
+      .withExec(["sh", "scripts/check-diagrams.sh"])
+      .combinedOutput
+  }
+
+  """
   Check local Markdown paths and fragments without network access.
   """
   localLinks: String! @check {

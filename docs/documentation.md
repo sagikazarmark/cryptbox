@@ -8,7 +8,8 @@ with `include_str!`, so its Markdown and rendered crate versions have one source
 
 ## Local checks
 
-From the repository root, with Rust and Lychee **0.24.2** available:
+From the repository root, with Rust, Node.js **18 or newer**, Docker, and Lychee
+**0.24.2** available:
 
 ```sh
 cargo fmt --all --check
@@ -16,6 +17,9 @@ cargo check --locked --all-targets --all-features
 sh scripts/check-sqlx-features.sh
 cargo clippy --locked --all-targets --all-features -- -D warnings
 sh scripts/check-rustdoc.sh
+node scripts/doc-snippets.mjs
+node scripts/check-consumers.mjs checkout
+node scripts/check-consumers.mjs published
 sh scripts/check-links.sh local
 cargo test --locked --all-targets --all-features
 cargo test --locked --doc --all-features
@@ -29,12 +33,45 @@ docker run --rm --entrypoint sh -v "$PWD:/work" -w /work \
 ```
 
 `check-rustdoc.sh` builds default and all-feature API documentation with warnings
-denied, then compiles/runs the README and testing-guide Rust blocks against a
+denied, then compiles/runs the README, first-field, and testing-guide Rust blocks against a
 default-feature library build. The manifest retains `missing_docs`, Clippy `all`/`pedantic` (including
 documentation lints), and denied broken intra-doc links, and additionally denies
 `rustdoc::missing_crate_level_docs`. The docs.rs all-feature build exposes gated
 items; availability is documented on their pages and in the crate feature table
 without requiring unstable rustdoc features.
+
+### Shared consumer examples and diagrams
+
+Edit `examples/first_field.rs` (the marked region) or `examples/sqlx_sqlite.rs`,
+and the consumer manifests under `docs/snippets/`. Run
+`node scripts/doc-snippets.mjs --write` to update the landing/tutorial snippets.
+The crate landing includes the generated Markdown directly. The check mode
+rejects drift; no required example is marked `ignore`.
+
+`check-consumers.mjs` creates isolated temporary Cargo projects using only those
+manifests and public example sources. `checkout` patches the advertised
+dependency to this checkout, while `published` downloads exact 0.5.0. Both check
+and execute the examples; the first-field tests also check cross-field rejection.
+Neither inherits repository dev-dependencies. Temporary projects are removed;
+build artifacts are cached under `target/consumers`. Consumer resolution is fresh,
+so compatible dependency updates are exercised; each run locks before execution.
+
+The lifecycle's canonical source is `docs/diagrams/lifecycle.mmd`. The snippet
+script embeds it in Markdown, and pinned Mermaid CLI produces the committed SVG
+included inline in rustdoc (no remote image request or library dependency).
+Generate it with:
+
+```sh
+docker run --rm --user "$(id -u):$(id -g)" --entrypoint sh \
+  -v "$PWD:/data" -w /data \
+  ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.12.0@sha256:bad64c9d9ad917c8dfbe9d9e9c162b96f6615ff019b37058638d16eb27ce7783 \
+  scripts/check-diagrams.sh write
+```
+
+Omit `write` to check byte-for-byte regeneration. The image pins Chromium/fonts
+and the configuration fixes Mermaid IDs. GitHub Actions and Dagger run the same
+snippet, consumer, and diagram checks (`cryptbox:docs:consumers` and
+`cryptbox:docs:diagrams`).
 
 `check-links.sh local` checks local file destinations and Markdown anchors
 deterministically with `--offline`. It checks root Markdown, every reader-facing
@@ -91,8 +128,8 @@ Keep useful old headings/redirect pages when moving procedures.
 
 Before publishing, repeat the [cold adoption walk](adoption-walk.md). Check both
 entry points, including the rendered crate page, and record any inference or
-outside help needed. The complete consumer tutorial/snippet harness is owned by
-[#54](https://github.com/sagikazarmark/cryptbox/issues/54) and
+outside help needed. Repeat the [first-field docs-only task](first-field-walk.md)
+when editing onboarding. Further durable integration is owned by
 [#19](https://github.com/sagikazarmark/cryptbox/issues/19); this link gate does not
 claim to compile every Markdown code block. Existing doctests and examples stay
 enabled. The four final docs-only journeys are owned by

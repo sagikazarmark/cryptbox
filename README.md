@@ -28,7 +28,8 @@ equality/frequency; every hit requires decrypted, normalized comparison.
 
 - **Evaluate:** [suitability, unsuitable uses, and review gates](docs/security.md).
 - **Configure:** [feature/platform reference](docs/features.md), shared with the crate landing page.
-- **Integrate:** [stored-value tutorial (unreleased Serde support)](docs/stored-values.md) and [SQLite example](examples/sqlx_sqlite.rs) (currently unbound; see the [integration caveat](docs/README.md#integration-caveat)).
+- **Start:** [encrypt your first field in a fresh Rust project](docs/first-field.md).
+- **Integrate:** [field-bound SQLite tutorial](docs/first-field-sqlite.md) and [stored-value tutorial (unreleased Serde support)](docs/stored-values.md).
 - **Operate:** [key rotation](examples/key_rotation.rs), [maintenance sweeps](docs/reencryption-sweep.md), and [legacy migration](docs/legacy-migration.md).
 - **Review security:** [review reading path](docs/security.md#security-review-path).
 - **Browse:** [all documentation, examples, and document authority](docs/README.md).
@@ -49,8 +50,12 @@ stored-byte Serde support and later documentation improvements; see the
 
 ## Quick Start
 
-This in-memory demonstration uses no optional features (`cryptbox = "0.5"`).
+This in-memory demonstration uses no optional features (`cryptbox = "=0.5.0"`).
 Keys are ephemeral: do not use this provisioning pattern for durable data.
+For the complete manifest, file placement, and expected output, follow
+[encrypt your first field](docs/first-field.md).
+
+<!-- BEGIN SHARED: first-field -->
 
 ```rust
 use cryptbox::{Encrypted, EncryptionKey, LocalEncryptionKeyring};
@@ -65,26 +70,30 @@ cryptbox::profile! {
 }
 
 fn main() -> Result<(), cryptbox::Error> {
+    // Ephemeral demo keys: a new key and generation ID on every run.
     let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
     let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
     let ciphertext = email.encrypt_with(&(), &keys)?;
     let decrypted = ciphertext.decrypt_with(&(), &keys)?;
     assert_eq!(decrypted.expose_secret(), "mark@example.com");
+    assert_eq!(email.expose_secret(), "mark@example.com"); // Source retained.
+    println!("Field-bound round trip succeeded.");
     Ok(())
 }
 ```
 
+<!-- END SHARED: first-field -->
+
+The macro selects UTF-8 encoding, field binding, no padding, and the default key
+context. `Encrypted` holds plaintext; `Ciphertext` holds the encrypted envelope.
 `&()` is the unit **binding context**, not a key provider or an opt-out from
 field binding. `&keys` supplies keys explicitly. Encryption borrows `email`, so
 the original plaintext remains in memory. See [concepts and terminology](docs/concepts.md).
 
 For durable data, load the same key/ID pairs after every restart; generate
 encryption and blind-index roots independently. Before storing anything, review
-the [persistent-schema contract](https://docs.rs/cryptbox/0.5.0/cryptbox/#persistent-schema),
-then follow the [stored-value tutorial](docs/stored-values.md). A complete
-first-project tutorial and durable PostgreSQL path are tracked in
-[#54](https://github.com/sagikazarmark/cryptbox/issues/54) and
-[#19](https://github.com/sagikazarmark/cryptbox/issues/19).
+the [schema and durable-key next steps](docs/first-field.md#4-freeze-schema-decisions-before-durable-storage),
+then follow the [SQLite tutorial](docs/first-field-sqlite.md).
 
 ## Testing
 

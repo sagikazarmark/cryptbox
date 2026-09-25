@@ -2,52 +2,47 @@
 
 use std::error::Error;
 
-use cryptbox::{
-    Ciphertext, Encrypted, EncryptionKey, EncryptionProfile, GlobalKeyContext, GlobalProviders,
-    LocalEncryptionKeyring, Unbound, Utf8, key_id,
-};
+use cryptbox::{Ciphertext, Encrypted, EncryptionKey, LocalEncryptionKeyring};
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 
-struct StoredEmail;
-
-impl EncryptionProfile<String> for StoredEmail {
-    type Binding = Unbound;
-    type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
+cryptbox::profile! {
+    UserEmail: String {
+        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
+        name: "user-email",
+        codec: cryptbox::Utf8,
+        binding: field_bound,
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Demo-only material. Install runtime-loaded secret providers at startup.
-    let keys = LocalEncryptionKeyring::new(
-        EncryptionKey::new(key_id!("90000000-0000-4000-8000-000000000009"), [0x64; 32]),
-        [],
-    )?;
-    GlobalKeyContext::install(GlobalProviders::new(keys))?;
+    // Ephemeral keys and database: load stable key/ID pairs for durable storage.
+    let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 
-    futures_executor::block_on(run())
+    futures_executor::block_on(run(&keys))
 }
 
-async fn run() -> Result<(), Box<dyn Error>> {
+async fn run(keys: &LocalEncryptionKeyring) -> Result<(), Box<dyn Error>> {
     let mut connection = SqliteConnection::connect("sqlite::memory:").await?;
     sqlx::query("CREATE TABLE users (email BLOB NOT NULL)")
         .execute(&mut connection)
         .await?;
 
-    let email = Encrypted::<_, StoredEmail>::new("mark@example.com".to_owned());
+    let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
+    let prepared = email.prepare_with(&(), keys)?;
     sqlx::query("INSERT INTO users (email) VALUES (?)")
-        .bind(&email)
+        .bind(prepared.ciphertext())
         .execute(&mut connection)
         .await?;
 
     let row = sqlx::query("SELECT email FROM users")
         .fetch_one(&mut connection)
         .await?;
-    let ciphertext: Ciphertext<String, StoredEmail> = row.try_get("email")?;
-    let decrypted: Encrypted<String, StoredEmail> = row.try_get("email")?;
+    let ciphertext: Ciphertext<String, UserEmail> = row.try_get("email")?;
+    let decrypted = ciphertext.decrypt_with(&(), keys)?;
 
     assert!(ciphertext.as_bytes().starts_with(b"CBX\0"));
     assert_eq!(decrypted.expose_secret(), "mark@example.com");
+    println!("Field-bound SQLite round trip succeeded.");
 
     Ok(())
 }
