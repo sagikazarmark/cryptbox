@@ -6,8 +6,11 @@ import { resolve, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { checkRotation } from './check-rotation-consumer.mjs';
+import { checkSweep } from './check-sweep-consumer.mjs';
 
-const [mode = 'checkout', backend = 'sqlite'] = process.argv.slice(2);
+const [mode = 'checkout', backend = 'sqlite', scenario = 'searchable'] = process.argv.slice(2);
+assert.ok(['searchable', 'sweep'].includes(scenario));
+const features = scenario === 'sweep' ? `${backend},maintenance` : backend;
 assert.ok(['checkout', 'published'].includes(mode));
 assert.ok(['sqlite', 'postgres'].includes(backend));
 if (backend === 'postgres' && !process.env.DATABASE_URL) {
@@ -65,8 +68,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 `);
   }
-  command('cargo', ['check', '--no-default-features', '--features', backend]);
-  command('cargo', ['build', '--locked', '--no-default-features', '--features', backend]);
+  command('cargo', ['check', '--no-default-features', '--features', features]);
+  command('cargo', ['build', '--locked', '--no-default-features', '--features', features]);
   if (backend === 'postgres') {
     fixture('create');
     schemaCreated = true;
@@ -78,62 +81,67 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   assert.match(cli(['init'], {}, false).stderr, /key configuration/);
   mkdirSync(env.CRYPTBOX_KEY_DIR);
   for (const role of ['encryption', 'index']) {
-    for (const generation of [1, 2]) {
+    for (const generation of scenario === 'sweep' ? [1, 2, 3] : [1, 2]) {
       writeFileSync(join(env.CRYPTBOX_KEY_DIR, `${role}-${generation}.hex`), randomBytes(32).toString('hex') + '\n', { mode: 0o600 });
     }
   }
   assert.equal(cli(['init']).stdout.trim(), 'Schema ready.');
-  // Begin the generation-1 rehearsal on empty storage, as the runbook requires.
-  checkRotation(cli);
-  assert.equal(cli(['put', '1', ' Alice@Example.com ']).stdout.trim(), 'Stored 1.');
-  assert.equal(cli(['get', '1']).stdout.trim(), '1:  Alice@Example.com');
-  assert.equal(cli(['search', 'alice@example.com']).stdout.trim(), 'Matches: [1]; rejected: 0.');
-  assert.equal(cli(['put-null', '2']).stdout.trim(), 'Stored 2.');
-  assert.equal(cli(['get', '2']).stdout.trim(), '2: NULL');
-  cli(['put', '2', 'before@example.com']);
-  cli(['put', '2', ' Alice@Example.com ']);
-  assert.equal(cli(['search', 'before@example.com']).stdout.trim(), 'Matches: []; rejected: 0.');
-  assert.equal(cli(['search', 'alice@example.com']).stdout.trim(), 'Matches: [1, 2]; rejected: 0.');
-  cli(['put-null', '2']);
-  assert.equal(cli(['search', 'alice@example.com']).stdout.trim(), 'Matches: [1]; rejected: 0.');
-  env.CRYPTBOX_GENERATION = '2';
-  cli(['put', '3', 'alice@example.com']);
-  cli(['put', '4', 'bob@example.com']);
-  cli(['demo-false-candidate', '4', '3']);
-  assert.equal(cli(['get', '1']).stdout.trim(), '1:  Alice@Example.com');
-  assert.equal(cli(['get', '3']).stdout.trim(), '3: alice@example.com');
-  assert.equal(cli(['get', '4']).stdout.trim(), '4: bob@example.com');
-  assert.equal(cli(['search', ' ALICE@EXAMPLE.COM ']).stdout.trim(), 'Matches: [1, 3]; rejected: 1.');
-  assert.equal(cli(['search', 'alice@example.com'], { CRYPTBOX_GENERATION: '1' }).stdout.trim(), 'Matches: [1, 3]; rejected: 1.');
-  assert.match(cli(['get', '1'], { CRYPTBOX_GENERATION: '3' }, false).stderr, /key configuration/);
-  const keyFile = join(env.CRYPTBOX_KEY_DIR, 'encryption-1.hex');
-  const original = readFileSync(keyFile);
-  for (const malformed of ['z'.repeat(64), '00']) {
-    writeFileSync(keyFile, malformed);
-    assert.match(cli(['get', '1'], {}, false).stderr, /key configuration/);
+  if (scenario === 'sweep') {
+    checkSweep(cli);
+    command('cargo', ['clippy', '--locked', '--no-default-features', '--features', features, '--', '-D', 'warnings']);
+  } else {
+    // Begin the generation-1 rehearsal on empty storage, as the runbook requires.
+    checkRotation(cli);
+    assert.equal(cli(['put', '1', ' Alice@Example.com ']).stdout.trim(), 'Stored 1.');
+    assert.equal(cli(['get', '1']).stdout.trim(), '1:  Alice@Example.com');
+    assert.equal(cli(['search', 'alice@example.com']).stdout.trim(), 'Matches: [1]; rejected: 0.');
+    assert.equal(cli(['put-null', '2']).stdout.trim(), 'Stored 2.');
+    assert.equal(cli(['get', '2']).stdout.trim(), '2: NULL');
+    cli(['put', '2', 'before@example.com']);
+    cli(['put', '2', ' Alice@Example.com ']);
+    assert.equal(cli(['search', 'before@example.com']).stdout.trim(), 'Matches: []; rejected: 0.');
+    assert.equal(cli(['search', 'alice@example.com']).stdout.trim(), 'Matches: [1, 2]; rejected: 0.');
+    cli(['put-null', '2']);
+    assert.equal(cli(['search', 'alice@example.com']).stdout.trim(), 'Matches: [1]; rejected: 0.');
+    env.CRYPTBOX_GENERATION = '2';
+    cli(['put', '3', 'alice@example.com']);
+    cli(['put', '4', 'bob@example.com']);
+    cli(['demo-false-candidate', '4', '3']);
+    assert.equal(cli(['get', '1']).stdout.trim(), '1:  Alice@Example.com');
+    assert.equal(cli(['get', '3']).stdout.trim(), '3: alice@example.com');
+    assert.equal(cli(['get', '4']).stdout.trim(), '4: bob@example.com');
+    assert.equal(cli(['search', ' ALICE@EXAMPLE.COM ']).stdout.trim(), 'Matches: [1, 3]; rejected: 1.');
+    assert.equal(cli(['search', 'alice@example.com'], { CRYPTBOX_GENERATION: '1' }).stdout.trim(), 'Matches: [1, 3]; rejected: 1.');
+    assert.match(cli(['get', '1'], { CRYPTBOX_GENERATION: '3' }, false).stderr, /key configuration/);
+    const keyFile = join(env.CRYPTBOX_KEY_DIR, 'encryption-1.hex');
+    const original = readFileSync(keyFile);
+    for (const malformed of ['z'.repeat(64), '00']) {
+      writeFileSync(keyFile, malformed);
+      assert.match(cli(['get', '1'], {}, false).stderr, /key configuration/);
+    }
+    writeFileSync(keyFile, original);
+    assert.equal(cli(['get', '1']).stdout.trim(), '1:  Alice@Example.com');
+    for (const role of ['encryption', 'index']) {
+      const file = join(env.CRYPTBOX_KEY_DIR, `${role}-2.hex`);
+      const original = readFileSync(file);
+      writeFileSync(file, randomBytes(32).toString('hex'));
+      cli(['rotation-ready', 'index.canary'], {}, false);
+      writeFileSync(file, original);
+      assert.equal(cli(['rotation-ready', 'index.canary']).stdout.trim(), 'Ready.');
+    }
+    assert.match(cli(['get', '1'], { CRYPTBOX_ENCRYPTION: '2' }, false).stderr, /set both/);
+    assert.match(cli(['get', '1'], { CRYPTBOX_ENCRYPTION: 'invalid', CRYPTBOX_INDEX: '1' }, false).stderr, /key configuration/);
+    command('cargo', ['check', '--locked', '--no-default-features', '--features', `${backend},macro-check`]);
+    command('cargo', ['build', '--locked', '--no-default-features', '--features', `${backend},macro-check`]);
+    assert.equal(cli(['macro-get', '1']).stdout.trim(), '1:  Alice@Example.com');
+    assert.equal(cli(['macro-get', '2']).stdout.trim(), '2: NULL');
+    assert.equal(cli(['macro-get', '3']).stdout.trim(), '3: alice@example.com');
+    assert.equal(cli(['macro-put', '5', 'macro@example.com']).stdout.trim(), 'Stored 5.');
+    assert.equal(cli(['get', '5']).stdout.trim(), '5: macro@example.com');
+    assert.equal(cli(['search', 'MACRO@example.com']).stdout.trim(), 'Matches: [5]; rejected: 0.');
+    command('cargo', ['clippy', '--locked', '--no-default-features', '--features', `${backend},macro-check`, '--', '-D', 'warnings']);
+    console.log(`${mode}/${backend}: durable restart, nullable updates, both readable generations, false-candidate rejection and invalid-key failures passed.`);
   }
-  writeFileSync(keyFile, original);
-  assert.equal(cli(['get', '1']).stdout.trim(), '1:  Alice@Example.com');
-  for (const role of ['encryption', 'index']) {
-    const file = join(env.CRYPTBOX_KEY_DIR, `${role}-2.hex`);
-    const original = readFileSync(file);
-    writeFileSync(file, randomBytes(32).toString('hex'));
-    cli(['rotation-ready', 'index.canary'], {}, false);
-    writeFileSync(file, original);
-    assert.equal(cli(['rotation-ready', 'index.canary']).stdout.trim(), 'Ready.');
-  }
-  assert.match(cli(['get', '1'], { CRYPTBOX_ENCRYPTION: '2' }, false).stderr, /set both/);
-  assert.match(cli(['get', '1'], { CRYPTBOX_ENCRYPTION: 'invalid', CRYPTBOX_INDEX: '1' }, false).stderr, /key configuration/);
-  command('cargo', ['check', '--locked', '--no-default-features', '--features', `${backend},macro-check`]);
-  command('cargo', ['build', '--locked', '--no-default-features', '--features', `${backend},macro-check`]);
-  assert.equal(cli(['macro-get', '1']).stdout.trim(), '1:  Alice@Example.com');
-  assert.equal(cli(['macro-get', '2']).stdout.trim(), '2: NULL');
-  assert.equal(cli(['macro-get', '3']).stdout.trim(), '3: alice@example.com');
-  assert.equal(cli(['macro-put', '5', 'macro@example.com']).stdout.trim(), 'Stored 5.');
-  assert.equal(cli(['get', '5']).stdout.trim(), '5: macro@example.com');
-  assert.equal(cli(['search', 'MACRO@example.com']).stdout.trim(), 'Matches: [5]; rejected: 0.');
-  command('cargo', ['clippy', '--locked', '--no-default-features', '--features', `${backend},macro-check`, '--', '-D', 'warnings']);
-  console.log(`${mode}/${backend}: durable restart, nullable updates, both readable generations, false-candidate rejection and invalid-key failures passed.`);
 } finally {
   try {
     if (schemaCreated) fixture('drop');

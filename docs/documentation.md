@@ -84,6 +84,11 @@ by the snippet script; they are Markdown-only and need no separate rustdoc SVG.
 The diagram check still renders both to validate their Mermaid syntax.
 The searchable runner includes the staggered rollout/rollback fixture on both
 backends through the same existing CI/Dagger entry points.
+Append `sweep` to that focused command for the durable maintenance scenario in
+`scripts/check-sweep-consumer.mjs`. It exercises new CLI processes for bounded
+batches, durable progress, replay, fresh verification/recovery and a second
+rotation. The full consumer checks include it on SQLite; Dagger's PostgreSQL
+check executes it against the same service for both dependency modes.
 
 The lifecycle's canonical source is `docs/diagrams/lifecycle.mmd`. The snippet
 script embeds it in Markdown, and pinned Mermaid CLI produces the committed SVG

@@ -209,6 +209,25 @@ This is actual database execution, including process exit/reload, not a
 compile-only guarantee. The [docs-only reader trial](searchable-sqlx-walk.md)
 separately evaluates whether the instructions supply enough information.
 
+Append `sweep` to the focused runner to execute the
+[durable maintenance walkthrough](reencryption-sweep.md#durable-postgresql-and-sqlite-walkthrough):
+
+```sh
+node scripts/check-searchable-consumer.mjs checkout sqlite sweep
+node scripts/check-searchable-consumer.mjs checkout postgres sweep
+node scripts/check-searchable-consumer.mjs published postgres sweep
+```
+
+This scenario selects the consumer's `maintenance` feature, checks and lints its
+public-API CLI, and uses non-NULL encrypted rows. Each operation starts a fresh
+process: it checks checkpoint survival, uncheckpointed writes and replay,
+paginated verification, stale data behind completed progress, fresh-run recovery,
+a failed batch with no checkpoint advance, competing application writes, and a
+second rotation with retained-key reads/searches. SQLite uses a persistent file;
+PostgreSQL uses the same isolated-schema infrastructure. Both published/checkout
+SQLite variants run in the consumer checks, and both PostgreSQL variants run in
+the existing Dagger service check. This supplements the connection-level cases below.
+
 ## Live PostgreSQL sweep checks
 
 **Development checkout tooling.** From the repository root, run:

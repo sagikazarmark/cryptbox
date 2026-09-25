@@ -169,6 +169,8 @@ type Test {
       .withExec(["sh", "-c", "apt-get update && apt-get install -y --no-install-recommends nodejs"])
       .withExec(["node", "scripts/check-searchable-consumer.mjs", "checkout", "postgres"])
       .withExec(["node", "scripts/check-searchable-consumer.mjs", "published", "postgres"])
+      .withExec(["node", "scripts/check-searchable-consumer.mjs", "checkout", "postgres", "sweep"])
+      .withExec(["node", "scripts/check-searchable-consumer.mjs", "published", "postgres", "sweep"])
       .withExec([
         "cargo", "test", "--locked",
         "--test", "sqlx_postgres",

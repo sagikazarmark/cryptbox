@@ -25,6 +25,8 @@ Each has these states:
 | `1` | 1 | 1 | `role-1.hex` only |
 | `staged` | 1 | 1 and 2 | `role-1.hex`, `role-2.hex` |
 | `2` | 2 | 1 and 2 | `role-1.hex`, `role-2.hex` |
+| `staged-3` | 2 | 1, 2 and 3 | files 1, 2, 3 for this role |
+| `3` | 3 | 1, 2 and 3 | files 1, 2, 3 for this role |
 
 When neither is set, the introductory `CRYPTBOX_GENERATION=1` means **both roles
 staged**, and `=2` means both promoted. The explicit pair takes precedence; unset
@@ -56,9 +58,10 @@ No new dependency or schema design is needed. Keep the same field and index
 IDs as the tutorial. **Use a fresh empty database for this rehearsal.** The
 completed tutorial already has E2/I2 rows; starting its existing database with
 generation-1-only providers would break reads and silently omit search matches.
-For an actual next rotation of that database, provision new independent E3/I3
-pairs with new IDs, extend the loader, and retain E1/E2 and I1/I2 throughout the
-same compatibility-first sequence.
+For an actual next rotation of that database, follow the
+[second-rotation maintenance procedure](reencryption-sweep.md#repeat-for-a-second-rotation-and-preserve-a-competing-write).
+The current loader supports E3/I3 with new IDs; provision independent files and
+retain E1/E2 and I1/I2 throughout the same compatibility-first sequence.
 
 With the tutorial's disposable PostgreSQL service still running, create a new
 database once (choose another name if this one already exists):

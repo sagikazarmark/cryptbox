@@ -13,6 +13,7 @@ including stored-byte Serde support. See [document authority and versions](#docu
 | Store and search durable SQLx data | [PostgreSQL / SQLite consumer](searchable-sqlx.md) | [Testing](testing.md#durable-searchable-consumer), [integration trial](searchable-sqlx-walk.md) |
 | Serialize stored values | [Stored-value tutorial (unreleased Serde support)](stored-values.md) | [Stored-value assurance](stored-values.md#obtain-additional-assurance) |
 | Rotate keys and rewrite data | [Staggered fleet rotation](key-rotation.md) | [Maintenance sweep how-to](reencryption-sweep.md) |
+| Interrupt, resume, and repeat maintenance | [Durable sweep walkthrough](reencryption-sweep.md#durable-postgresql-and-sqlite-walkthrough) | [Run ownership](reencryption-sweep.md#run-identity-and-progress-ownership), [verification and retirement](reencryption-sweep.md#verification-and-retirement) |
 | Adopt encryption over existing data | [Legacy migration how-to](legacy-migration.md) | [Legacy example](../examples/legacy_migration.rs), [plaintext example](../examples/plaintext_migration.rs) |
 | Review security | [Review path and gates](security.md#security-review-path) | [Wire-format reference](wire-format.md), [suite research](suite-evaluation.md), [proposed policy](suite-1-usage-policy.md) |
 | Test and diagnose an integration | [Testing and diagnostics how-to](testing.md) | [Stored-value assurance procedure](stored-values.md#obtain-additional-assurance) |
@@ -68,7 +69,8 @@ and profile schema. No production approval follows from any version number.
 | [Searchable SQLx tutorial](searchable-sqlx.md) | Durable key loading, PostgreSQL/SQLite CRUD, nullable/deferred reads, macro prerequisites and verified lookup |
 | [Fleet rotation how-to](key-rotation.md) | Independent key staging, readiness, writer promotion, provider lifecycle and compatible rollback |
 | [Stored-value tutorial](stored-values.md) | Unreleased explicit Serde consumer path using a checkout dependency, plus assurance steps |
-| [Maintenance](reencryption-sweep.md) and [legacy migration](legacy-migration.md) how-tos | Existing bounded maintenance procedures; operational extensions remain tracked downstream |
+| [Maintenance how-to](reencryption-sweep.md) | Run identity, durable checkpoints, bounded rewrite/verification, recovery and repeat rotations |
+| [Legacy migration how-to](legacy-migration.md) | Legacy recovery and migration closing procedure; further operational extensions remain tracked downstream |
 | [Plaintext migration redirect](plaintext-migration.md) | Preserves the old entry point; canonical procedure is legacy migration |
 | [Testing how-to](testing.md) | Local providers, automatic-adapter isolation, diagnostic metadata |
 | [Custom-profile recipe](custom-profile.md) | Executable codec, normalizer and provider extensions; contracts live beside public traits and ownership is explained in concepts |

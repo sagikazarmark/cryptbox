@@ -35,6 +35,7 @@ default = ["postgres"]
 postgres = ["cryptbox/sqlx-postgres", "sqlx/postgres"]
 sqlite = ["cryptbox/sqlx-sqlite", "sqlx/sqlite"]
 macro-check = ["sqlx/macros"]
+maintenance = ["cryptbox/migrate"]
 
 [dependencies]
 cryptbox = "=0.5.0"
@@ -278,38 +279,157 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
     // State 1 does not even load generation 2. Staging retains generation 1 for writes.
     let encryption = match encryption_state.as_str() {
         "1" => LocalEncryptionKeyring::new(encryption_1, [])?,
-        "staged" | "2" => {
+        "staged" | "2" | "staged-3" | "3" => {
             let encryption_2 = EncryptionKey::new(
                 key_id!("20000000-0000-4000-8000-000000000002"),
                 *load_root_key(directory, "encryption-2.hex")?,
             );
-            if encryption_state == "staged" {
+            if matches!(encryption_state.as_str(), "staged-3" | "3") {
+                let encryption_3 = EncryptionKey::new(
+                    key_id!("70000000-0000-4000-8000-000000000007"),
+                    *load_root_key(directory, "encryption-3.hex")?,
+                );
+                if encryption_state == "staged-3" {
+                    LocalEncryptionKeyring::new(encryption_2, [encryption_1, encryption_3])?
+                } else {
+                    LocalEncryptionKeyring::new(encryption_3, [encryption_1, encryption_2])?
+                }
+            } else if encryption_state == "staged" {
                 LocalEncryptionKeyring::new(encryption_1, [encryption_2])?
             } else {
                 LocalEncryptionKeyring::new(encryption_2, [encryption_1])?
             }
         }
-        _ => return Err("key configuration: CRYPTBOX_ENCRYPTION must be 1, staged or 2".into()),
+        _ => {
+            return Err(
+                "key configuration: CRYPTBOX_ENCRYPTION must be 1, staged, 2, staged-3 or 3".into(),
+            );
+        }
     };
     let indexes = match index_state.as_str() {
         "1" => LocalBlindIndexKeyring::new(index_1, [])?,
-        "staged" | "2" => {
+        "staged" | "2" | "staged-3" | "3" => {
             let index_2 = BlindIndexKey::new(
                 index_key_id!("40000000-0000-4000-8000-000000000004"),
                 *load_root_key(directory, "index-2.hex")?,
             );
-            if index_state == "staged" {
+            if matches!(index_state.as_str(), "staged-3" | "3") {
+                let index_3 = BlindIndexKey::new(
+                    index_key_id!("90000000-0000-4000-8000-000000000009"),
+                    *load_root_key(directory, "index-3.hex")?,
+                );
+                if index_state == "staged-3" {
+                    LocalBlindIndexKeyring::new(index_2, [index_1, index_3])?
+                } else {
+                    LocalBlindIndexKeyring::new(index_3, [index_1, index_2])?
+                }
+            } else if index_state == "staged" {
                 LocalBlindIndexKeyring::new(index_1, [index_2])?
             } else {
                 LocalBlindIndexKeyring::new(index_2, [index_1])?
             }
         }
-        _ => return Err("key configuration: CRYPTBOX_INDEX must be 1, staged or 2".into()),
+        _ => {
+            return Err(
+                "key configuration: CRYPTBOX_INDEX must be 1, staged, 2, staged-3 or 3".into(),
+            );
+        }
     };
     Ok((encryption, indexes))
 }
 
 const CANARY: &str = "rotation-canary@example.invalid";
+
+#[cfg(feature = "maintenance")]
+async fn maintenance(
+    connection: &mut DbConnection,
+    command: &str,
+    run: &str,
+    encryption: &LocalEncryptionKeyring,
+    indexes: &LocalBlindIndexKeyring,
+) -> Result<()> {
+    #[cfg(feature = "postgres")]
+    use cryptbox::migrate::PostgresSweepStore as Store;
+    #[cfg(feature = "sqlite")]
+    use cryptbox::migrate::SqliteSweepStore as Store;
+    use cryptbox::migrate::{RowPlanner, Sweep, SweepReport, SweepStore, SweepTable};
+
+    // Run identity belongs to the operator; this store persists only (name, cursor).
+    let table = SweepTable::new("users", "id", "email")
+        .with_index_column("email_lookup")
+        .with_progress("cryptbox_migration_progress", run);
+    let planner = RowPlanner::<String, UserEmail>::new(&(), encryption)
+        .with_index_with::<EmailLookup>(indexes);
+    let sweep = Sweep::new(planner).with_batch_size(2);
+    let mut store = Store::new(connection, &table);
+    store.ensure_progress_table().await?;
+    match command {
+        "sweep-status" => println!("Checkpoint: {:?}.", store.load_checkpoint().await?),
+        "sweep-conflict" => {
+            // Fixture only: interleave an application write after loading the exact old pair.
+            let rows = store.load_batch(None, 1).await?;
+            let row = rows.first().ok_or("conflict rehearsal needs a stale row")?;
+            let planner = RowPlanner::<String, UserEmail>::new(&(), encryption)
+                .with_index_with::<EmailLookup>(indexes);
+            let plan = planner.plan_row(&row.ciphertext, &[&row.indexes[0]])?;
+            let replacement = plan.write().ok_or("conflict rehearsal needs a stale row")?;
+            let mut writer = DbConnection::connect(&env::var("DATABASE_URL")?).await?;
+            put(
+                &mut writer,
+                row.cursor,
+                Some("concurrent@example.com".to_owned()),
+                encryption,
+                indexes,
+            )
+            .await?;
+            writer.close().await?;
+            let updated = store.update(row, replacement).await?;
+            if updated {
+                return Err("concurrent application write was overwritten".into());
+            }
+            println!("Conflicts: 1.");
+        }
+        "sweep-batch" | "sweep-uncheckpointed" => {
+            let outcome = if command == "sweep-uncheckpointed" {
+                // Rehearse process loss after writes, before durable progress is saved.
+                let after = store.load_checkpoint().await?;
+                sweep.process_batch(&mut store, after.as_ref()).await?
+            } else {
+                sweep.run_batch(&mut store).await?
+            };
+            println!(
+                "Checkpoint: {:?}; current: {}; stale: {}; conflicts: {}.",
+                outcome.checkpoint,
+                outcome.report.current,
+                outcome.report.stale,
+                outcome.report.conflicts
+            );
+        }
+        "sweep-verify" => {
+            // Separate, fresh cursor: never resume verification from rewrite progress.
+            let mut cursor = None;
+            let mut report = SweepReport::default();
+            loop {
+                let batch = sweep.verify_batch(&mut store, cursor.as_ref()).await?;
+                report.merge(batch.report);
+                cursor = batch.checkpoint;
+                if cursor.is_none() {
+                    break;
+                }
+            }
+            println!(
+                "Complete: {}; current: {}; stale: {}; legacy: {}; malformed: {}.",
+                report.is_terminal(),
+                report.current,
+                report.stale,
+                report.legacy,
+                report.malformed
+            );
+        }
+        _ => return Err("unknown maintenance command".into()),
+    }
+    Ok(())
+}
 
 fn rotation_canary(
     path: &str,
@@ -518,6 +638,17 @@ async fn main() -> Result<()> {
         }
         ["put-null", id] => put(&mut connection, id.parse()?, None, &encryption, &indexes).await?,
         ["get", id] => get(&mut connection, id.parse()?, &encryption).await?,
+        #[cfg(feature = "maintenance")]
+        [
+            command @ ("sweep-status"
+            | "sweep-batch"
+            | "sweep-uncheckpointed"
+            | "sweep-verify"
+            | "sweep-conflict"),
+            run,
+        ] => {
+            maintenance(&mut connection, command, run, &encryption, &indexes).await?;
+        }
         ["generations", id] => {
             let row = sqlx::query("SELECT email, email_lookup FROM users WHERE id = $1")
                 .bind(id.parse::<i64>()?)
@@ -556,7 +687,9 @@ async fn main() -> Result<()> {
         _ => {
             return Err(concat!(
                 "usage: init | put ID EMAIL | put-null ID | get ID | search EMAIL | ",
-                "generations ID | rotation-canary FILE | rotation-ready FILE"
+                "generations ID | rotation-canary FILE | rotation-ready FILE; ",
+                "with maintenance: sweep-status RUN | sweep-batch RUN | sweep-verify RUN | ",
+                "sweep-uncheckpointed RUN | sweep-conflict RUN"
             )
             .into());
         }
