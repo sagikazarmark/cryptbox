@@ -4,27 +4,40 @@ Repository docs describe this checkout. For released APIs, select your dependenc
 version on [docs.rs](https://docs.rs/cryptbox/0.5.0/cryptbox/); stored-byte Serde support
 is unreleased even though this checkout still declares 0.5.0.
 
-## Understand
+## Start here
 
-- [Concepts](concepts.md): components, ownership, binding, generations, and assurance.
-- [Threat model](security.md): protections, assumptions, limitations, and review status.
-- [Wire format](wire-format.md): exact encryption/index recipes, padding, and vectors.
-- [Features and platforms](features.md): configuration and supported constraints.
-- [Glossary](../CONTEXT.md) and [API reference](https://docs.rs/cryptbox/0.5.0/cryptbox/).
+Choose the entry point that fits your question:
 
-## Build
+- **Try it:** [encrypt your first field](first-field.md), a small in-memory tutorial.
+- **Understand it:** [how CryptBox works](concepts.md), from application value to storage and back.
+- **Assess it:** [security and threat model](security.md), including current review status.
 
-- [Encrypt your first field](first-field.md).
-- [Durable SQLx storage and verified search](searchable-sqlx.md).
-- Examples: [minimal SQLite](first-field-sqlite.md), [Serde stored values](stored-values.md),
-  [custom profiles and providers](custom-profile.md).
-- [Application testing and diagnostics](testing.md).
+## Integrate into a project
+
+- [Integration design and trade-offs](integration.md): persistent schema, storage boundaries, providers, and search.
+- [Store a field durably in SQLite](first-field-sqlite.md): encryption-only tutorial with a separate-process read.
+- [Build searchable SQLx storage](searchable-sqlx.md): a complete tutorial for atomic writes and verified equality lookup on PostgreSQL or SQLite.
+- [Automatic SQLx adapters](testing.md#automatic-adapters): a runnable example and its key-context lifetime.
+- [Serialize stored values](stored-values.md): explicit ciphertext and index serialization with Serde (unreleased).
+- [Customize profiles and providers](custom-profile.md): codecs, normalization, key sources, and wrapped plaintext.
+- [Testing and diagnostics](testing.md): isolated providers and sanitized failures.
+- [Adopt existing data](legacy-migration.md): prerequisites and rollout for plaintext or previous-solution ciphertext.
 
 ## Operate
 
 - [Key lifecycle](key-rotation.md): stage, promote, roll back, retire, and recover.
 - [Maintenance sweeps](reencryption-sweep.md): rewrite and verify existing storage.
-- [Legacy migration](legacy-migration.md): adopt encryption over existing data.
+- [Retirement and recovery](key-rotation.md#retirement-and-recovery): backup dependencies, isolated restores, and online key removal.
+- [Close a legacy migration](legacy-migration.md#verification-and-closing-the-window): verify converted data and return to strict reads.
+
+## Reference
+
+- [API](https://docs.rs/cryptbox/0.5.0/cryptbox/).
+- [Features and platforms](features.md): feature flags, release differences, and supported constraints.
+- [Wire format](wire-format.md): exact layouts, encryption/index recipes, padding, and vectors.
+- [Plaintext and key ownership](ownership.md): borrowing, cloning, and erasure contracts.
+- [What each check establishes](security.md#what-each-check-establishes): parsing, authentication, candidate comparison, and migration-state verification.
+- [Glossary](glossary.md).
 
 ## Runnable examples
 
@@ -40,7 +53,7 @@ Run from a checkout. SQLx examples need the indicated backend feature.
 | [Plaintext migration](../examples/plaintext_migration.rs) | `cargo run --locked --example plaintext_migration --features migrate,sqlx-sqlite` |
 | [Blind-index lookup](../examples/blind_indexes.rs) | `cargo run --locked --example blind_indexes` |
 | [Stored values](../examples/stored_values.rs) | `cargo run --locked --example stored_values --features serde` |
-| [SQLite](../examples/sqlx_sqlite.rs) | `cargo run --locked --example sqlx_sqlite --features sqlx-sqlite` |
+| [SQLite](../examples/sqlx_sqlite.rs) | `cargo run --locked --example sqlx_sqlite --features sqlx-sqlite -- --help` (see [provisioning and write/read steps](first-field-sqlite.md)) |
 
 ## Contribute
 

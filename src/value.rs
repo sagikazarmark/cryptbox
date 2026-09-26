@@ -21,7 +21,7 @@ pub type ProfileContext<T, Profile> =
 /// serialization, then deserialize and decrypt explicitly when reading.
 /// Encryption/preparation borrows and retains this source. Cloning clones `T`,
 /// potentially creating another plaintext allocation; decryption creates another
-/// owned `T`. See the development [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
+/// owned `T`. See the development [ownership explanation].
 ///
 /// Plaintext comparison must also be explicit:
 ///
@@ -33,6 +33,10 @@ pub type ProfileContext<T, Profile> =
 /// let right = Encrypted::<_, Profile>::new("secret");
 /// let _ = left == right;
 /// ```
+///
+#[doc = concat!(
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub struct Encrypted<T, Profile> {
     value: T,
     profile: PhantomData<fn() -> Profile>,
@@ -295,8 +299,12 @@ where
 /// `Encrypted<String, Profile>`, use `Secret::new(decrypted.into_secret())`.
 /// If the profile value itself is `Secret<String>`, supply `Codec<Secret<String>>`;
 /// [`crate::Utf8`] implements only `Codec<String>`.
-/// See the development [custom-profile recipe](https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md)
-/// and canonical [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
+/// See the development [custom-profile recipe] and canonical [ownership explanation].
+///
+#[doc = concat!(
+    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub struct Secret<T: Zeroize> {
     value: Zeroizing<T>,
 }

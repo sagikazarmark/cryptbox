@@ -13,8 +13,12 @@ use crate::{Binding, Codec, KeyContext, Padding};
 /// providers. [`Binding`] and [`Padding`] are sealed to built-in policies;
 /// row/tenant binding is future work. The codec must implement `Codec<T>` for the
 /// exact application type, including any secret wrapper. See the development
-/// [custom-profile recipe](https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md)
-/// and canonical [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
+/// [custom-profile recipe] and canonical [ownership explanation].
+///
+#[doc = concat!(
+    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub trait EncryptionProfile<T>: Sized + 'static {
     /// The codec used before encryption and after decryption.
     ///

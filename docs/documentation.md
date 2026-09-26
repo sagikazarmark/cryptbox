@@ -102,8 +102,28 @@ At release, update package/version labels and docs.rs links together; verify eac
 destination exists in that release. Label development-only features at their use.
 Format and suite IDs change only when their contracts change.
 
-Each page should serve one task or reference contract. Keep one maintained
-explanation per fact, with brief point-of-use warnings where needed. Run relevant
+## Writing for the reader's task
+
+Use [Diátaxis](https://diataxis.fr/compass/) to clarify the reader need served by a
+page or section:
+
+- **Tutorial:** guide a learning exercise with a reliable path and observable results.
+- **How-to:** help a reader accomplish a bounded task in their own application.
+- **Explanation:** develop understanding of a question, its reasons, and trade-offs.
+- **Reference:** describe exact contracts that readers consult while working.
+
+Difficulty does not determine the form: an advanced exercise is still a tutorial.
+Keep introductory concepts separate from exhaustive contracts, and give optional
+tutorial branches a clear completion point. An automated test scenario is a
+rehearsal, not a manual walkthrough. When linking a next step, check that its
+prerequisites match the data and configuration left by the preceding exercise.
+
+The documentation index follows reader journeys; it is not a mandatory reading
+order. Security and reference should be directly accessible at every stage.
+Improve pages [incrementally](https://diataxis.fr/how-to-use-diataxis/) rather than
+creating empty categories or a separate page for every change of subject.
+
+Keep one maintained explanation per fact, with brief point-of-use warnings where needed. Run relevant
 automated checks; for materially changed instructions, have an unfamiliar reader
 attempt the affected task and record blockers in the PR. Research, review results,
 and unfinished work belong in issues/PRs, not recurring documentation reports.

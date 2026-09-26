@@ -19,7 +19,11 @@ struct KeyMaterial<Id> {
 /// Cloning shares the reference-counted allocation; material is zeroized when
 /// the last handle drops, not when any one provider or handle drops. Caller-owned
 /// input copies and operating-system copies are outside this guarantee. See the
-/// development [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
+/// development [ownership explanation].
+///
+#[doc = concat!(
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 #[derive(Clone)]
 pub struct EncryptionKey(Arc<KeyMaterial<KeyId>>);
 
@@ -100,7 +104,11 @@ impl fmt::Debug for EncryptionKey {
 /// permanently identify these exact bytes and must never be reused for different
 /// material. Cloning shares the allocation; its key bytes are zeroized only after
 /// the last handle drops. Caller-owned input and OS copies are separate. See the
-/// development [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
+/// development [ownership explanation].
+///
+#[doc = concat!(
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 #[derive(Clone)]
 pub struct BlindIndexKey(Arc<KeyMaterial<IndexKeyId>>);
 
@@ -237,8 +245,10 @@ fn initialize_key_material<Id>(
 ///
 /// See the development [custom-profile recipe] and canonical [ownership explanation].
 ///
-/// [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
-/// [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
+#[doc = concat!(
+    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub trait EncryptionKeyProvider: Send + Sync {
     /// Returns the sole key used for new encryption.
     ///
@@ -279,8 +289,10 @@ pub trait EncryptionKeyProvider: Send + Sync {
 ///
 /// See the development [custom-profile recipe] and canonical [ownership explanation].
 ///
-/// [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
-/// [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
+#[doc = concat!(
+    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub trait BlindIndexKeyProvider: Send + Sync {
     /// Returns the sole key used for new stored indexes.
     ///
@@ -475,7 +487,11 @@ static GLOBAL_PROVIDERS: OnceLock<GlobalProviders> = OnceLock::new();
 /// providers. Synchronizing individual provider calls does not isolate a whole
 /// test: cases replacing shared keys must be serialized for their entire
 /// setup/use lifetime or run in separate processes. See the
-/// [testing guide](https://github.com/sagikazarmark/cryptbox/blob/main/docs/testing.md#automatic-adapters).
+/// [testing guide].
+///
+#[doc = concat!(
+    "[testing guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/testing.md#automatic-adapters",
+)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GlobalKeyContext;
 

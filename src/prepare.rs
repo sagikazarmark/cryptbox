@@ -18,7 +18,11 @@ struct PreparedIndex {
 /// and index bytes into the storage operation, then let it drop.
 /// Dropping preparation releases its borrow, not the source plaintext. The
 /// application owns persistence and atomicity. See the development
-/// [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
+/// [ownership explanation].
+///
+#[doc = concat!(
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub struct Prepared<'a, T, Profile>
 where
     Profile: EncryptionProfile<T>,

@@ -7,3 +7,5 @@ edition = "2024"
 cryptbox = { version = "=0.5.0", features = ["sqlx-sqlite"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["sqlite"] }
 futures-executor = "0.3.34"
+hex = "0.4.3"
+zeroize = { version = "1.8.1", features = ["alloc"], default-features = false }

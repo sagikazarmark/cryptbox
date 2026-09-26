@@ -12,8 +12,12 @@ use crate::Error;
 /// This trait is sealed: select [`NoPadding`], [`PadToBlock`], or [`PadToLength`].
 /// Applications cannot implement another padding policy. Codecs, index normalizers,
 /// profiles, and key providers are extensible; see the development
-/// [custom-profile recipe](https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md)
-/// and [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
+/// [custom-profile recipe] and [ownership explanation].
+///
+#[doc = concat!(
+    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub trait Padding: private::Sealed + Sized + 'static {
     /// Applies this policy to encoded plaintext.
     #[doc(hidden)]

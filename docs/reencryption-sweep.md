@@ -41,6 +41,11 @@ not a reset because valid cursors may be zero or negative.
 
 ## Durable PostgreSQL and SQLite walkthrough
 
+This section runs an automated rehearsal. It is separate from the nullable
+dataset created by the [searchable tutorial](searchable-sqlx.md): the runner
+provisions a fresh non-NULL population. To operate your own nullable application,
+use the explicit NULL policy and custom-store/manual-loop boundary described below.
+
 ### Prepare the consumer
 
 Use the [consumer setup](searchable-sqlx.md), [complete source](snippets/searchable.rs)
@@ -134,7 +139,7 @@ These behaviors make the following separate audit necessary.
 
 ## Verification And Retirement
 
-This is the canonical whole-store audit procedure. The [assurance concepts](concepts.md#assurance)
+This is the canonical whole-store audit procedure. The [assurance reference](security.md#what-each-check-establishes)
 explain what each check establishes. Fix the intended profile, binding context,
 codec, index specifications, normalization, precision and allowed generations
 from trusted application schema, not stored metadata.

@@ -19,7 +19,7 @@ with [custom-profile.toml](snippets/custom-profile.toml), copy the example to
 `src/main.rs`, and run `cargo run`. `zeroize` is a direct dependency because the
 extension interfaces return `Zeroizing<Vec<u8>>`.
 
-Keys are ephemeral; use [durable key/ID pairs](searchable-sqlx.md#2-provision-durable-key-generations-once)
+Keys are ephemeral; use [durable key/ID pairs](integration.md#key-providers-and-key-contexts)
 before persisting data.
 
 ## Why these implementations?
@@ -46,11 +46,12 @@ before persisting data.
 | [BlindIndexKeyProvider](https://docs.rs/cryptbox/0.5.0/cryptbox/trait.BlindIndexKeyProvider.html) | Also enumerate the current generation first, then every other readable generation once. Provision index roots independently from encryption roots. |
 
 Preallocate before copying sensitive bytes: `Zeroizing<Vec<u8>>` wipes its current
-allocation, not allocations already released by growth. Protect failure paths too.
-See [ownership limits](concepts.md#plaintext-and-key-ownership).
+allocation, not allocations already released by growth. When growth is unavoidable,
+copy into a new zeroizing allocation, then wipe the old allocation before release.
+Protect failure paths too. See the [ownership contracts](ownership.md).
 
 `EncryptionProfile`, `Field` and `KeyContext` are also extension points;
 **`Binding` and `Padding` are sealed**. Choose built-in policies. A codec or
 normalizer cannot add row/tenant authentication. Preserve the
-[persistent schema](https://docs.rs/cryptbox/0.5.0/cryptbox/#persistent-schema)
-when adapting this example, then integrate it into [SQLx storage](searchable-sqlx.md).
+[persistent schema](integration.md#persistent-schema)
+when adapting this example, then integrate it into [SQLx storage](first-field-sqlite.md).

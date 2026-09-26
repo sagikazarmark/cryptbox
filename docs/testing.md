@@ -19,9 +19,13 @@ cargo test --lib -- --test-threads=2
 
 Expect two passing tests, including concurrent round trips and verified candidate
 comparison. Predictable roots and reused IDs are isolated test fixtures, never a
-[durable provisioning pattern](searchable-sqlx.md#2-provision-durable-key-generations-once).
+[durable provisioning pattern](integration.md#key-providers-and-key-contexts).
 
 ## Automatic adapters
+
+For the design choice between automatic adapters and explicit ciphertext storage,
+see [storage boundaries](integration.md#storage-boundaries). This example shows
+how to exercise the automatic path with isolated process-lifetime key contexts.
 
 Automatic SQLx encryption/decryption resolves providers through the profile's
 `Keys: KeyContext`. The [automatic example](snippets/testing-automatic.rs) selects

@@ -49,7 +49,7 @@ structure but do not establish authenticity; ciphertext is authenticated only
 when decrypted, and blind-index candidates must still be compared against
 decrypted plaintext. That comparison does not authenticate index metadata;
 checking stored-index consistency requires separate recomputation. See the
-development [stored-value walkthrough](https://github.com/sagikazarmark/cryptbox/blob/main/docs/stored-values.md).
+development [stored-value walkthrough].
 
 ## Platforms and tested configurations
 
@@ -73,9 +73,14 @@ compilation (each backend with and without `migrate`), and default/all-feature
 rustdoc. Dagger uses the configured Rust Linux container, runs examples, and
 supplies PostgreSQL to execute the live round-trip and packaged-sweep tests,
 including the otherwise ignored cases. See the development
-[live-backend check instructions](https://github.com/sagikazarmark/cryptbox/blob/main/docs/documentation.md#live-postgresql).
+[live-backend check instructions].
 These are tested configurations, not a reviewed target allowlist; no macOS,
 Windows, browser, or embedded CI matrix is claimed.
 
-Next: use the development [task index](https://github.com/sagikazarmark/cryptbox/blob/main/docs/README.md)
+Next: use the development [task index]
 or consult the [0.5.0 API](https://docs.rs/cryptbox/0.5.0/cryptbox/).
+
+<!-- Rustdoc supplies repository-qualified definitions before including this page. -->
+[stored-value walkthrough]: stored-values.md
+[live-backend check instructions]: documentation.md#live-postgresql
+[task index]: README.md

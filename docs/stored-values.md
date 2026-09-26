@@ -19,7 +19,7 @@ example to `src/main.rs`, and run `cargo run`. The manifest's path dependency
 selects the checkout. `serde_json` is the storage format; CryptBox's `json` codec
 feature is unnecessary because the plaintext codec is `Utf8`.
 
-The fixed keys are public fixtures. For persistence, use [durable key/ID pairs](searchable-sqlx.md#2-provision-durable-key-generations-once)
+The fixed keys are public fixtures. For persistence, use [durable key/ID pairs](integration.md#key-providers-and-key-contexts)
 and write ciphertext and indexes atomically.
 
 ## Follow The Value Through Storage
@@ -35,5 +35,5 @@ and write ciphertext and indexes atomically.
   normalized candidate comparison and stored-index consistency are separate checks.
 
 The example's damaged, current-generation ciphertext still deserializes but fails
-decryption. See [assurance distinctions](concepts.md#assurance) and the
-[full audit and retirement procedure](reencryption-sweep.md#verification-and-retirement).
+decryption. See [what each check establishes](security.md#what-each-check-establishes)
+and [integration design](integration.md#storage-boundaries) for storage choices.

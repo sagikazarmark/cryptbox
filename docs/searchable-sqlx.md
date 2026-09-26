@@ -1,8 +1,16 @@
 # Build a durable, searchable SQLx application
 
-**Guide · published CryptBox 0.5.0 API.** Prepared writes, nullable/deferred reads,
-verified lookup and process restarts on PostgreSQL or SQLite.
+**Tutorial · published CryptBox 0.5.0 API.** Build a sample application with
+prepared writes, nullable/deferred reads, verified lookup, and process restarts.
 [All tasks](README.md) · [Security](security.md).
+
+Choose PostgreSQL or SQLite and follow steps 1–5 for the core exercise. Query
+macros and operations are optional follow-ups. For encryption without search,
+start with [durable SQLite storage](first-field-sqlite.md). For decisions in an
+existing application, read [integration design](integration.md).
+
+This is a separate sample application; its setup creates a new project and new
+key generations rather than reusing the first-field tutorial's files.
 
 ## 1. Create the consumer
 
@@ -94,7 +102,11 @@ Both schemas store complete ciphertext envelopes and index tokens in `BYTEA`/`BL
 columns. The lookup index is **non-unique**. A check constraint pairs `NULL` email
 with `NULL` lookup; it does not establish cryptographic consistency. Preserve
 field/index IDs, codec, binding, padding, normalization and precision as
-[persistent schema](https://docs.rs/cryptbox/0.5.0/cryptbox/#persistent-schema).
+[persistent schema](integration.md#persistent-schema).
+
+This tutorial supports nullable fields. The packaged maintenance rehearsal linked
+at the end uses a separate non-NULL population; it cannot sweep this tutorial's
+nullable dataset unchanged.
 
 ## 4. Storage operations
 
@@ -226,7 +238,8 @@ Probe **every readable index generation**, authenticate/decrypt candidates, then
 compare normalized plaintext. False candidates are ordinary non-matches;
 authentication/decoding failures fail lookup. Bound or paginate large candidate
 sets without skipping verification. Candidate comparison cannot detect omitted
-rows or authenticate index metadata; see [assurance](concepts.md#assurance).
+rows or authenticate index metadata; see
+[what each check establishes](security.md#what-each-check-establishes).
 
 Blind indexes reveal equality/frequency and cannot enforce uniqueness. `NoPadding`
 reveals encoded length; field binding does not prevent same-field substitution or replay.
@@ -280,7 +293,14 @@ consumer put 4 bob@example.com
 The fixture copies row 3's index onto row 4. Search reports
 `Matches: [1, 3]; rejected: 1.`; the final normal write restores consistency.
 
+You have now written and updated encrypted values, read them across process
+restarts, and searched across readable index generations while rejecting a false
+candidate. The core tutorial is complete. Continue to the optional sections only
+when those features are relevant to your application.
+
 ## 6. Verify SQLx query macros and type overrides
+
+**Optional:** use this section if your application uses SQLx compile-time query macros.
 
 Dynamic `query`/`QueryBuilder` needs no build-time database. `query!` needs a
 reachable `DATABASE_URL` with the schema already applied (or a matching SQLx
@@ -332,12 +352,25 @@ is still set but the database is unavailable.
 
 ## 7. Continue rotation and verify the integration
 
+**Optional operational follow-up:** first review [testing and diagnostics](testing.md)
+when adapting the application to your project.
+
 This application's providers are startup snapshots. Follow [fleet rotation](key-rotation.md)
 to stage readable generations on every reader before promoting writers. Promotion
 does not rewrite old rows; retain keys required by data and recoverable backups.
-Continue with [maintenance sweeps](reencryption-sweep.md) or [legacy migration](legacy-migration.md).
-The latter's optional feature also needs [migration.rs](snippets/migration.rs) as
-`src/migration.rs`.
+The [maintenance](reencryption-sweep.md#durable-postgresql-and-sqlite-walkthrough)
+and [legacy migration](legacy-migration.md#durable-mixed-format-walkthrough)
+automated scenarios provision their own data. They are separate rehearsals, not
+commands to run unchanged against this tutorial's resulting database: row 2 is
+NULL, while the packaged sweep and audit require non-NULL values in every swept
+column. Operating a nullable application requires a custom `SweepStore` or manual
+loop with an explicit NULL policy and matching audit coverage. See
+[packaged-store limits](reencryption-sweep.md#prepare-the-consumer).
+
+For adoption over existing plaintext or foreign ciphertext, review the
+[migration prerequisites](legacy-migration.md#preconditions) before changing
+writes. The consumer's optional legacy feature also needs
+[migration.rs](snippets/migration.rs) as `src/migration.rs`.
 
 When finished, `docker stop cryptbox-searchable-postgres` removes the disposable
 service and its data. SQLite's `users.db` and the key files persist until removed.

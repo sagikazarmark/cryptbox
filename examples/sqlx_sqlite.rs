@@ -1,9 +1,19 @@
-//! Stores encrypted values in an in-memory `SQLite` database through `SQLx`.
+//! Writes and reads a persistent `SQLite` field in separate processes through `SQLx`.
 
-use std::error::Error;
+use std::{error::Error, fs::File, io::Read, path::Path};
 
-use cryptbox::{Ciphertext, Encrypted, EncryptionKey, LocalEncryptionKeyring};
-use sqlx::{Connection, Row, sqlite::SqliteConnection};
+use cryptbox::{Ciphertext, Encrypted, EncryptionKey, KeyId, LocalEncryptionKeyring, key_id};
+use sqlx::{Connection, Row, sqlite::SqliteConnectOptions, sqlite::SqliteConnection};
+use zeroize::Zeroizing;
+
+// Demo generation ID: preserve this ID AND the independently provisioned root on restart.
+const ENCRYPTION_KEY_ID: KeyId = key_id!("40000000-0000-4000-8000-000000000004");
+const DEMO_EMAIL: &str = "mark@example.com";
+
+enum Command {
+    Write,
+    Read,
+}
 
 cryptbox::profile! {
     UserEmail: String {
@@ -15,34 +25,111 @@ cryptbox::profile! {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Ephemeral keys and database: load stable key/ID pairs for durable storage.
-    let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+    let args: Vec<_> = std::env::args_os().skip(1).collect();
+    if args.is_empty() || (args.len() == 1 && args[0] == "--help") {
+        println!("Usage: sqlx_sqlite <write|read> DATABASE KEY_FILE");
+        return Ok(());
+    }
+    let [command, database, key_file] = args.as_slice() else {
+        return Err("Usage: sqlx_sqlite <write|read> DATABASE KEY_FILE".into());
+    };
+    let command = if command == "write" {
+        Command::Write
+    } else if command == "read" {
+        Command::Read
+    } else {
+        return Err("Expected write or read".into());
+    };
 
-    futures_executor::block_on(run(&keys))
+    // Fail before opening storage. Never generate a replacement for a missing root.
+    let keys = load_keys(Path::new(key_file))?;
+    futures_executor::block_on(run(command, Path::new(database), &keys))
 }
 
-async fn run(keys: &LocalEncryptionKeyring) -> Result<(), Box<dyn Error>> {
-    let mut connection = SqliteConnection::connect("sqlite::memory:").await?;
-    sqlx::query("CREATE TABLE users (email BLOB NOT NULL)")
-        .execute(&mut connection)
-        .await?;
+fn load_keys(path: &Path) -> Result<LocalEncryptionKeyring, Box<dyn Error>> {
+    // Read directly into an erased buffer, including on read/decode failure. Limit input
+    // to 64 hex digits plus an optional LF or CRLF; never include input in errors.
+    let mut input = Zeroizing::new(Vec::with_capacity(67));
+    File::open(path)
+        .map_err(|_| "Cannot open encryption key file")?
+        .take(67)
+        .read_to_end(&mut input)
+        .map_err(|_| "Cannot read encryption key file")?;
+    let invalid = "Encryption key file must contain 64 hex digits with an optional newline";
+    let hex = input
+        .strip_suffix(b"\r\n")
+        .or_else(|| input.strip_suffix(b"\n"))
+        .unwrap_or(&input);
+    if hex.len() != 64 {
+        return Err(invalid.into());
+    }
+    let mut root = Zeroizing::new([0_u8; 32]);
+    hex::decode_to_slice(hex, root.as_mut()).map_err(|_| invalid)?;
+    Ok(LocalEncryptionKeyring::new(
+        EncryptionKey::new(ENCRYPTION_KEY_ID, *root),
+        [],
+    )?)
+}
 
-    let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
+async fn run(
+    command: Command,
+    database: &Path,
+    keys: &LocalEncryptionKeyring,
+) -> Result<(), Box<dyn Error>> {
+    let options = SqliteConnectOptions::new()
+        .filename(database)
+        .create_if_missing(matches!(command, Command::Write))
+        .read_only(matches!(command, Command::Read));
+    let mut connection = SqliteConnection::connect_with(&options).await?;
+    match command {
+        Command::Write => write(&mut connection, keys).await?,
+        Command::Read => read(&mut connection, keys).await?,
+    }
+    connection.close().await?;
+    match command {
+        Command::Write => println!("Encrypted field stored. Run read in a new process."),
+        Command::Read => {
+            println!("Persistent SQLite read succeeded; demonstration value verified.");
+        }
+    }
+    Ok(())
+}
+
+async fn write(
+    connection: &mut SqliteConnection,
+    keys: &LocalEncryptionKeyring,
+) -> Result<(), Box<dyn Error>> {
+    let email = Encrypted::<_, UserEmail>::new(DEMO_EMAIL.to_owned());
     let prepared = email.prepare_with(&(), keys)?;
-    sqlx::query("INSERT INTO users (email) VALUES (?)")
-        .bind(prepared.ciphertext())
-        .execute(&mut connection)
+    let mut transaction = connection.begin().await?;
+    sqlx::query("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email BLOB NOT NULL)")
+        .execute(&mut *transaction)
         .await?;
 
-    let row = sqlx::query("SELECT email FROM users")
-        .fetch_one(&mut connection)
+    // A second write fails on the primary key instead of replacing the demonstration row.
+    sqlx::query("INSERT INTO users (id, email) VALUES (1, ?)")
+        .bind(prepared.ciphertext())
+        .execute(&mut *transaction)
+        .await?;
+    transaction.commit().await?;
+    Ok(())
+}
+
+async fn read(
+    connection: &mut SqliteConnection,
+    keys: &LocalEncryptionKeyring,
+) -> Result<(), Box<dyn Error>> {
+    let row = sqlx::query("SELECT email FROM users WHERE id = 1")
+        .fetch_one(connection)
         .await?;
     let ciphertext: Ciphertext<String, UserEmail> = row.try_get("email")?;
     let decrypted = ciphertext.decrypt_with(&(), keys)?;
 
     assert!(ciphertext.as_bytes().starts_with(b"CBX\0"));
-    assert_eq!(decrypted.expose_secret(), "mark@example.com");
-    println!("Field-bound SQLite round trip succeeded.");
-
+    // Unlike assert_eq!, this cannot print plaintext on a failed assertion.
+    assert!(
+        decrypted.expose_secret() == DEMO_EMAIL,
+        "Unexpected demo value"
+    );
     Ok(())
 }

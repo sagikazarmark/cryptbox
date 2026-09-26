@@ -1,46 +1,111 @@
-# Experimental Wire Format
+# Wire Format
 
-**Reference · current experimental formats.** [All tasks and versions](README.md).
+CryptBox stores encrypted values as binary **envelopes**: public metadata followed
+by encrypted bytes and an authentication tag. Searchable fields may also have a
+separate **blind index**, a deterministic lookup value derived from normalized
+plaintext. This document defines both stored representations and the recipes
+needed to reproduce them.
 
-This document records ciphertext format **1**, blind-index format **1**, and
-encryption suite ID **1**, implemented by crate **0.5.0**. The original design
-generation called “v0.1” is a separate historical label.
-They are not stable protocol commitments and must receive focused cryptographic
-review plus independently generated vectors before a production release.
+| Format | Format version | Suite ID |
+| --- | --- | --- |
+| [Ciphertext](#envelope) | 1 | [1](#encryption-suite-1) |
+| [Blind index](#blind-index-format-1) | 1 | — |
 
-Next: follow the [security review path](security.md#security-review-path) for
-suite research, proposed policy, and outstanding gates.
+> [!WARNING]
+> **These wire formats are under development.**
+>
+> Although they are in reasonably good
+> shape, there are no commitments to stability or backward compatibility, and
+> they may change. **Use them at your own risk.**
+>
+> No cryptography review has been conducted yet. A focused review and independently
+> generated test vectors are still required.
 
-All identifiers use their 16-byte RFC UUID network-order representation. All
-multibyte integers are unsigned big-endian values.
-In the recipes, `||` concatenates raw bytes, `\0` is one NUL byte (`00`), and
-slice endpoints are exclusive. Quoted labels are ASCII bytes, without quotes;
-UUID strings and hexadecimal displays must be decoded, not hashed as text.
+## Versions and identifiers
+
+The ciphertext envelope carries three identifiers with different jobs:
+
+- **Format version** identifies the envelope structure: how its bytes are parsed.
+- **Suite ID** identifies the complete encryption construction: how keys are
+  derived, bytes are encrypted, and metadata is authenticated.
+- **`KeyId`** identifies the encryption-key generation: which root key the
+  provider must supply to decrypt this value. The ID is public; key material is
+  never stored in the envelope.
+
+Format version `1` and suite ID `1` are separate identifiers that happen to have
+the same value. They are CryptBox protocol identifiers, independent of the crate's
+release version. Rotating keys changes the key generation used for new values;
+it does not change the format or suite.
+
+Blind indexes have their own format version and `IndexKeyId`. Their format
+defines the derivation construction directly, so they have no separate suite ID.
+
+## Encoding and notation
+
+The format layouts and cryptographic recipes below use these conventions:
+
+- UUID identifiers use their 16-byte RFC UUID network-order representation.
+- Multibyte integers are unsigned big-endian values.
+- Byte literals such as `01`, `80`, and `ff` are hexadecimal.
+- `||` concatenates raw bytes.
+- `\0` is one NUL byte (`00`).
+- Slice endpoints are exclusive.
+- Quoted labels are ASCII bytes, without quotes.
+- UUID strings and hexadecimal displays represent raw bytes; decode them before
+  use rather than hashing their text representation.
 
 ## Encryption Suite 1
 
-Suite ID `1` combines:
+An encryption suite is a complete recipe, rather than just a cipher name.
+Agreeing on XChaCha20-Poly1305 alone would not tell another implementation which
+key to use or which metadata to authenticate. A suite fixes those choices together
+so that a reader can reconstruct exactly the same operation as the writer.
 
-- HKDF-SHA-256 for per-binding operational-key derivation;
-- XChaCha20-Poly1305 with a 32-byte key, 24-byte OS-random nonce, and full 16-byte tag;
-- the exact envelope metadata and expected binding as authenticated data.
+`1` is CryptBox's identifier for the construction defined below. It combines:
 
-Applications cannot compose or register arbitrary primitives. New encryption
-uses suite 1; unknown suites are rejected before authentication because their
-construction is unavailable.
+- **HKDF-SHA-256** derives a 32-byte operational key from the root key, separating
+  its use by format, suite, key generation, and binding. The root key is not used
+  directly to encrypt values.
+- **XChaCha20-Poly1305** encrypts the plaintext and produces a full 16-byte
+  authentication tag. Each encryption uses a fresh 24-byte OS-random nonce, stored
+  alongside the ciphertext so decryption can reproduce the operation.
+- **Authenticated metadata** ties the encrypted bytes to the exact envelope
+  prefix and expected binding. This additional authenticated data (**AAD**) is
+  covered by the tag without itself being encrypted.
+
+This is authenticated encryption with associated data (**AEAD**): decryption
+returns plaintext only if authentication succeeds. Suite 1 is currently the only
+suite CryptBox writes or reads. Suites are built into the library; applications
+cannot register their own combinations. An unknown suite ID is rejected before authentication
+because the reader has no construction with which to verify it.
 
 ### Binding
+
+A binding identifies the expected cryptographic domain of a value. For example,
+binding an email field to a stable `FieldId` prevents its ciphertext from being
+accepted under a different field's binding, even when both use the same root key.
+Field binding identifies a logical field, not a particular row or tenant.
+
+The binding is encoded as:
 
 ```text
 Unbound:             00
 FieldBound(FieldId): 01 || field_id[16]
 ```
 
-The profile supplies the expected binding. The envelope does not select whether
-decryption is bound or unbound. Codec identity/version is also absent: decoding
-is an application-schema decision after authentication and unpadding.
+The profile supplies the expected binding; it is not stored in the envelope.
+This makes the application decide where a value belongs, rather than allowing
+stored bytes to select their own binding. `Unbound` explicitly omits field
+identity, but still authenticates the envelope metadata and encrypted bytes.
+
+Codec identity/version and padding policy are also absent. The application
+schema must supply these to interpret the plaintext after authentication.
 
 ### Envelope
+
+Ciphertext format 1 starts with a 22-byte header containing the magic bytes,
+format version, suite ID, and `KeyId`. The suite determines the remaining layout.
+For suite 1, the nonce extends that header to a 46-byte prefix:
 
 ```text
 offset  size  field
@@ -53,13 +118,22 @@ offset  size  field
 46+N    16    Poly1305 tag
 ```
 
+There is no embedded payload-length field: the enclosing storage or transport
+must supply the envelope boundary. Within that boundary, the last 16 bytes are
+the tag and the bytes between the prefix and tag are the encrypted payload.
+The prefix is readable without a key, but remains untrusted until authentication.
+
 The minimum envelope is 62 bytes and represents empty AEAD plaintext. For an
 unpadded profile, ciphertext leaks encoded plaintext length exactly plus this
 fixed overhead. A padded profile reveals its padded bucket length instead.
 See [size semantics and enforcement](#size-semantics-and-enforcement) for exact
 encoded, padded, and stored lengths and the suite's functional limit.
 
-Exact domain labels include the terminating NUL byte:
+### Key derivation and authenticated data
+
+Fixed labels keep cryptographic operations for different purposes distinct,
+even when other inputs overlap. These labels are protocol bytes, not descriptive
+names that an implementation can change. Each includes its terminating NUL byte:
 
 ```text
 HKDF salt:      "cryptbox/hkdf-sha256/v1\0"
@@ -81,23 +155,19 @@ aad = aad_label || envelope[0..46] || binding
 
 Inputs are an independent 32-byte encryption root, its immutable 16-byte
 `KeyId`, the expected profile binding, and AEAD plaintext bytes (encoded and
-optionally padded as below). Encode `format_version` and `suite_id` as single
-bytes `01`; encode `KeyId` and any `FieldId` as 16 UUID network-order bytes.
-The binding is exactly `00` for `Unbound`, or `01 || field_id[16]` for
-`FieldBound`. Rust names and field diagnostic names are not inputs.
+optionally padded as below). Use the encoding conventions and binding bytes
+above, with `format_version = 01` and `suite_id = 01`. Rust names and field
+diagnostic names are not inputs.
 
 1. Construct `key_info` in the order above. Perform **both** RFC 5869 stages:
    `PRK = HKDF-Extract-SHA256(salt, root_key)` (32-byte PRK), then
    `operational_key = HKDF-Expand-SHA256(PRK, key_info, L=32)`.
-   The salt is the literal 24-byte `cryptbox/hkdf-sha256/v1\0`; it is neither
-   absent nor the nonce. The key-info label is 27 bytes including its NUL.
+   Use the fixed HKDF salt above, not the nonce.
 2. Generate a fresh 24-byte nonce from the operating-system random source for
    each encryption, failing if randomness is unavailable. The fixed nonces in
    the vectors are test inputs only, not a supported application nonce policy.
 3. Construct the 46-byte prefix from magic, version, suite, `KeyId`, and nonce
-   using the offset table. Form `aad = aad_label || prefix || binding` using
-   the 25-byte label including NUL. AAD is 72 bytes unbound or 88 bytes
-   field-bound. The binding comes from the expected profile, not stored metadata.
+   using the offset table. Form `aad = aad_label || prefix || binding`.
 4. Seal the complete AEAD plaintext with XChaCha20-Poly1305 using the 32-byte
    operational key, nonce, and AAD. Append the ciphertext (same length as AEAD
    plaintext) and the full 16-byte tag to the prefix. No text encoding, tag
@@ -113,10 +183,14 @@ does not establish freshness or row identity.
 
 ### Plaintext padding
 
-Profiles may apply ISO/IEC 7816-4 padding to encoded plaintext before passing
-it to the encryption suite. Padding appends one `80` byte followed by `00`
-bytes to the selected block or fixed length. Removal scans backward over zero
-bytes, requires the `80` marker, and strips it. It does not depend on the block
+Encryption preserves payload length, so padding lets a profile hide the exact
+encoded length by expanding it to a block boundary or fixed target. Suite 1 does
+not require padding; it can encrypt any byte length within its size limit.
+
+Profiles that enable padding use ISO/IEC 7816-4 padding before passing encoded
+plaintext to the encryption suite. Padding appends one `80` byte followed by as
+many `00` bytes as needed to reach the selected block or fixed length. Removal
+scans backward over zero bytes, requires the `80` marker, and strips it. It does not depend on the block
 size or fixed length that produced the padding.
 
 For encoded length `E`, `NoPadding` passes through `E` bytes;
@@ -133,51 +207,35 @@ the parameters of an already-padded profile does not prevent old ciphertext
 from decrypting. Re-encryption rewrites authenticated plaintext with the
 profile's current padding parameters.
 
-For `"cryptbox vector"` under `PadToBlock<16>`, the padded plaintext and
-corresponding deterministic test envelope are:
-
-```text
-padded plaintext: 6372797074626f7820766563746f7280
-envelope:         43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b9368a9985aacb04ff8f7b6a677d9665a9ba
-```
-
 ### Size semantics and enforcement
 
 All lengths are byte counts, not character counts or Rust memory sizes:
 
 | Quantity | Definition |
 | --- | --- |
-| Application value | The typed value before encoding, such as a string or JSON object. |
 | `E`: encoded bytes | Codec output before padding. `Utf8` counts UTF-8 bytes: `"é"` has `E = 2`. |
 | `P`: AEAD plaintext | Encoded bytes after padding, including the marker and zero fill when enabled. `NoPadding` gives `P = E`. |
 | `W`: envelope bytes | Complete binary ciphertext: 46-byte prefix, `P` ciphertext bytes, 16-byte tag. `W = P + 62`; excludes text encoding, database framing, and separate indexes. |
 
 Padding boundary examples (ASCII input, one encoded byte per character):
 
-| Padding policy | `E` | Padding bytes | `P` | `W` | Current library result |
+| Padding policy | `E` | Padding bytes | `P` | `W` | Result |
 | --- | ---: | ---: | ---: | ---: | --- |
 | `NoPadding` | 0 | 0 | 0 | 62 | Accepted |
-| `NoPadding` | 1,048,576 | 0 | 1,048,576 | 1,048,638 | Accepted |
-| `NoPadding` | 1,048,577 | 0 | 1,048,577 | 1,048,639 | Accepted |
+| `NoPadding` | 16 | 0 | 16 | 78 | Exact length preserved |
 | `PadToBlock<16>` | 0 | 16 | 16 | 78 | Empty input still padded |
 | `PadToBlock<16>` | 15 | 1 | 16 | 78 | Marker fills block |
 | `PadToBlock<16>` | 16 | 16 | 32 | 94 | Marker starts next block |
-| `PadToBlock<16>` | 1,048,575 | 1 | 1,048,576 | 1,048,638 | Accepted |
-| `PadToBlock<16>` | 1,048,576 | 16 | 1,048,592 | 1,048,654 | Accepted |
-| `PadToLength<1048576>` | 0 | 1,048,576 | 1,048,576 | 1,048,638 | Empty input uses entire target |
-| `PadToLength<1048576>` | 1,048,575 | 1 | 1,048,576 | 1,048,638 | Largest fitting input |
-| `PadToLength<1048576>` | 1,048,576 | — | — | — | `PaddingOverflow`: marker cannot fit |
-
-These cases are exercised by [`tests/padding.rs`](../tests/padding.rs). The
-1 MiB examples illustrate behavior around a historical **proposed**, unaccepted
-cap; they are not an operational recommendation or enforced threshold. See the
-[historical proposal](security.md#historical-references).
+| `PadToLength<16>` | 0 | 16 | 16 | 78 | Empty input uses entire target |
+| `PadToLength<16>` | 15 | 1 | 16 | 78 | Largest fitting input |
+| `PadToLength<16>` | 16 | — | — | — | `PaddingOverflow`: marker cannot fit |
 
 Suite 1 enforces RFC 8439's functional maximum `P <= 274,877,906,880`
 (`(2^32 - 1) * 64`) on encryption and rejects parsed/decrypted payloads implying
 a larger `P`, with `MessageTooLong`. Padding/envelope size arithmetic is checked;
-fixed padding rejects `E >= N` with `PaddingOverflow`. These checks do not enforce
-an operational field-size, encryption-count, key-age, or failed-decryption budget.
+fixed padding rejects `E >= N` with `PaddingOverflow`. This is an algorithmic
+ceiling, not a recommended field size. Applications must choose smaller limits
+appropriate to their workloads; see [application responsibilities](security.md#application-responsibilities).
 
 For an application-selected padded cap `L`, `NoPadding` permits `E <= L`;
 `PadToBlock<N>` permits `E <= N * floor(L / N) - 1` if at least one block fits;
@@ -190,10 +248,13 @@ A size check is not authentication.
 
 ### Key and buffer lifetime
 
-See [plaintext and key ownership](concepts.md#plaintext-and-key-ownership) for
+See [plaintext and key ownership](ownership.md) for
 buffer lifetimes and erasure obligations.
 
 ### Provisional Envelope Vector
+
+These fixed inputs and expected outputs help check byte-for-byte compatibility.
+The first vector encrypts unpadded plaintext with `Unbound`:
 
 ```text
 root key:   1111111111111111111111111111111111111111111111111111111111111111
@@ -215,10 +276,30 @@ binding:    01123456781234423482341234567890ab
 envelope:   43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d
 ```
 
+The padded vector uses the same root key, `KeyId`, nonce, and unbound binding as
+the first vector, with `"cryptbox vector"` padded under `PadToBlock<16>`:
+
+```text
+padded plaintext: 6372797074626f7820766563746f7280
+envelope:         43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b9368a9985aacb04ff8f7b6a677d9665a9ba
+```
+
 ## Blind-Index Format 1
 
-Format 1 combines HKDF-SHA-256, HMAC-SHA-256, and explicit most-significant-bit
-truncation. Root blind-index keys must be independent from encryption keys.
+A blind index supports equality-style lookup without decrypting every stored
+value. Normalization gives values the application considers equivalent the same
+bytes—for example, by lowercasing text for a case-insensitive index. For a given
+index policy and key generation, the same normalized bytes produce the same
+index bytes. Unlike randomized ciphertext, this deliberately
+reveals equality and frequency information.
+
+Format `1` defines both the stored layout and the derivation recipe:
+HKDF-SHA-256 derives an index-specific key, HMAC-SHA-256 computes a keyed digest
+of the normalized value and its context, and truncation retains only the selected
+number of most-significant bits. Fewer retained bits mean more false candidates.
+Root blind-index keys must be independent from encryption keys.
+
+### Stored layout
 
 ```text
 offset  size          field
@@ -228,8 +309,17 @@ offset  size          field
 19      ceil(bits/8)  truncated HMAC
 ```
 
-Valid precision is 1 through 256 bits. For non-byte-aligned precision, unused
-low bits in the final byte are zero and noncanonical stored values are rejected.
+`IndexKeyId` identifies the root-key generation, while the retained bit count
+records the index precision. Valid precision is 1 through 256 bits, giving a total
+stored length of 20 through 51 bytes. For non-byte-aligned precision, unused low
+bits in the final byte are zero and noncanonical stored values are rejected.
+
+### Key derivation and index input
+
+The logical `IndexId` distinguishes indexes, such as two differently normalized
+projections of the same field. It is separate from `IndexKeyId`: one identifies
+the index's meaning, the other its key generation. `IndexId`, binding, and
+normalization come from the application schema and are not stored in the index.
 
 Exact domain labels include the terminating NUL byte:
 
@@ -251,9 +341,9 @@ mac_input = MAC_label || context || normalized_length_be_u64 || normalized_bytes
 Inputs are an independent 32-byte blind-index root (never an encryption root),
 its immutable `IndexKeyId`, the expected binding, logical `IndexId`, retained
 bit count, and normalized bytes. `IndexKeyId`, `IndexId`, and any `FieldId` are
-each 16 UUID network-order bytes. The version is one byte `01`; `bits_be` is
-a two-byte unsigned big-endian count in `1..=256`. The binding is exactly `00`
-for `Unbound`, or `01 || field_id[16]` for `FieldBound`.
+encoded using the UUID convention above, and binding uses the same encoding as
+encryption. The version is one byte `01`; `bits_be` is a two-byte unsigned
+big-endian count in `1..=256`.
 
 1. Run the application's deterministic normalizer for this logical index.
    There is no built-in case folding, Unicode normalization, or text encoding
@@ -265,12 +355,10 @@ for `Unbound`, or `01 || field_id[16]` for `FieldBound`.
    order above. Perform **both** RFC 5869 stages:
    `PRK = HKDF-Extract-SHA256(salt, blind_index_root)` (32-byte PRK), then
    `index_key = HKDF-Expand-SHA256(PRK, key_info, L=32)`.
-   The salt is the literal 24-byte `cryptbox/hkdf-sha256/v1\0` including NUL;
-   the key-info label is 28 bytes including NUL. No nonce is used.
-3. Compute the full 32-byte `HMAC-SHA256(index_key, mac_input)` with the 30-byte
-   MAC label including NUL. Concatenation adds no separators or terminators
-   beyond those explicitly shown; in particular, normalized bytes have no
-   implicit NUL terminator.
+   Use the fixed HKDF salt above. No nonce is used, so derivation is deterministic.
+3. Compute the full 32-byte `HMAC-SHA256(index_key, mac_input)`. Concatenation adds
+   no separators or terminators beyond those explicitly shown; in particular,
+   normalized bytes have no implicit NUL terminator.
 4. Retain the first `ceil(bits / 8)` digest bytes, keeping the most-significant
    `bits` bits. If `r = bits mod 8` is nonzero, AND the final byte with
    `(ff << (8 - r)) & ff`. Append this canonical truncated digest to `header`.
@@ -280,11 +368,11 @@ for `Unbound`, or `01 || field_id[16]` for `FieldBound`.
 Structural parsing rejects unsupported versions, precision outside `1..=256`,
 incorrect total length (including trailing bytes), or nonzero unused low bits.
 A typed `BlindIndex<Spec>` additionally requires the stored precision to equal
-`Spec::BITS`. Binding, `IndexId`, and normalization are not stored and must be
-supplied by the application schema. These inputs domain-separate derivation;
-parsing the representation does not authenticate it or prove consistency with
-ciphertext. Index hits remain candidates requiring authenticated decryption
-and normalized plaintext comparison.
+`Spec::BITS`. Parsing checks structure only; it does not authenticate the stored
+metadata or prove consistency with ciphertext. Because truncation allows different
+values to share an index, index hits remain candidates requiring authenticated
+decryption and normalized plaintext comparison. See the
+[verified search workflow](searchable-sqlx.md) for using these bytes in a query.
 
 ### Provisional Blind-Index Vector
 

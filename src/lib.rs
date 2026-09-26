@@ -29,8 +29,10 @@
 //! `Secret`, and shared key lifetimes, and the [custom-profile recipe] for public
 //! codec, normalizer, and synchronous provider implementations.
 //!
-//! [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
-//! [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
+#![doc = concat!(
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
+    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md",
+)]
 //!
 //! [`Binding`] is sealed to [`Unbound`] and [`FieldBound`], both with unit context
 //! `()`. Thus `&()` is not an opt-out from field binding and does not supply keys.
@@ -54,9 +56,17 @@
 //! settle the persistent schema below and load stable key material and generation
 //! IDs across restarts; see the [first-field tutorial]'s durable-key next step.
 //!
-//! [first-field tutorial]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/first-field.md
+#![doc = concat!(
+    "[first-field tutorial]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/first-field.md",
+)]
 //!
-#![doc = include_str!("../docs/features.md")]
+// Markdown uses the first definition: qualify the shared page's relative links for rustdoc.
+#![doc = concat!(
+    "\n[stored-value walkthrough]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/stored-values.md\n",
+    "[live-backend check instructions]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/documentation.md#live-postgresql\n",
+    "[task index]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/README.md\n\n",
+    include_str!("../docs/features.md"),
+)]
 //!
 //! # Persistent schema
 //!
@@ -64,7 +74,9 @@
 //! and index precision are persistent schema. Stored bytes do not describe all
 //! of them; changing them requires a migration plan. See [schema rules].
 //!
-//! [schema rules]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#persistent-schema
+#![doc = concat!(
+    "[schema rules]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/integration.md#persistent-schema",
+)]
 //!
 //! # Workflows
 //!
@@ -72,8 +84,10 @@
 //! lifecycle, maintenance, and migration. Repository links describe development;
 //! select your dependency version on docs.rs for released API documentation.
 //!
-//! [documentation index]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/README.md
-//! [threat model]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/security.md
+#![doc = concat!(
+    "[documentation index]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/README.md\n",
+    "[threat model]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/security.md",
+)]
 //!
 //! # Security boundaries
 //!

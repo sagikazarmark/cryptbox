@@ -1,6 +1,6 @@
 # Threat model and security boundaries
 
-**Explanation · experimental assurance.** CryptBox encrypts selected application
+CryptBox encrypts selected application
 values before storage. **It is not production-ready.** Ciphertext format 1,
 blind-index format 1, and suite 1 remain experimental; version numbers and passing
 tests do not indicate security approval. [All tasks](README.md).
@@ -63,12 +63,30 @@ equality-style candidate lookup, not ordering, ranges, or full-text search.
   their leakage. Detecting missing rows requires application-owned evidence.
 - Protect logs, traces, crash dumps, swap, configuration, and application copies.
   CryptBox-owned zeroization cannot erase every copy; see
-  [plaintext and key ownership](concepts.md#plaintext-and-key-ownership).
+  [plaintext and key ownership](ownership.md).
 - Treat rotation as selection of a new current generation, not revocation,
   re-encryption, or crypto-shredding. Follow [key lifecycle and recovery](key-rotation.md)
   and the [whole-store audit](reencryption-sweep.md#verification-and-retirement).
   Generation convergence alone establishes neither authenticated readability nor
   index consistency, and live-table convergence does not retire backup dependencies.
+
+## What each check establishes
+
+These checks answer different questions about stored data. Their results are
+distinct from the independent security review status of the implementation.
+
+| Check | Establishes | Does not establish |
+| --- | --- | --- |
+| Parse ciphertext or deserialize stored bytes | Supported structure and lengths | Authenticity or readability |
+| Inspect generations / complete sweep verification | Stored values name the intended generations | Authentication, decodability, or index consistency |
+| Decrypt with the expected profile | Authentication, padding removal, and decoding for that value | Row identity, freshness, or index consistency |
+| Verify a lookup candidate | Its normalized plaintext matches the query | Stored-index authenticity or completeness of query results |
+| Recompute a stored index under its recorded generation | Consistency with authenticated plaintext and the expected index policy at the configured precision | Absence of omitted rows or rollback |
+
+A whole-store audit must cover the complete application-owned population, not only
+rows returned by blind-index queries. Follow the
+[verification procedure](reencryption-sweep.md#verification-and-retirement) before
+retiring keys or closing a migration.
 
 ## Why these constructions
 

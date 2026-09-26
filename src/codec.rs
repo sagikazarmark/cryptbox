@@ -101,8 +101,10 @@ impl std::io::Write for ZeroizingByteBuffer {
 ///
 /// See the development [custom-profile recipe] and canonical [ownership explanation].
 ///
-/// [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
-/// [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
+#[doc = concat!(
+    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub trait Codec<T>: Sized + 'static {
     /// Encodes `value` into an owned, zeroizing plaintext buffer.
     ///

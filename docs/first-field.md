@@ -78,17 +78,20 @@ Expect `Field-bound round trip succeeded.` and exit status 0.
 - Field binding identifies a logical field, not a row or tenant; it does not stop
   same-field substitution or replay. The default `NoPadding` reveals encoded length.
 
-See [the value lifecycle](concepts.md#the-value-lifecycle) for ownership details.
+See [how CryptBox works](concepts.md) for the complete picture.
 
-## 3. Freeze schema decisions before durable storage
+## Next: use durable storage
 
-Keep the field ID, codec compatibility, binding and padding mode stable; when
-adding indexes, also preserve index IDs, normalization and precision. Changes need
-a migration plan. See the [persistent-schema contract](https://docs.rs/cryptbox/0.5.0/cryptbox/#persistent-schema).
+The round trip is complete. To keep values across restarts, follow
+[store your first field in SQLite](first-field-sqlite.md). That tutorial provisions
+one durable encryption generation and reads the stored value in a new process.
 
-### Next: keep keys across restarts
+In your own project, preserve the same key ID/material pairs and the field's
+[persistent schema](integration.md#persistent-schema). Missing keys must not be
+silently replaced. The [integration explanation](integration.md) covers these
+choices before you commit data to storage.
 
-Provision independent encryption/index roots once and reload the **same ID/key
-pairs** on restart. Never silently replace missing keys; retain generations needed
-by stored data and backups. Follow the [durable SQLx guide](searchable-sqlx.md), or
-try the [in-memory SQLite example](first-field-sqlite.md) first.
+If you need lookup, the [searchable SQLx tutorial](searchable-sqlx.md) adds
+independently keyed blind indexes. If the project already has plaintext or
+previous-solution ciphertext, review [legacy adoption](legacy-migration.md)
+before enabling encrypted writes.

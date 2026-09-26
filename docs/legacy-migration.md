@@ -201,6 +201,11 @@ for online key removal and eventual destruction; live closure alone permits neit
 
 ## Durable mixed-format walkthrough
 
+This is an automated rehearsal with its own fresh non-NULL dataset, not a manual
+continuation of the nullable searchable tutorial. The general operating procedure
+is described in the sections above; the test runner exercises it using the sample
+consumer and records expected outcomes in the scenario source.
+
 The [consumer module](snippets/migration.rs) and [migration scenario](../tests/e2e/migration.rs)
 exercise plaintext, authenticated illustrative legacy ciphertext, historical/current
 CryptBox rows, missing indexes and a trusted magic collision. The scenario drives

@@ -8,7 +8,7 @@
 **Application-layer encryption for sensitive data in Rust.**
 
 > [!WARNING]
-> CryptBox is early in development. **Use it at your own risk.**
+> CryptBox is under development. **Use it at your own risk.**
 >
 > Read the [threat model](docs/security.md) for its security boundaries and
 > outstanding review work.
@@ -26,8 +26,9 @@ separate. It does not protect a compromised application, prevent replay or
 same-field cross-row substitution, or hide query patterns. Blind indexes leak
 equality/frequency; every hit requires decrypted, normalized comparison.
 
-[Get started](docs/first-field.md) · [Documentation](docs/README.md) ·
-[Threat model](docs/security.md) · [API](https://docs.rs/cryptbox/0.5.0/cryptbox/)
+[Try it](docs/first-field.md) · [How it works](docs/concepts.md) ·
+[Security](docs/security.md) · [Documentation](docs/README.md) ·
+[API](https://docs.rs/cryptbox/latest/cryptbox/)
 
 Repository docs describe development; select your dependency version on docs.rs.
 Stored-byte Serde support is unreleased.
@@ -73,12 +74,14 @@ The macro selects UTF-8 encoding, field binding, no padding, and the default key
 context. `Encrypted` holds plaintext; `Ciphertext` holds the encrypted envelope.
 `&()` is the unit **binding context**, not a key provider or an opt-out from
 field binding. `&keys` supplies keys explicitly. Encryption borrows `email`, so
-the original plaintext remains in memory. See [concepts and terminology](docs/concepts.md).
+the original plaintext remains in memory. See [how CryptBox works](docs/concepts.md).
 
-For durable data, load the same key/ID pairs after every restart; generate
-encryption and blind-index roots independently. Before storing anything, review
-the [schema and durable-key next steps](docs/first-field.md#3-freeze-schema-decisions-before-durable-storage),
-then follow the [durable SQLx tutorial](docs/searchable-sqlx.md).
+Next, [store the field durably in SQLite](docs/first-field-sqlite.md), or read
+[integration design and trade-offs](docs/integration.md) before applying it to your
+project. If you need equality lookup, continue with the
+[searchable SQLx tutorial](docs/searchable-sqlx.md). For existing plaintext or
+foreign ciphertext, review [legacy adoption](docs/legacy-migration.md) before
+changing writes.
 
 ## Development
 

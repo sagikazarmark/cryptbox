@@ -27,7 +27,7 @@ const sources = {
 const pages = {
   'README.md': ['first-field'],
   'docs/first-field.md': ['first-field-manifest', 'first-field'],
-  'docs/concepts.md': ['lifecycle'],
+  'docs/ownership.md': ['lifecycle'],
   'docs/searchable-sqlx.md': [
     'searchable-put', 'searchable-get', 'searchable-search',
     'searchable-macro-get', 'searchable-macro-put',

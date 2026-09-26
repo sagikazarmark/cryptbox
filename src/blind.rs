@@ -96,8 +96,10 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
 /// See the development [custom-profile recipe] and canonical [ownership explanation].
 /// Bindings and padding remain sealed; a custom normalizer does not add row binding.
 ///
-/// [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
-/// [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
+#[doc = concat!(
+    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
     /// Returns normalized bytes owned by a zeroizing buffer.
     ///
