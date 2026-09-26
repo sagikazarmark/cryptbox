@@ -68,7 +68,7 @@
 //!
 //! # Workflows
 //!
-//! See the [documentation index] for runnable examples, SQLx integration, key
+//! See the [documentation index] for runnable examples, `SQLx` integration, key
 //! lifecycle, maintenance, and migration. Repository links describe development;
 //! select your dependency version on docs.rs for released API documentation.
 //!
@@ -93,6 +93,14 @@
 //! configuration.
 
 #![forbid(unsafe_code)]
+
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;
+
+#[cfg(doctest)]
+#[doc = include_str!("../docs/first-field.md")]
+pub struct FirstFieldDoctests;
 
 mod binding;
 mod blind;

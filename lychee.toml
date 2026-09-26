@@ -6,7 +6,9 @@ no_progress = true
 timeout = 30
 max_retries = 2
 max_concurrency = 8
+default_extension = "md"
 
 # Research cites PDF section fragments; Lychee cannot extract PDF anchors.
-# Check the PDF resource, but not the fragment (see scripts/check-links.sh).
+# Check the PDF resource, but not the fragment.
+remap = ['(https?://[^#]+\.pdf)#\S+ $1']
 # No host-wide exclusions or acceptance of rate-limit/error responses.

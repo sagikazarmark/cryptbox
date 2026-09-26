@@ -212,18 +212,18 @@ destruction of all copies. CryptBox supplies no inventory, escrow or erasure ser
 ## Runnable scenarios
 
 Use the [consumer setup](searchable-sqlx.md) and [test runner](documentation.md#local-checks).
-The [rotation scenario](../scripts/check-rotation-consumer.mjs) exercises staggered
-role promotion and rollback; the [recovery scenario](../scripts/check-recovery-consumer.mjs)
+The [rotation scenario](../tests/e2e/rotation.rs) exercises staggered
+role promotion and rollback; the [recovery scenario](../tests/e2e/recovery.rs)
 exercises preflight restore, online removal and isolated historical lookup.
-From the repository root with Rust/Cargo 1.85+, Node.js 18+, a native C compiler
+From the repository root with Rust/Cargo 1.85+, a native C compiler
 for bundled SQLite, and dependency access:
 
 ```sh
-node scripts/check-searchable-consumer.mjs checkout sqlite
-node scripts/check-searchable-consumer.mjs checkout sqlite recovery
+cargo test --locked --test e2e --all-features sqlite_rotation
+cargo test --locked --test e2e --all-features sqlite_recovery
 ```
 
-The default scenario includes rotation. Use `published` for crates.io 0.5.0;
-rotation also supports `postgres` with a disposable `DATABASE_URL`. Recovery uses
+For live PostgreSQL rotation, see the [test instructions](documentation.md#live-postgresql).
+Recovery uses
 SQLite and does not validate PostgreSQL backup tooling. The runner creates fresh
 fixtures; never start generation-1-only providers against already-promoted data.

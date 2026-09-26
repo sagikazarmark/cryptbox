@@ -28,8 +28,11 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
-      - name: Check SQLx and migration features independently
-        run: sh scripts/check-sqlx-features.sh
+      - name: Install cargo-hack
+        run: cargo install cargo-hack --version 0.6.45 --locked
+
+      - name: Test feature combinations
+        run: cargo hack test --locked --feature-powerset --depth 2
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.20.2 --locked
@@ -51,16 +54,19 @@ jobs:
           cargo run --locked --example sqlx_sqlite --features sqlx-sqlite
 
       - name: Run documentation tests
-        run: cargo test --locked --doc --all-features
+        run: |
+          cargo test --locked --doc
+          cargo test --locked --doc --all-features
 
       - name: Build API documentation
-        run: sh scripts/check-rustdoc.sh
-
-      - name: Check shared snippets and isolated consumers
+        env:
+          RUSTDOCFLAGS: -D warnings
         run: |
-          node scripts/doc-snippets.mjs
-          node scripts/check-consumers.mjs checkout
-          node scripts/check-consumers.mjs published
+          cargo doc --locked --no-deps --no-default-features
+          cargo doc --locked --no-deps --all-features
+
+      - name: Check shared snippets
+        run: node scripts/doc-snippets.mjs
 
       - name: Check generated lifecycle diagram
         run: |

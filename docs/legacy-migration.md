@@ -201,21 +201,21 @@ for online key removal and eventual destruction; live closure alone permits neit
 
 ## Durable mixed-format walkthrough
 
-The [consumer module](snippets/migration.rs) and [migration scenario](../scripts/check-migration-consumer.mjs)
+The [consumer module](snippets/migration.rs) and [migration scenario](../tests/e2e/migration.rs)
 exercise plaintext, authenticated illustrative legacy ciphertext, historical/current
 CryptBox rows, missing indexes and a trusted magic collision. The scenario drives
 failure/quarantine/recovery, replay and manual repairs, then verifies closure.
-The [runner](../scripts/check-searchable-consumer.mjs) additionally removes the
-online module/key and rebuilds without migration features for strict smoke checks.
+The scenario additionally removes the online legacy key and rebuilds without the
+legacy handler or migration features for strict smoke checks.
 
-With Rust/Cargo 1.85+, Node.js 18+, a native C compiler for bundled SQLite, and
+With Rust/Cargo 1.85+, a native C compiler for bundled SQLite, and
 dependency access, run from the repository root:
 
 ```sh
-node scripts/check-searchable-consumer.mjs checkout sqlite migration
+cargo test --locked --test e2e --all-features sqlite_migration
 ```
 
-Use `published` for crates.io 0.5.0, or `postgres` with a disposable `DATABASE_URL`.
+For live PostgreSQL, see the [test instructions](documentation.md#live-postgresql).
 The runner creates independent keys and fresh persistent fixtures; damage/repair
 commands are for those fixtures only. For manual setup, use the [SQLx tutorial](searchable-sqlx.md),
 copy `migration.rs` to `src/migration.rs`, enable `legacy-migration`, and provision

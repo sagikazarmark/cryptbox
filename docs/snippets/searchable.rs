@@ -562,9 +562,9 @@ async fn run() -> Result<()> {
     {
         ["init"] => {
             #[cfg(feature = "postgres")]
-            let schema = include_str!("postgres.sql");
+            let schema = include_str!("searchable-postgres.sql");
             #[cfg(feature = "sqlite")]
-            let schema = include_str!("sqlite.sql");
+            let schema = include_str!("searchable-sqlite.sql");
             sqlx::raw_sql(schema).execute(&mut connection).await?;
             println!("Schema ready.");
         }

@@ -44,16 +44,16 @@ not a reset because valid cursors may be zero or negative.
 ### Prepare the consumer
 
 Use the [consumer setup](searchable-sqlx.md), [complete source](snippets/searchable.rs)
-and its `maintenance` feature. The [runnable sweep scenario](../scripts/check-sweep-consumer.mjs)
+and its `maintenance` feature. The [runnable sweep scenario](../tests/e2e/sweep.rs)
 contains the interruption, replay, stale-write recovery, second rotation and
-competing-write rehearsal. Use Rust/Cargo 1.85+, Node.js 18+, a native C compiler
+competing-write rehearsal. Use Rust/Cargo 1.85+, a native C compiler
 for bundled SQLite, and dependency access. Run from the repository root:
 
 ```sh
-node scripts/check-searchable-consumer.mjs checkout sqlite sweep
+cargo test --locked --test e2e --all-features sqlite_sweep
 ```
 
-Use `published` for crates.io 0.5.0, or `postgres` with a disposable `DATABASE_URL`.
+For live PostgreSQL, see the [test instructions](documentation.md#live-postgresql).
 The runner provisions persistent temporary keys and storage, and each consumer
 command runs in a new process. The manual in-memory example is not evidence of
 cross-process durability.

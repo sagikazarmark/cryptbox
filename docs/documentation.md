@@ -2,49 +2,72 @@
 
 ## Local checks
 
-Use Rust, Node.js 18+, Docker for database/diagram checks, and Lychee 0.24.2.
+Use Rust, cargo-hack 0.6.45, Node.js 18+, and Docker for database/diagram checks.
+The development shell includes cargo-hack; otherwise install it with
+`cargo install cargo-hack --version 0.6.45 --locked`.
 Run from the repository root:
 
 ```sh
 cargo fmt --all --check
 cargo check --locked --all-targets --all-features
-sh scripts/check-sqlx-features.sh
+cargo hack test --locked --feature-powerset --depth 2
 cargo clippy --locked --all-targets --all-features -- -D warnings
-sh scripts/check-rustdoc.sh
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --no-default-features
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --all-features
 node scripts/doc-snippets.mjs
-node scripts/check-consumers.mjs checkout
-node scripts/check-consumers.mjs published
-sh scripts/check-links.sh local
 cargo test --locked --all-targets --all-features
+cargo test --locked --doc
 cargo test --locked --doc --all-features
 ```
 
-The consumer runner builds isolated projects with their declared dependencies.
-`checkout` tests this tree; `published` tests exact 0.5.0 and excludes unreleased
-Serde support. To focus a recipe, append its name, for example:
+The README and first-field tutorial are included under `cfg(doctest)` in
+`src/lib.rs`, so their Rust snippets run with the crate's documentation tests.
+Dagger's Rust module checks API docs with warnings denied across default,
+no-default, individual, and all features. Its test matrix includes doctests and
+uses `--feature-powerset --depth 2` to cover individual features and pairs, including
+`migrate,sqlx-postgres` and `migrate,sqlx-sqlite` independently. These matrices are
+configured by `hack.doc` and `hack.test` in `Cargo.toml`; GitHub Actions runs the
+same test matrix. The separate all-target, all-feature test run covers the full
+feature set together.
+Run `dagger check rust:doc rust:test` for both matrices.
+
+Process-level scenarios are Rust integration tests in `tests/e2e.rs`, included in
+the ordinary all-feature test run. They cover durable rotation, sweep restart,
+mixed-format migration and closure, backup recovery, SQLx macros, and sanitized
+diagnostics. Basic API behavior remains in the existing integration tests and
+example tests. To focus a scenario:
 
 ```sh
-node scripts/check-consumers.mjs checkout custom-profile
-node scripts/check-consumers.mjs checkout stored-values
-node scripts/check-testing-consumers.mjs checkout
-node scripts/check-searchable-consumer.mjs checkout sqlite
+cargo test --locked --test e2e --all-features sqlite_rotation
+cargo test --locked --test e2e --all-features sqlite_migration
 ```
+
+The unpublished `tests/fixtures/app` package builds the documented CLI against the
+local library. Its app-specific features allow tests to rebuild with SQLx macros
+or without legacy migration support. Executables are copied into each scenario's
+temporary directory; keys and databases persist across child processes and are
+removed afterwards. Builds share `target/e2e` (under `CARGO_TARGET_DIR` if set).
+These fixture-driven tests are checkout-only and excluded from the crate archive.
 
 ### Live PostgreSQL
 
 Dagger supplies a disposable PostgreSQL service and runs the live tests and
-consumer scenarios, including cases ignored by ordinary `cargo test`:
+E2E scenarios, including cases ignored by ordinary `cargo test`:
 
 ```sh
-dagger check cryptbox:docs
+dagger check cryptbox:test:postgres
 dagger check
 ```
 
 With your own disposable service, use a database role allowed to create and drop
-its test schemas (`CREATE` on the database). Set `DATABASE_URL` and run
-`node scripts/check-searchable-consumer.mjs checkout postgres` (or `published`).
-Append `sweep` or `migration` for the corresponding scenario. SQLite additionally
-supports `recovery`. These scenarios modify their test database.
+its test schemas (`CREATE` on the database). Set `DATABASE_URL` and run:
+
+```sh
+cargo test --locked --test e2e --no-default-features --features migrate,sqlx-postgres -- --include-ignored
+```
+
+Each PostgreSQL scenario creates and removes its own schema. Recovery uses SQLite
+database copies. These scenarios modify their test database.
 
 ## Editing shared sources
 
@@ -67,14 +90,13 @@ diagrams are rendered for validation without committing SVG copies.
 
 ## Links and publication
 
-`sh scripts/check-links.sh local` checks files and anchors offline, remapping this
-repository's `blob/main/` links to the checkout. Use `external` to check live URLs;
-CI runs that network-dependent check separately. Without a local Lychee install:
+Dagger uses the shared Lychee module and discovers `lychee.toml` automatically:
 
 ```sh
-docker run --rm --entrypoint sh -v "$PWD:/work" -w /work \
-  lycheeverse/lychee:0.24.2 scripts/check-links.sh local
+dagger check lychee:check
 ```
+
+This checks workspace links, including external URLs, as part of `dagger check`.
 
 At release, update package/version labels and docs.rs links together; verify each
 destination exists in that release. Label development-only features at their use.

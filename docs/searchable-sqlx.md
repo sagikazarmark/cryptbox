@@ -21,8 +21,8 @@ Copy these canonical files into the new project:
 | --- | --- |
 | [searchable.toml](snippets/searchable.toml) | `Cargo.toml` |
 | [searchable.rs](snippets/searchable.rs) — complete application | `src/main.rs` |
-| [searchable-postgres.sql](snippets/searchable-postgres.sql) | `src/postgres.sql` |
-| [searchable-sqlite.sql](snippets/searchable-sqlite.sql) | `src/sqlite.sql` |
+| [searchable-postgres.sql](snippets/searchable-postgres.sql) | `src/searchable-postgres.sql` |
+| [searchable-sqlite.sql](snippets/searchable-sqlite.sql) | `src/searchable-sqlite.sql` |
 
 Select exactly one backend. The manifest defaults to PostgreSQL and explicitly
 selects Tokio and Rustls/native-root TLS; a CryptBox backend feature alone selects
