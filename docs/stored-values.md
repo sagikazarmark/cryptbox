@@ -1,7 +1,7 @@
 # Serialize And Read Stored Values
 
-**Example · unreleased development API, not published 0.5.0.** The `serde` feature
-requires this checkout. [All tasks](README.md).
+**Example.** Serialize ciphertext and blind indexes with the `serde` feature.
+[All tasks](README.md).
 
 ## Run The Consumer Example
 

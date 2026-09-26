@@ -1,6 +1,6 @@
 # Build a durable, searchable SQLx application
 
-**Tutorial · published CryptBox 0.5.0 API.** Build a sample application with
+**Tutorial.** Build a sample application with
 prepared writes, nullable/deferred reads, verified lookup, and process restarts.
 [All tasks](README.md) · [Security](security.md).
 

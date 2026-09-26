@@ -101,7 +101,7 @@ for false candidates, without eliminating equality leakage.
 ## Security review path
 
 Read the [wire recipes and provisional vectors](wire-format.md), then the
-[current model](concepts.md) and [API reference](https://docs.rs/cryptbox/0.5.0/cryptbox/).
+[current model](concepts.md) and [API reference](https://docs.rs/cryptbox/latest/cryptbox/).
 Outstanding gates include independent vectors ([#10](https://github.com/sagikazarmark/cryptbox/issues/10)),
 HKDF/HMAC/AAD composition and failure-path review, parser fuzzing
 ([#11](https://github.com/sagikazarmark/cryptbox/issues/11)), target/entropy and

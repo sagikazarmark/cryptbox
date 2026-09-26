@@ -109,7 +109,6 @@ SQLx adapters store ciphertext in `BYTEA` or `BLOB` columns. You can encrypt
 explicitly and load `Ciphertext` for later decryption, or use automatic encryption
 and decryption at the SQLx boundary. Serde support serializes stored ciphertext
 and blind-index bytes; it does not serialize plaintext-bearing `Encrypted` values.
-Stored-value Serde support is currently unreleased.
 
 For an indexed value, **`Prepared`** derives ciphertext and indexes from the same
 source. Preparation is not persistence: the application writes those

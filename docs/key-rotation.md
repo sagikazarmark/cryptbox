@@ -1,6 +1,6 @@
 # Key lifecycle
 
-**How-to · CryptBox 0.5.0.** Stage readers, promote writers, then retire online
+**How-to.** Stage readers, promote writers, then retire online
 access while preserving recovery. [All tasks](README.md) · [Maintenance sweeps](reencryption-sweep.md).
 
 ## Key states and the promotion gate

@@ -1,6 +1,6 @@
 # Store your first field in SQLite
 
-**Tutorial · published CryptBox 0.5.0 API.** Continue from
+**Tutorial.** Continue from
 [your first field](first-field.md). [All tasks](README.md).
 
 Store one field-bound email, let the writing process exit, then authenticate and
@@ -24,8 +24,8 @@ cp "$CRYPTBOX_REPO/examples/sqlx_sqlite.rs" src/main.rs
 cargo build
 ```
 
-The [manifest](snippets/sqlite.toml) pins CryptBox to published version 0.5.0,
-enables its `sqlx-sqlite` adapter, and uses SQLx 0.8 with `futures-executor` for
+The [manifest](snippets/sqlite.toml) enables CryptBox's `sqlx-sqlite` adapter
+and uses SQLx 0.8 with `futures-executor` for
 this SQLite-only program. The [complete example](../examples/sqlx_sqlite.rs) is
 the program you just copied. Running it without arguments only prints usage.
 

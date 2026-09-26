@@ -33,8 +33,8 @@ The ciphertext envelope carries three identifiers with different jobs:
   never stored in the envelope.
 
 Format version `1` and suite ID `1` are separate identifiers that happen to have
-the same value. They are CryptBox protocol identifiers, independent of the crate's
-release version. Rotating keys changes the key generation used for new values;
+the same value. They identify separate parts of the protocol. Rotating keys
+changes the key generation used for new values;
 it does not change the format or suite.
 
 Blind indexes have their own format version and `IndexKeyId`. Their format

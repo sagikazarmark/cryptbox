@@ -1,6 +1,6 @@
 # Encrypt your first field
 
-**Tutorial · published CryptBox 0.5.0.** CryptBox is experimental and
+**Tutorial.** CryptBox is experimental and
 [not production-ready](security.md). [All tasks](README.md).
 
 ## 1. Create a consumer project

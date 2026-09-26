@@ -7,8 +7,7 @@
 //! management but wants storage adapters to enforce ciphertext-at-rest.
 //!
 //! **Experimental; not production-ready.** See the [threat model] for assumptions,
-//! limitations, and outstanding review work. This checkout includes unreleased
-//! stored-byte Serde support; the Features reference distinguishes it from 0.5.0.
+//! limitations, and outstanding review work.
 //!
 //! # Type model
 //!
@@ -81,8 +80,7 @@
 //! # Workflows
 //!
 //! See the [documentation index] for runnable examples, `SQLx` integration, key
-//! lifecycle, maintenance, and migration. Repository links describe development;
-//! select your dependency version on docs.rs for released API documentation.
+//! lifecycle, maintenance, and migration.
 //!
 #![doc = concat!(
     "[documentation index]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/README.md\n",

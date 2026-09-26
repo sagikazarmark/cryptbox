@@ -3,7 +3,7 @@
 [![ci](https://img.shields.io/github/actions/workflow/status/sagikazarmark/cryptbox/ci.yaml?style=flat-square)](https://github.com/sagikazarmark/cryptbox/actions/workflows/ci.yaml)
 [![openssf scorecard](https://api.securityscorecards.dev/projects/github.com/sagikazarmark/cryptbox/badge?style=flat-square)](https://securityscorecards.dev/viewer/?uri=github.com/sagikazarmark/cryptbox)
 [![crates.io](https://img.shields.io/crates/v/cryptbox?style=flat-square)](https://crates.io/crates/cryptbox)
-[![docs.rs](https://img.shields.io/docsrs/cryptbox?style=flat-square)](https://docs.rs/cryptbox/0.5.0/cryptbox/)
+[![docs.rs](https://img.shields.io/docsrs/cryptbox?style=flat-square)](https://docs.rs/cryptbox/latest/cryptbox/)
 
 **Application-layer encryption for sensitive data in Rust.**
 
@@ -30,13 +30,9 @@ equality/frequency; every hit requires decrypted, normalized comparison.
 [Security](docs/security.md) · [Documentation](docs/README.md) ·
 [API](https://docs.rs/cryptbox/latest/cryptbox/)
 
-Repository docs describe development; select your dependency version on docs.rs.
-Stored-byte Serde support is unreleased.
-
-
 ## Quick Start
 
-This in-memory demonstration uses no optional features (`cryptbox = "=0.5.0"`).
+This in-memory demonstration uses no optional features.
 Keys are ephemeral: do not use this provisioning pattern for durable data.
 For the complete manifest, file placement, and expected output, follow
 [encrypt your first field](docs/first-field.md).

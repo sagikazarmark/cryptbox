@@ -1,6 +1,6 @@
 # Migrating Legacy Data To CryptBox
 
-**How-to · CryptBox 0.5.0.** Adopt encryption over plaintext, previous-solution
+**How-to.** Adopt encryption over plaintext, previous-solution
 ciphertext or mixed storage. [All tasks](README.md) · [Sweep operations](reencryption-sweep.md).
 
 The `migrate` feature supplies explicit permissive reads, an application-owned

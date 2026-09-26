@@ -98,9 +98,10 @@ dagger check lychee:check
 
 This checks workspace links, including external URLs, as part of `dagger check`.
 
-At release, update package/version labels and docs.rs links together; verify each
-destination exists in that release. Label development-only features at their use.
-Format and suite IDs change only when their contracts change.
+Describe the API and behavior directly, without crate-version labels or
+unreleased-status commentary. Use `latest` for API links on docs.rs; dependency
+versions belong in runnable manifests. Format and suite IDs change only when
+their contracts change.
 
 ## Writing for the reader's task
 

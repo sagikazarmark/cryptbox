@@ -57,7 +57,7 @@ The application owns database schemas, transactions, query construction, and
 concurrency policy. SQLx features do not choose the application's async runtime
 or TLS configuration. Serde handles stored bytes only and supplies neither
 encryption nor atomic persistence. See [features and platforms](features.md) for
-exact availability, including unreleased Serde support.
+exact availability and configuration requirements.
 
 Try [explicit SQLite storage](first-field-sqlite.md), the
 [automatic-adapter example](testing.md#automatic-adapters), or

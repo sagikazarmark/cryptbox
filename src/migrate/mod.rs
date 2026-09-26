@@ -24,11 +24,10 @@
 //! other stores. Retain historical and legacy recovery keys separately; destroy
 //! them only when all dependent artifacts and retention requirements permit it.
 //!
-//! These guide links describe the 0.5.0 release archive. Later documentation
-//! improvements are available through the crate's development task index.
-//!
-//! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/0.5.0/source/docs/reencryption-sweep.md
-//! [legacy migration guide]: https://docs.rs/crate/cryptbox/0.5.0/source/docs/legacy-migration.md
+#![doc = concat!(
+    "[maintenance sweep guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/reencryption-sweep.md\n",
+    "[legacy migration guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/legacy-migration.md",
+)]
 //! [`Encrypted`]: crate::Encrypted
 
 mod legacy;

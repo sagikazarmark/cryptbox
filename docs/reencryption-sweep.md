@@ -1,6 +1,6 @@
 # Re-encryption Maintenance Sweeps
 
-**How-to · CryptBox 0.5.0.** Rewrite stored values in bounded, resumable batches.
+**How-to.** Rewrite stored values in bounded, resumable batches.
 [All tasks](README.md) · [Key lifecycle](key-rotation.md) · [Legacy adoption](legacy-migration.md).
 
 Rotation selects keys for future writes; a later sweep converges existing

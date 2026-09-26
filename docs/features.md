@@ -1,24 +1,19 @@
 # Features
 
-**Reference · current development API, with release differences below.**
-This is the canonical feature/platform reference, also included in the crate
-landing documentation. The checkout still declares package version 0.5.0, but
-contains unreleased changes. The published 0.5.0 archive does **not** have the
-`serde` feature or stored-value Serde implementations. In that release, `json`
-and `postcard` activate Serde as a codec dependency only, not stored-byte
-serialization. The other feature names below are available in 0.5.0.
+This reference describes feature flags and platform requirements. It is also
+included in the crate landing documentation.
 
 No features are enabled by default, and all features are additive:
 
 - `json` adds the `Json` codec. Its serialized representation is part of the
-  persistent schema. In development it implies `serde`; values need Serde traits.
+  persistent schema. It implies `serde`; values need Serde traits.
 - `migrate` adds the explicit `migrate` module for adopting `CryptBox` over
   plaintext or data encrypted by a previous solution: permissive reads, a legacy
   recovery handler, and a resumable sweep. Intended for a bounded migration
   window only; the default decoding path stays strict.
 - `postcard` adds the `Postcard` codec. Its serialized representation is part of
-  the persistent schema. In development it implies `serde`; values need Serde traits.
-- `serde` (**unreleased**) adds explicit serialization of `Ciphertext` and `BlindIndex` stored
+  the persistent schema. It implies `serde`; values need Serde traits.
+- `serde` adds explicit serialization of `Ciphertext` and `BlindIndex` stored
   bytes. It never adds serialization for plaintext `Encrypted` values.
 - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
 - `sqlx-sqlite` adds `SQLx` 0.8 `BLOB` storage for `SQLite`.
@@ -38,8 +33,8 @@ Feature-gated availability: `Json` requires `json`; `Postcard` requires
 `migrate::PostgresSweepStore` additionally requires `sqlx-postgres`,
 `migrate::SqliteSweepStore` requires `sqlx-sqlite`, and `migrate::SweepTable`
 requires either backend. Stored-value Serde implementations require `serde`;
-`SQLx` implementations require the corresponding backend feature. The published
-docs.rs build enables all features, so an item appearing there does not mean it
+`SQLx` implementations require the corresponding backend feature. The docs.rs
+build enables all features, so an item appearing there does not mean it
 is enabled in a default build.
 
 `CryptBox` deliberately provides no Serde implementation for `Encrypted`, because
@@ -49,7 +44,7 @@ structure but do not establish authenticity; ciphertext is authenticated only
 when decrypted, and blind-index candidates must still be compared against
 decrypted plaintext. That comparison does not authenticate index metadata;
 checking stored-index consistency requires separate recomputation. See the
-development [stored-value walkthrough].
+[stored-value walkthrough].
 
 ## Platforms and tested configurations
 
@@ -72,13 +67,13 @@ on Ubuntu, and stable Rust with all-feature tests, independent `SQLx` feature
 compilation (each backend with and without `migrate`), and default/all-feature
 rustdoc. Dagger uses the configured Rust Linux container, runs examples, and
 supplies PostgreSQL to execute the live round-trip and packaged-sweep tests,
-including the otherwise ignored cases. See the development
+including the otherwise ignored cases. See the
 [live-backend check instructions].
 These are tested configurations, not a reviewed target allowlist; no macOS,
 Windows, browser, or embedded CI matrix is claimed.
 
-Next: use the development [task index]
-or consult the [0.5.0 API](https://docs.rs/cryptbox/0.5.0/cryptbox/).
+Next: use the [task index]
+or consult the [API reference](https://docs.rs/cryptbox/latest/cryptbox/).
 
 <!-- Rustdoc supplies repository-qualified definitions before including this page. -->
 [stored-value walkthrough]: stored-values.md

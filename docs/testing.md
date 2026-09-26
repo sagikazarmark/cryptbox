@@ -1,6 +1,6 @@
 # Testing and diagnostics
 
-**How-to · published CryptBox 0.5.0 API.** Use local providers for ordinary tests
+**How-to.** Use local providers for ordinary tests
 and process isolation for static key contexts. [All tasks](README.md).
 
 ## Local providers

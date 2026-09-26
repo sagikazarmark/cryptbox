@@ -1,9 +1,5 @@
 # CryptBox documentation
 
-Repository docs describe this checkout. For released APIs, select your dependency
-version on [docs.rs](https://docs.rs/cryptbox/0.5.0/cryptbox/); stored-byte Serde support
-is unreleased even though this checkout still declares 0.5.0.
-
 ## Start here
 
 Choose the entry point that fits your question:
@@ -18,7 +14,7 @@ Choose the entry point that fits your question:
 - [Store a field durably in SQLite](first-field-sqlite.md): encryption-only tutorial with a separate-process read.
 - [Build searchable SQLx storage](searchable-sqlx.md): a complete tutorial for atomic writes and verified equality lookup on PostgreSQL or SQLite.
 - [Automatic SQLx adapters](testing.md#automatic-adapters): a runnable example and its key-context lifetime.
-- [Serialize stored values](stored-values.md): explicit ciphertext and index serialization with Serde (unreleased).
+- [Serialize stored values](stored-values.md): explicit ciphertext and index serialization with Serde.
 - [Customize profiles and providers](custom-profile.md): codecs, normalization, key sources, and wrapped plaintext.
 - [Testing and diagnostics](testing.md): isolated providers and sanitized failures.
 - [Adopt existing data](legacy-migration.md): prerequisites and rollout for plaintext or previous-solution ciphertext.
@@ -32,8 +28,8 @@ Choose the entry point that fits your question:
 
 ## Reference
 
-- [API](https://docs.rs/cryptbox/0.5.0/cryptbox/).
-- [Features and platforms](features.md): feature flags, release differences, and supported constraints.
+- [API](https://docs.rs/cryptbox/latest/cryptbox/).
+- [Features and platforms](features.md): feature flags and supported constraints.
 - [Wire format](wire-format.md): exact layouts, encryption/index recipes, padding, and vectors.
 - [Plaintext and key ownership](ownership.md): borrowing, cloning, and erasure contracts.
 - [What each check establishes](security.md#what-each-check-establishes): parsing, authentication, candidate comparison, and migration-state verification.

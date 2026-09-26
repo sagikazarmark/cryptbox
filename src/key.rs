@@ -326,10 +326,10 @@ pub trait BlindIndexKeyProvider: Send + Sync {
 /// rewritten. See the complete [key-rotation example] and [maintenance sweep
 /// example].
 ///
-/// Example links describe the 0.5.0 release archive.
-///
-/// [key-rotation example]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/key_rotation.rs
-/// [maintenance sweep example]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/reencryption_sweep.rs
+#[doc = concat!(
+    "[key-rotation example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/key_rotation.rs\n",
+    "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs",
+)]
 #[derive(Clone, Debug)]
 pub struct LocalEncryptionKeyring {
     current: EncryptionKey,
@@ -374,10 +374,10 @@ impl EncryptionKeyProvider for LocalEncryptionKeyring {
 /// from every retained key until old indexes have been rewritten. See the
 /// complete [blind-index example] and [maintenance sweep example].
 ///
-/// Example links describe the 0.5.0 release archive.
-///
-/// [blind-index example]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/blind_indexes.rs
-/// [maintenance sweep example]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/reencryption_sweep.rs
+#[doc = concat!(
+    "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/blind_indexes.rs\n",
+    "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs",
+)]
 #[derive(Clone, Debug)]
 pub struct LocalBlindIndexKeyring {
     current: BlindIndexKey,
