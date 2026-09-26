@@ -78,22 +78,23 @@ authentication because the reader has no construction with which to verify it.
 
 ### Binding
 
-A binding identifies the expected cryptographic domain of a value. For example,
-binding an email field to a stable `FieldId` prevents its ciphertext from being
-accepted under a different field's binding, even when both use the same root key.
-Field binding identifies a logical field, not a particular row or tenant.
+A binding identifies the expected cryptographic domain of a value. Every value is
+bound to a stable `FieldId`, so an email field's ciphertext is not accepted under
+a different field, even when both use the same root key. Field binding identifies
+a logical field, not a particular row or tenant.
 
 The binding is encoded as:
 
 ```text
-Unbound:             00
-FieldBound(FieldId): 01 || field_id[16]
+Field(FieldId): 01 || field_id[16]
 ```
+
+Tag `00` is reserved: earlier releases used it for unbound values, and current
+releases neither write nor read it.
 
 The profile supplies the expected binding; it is not stored in the envelope.
 This makes the application decide where a value belongs, rather than allowing
-stored bytes to select their own binding. `Unbound` explicitly omits field
-identity, but still authenticates the envelope metadata and encrypted bytes.
+stored bytes to select their own binding.
 
 Codec identity/version and padding policy are also absent. The application
 schema must supply these to interpret the plaintext after authentication.
@@ -252,34 +253,27 @@ obligations.
 ### Provisional envelope vector
 
 These fixed inputs and expected outputs help check byte-for-byte compatibility.
-The first vector encrypts unpadded plaintext with `Unbound`:
+The first vector encrypts unpadded plaintext bound to
+`FieldId 12345678-1234-4234-8234-1234567890ab`:
 
 ```text
 root key:   1111111111111111111111111111111111111111111111111111111111111111
 KeyId:      11111111-2222-4333-8444-555555555555
-binding:    00
+binding:    01123456781234423482341234567890ab
 plaintext:  6372797074626f7820766563746f72 ("cryptbox vector")
 nonce:      000102030405060708090a0b0c0d0e0f1011121314151617
-envelope:   43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b961044c53838d7bf1c05cc81b81ae89d5
+envelope:   43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d
 ```
 
 The vector is generated and consumed in separate tests, but it has not yet
 been cross-checked against an independent implementation.
 
-The corresponding field-bound vector uses the same root key, `KeyId`,
-plaintext, and nonce with `FieldId 12345678-1234-4234-8234-1234567890ab`:
-
-```text
-binding:    01123456781234423482341234567890ab
-envelope:   43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d
-```
-
-The padded vector uses the same root key, `KeyId`, nonce, and unbound binding as
-the first vector, with `"cryptbox vector"` padded under `PadToBlock<16>`:
+The padded vector uses the same root key, `KeyId`, binding, and nonce as the
+first vector, with `"cryptbox vector"` padded under `PadToBlock<16>`:
 
 ```text
 padded plaintext: 6372797074626f7820766563746f7280
-envelope:         43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b9368a9985aacb04ff8f7b6a677d9665a9ba
+envelope:         43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6
 ```
 
 ## Blind-index format 1

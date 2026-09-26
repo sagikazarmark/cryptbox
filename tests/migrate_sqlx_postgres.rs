@@ -7,7 +7,7 @@ use std::{future::Future, panic::AssertUnwindSafe};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, EncryptionProfile, Error, Field, FieldBound, GlobalKeyContext, IndexId,
+    EncryptionKey, EncryptionProfile, Error, Field, GlobalKeyContext, IndexId,
     LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, blind_index_probes, field_id, index_id,
     index_key_id, key_id,
     migrate::{
@@ -26,8 +26,8 @@ impl Field for UserEmail {
     const NAME: &'static str = "user-email";
 }
 
-impl EncryptionProfile<String> for UserEmail {
-    type Binding = FieldBound<Self>;
+impl EncryptionProfile for UserEmail {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = cryptbox::NoPadding;
@@ -144,9 +144,9 @@ async fn insert(
     keys: &LocalEncryptionKeyring,
     index_keys: &LocalBlindIndexKeyring,
 ) {
-    let value = Encrypted::<_, UserEmail>::new(email.to_owned());
+    let value = Encrypted::<UserEmail>::new(email.to_owned());
     let prepared = value
-        .prepare_with(&(), keys)
+        .prepare_with(keys)
         .unwrap()
         .with_index_with::<EmailLookup>(index_keys)
         .unwrap();
@@ -165,9 +165,7 @@ async fn search(
     index_keys: &LocalBlindIndexKeyring,
 ) -> (Vec<i64>, Vec<i64>) {
     let query = " ALICE@example.com ".to_owned();
-    let probes =
-        blind_index_probes::<EmailLookup, String, FieldBound<UserEmail>>(&query, &(), index_keys)
-            .unwrap();
+    let probes = blind_index_probes::<EmailLookup, String, UserEmail>(&query, index_keys).unwrap();
     let mut candidates = Vec::new();
     let mut matches = Vec::new();
     for probe in probes {
@@ -179,8 +177,8 @@ async fn search(
         for row in rows {
             let id: i64 = row.get("id");
             candidates.push(id);
-            let ciphertext: Ciphertext<String, UserEmail> = row.get("email_ciphertext");
-            let value = ciphertext.decrypt_with(&(), keys).unwrap();
+            let ciphertext: Ciphertext<UserEmail> = row.get("email_ciphertext");
+            let value = ciphertext.decrypt_with(keys).unwrap();
             if verify_blind_index_candidate::<EmailLookup, String>(&query, value.expose_secret())
                 .unwrap()
             {
@@ -206,7 +204,7 @@ async fn assert_readable_rows(
     for row in rows {
         let id: i64 = row.get("id");
         let is_legacy = !migrated && id <= 20;
-        let strict = row.try_get::<Ciphertext<String, UserEmail>, _>("email_ciphertext");
+        let strict = row.try_get::<Ciphertext<UserEmail>, _>("email_ciphertext");
         let expected = match id {
             10 => "Alice@example.com",
             60 => "bob@example.com",
@@ -224,15 +222,15 @@ async fn assert_readable_rows(
             }
             // Authentication is asserted separately from generation convergence.
             assert_eq!(
-                ciphertext.decrypt_with(&(), keys).unwrap().expose_secret(),
+                ciphertext.decrypt_with(keys).unwrap().expose_secret(),
                 expected
             );
         }
-        let permissive: MaybeEncrypted<String, UserEmail> = row.get("email_ciphertext");
+        let permissive: MaybeEncrypted<UserEmail> = row.get("email_ciphertext");
         assert_eq!(permissive.is_legacy(), is_legacy);
         assert_eq!(
             permissive
-                .decrypt_with_legacy(&(), keys, &ToyLegacy)
+                .decrypt_with_legacy(keys, &ToyLegacy)
                 .unwrap()
                 .expose_secret(),
             expected,
@@ -289,7 +287,7 @@ fn postgres_sweep_converts_mixed_rows_and_resumes_stored_progress() {
             (vec![30, 40, 50, 60], vec![30, 40, 50])
         );
 
-        let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        let planner = RowPlanner::<UserEmail>::new(&keys)
             .with_legacy(&ToyLegacy)
             .with_index_with::<EmailLookup>(&index_keys);
         let sweep = Sweep::new(planner).with_batch_size(1);
@@ -358,8 +356,8 @@ fn postgres_guarded_updates_preserve_competing_ciphertext_and_index_writes() {
         .await;
         let table =
             SweepTable::new("users", "id", "email_ciphertext").with_index_column("email_bidx");
-        let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
-            .with_index_with::<EmailLookup>(&index_keys);
+        let planner =
+            RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
         let mut writer = connect(&url, &schema).await;
 
         // Interleave a real second connection between the public load and update
@@ -374,9 +372,9 @@ fn postgres_guarded_updates_preserve_competing_ciphertext_and_index_writes() {
                 .unwrap();
             let replacement = plan.write().unwrap();
 
-            let other_value = Encrypted::<_, UserEmail>::new("other@example.com".to_owned());
+            let other_value = Encrypted::<UserEmail>::new("other@example.com".to_owned());
             let prepared = other_value
-                .prepare_with(&(), &old_keys)
+                .prepare_with(&old_keys)
                 .unwrap()
                 .with_index_with::<EmailLookup>(&old_index_keys)
                 .unwrap();

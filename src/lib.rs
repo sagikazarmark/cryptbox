@@ -11,10 +11,11 @@
 //!
 //! # Type model
 //!
-//! - [`Encrypted<T, Profile>`] and [`Secret<T>`] contain plaintext.
-//! - [`Ciphertext<T, Profile>`] contains stored encrypted bytes. Parsing checks
+//! - [`Encrypted<Profile>`] and [`Secret<T>`] contain plaintext.
+//! - [`Ciphertext<Profile>`] contains stored encrypted bytes. Parsing checks
 //!   structure; decryption authenticates. Encryption borrows and retains the source.
-//! - [`EncryptionProfile`] chooses codec, padding, binding, and key context.
+//! - [`EncryptionProfile`] declares a [`Field`] and chooses its value type, codec,
+//!   padding, and key context. Every value is bound to its field.
 //! - [`Prepared`] borrows a source value and derives ciphertext/indexes for an
 //!   application-owned atomic write; it does not persist them.
 //! - A [`BlindIndex`] is a candidate selector. Use every [`blind_index_probes`]
@@ -33,8 +34,6 @@
     "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md",
 )]
 //!
-//! [`Binding`] is sealed to [`Unbound`] and [`FieldBound`], both with unit context
-//! `()`. Thus `&()` is not an opt-out from field binding and does not supply keys.
 //! Row/tenant binding is future work. [`KeyContext`] selects providers for
 //! context-less operations; explicit-provider methods take keys separately.
 //! [`Padding`] is also sealed to built-in policies.
@@ -48,10 +47,10 @@
 //!
 #![doc = include_str!("../docs/snippets/first-field.md")]
 //!
-//! The macro selects UTF-8 encoding, field binding, no padding, and the default
-//! key context. `Encrypted` contains plaintext; `Ciphertext` contains the encrypted
-//! envelope. `&()` supplies no runtime binding data, while `&keys` supplies the
-//! provider explicitly: no global installation is needed. Before durable storage,
+//! The macro selects UTF-8 encoding, no padding, and the default key context, and
+//! binds ciphertext to the declared field ID. `Encrypted` contains plaintext;
+//! `Ciphertext` contains the encrypted envelope. `&keys` supplies the provider
+//! explicitly: no global installation is needed. Before durable storage,
 //! settle the persistent schema below and load stable key material and generation
 //! IDs across restarts; see the [first-field tutorial]'s durable-key next step.
 //!
@@ -69,7 +68,7 @@
 //!
 //! # Persistent schema
 //!
-//! Codec compatibility, padding mode, binding, field/index IDs, normalization,
+//! Codec compatibility, padding mode, field/index IDs, normalization,
 //! and index precision are persistent schema. Stored bytes do not describe all
 //! of them; changing them requires a migration plan. See [schema rules].
 //!
@@ -134,9 +133,8 @@ mod sqlx_postgres;
 mod sqlx_sqlite;
 mod value;
 
-#[doc(hidden)]
-pub use binding::BindingDomain;
-pub use binding::{Binding, Field, FieldBound, Unbound};
+pub(crate) use binding::BindingDomain;
+pub use binding::Field;
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexMetadata, BlindIndexRef, BlindIndexSpec,
     blind_index_probes, derive_blind_index, inspect_blind_index, verify_blind_index_candidate,
@@ -159,4 +157,4 @@ pub use key::{
 pub use padding::{NoPadding, PadToBlock, PadToLength, Padding};
 pub use prepare::Prepared;
 pub use profile::EncryptionProfile;
-pub use value::{Ciphertext, Encrypted, ProfileContext, Secret};
+pub use value::{Ciphertext, Encrypted, Secret};

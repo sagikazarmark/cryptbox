@@ -43,17 +43,16 @@ cryptbox::profile! {
         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
         name: "user-email",
         codec: cryptbox::Utf8,
-        binding: field_bound,
     }
 }
 
 fn main() -> Result<(), cryptbox::Error> {
     // Demo only: this key is lost when the process exits.
     let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-    let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
+    let email = Encrypted::<UserEmail>::new("mark@example.com".to_owned());
 
-    let ciphertext = email.encrypt_with(&(), &keys)?;
-    let decrypted = ciphertext.decrypt_with(&(), &keys)?;
+    let ciphertext = email.encrypt_with(&keys)?;
+    let decrypted = ciphertext.decrypt_with(&keys)?;
     assert_eq!(decrypted.expose_secret(), "mark@example.com");
     Ok(())
 }

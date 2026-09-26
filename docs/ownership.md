@@ -30,7 +30,7 @@ flowchart TB
 
 | Object or buffer | Ownership and end of lifetime |
 | --- | --- |
-| `Encrypted<T, Profile>` | Owns plaintext `T`. Encryption/preparation borrows it and retains it. Drop drops `T`; it does not invoke zeroization for arbitrary application types. |
+| `Encrypted<Profile>` | Owns plaintext `T`. Encryption/preparation borrows it and retains it. Drop drops `T`; it does not invoke zeroization for arbitrary application types. |
 | Plaintext clones | `Encrypted::clone` clones `T`, and `Secret::clone` clones its inner value. A `String` clone owns another plaintext allocation. Each copy has an independent lifetime; erasing one does not erase the others. |
 | Encoded, padded, normalized and decrypted temporary bytes | CryptBox-owned plaintext buffers use zeroizing storage. Custom codecs and normalizers must protect their own intermediate allocations, including error paths and superseded buffers during growth. The trait's return type alone cannot enforce that. |
 | `Prepared` | Owns ciphertext and optional indexes while borrowing the plaintext source. Drop releases the borrow but does not erase the source. Preparation does not persist data. |
@@ -46,7 +46,7 @@ construct a `Secret` or clone the value. For a `String` profile, wrapping the re
 as `Secret::new(decrypted.into_secret())` gives that returned string a zeroizing
 owner; the original encryption source and any prior clones still exist independently.
 
-`Encrypted<Secret<String>, Profile>` requires a codec for `Secret<String>`.
+`Encrypted<Profile>` requires a codec for `Secret<String>`.
 The built-in `Utf8` implements `Codec<String>`, not every wrapper type. Normalizers
 also require an implementation for the exact input type. The
 [custom-profile example](../examples/custom_profile/README.md) demonstrates a codec that decodes

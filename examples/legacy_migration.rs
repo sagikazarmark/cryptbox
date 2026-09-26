@@ -8,9 +8,9 @@ use chacha20poly1305::{
 };
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, EncryptionProfile, Field, FieldBound, GlobalKeyContext, IndexId, IndexKeyId,
-    KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, blind_index_probes, field_id,
-    index_id, index_key_id, key_id,
+    EncryptionKey, EncryptionProfile, Field, GlobalKeyContext, IndexId, IndexKeyId, KeyId,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, blind_index_probes, field_id, index_id,
+    index_key_id, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore,
         Sweep, SweepTable,
@@ -33,8 +33,8 @@ impl Field for UserEmail {
     const NAME: &'static str = "user-email";
 }
 
-impl EncryptionProfile<String> for UserEmail {
-    type Binding = FieldBound<Self>;
+impl EncryptionProfile for UserEmail {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = cryptbox::NoPadding;
@@ -171,7 +171,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
 
     // The handler is injected only into the bounded migration worker. One
     // sweep recovers legacy rows, encrypts them, and derives every blind index.
-    let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+    let planner = RowPlanner::<UserEmail>::new(&keys)
         .with_legacy(&legacy)
         .with_index_with::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
@@ -193,9 +193,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
     drop(store);
 
     // Separately demonstrate strict authenticated reading for this lookup.
-    let probes = blind_index_probes::<EmailLookup, String, FieldBound<UserEmail>>(
+    let probes = blind_index_probes::<EmailLookup, String, UserEmail>(
         &"foreign@example.com".to_owned(),
-        &(),
         &index_keys,
     )?;
     let mut matches = 0;
@@ -205,8 +204,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
             .fetch_all(&mut connection)
             .await?;
         for row in rows {
-            let ciphertext: Ciphertext<String, UserEmail> = row.try_get("email_ciphertext")?;
-            let candidate = ciphertext.decrypt_with(&(), &keys)?;
+            let ciphertext: Ciphertext<UserEmail> = row.try_get("email_ciphertext")?;
+            let candidate = ciphertext.decrypt_with(&keys)?;
             assert_eq!(candidate.expose_secret(), "foreign@example.com");
             matches += 1;
         }
@@ -234,7 +233,7 @@ async fn verify_permissive_reads(
         .fetch_one(&mut *connection)
         .await?;
     assert!(matches!(
-        Ciphertext::<String, UserEmail>::from_bytes(foreign),
+        Ciphertext::<UserEmail>::from_bytes(foreign),
         Err(cryptbox::Error::NotCiphertext),
     ));
 
@@ -249,12 +248,10 @@ async fn verify_permissive_reads(
     ];
     for (row, expected) in rows.into_iter().zip(expected) {
         let id: i64 = row.try_get("id")?;
-        let value: MaybeEncrypted<String, UserEmail> = row.try_get("email_ciphertext")?;
+        let value: MaybeEncrypted<UserEmail> = row.try_get("email_ciphertext")?;
         assert_eq!(value.is_legacy(), id <= 2);
         assert_eq!(
-            value
-                .decrypt_with_legacy(&(), keys, legacy)?
-                .expose_secret(),
+            value.decrypt_with_legacy(keys, legacy)?.expose_secret(),
             expected,
         );
     }
@@ -276,9 +273,9 @@ async fn insert_encrypted(
     keys: &LocalEncryptionKeyring,
     index_keys: &LocalBlindIndexKeyring,
 ) -> Result<(), Box<dyn Error>> {
-    let value = Encrypted::<_, UserEmail>::new(email.to_owned());
+    let value = Encrypted::<UserEmail>::new(email.to_owned());
     let prepared = value
-        .prepare_with(&(), keys)?
+        .prepare_with(keys)?
         .with_index_with::<EmailLookup>(index_keys)?;
     sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
         .bind(prepared.ciphertext())

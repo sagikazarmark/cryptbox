@@ -21,7 +21,6 @@ cryptbox::profile! {
         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
         name: "user-email",
         codec: cryptbox::Utf8,
-        binding: field_bound,
     }
 }
 
@@ -100,8 +99,8 @@ async fn write(
     connection: &mut SqliteConnection,
     keys: &LocalEncryptionKeyring,
 ) -> Result<(), Box<dyn Error>> {
-    let email = Encrypted::<_, UserEmail>::new(DEMO_EMAIL.to_owned());
-    let prepared = email.prepare_with(&(), keys)?;
+    let email = Encrypted::<UserEmail>::new(DEMO_EMAIL.to_owned());
+    let prepared = email.prepare_with(keys)?;
     let mut transaction = connection.begin().await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email BLOB NOT NULL)")
         .execute(&mut *transaction)
@@ -123,8 +122,8 @@ async fn read(
     let row = sqlx::query("SELECT email FROM users WHERE id = 1")
         .fetch_one(connection)
         .await?;
-    let ciphertext: Ciphertext<String, UserEmail> = row.try_get("email")?;
-    let decrypted = ciphertext.decrypt_with(&(), keys)?;
+    let ciphertext: Ciphertext<UserEmail> = row.try_get("email")?;
+    let decrypted = ciphertext.decrypt_with(keys)?;
 
     assert!(ciphertext.as_bytes().starts_with(b"CBX\0"));
     // Unlike assert_eq!, this cannot print plaintext on a failed assertion.

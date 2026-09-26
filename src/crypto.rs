@@ -4,7 +4,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{Binding, BindingDomain, EncryptionKey, EncryptionKeyProvider, Error, KeyId, SuiteId};
+use crate::{BindingDomain, EncryptionKey, EncryptionKeyProvider, Error, Field, KeyId, SuiteId};
 
 const MAGIC: &[u8; 4] = b"CBX\0";
 const FORMAT_VERSION: u8 = 1;
@@ -107,51 +107,44 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
     parse_envelope(bytes).map(|parsed| parsed.info)
 }
 
-/// Encrypts opaque plaintext bytes with the provider's current key.
+/// Encrypts opaque plaintext bytes for field `F` with the provider's current key.
 ///
 /// # Errors
 ///
 /// Returns an error for unavailable keys, failed OS randomness, or messages
 /// longer than the active suite's 274,877,906,880-byte limit.
-pub fn encrypt<B: Binding>(
+pub fn encrypt<F: Field>(
     plaintext: &[u8],
-    context: &B::Context,
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Vec<u8>, Error> {
     let key = keys.current_key()?;
     let suite = active_suite();
     let header = envelope_header(suite.id(), key.id());
 
-    suite.seal(
-        &header,
-        plaintext,
-        &BindingDomain::from_binding::<B>(context),
-        &key,
-    )
+    suite.seal(&header, plaintext, &BindingDomain::field::<F>(), &key)
 }
 
 /// Authenticates and decrypts opaque ciphertext bytes.
 ///
 /// The provider is asked only for the exact key ID named by the envelope.
-/// Success authenticates the envelope under the supplied key and binding;
+/// Success authenticates the envelope under the supplied key and field `F`;
 /// it does not establish freshness, row identity, padding, or codec validity.
 /// Use [`crate::Ciphertext::decrypt_with`] to also unpad and decode a typed value.
 ///
 /// # Errors
 ///
 /// Returns a structured envelope, key-provider, unknown-key, or authentication
-/// error. Wrong binding and modified ciphertext both report authentication
+/// error. A different field and modified ciphertext both report authentication
 /// failure.
-pub fn decrypt<B: Binding>(
+pub fn decrypt<F: Field>(
     ciphertext: &[u8],
-    context: &B::Context,
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
     let parsed = parse_envelope(ciphertext)?;
     let key = keys
         .key(parsed.info.key_id)?
         .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id))?;
-    let domain = BindingDomain::from_binding::<B>(context);
+    let domain = BindingDomain::field::<F>();
 
     registered_suite(parsed.info.suite_id)?.open(parsed.header, parsed.suite_payload, &domain, &key)
 }
@@ -181,14 +174,13 @@ pub fn needs_reencryption(
 /// # Errors
 ///
 /// Returns any decryption or encryption error.
-pub fn reencrypt<B: Binding>(
+pub fn reencrypt<F: Field>(
     ciphertext: &[u8],
-    context: &B::Context,
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Vec<u8>, Error> {
-    let plaintext = decrypt::<B>(ciphertext, context, keys)?;
+    let plaintext = decrypt::<F>(ciphertext, keys)?;
 
-    encrypt::<B>(&plaintext, context, keys)
+    encrypt::<F>(&plaintext, keys)
 }
 
 #[cfg(test)]
@@ -435,7 +427,7 @@ pub(crate) fn hmac_sha256(key: &[u8], input: &[&[u8]]) -> Result<Zeroizing<[u8; 
 #[cfg(test)]
 mod tests {
     use super::{NONCE_LEN, hkdf_sha256_32_with_salt, seal_with_nonce};
-    use crate::{BindingDomain, EncryptionKey, Field, FieldBound, FieldId, KeyId};
+    use crate::{BindingDomain, EncryptionKey, Field, FieldId, KeyId};
 
     struct VectorField;
 
@@ -459,32 +451,6 @@ mod tests {
     }
 
     #[test]
-    fn experimental_envelope_vector_is_stable() {
-        let key = EncryptionKey::new(
-            KeyId::from_uuid_literal("11111111-2222-4333-8444-555555555555"),
-            [0x11; 32],
-        );
-        let mut nonce = [0_u8; NONCE_LEN];
-
-        for (value, byte) in nonce.iter_mut().zip(0_u8..) {
-            *value = byte;
-        }
-
-        let envelope = seal_with_nonce(
-            b"cryptbox vector",
-            BindingDomain::from_binding::<crate::Unbound>(&()),
-            &key,
-            nonce,
-        )
-        .unwrap();
-
-        assert_eq!(
-            hex::encode(envelope),
-            "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b961044c53838d7bf1c05cc81b81ae89d5"
-        );
-    }
-
-    #[test]
     fn experimental_padded_envelope_vector_is_stable() {
         let key = EncryptionKey::new(
             KeyId::from_uuid_literal("11111111-2222-4333-8444-555555555555"),
@@ -498,7 +464,7 @@ mod tests {
 
         let envelope = seal_with_nonce(
             b"cryptbox vector\x80",
-            BindingDomain::from_binding::<crate::Unbound>(&()),
+            BindingDomain::field::<VectorField>(),
             &key,
             nonce,
         )
@@ -506,12 +472,12 @@ mod tests {
 
         assert_eq!(
             hex::encode(envelope),
-            "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b9368a9985aacb04ff8f7b6a677d9665a9ba"
+            "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6"
         );
     }
 
     #[test]
-    fn experimental_field_bound_envelope_vector_is_stable() {
+    fn experimental_envelope_vector_is_stable() {
         let key = EncryptionKey::new(
             KeyId::from_uuid_literal("11111111-2222-4333-8444-555555555555"),
             [0x11; 32],
@@ -524,7 +490,7 @@ mod tests {
 
         let envelope = seal_with_nonce(
             b"cryptbox vector",
-            BindingDomain::from_binding::<FieldBound<VectorField>>(&()),
+            BindingDomain::field::<VectorField>(),
             &key,
             nonce,
         )

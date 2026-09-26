@@ -43,7 +43,6 @@ cryptbox::profile! {
         id: "dcaa3c69-1767-49a1-8476-36555eaf54bf",
         name: "account-handle",
         codec: HandleCodec,
-        binding: field_bound,
     }
 }
 
@@ -94,9 +93,9 @@ fn main() -> Result<(), cryptbox::Error> {
     };
     let old_index_key = BlindIndexKey::generate()?; // Independent of encryption keys.
     let index_writer = LocalBlindIndexKeyring::new(old_index_key.clone(), [])?;
-    let value = Encrypted::<_, Handle>::new(Secret::new("Alice-7".to_owned()));
+    let value = Encrypted::<Handle>::new(Secret::new("Alice-7".to_owned()));
     let prepared = value
-        .prepare_with(&(), &keys)?
+        .prepare_with(&keys)?
         .with_index_with::<HandleEquality>(&index_writer)?;
     let ciphertext = prepared.ciphertext().clone();
     let stored_index = prepared.index::<HandleEquality>()?.as_bytes().to_vec();
@@ -106,15 +105,11 @@ fn main() -> Result<(), cryptbox::Error> {
     // After index-key promotion, query every readable generation, including old data.
     let index_reader = LocalBlindIndexKeyring::new(BlindIndexKey::generate()?, [old_index_key])?;
     let query = Secret::new("ALICE-7".to_owned());
-    let probes = cryptbox::blind_index_probes::<HandleEquality, _, cryptbox::FieldBound<Handle>>(
-        &query,
-        &(),
-        &index_reader,
-    )?;
+    let probes = cryptbox::blind_index_probes::<HandleEquality, _, Handle>(&query, &index_reader)?;
     assert_eq!(probes.len(), 2);
     assert!(probes.iter().any(|probe| probe.as_bytes() == stored_index));
     // An index hit is only a candidate: authenticate and compare normalized plaintext.
-    let decrypted = ciphertext.decrypt_with(&(), &keys)?.into_secret();
+    let decrypted = ciphertext.decrypt_with(&keys)?.into_secret();
     assert!(cryptbox::verify_blind_index_candidate::<HandleEquality, _>(
         &query, &decrypted
     )?);
@@ -156,8 +151,8 @@ mod tests {
         let current = EncryptionKey::generate()?;
         let unknown = EncryptionKey::generate()?.id();
         let writer = LocalEncryptionKeyring::new(old.clone(), [])?;
-        let value = Encrypted::<_, Handle>::new(Secret::new("Alice-7".to_owned()));
-        let ciphertext = value.encrypt_with(&(), &writer)?;
+        let value = Encrypted::<Handle>::new(Secret::new("Alice-7".to_owned()));
+        let ciphertext = value.encrypt_with(&writer)?;
         let reader = CachedEncryptionKeys {
             snapshot: Some(LocalEncryptionKeyring::new(current.clone(), [old.clone()])?),
         };
@@ -167,7 +162,7 @@ mod tests {
         assert!(reader.key(unknown)?.is_none());
         assert_eq!(
             ciphertext
-                .decrypt_with(&(), &reader)?
+                .decrypt_with(&reader)?
                 .into_secret()
                 .expose_secret(),
             "Alice-7"
@@ -176,7 +171,7 @@ mod tests {
             snapshot: Some(LocalEncryptionKeyring::new(current, [])?),
         };
         assert_eq!(
-            ciphertext.decrypt_with(&(), &retired).unwrap_err(),
+            ciphertext.decrypt_with(&retired).unwrap_err(),
             cryptbox::Error::UnknownEncryptionKey(old.id())
         );
         let unavailable = CachedEncryptionKeys { snapshot: None };
@@ -189,7 +184,7 @@ mod tests {
             KeyProviderError::Unavailable
         );
         assert_eq!(
-            ciphertext.decrypt_with(&(), &unavailable).unwrap_err(),
+            ciphertext.decrypt_with(&unavailable).unwrap_err(),
             cryptbox::Error::KeyProviderUnavailable
         );
         Ok(())
@@ -212,9 +207,9 @@ mod tests {
 
         // Encoding failure is sanitized at the storage boundary too.
         let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-        let value = Encrypted::<_, Handle>::new(invalid);
+        let value = Encrypted::<Handle>::new(invalid);
         assert_eq!(
-            value.encrypt_with(&(), &keys).unwrap_err(),
+            value.encrypt_with(&keys).unwrap_err(),
             cryptbox::Error::CodecFailed(encode)
         );
         Ok(())
@@ -227,13 +222,12 @@ mod tests {
                 id: "dcaa3c69-1767-49a1-8476-36555eaf54bf",
                 name: "account-handle",
                 codec: cryptbox::Utf8,
-                binding: field_bound,
             }
         }
         let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-        let value = Encrypted::<_, PlainHandle>::new("Alice-7".to_owned());
-        let ciphertext = value.encrypt_with(&(), &keys)?;
-        let decrypted = ciphertext.decrypt_with(&(), &keys)?;
+        let value = Encrypted::<PlainHandle>::new("Alice-7".to_owned());
+        let ciphertext = value.encrypt_with(&keys)?;
+        let decrypted = ciphertext.decrypt_with(&keys)?;
         let secret = Secret::new(decrypted.into_secret());
         assert_eq!(secret.expose_secret(), "Alice-7");
         Ok(())

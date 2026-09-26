@@ -1,9 +1,8 @@
 //! Public-boundary tests for profile padding policies.
 
 use cryptbox::{
-    Ciphertext, Encrypted, EncryptionKey, EncryptionProfile, Error, Field, FieldBound,
-    GlobalKeyContext, KeyId, LocalEncryptionKeyring, NoPadding, PadToBlock, PadToLength, Unbound,
-    Utf8, field_id, key_id,
+    Ciphertext, Encrypted, EncryptionKey, EncryptionProfile, Error, Field, GlobalKeyContext, KeyId,
+    LocalEncryptionKeyring, NoPadding, PadToBlock, PadToLength, Utf8, field_id, key_id,
 };
 
 const KEY_ID: KeyId = key_id!("50000000-0000-4000-8000-000000000005");
@@ -21,8 +20,13 @@ impl Field for SharedField {
 
 struct Unpadded;
 
-impl EncryptionProfile<String> for Unpadded {
-    type Binding = FieldBound<SharedField>;
+impl Field for Unpadded {
+    const ID: cryptbox::FieldId = SharedField::ID;
+    const NAME: &'static str = SharedField::NAME;
+}
+
+impl EncryptionProfile for Unpadded {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = NoPadding;
@@ -30,8 +34,13 @@ impl EncryptionProfile<String> for Unpadded {
 
 struct SharedFieldPadded;
 
-impl EncryptionProfile<String> for SharedFieldPadded {
-    type Binding = FieldBound<SharedField>;
+impl Field for SharedFieldPadded {
+    const ID: cryptbox::FieldId = SharedField::ID;
+    const NAME: &'static str = SharedField::NAME;
+}
+
+impl EncryptionProfile for SharedFieldPadded {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = PadToBlock<16>;
@@ -39,8 +48,13 @@ impl EncryptionProfile<String> for SharedFieldPadded {
 
 struct FixedLength;
 
-impl EncryptionProfile<String> for FixedLength {
-    type Binding = Unbound;
+impl Field for FixedLength {
+    const ID: cryptbox::FieldId = SharedField::ID;
+    const NAME: &'static str = SharedField::NAME;
+}
+
+impl EncryptionProfile for FixedLength {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = PadToLength<16>;
@@ -48,8 +62,13 @@ impl EncryptionProfile<String> for FixedLength {
 
 struct WiderBlockPadded;
 
-impl EncryptionProfile<String> for WiderBlockPadded {
-    type Binding = Unbound;
+impl Field for WiderBlockPadded {
+    const ID: cryptbox::FieldId = SharedField::ID;
+    const NAME: &'static str = SharedField::NAME;
+}
+
+impl EncryptionProfile for WiderBlockPadded {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = PadToBlock<32>;
@@ -57,8 +76,13 @@ impl EncryptionProfile<String> for WiderBlockPadded {
 
 struct BlockPadded;
 
-impl EncryptionProfile<String> for BlockPadded {
-    type Binding = Unbound;
+impl Field for BlockPadded {
+    const ID: cryptbox::FieldId = SharedField::ID;
+    const NAME: &'static str = SharedField::NAME;
+}
+
+impl EncryptionProfile for BlockPadded {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = PadToBlock<16>;
@@ -66,8 +90,13 @@ impl EncryptionProfile<String> for BlockPadded {
 
 struct PolicyFixedLength;
 
-impl EncryptionProfile<String> for PolicyFixedLength {
-    type Binding = Unbound;
+impl Field for PolicyFixedLength {
+    const ID: cryptbox::FieldId = SharedField::ID;
+    const NAME: &'static str = SharedField::NAME;
+}
+
+impl EncryptionProfile for PolicyFixedLength {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = PadToLength<1_048_576>;
@@ -75,19 +104,16 @@ impl EncryptionProfile<String> for PolicyFixedLength {
 
 // Padding/envelope arithmetic from docs/wire-format.md#size-semantics-and-enforcement.
 // The 1 MiB cases test size boundaries, not an enforced operational cap.
-fn assert_stored_sizes<P: EncryptionProfile<String>>(cases: &[(usize, usize)])
-where
-    P::Binding: cryptbox::Binding<Context = ()>,
-{
+fn assert_stored_sizes<P: EncryptionProfile<Value = String>>(cases: &[(usize, usize)]) {
     let keys = keyring();
     for &(encoded_bytes, envelope_bytes) in cases {
         let input = "x".repeat(encoded_bytes);
-        let ciphertext = Encrypted::<_, P>::new(input.clone())
-            .encrypt_with(&(), &keys)
+        let ciphertext = Encrypted::<P>::new(input.clone())
+            .encrypt_with(&keys)
             .unwrap();
         assert_eq!(ciphertext.as_bytes().len(), envelope_bytes);
         assert_eq!(
-            ciphertext.decrypt_with(&(), &keys).unwrap().expose_secret(),
+            ciphertext.decrypt_with(&keys).unwrap().expose_secret(),
             &input
         );
     }
@@ -112,9 +138,9 @@ fn documented_block_padding_sizes_include_the_marker_at_boundaries() {
 #[test]
 fn documented_fixed_padding_sizes_reserve_room_for_the_marker() {
     assert_stored_sizes::<PolicyFixedLength>(&[(0, 1_048_638), (1_048_575, 1_048_638)]);
-    let value = Encrypted::<_, PolicyFixedLength>::new("x".repeat(1_048_576));
+    let value = Encrypted::<PolicyFixedLength>::new("x".repeat(1_048_576));
     assert!(matches!(
-        value.encrypt_with(&(), &keyring()),
+        value.encrypt_with(&keyring()),
         Err(Error::PaddingOverflow)
     ));
 }
@@ -124,8 +150,8 @@ fn block_padded_values_round_trip_without_revealing_length_within_a_bucket() {
     let keys = keyring();
     let ciphertexts = (0..=15)
         .map(|length| {
-            Encrypted::<_, BlockPadded>::new("x".repeat(length))
-                .encrypt_with(&(), &keys)
+            Encrypted::<BlockPadded>::new("x".repeat(length))
+                .encrypt_with(&keys)
                 .unwrap()
         })
         .collect::<Vec<_>>();
@@ -138,7 +164,7 @@ fn block_padded_values_round_trip_without_revealing_length_within_a_bucket() {
     assert!(ciphertext_lengths.windows(2).all(|pair| pair[0] == pair[1]));
     for (length, ciphertext) in ciphertexts.iter().enumerate() {
         assert_eq!(
-            ciphertext.decrypt_with(&(), &keys).unwrap().expose_secret(),
+            ciphertext.decrypt_with(&keys).unwrap().expose_secret(),
             &"x".repeat(length)
         );
     }
@@ -147,14 +173,13 @@ fn block_padded_values_round_trip_without_revealing_length_within_a_bucket() {
 #[test]
 fn enabling_padding_for_unpadded_ciphertext_is_a_schema_mismatch() {
     let keys = keyring();
-    let unpadded = Encrypted::<_, Unpadded>::new("plaintext without marker".to_owned())
-        .encrypt_with(&(), &keys)
+    let unpadded = Encrypted::<Unpadded>::new("plaintext without marker".to_owned())
+        .encrypt_with(&keys)
         .unwrap();
-    let padded =
-        Ciphertext::<String, SharedFieldPadded>::from_bytes(unpadded.into_bytes()).unwrap();
+    let padded = Ciphertext::<SharedFieldPadded>::from_bytes(unpadded.into_bytes()).unwrap();
 
     assert!(matches!(
-        padded.decrypt_with(&(), &keys),
+        padded.decrypt_with(&keys),
         Err(Error::InvalidPadding)
     ));
 }
@@ -162,10 +187,10 @@ fn enabling_padding_for_unpadded_ciphertext_is_a_schema_mismatch() {
 #[test]
 fn fixed_length_padding_rejects_encoded_plaintext_that_does_not_fit() {
     let keys = keyring();
-    let value = Encrypted::<_, FixedLength>::new("x".repeat(16));
+    let value = Encrypted::<FixedLength>::new("x".repeat(16));
 
     assert!(matches!(
-        value.encrypt_with(&(), &keys),
+        value.encrypt_with(&keys),
         Err(Error::PaddingOverflow)
     ));
 }
@@ -173,17 +198,16 @@ fn fixed_length_padding_rejects_encoded_plaintext_that_does_not_fit() {
 #[test]
 fn reencryption_normalizes_plaintext_to_the_current_padding_parameters() {
     let keys = keyring();
-    let original = Encrypted::<_, BlockPadded>::new("short".to_owned())
-        .encrypt_with(&(), &keys)
+    let original = Encrypted::<BlockPadded>::new("short".to_owned())
+        .encrypt_with(&keys)
         .unwrap();
-    let current =
-        Ciphertext::<String, WiderBlockPadded>::from_bytes(original.into_bytes()).unwrap();
+    let current = Ciphertext::<WiderBlockPadded>::from_bytes(original.into_bytes()).unwrap();
 
-    let rewritten = current.reencrypt_with(&(), &keys).unwrap();
+    let rewritten = current.reencrypt_with(&keys).unwrap();
 
     assert_eq!(rewritten.as_bytes().len(), 62 + 32);
     assert_eq!(
-        rewritten.decrypt_with(&(), &keys).unwrap().expose_secret(),
+        rewritten.decrypt_with(&keys).unwrap().expose_secret(),
         "short"
     );
 }

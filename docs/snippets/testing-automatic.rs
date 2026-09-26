@@ -38,7 +38,6 @@ cryptbox::profile! {
         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
         name: "user-email",
         codec: cryptbox::Utf8,
-        binding: field_bound,
         keys: TestKeys,
     }
 }
@@ -93,7 +92,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     sqlx::query("CREATE TABLE users (email BLOB NOT NULL, email_idx BLOB)")
         .execute(&mut connection)
         .await?;
-    let email = Encrypted::<_, UserEmail>::new(plaintext.to_owned());
+    let email = Encrypted::<UserEmail>::new(plaintext.to_owned());
 
     // Binding Encrypted exercises automatic encryption; this does not write an index.
     sqlx::query("INSERT INTO users (email) VALUES (?)")
@@ -103,7 +102,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     let row = sqlx::query("SELECT email, email_idx FROM users")
         .fetch_one(&mut connection)
         .await?;
-    let read: Encrypted<String, UserEmail> = row.try_get("email")?;
+    let read: Encrypted<UserEmail> = row.try_get("email")?;
     assert_eq!(read.expose_secret(), plaintext); // Automatic authenticated decryption.
     assert!(row.try_get::<Option<Vec<u8>>, _>("email_idx")?.is_none());
 
@@ -118,7 +117,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     let row = sqlx::query("SELECT email, email_idx FROM users")
         .fetch_one(&mut connection)
         .await?;
-    let read: Encrypted<String, UserEmail> = row.try_get("email")?;
+    let read: Encrypted<UserEmail> = row.try_get("email")?;
     assert_eq!(read.expose_secret(), plaintext);
     assert_eq!(
         row.try_get::<Vec<u8>, _>("email_idx")?,

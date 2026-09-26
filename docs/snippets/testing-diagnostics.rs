@@ -7,7 +7,6 @@ cryptbox::profile! {
         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
         name: "user-email",
         codec: cryptbox::Utf8,
-        binding: field_bound,
     }
 }
 
@@ -32,13 +31,13 @@ fn main() -> Result<(), Error> {
         ),
         [],
     )?;
-    let email = Encrypted::<_, UserEmail>::new("private-fixture@example.test".to_owned());
-    let ciphertext = email.encrypt_with(&(), &keys)?;
+    let email = Encrypted::<UserEmail>::new("private-fixture@example.test".to_owned());
+    let ciphertext = email.encrypt_with(&keys)?;
     let mut damaged = ciphertext.as_bytes().to_vec();
     // Corrupt the authentication tag while leaving a structurally valid envelope.
     *damaged.last_mut().ok_or(Error::Internal)? ^= 1;
-    let damaged = Ciphertext::<String, UserEmail>::try_from(damaged)?;
-    let error = match damaged.decrypt_with(&(), &keys) {
+    let damaged = Ciphertext::<UserEmail>::try_from(damaged)?;
+    let error = match damaged.decrypt_with(&keys) {
         Err(error) => error,
         Ok(_) => return Err(Error::Internal),
     };

@@ -66,7 +66,7 @@ Re-encryption protects recovered bytes going forward, not their historical origi
 
 ## The bounded window
 
-Read as `cryptbox::migrate::MaybeEncrypted<T, Profile>` only where legacy values
+Read as `cryptbox::migrate::MaybeEncrypted<Profile>` only where legacy values
 may still occur. `from_bytes` and SQLx `Decode` classify without accessing keys:
 
 - Valid envelopes are retained structurally; explicit decryption authenticates
@@ -82,7 +82,7 @@ new writes; other database clients still need fencing.
 
 For legacy bytes colliding with `CBX\0`, a **trusted out-of-band discriminator**
 may authorize `MaybeEncrypted::from_legacy_bytes`, which bypasses classification.
-`from_plaintext` takes an already decoded `Encrypted<T, Profile>`;
+`from_plaintext` takes an already decoded `Encrypted<Profile>`;
 `From<Ciphertext>` wraps known ciphertext. The packaged stores load no discriminator
 and `RowPlanner` uses ordinary classification: use a custom/manual guarded repair
 for collisions, never a general malformed-envelope fallback.
@@ -119,7 +119,7 @@ Switch to blind-index-only lookup only after the [closure gates](#verification-a
 
 ## Running the sweep
 
-Configure `RowPlanner::<T, Profile>::new(context, encryption_provider)`, add the
+Configure `RowPlanner::<Profile>::new(context, encryption_provider)`, add the
 explicit handler with `with_legacy`, and register indexes in stored order with
 `with_index_with::<Spec>(index_provider)`. Omit `with_legacy` only for authorized
 plaintext-only data. Recovery decodes through the profile codec, encrypts and

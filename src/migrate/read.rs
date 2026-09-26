@@ -2,10 +2,7 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
-use crate::{
-    Binding, Ciphertext, Codec, Encrypted, EncryptionKeyProvider, EncryptionProfile, Error,
-    value::ProfileContext,
-};
+use crate::{Ciphertext, Codec, Encrypted, EncryptionKeyProvider, EncryptionProfile, Error};
 
 use super::{LegacyFormat, legacy};
 
@@ -39,8 +36,7 @@ use super::{LegacyFormat, legacy};
 ///
 /// ```
 /// use cryptbox::{
-///     Encrypted, EncryptionKey, EncryptionProfile, Field, FieldBound,
-///     GlobalKeyContext, LocalEncryptionKeyring, Utf8, field_id, key_id,
+///     EncryptionKey, LocalEncryptionKeyring, key_id,
 ///     migrate::{LegacyError, LegacyFormat, MaybeEncrypted},
 /// };
 /// use zeroize::Zeroizing;
@@ -54,17 +50,12 @@ use super::{LegacyFormat, legacy};
 ///     }
 /// }
 ///
-/// struct UserEmail;
-/// impl Field for UserEmail {
-///     const ID: cryptbox::FieldId =
-///         field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-///     const NAME: &'static str = "user-email";
-/// }
-/// impl EncryptionProfile<String> for UserEmail {
-///     type Codec = Utf8;
-///     type Binding = FieldBound<Self>;
-///     type Keys = GlobalKeyContext;
-///     type Padding = cryptbox::NoPadding;
+/// cryptbox::profile! {
+///     UserEmail: String {
+///         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
+///         name: "user-email",
+///         codec: cryptbox::Utf8,
+///     }
 /// }
 ///
 /// // Fixed key material is for this doctest only; load production keys securely.
@@ -77,52 +68,47 @@ use super::{LegacyFormat, legacy};
 /// )?;
 ///
 /// // The handler accepts both plaintext and the previous format.
-/// let plaintext = MaybeEncrypted::<String, UserEmail>::from_bytes(
+/// let plaintext = MaybeEncrypted::<UserEmail>::from_bytes(
 ///     b"mark@example.com".to_vec(),
 /// )?;
 /// assert!(plaintext.is_legacy());
 /// assert_eq!(
 ///     plaintext
-///         .decrypt_with_legacy(&(), &keys, &PreviousFormat)?
+///         .decrypt_with_legacy(&keys, &PreviousFormat)?
 ///         .expose_secret(),
 ///     "mark@example.com",
 /// );
 ///
-/// let foreign = MaybeEncrypted::<String, UserEmail>::from_bytes(
+/// let foreign = MaybeEncrypted::<UserEmail>::from_bytes(
 ///     b"previous:other@example.com".to_vec(),
 /// )?;
-/// let value = foreign.decrypt_with_legacy(&(), &keys, &PreviousFormat)?;
-/// let stored = value.encrypt_with(&(), &keys)?;
-/// let read = MaybeEncrypted::<String, UserEmail>::from_bytes(stored.into_bytes())?;
+/// let value = foreign.decrypt_with_legacy(&keys, &PreviousFormat)?;
+/// let stored = value.encrypt_with(&keys)?;
+/// let read = MaybeEncrypted::<UserEmail>::from_bytes(stored.into_bytes())?;
 /// assert!(!read.is_legacy());
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
-pub struct MaybeEncrypted<T, Profile> {
-    state: State<T, Profile>,
+pub struct MaybeEncrypted<Profile: EncryptionProfile> {
+    state: State<Profile>,
 }
 
-enum State<T, Profile> {
-    Ciphertext(Ciphertext<T, Profile>),
-    Plaintext(Encrypted<T, Profile>),
+enum State<Profile: EncryptionProfile> {
+    Ciphertext(Ciphertext<Profile>),
+    Plaintext(Encrypted<Profile>),
     Legacy(Zeroizing<Vec<u8>>),
 }
 
-fn decode_legacy<T, Profile>(
+fn decode_legacy<Profile: EncryptionProfile>(
     bytes: &[u8],
     legacy: Option<&dyn LegacyFormat>,
-) -> Result<Encrypted<T, Profile>, Error>
-where
-    Profile: EncryptionProfile<T>,
-{
+) -> Result<Encrypted<Profile>, Error> {
     let plaintext = legacy::recover(bytes, legacy)?;
-    Ok(Encrypted::new(<Profile::Codec as Codec<T>>::decode(
-        &plaintext,
-    )?))
+    Ok(Encrypted::from_value(Profile::Codec::decode(&plaintext)?))
 }
 
-impl<T, Profile> MaybeEncrypted<T, Profile>
+impl<Profile> MaybeEncrypted<Profile>
 where
-    Profile: EncryptionProfile<T>,
+    Profile: EncryptionProfile,
 {
     /// Classifies stored bytes as a `CryptBox` envelope or legacy data.
     ///
@@ -148,7 +134,7 @@ where
     }
 
     /// Wraps a value whose storage is known out of band to hold plaintext.
-    pub const fn from_plaintext(value: Encrypted<T, Profile>) -> Self {
+    pub const fn from_plaintext(value: Encrypted<Profile>) -> Self {
         Self {
             state: State::Plaintext(value),
         }
@@ -160,20 +146,19 @@ where
     /// legacy value that begins with the `CryptBox` envelope magic.
     ///
     /// ```
-    /// use cryptbox::{EncryptionProfile, GlobalKeyContext, Raw, Unbound};
     /// use cryptbox::migrate::MaybeEncrypted;
     ///
-    /// struct LegacyBlob;
-    /// impl EncryptionProfile<Vec<u8>> for LegacyBlob {
-    ///     type Codec = Raw;
-    ///     type Binding = Unbound;
-    ///     type Keys = GlobalKeyContext;
-    ///     type Padding = cryptbox::NoPadding;
+    /// cryptbox::profile! {
+    ///     LegacyBlob: Vec<u8> {
+    ///         id: "3f0e8f5c-2d4b-4e7a-9c1d-6b5a4f3e2d1c",
+    ///         name: "legacy-blob",
+    ///         codec: cryptbox::Raw,
+    ///     }
     /// }
     ///
     /// // A discriminator column established that these bytes are legacy, even
     /// // though they collide with CryptBox's envelope magic.
-    /// let read = MaybeEncrypted::<Vec<u8>, LegacyBlob>::from_legacy_bytes(
+    /// let read = MaybeEncrypted::<LegacyBlob>::from_legacy_bytes(
     ///     b"CBX\0previous-format".to_vec(),
     /// );
     /// assert!(read.is_legacy());
@@ -197,11 +182,10 @@ where
     /// failure, unavailable providers, or codec failure.
     pub fn decrypt_with(
         self,
-        context: &ProfileContext<T, Profile>,
         keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Encrypted<T, Profile>, Error> {
+    ) -> Result<Encrypted<Profile>, Error> {
         match self.state {
-            State::Ciphertext(ciphertext) => ciphertext.decrypt_with(context, keys),
+            State::Ciphertext(ciphertext) => ciphertext.decrypt_with(keys),
             State::Plaintext(value) => Ok(value),
             State::Legacy(bytes) => decode_legacy(&bytes, None),
         }
@@ -219,22 +203,20 @@ where
     /// decryption fails.
     pub fn decrypt_with_legacy(
         self,
-        context: &ProfileContext<T, Profile>,
         keys: &dyn EncryptionKeyProvider,
         legacy: &dyn LegacyFormat,
-    ) -> Result<Encrypted<T, Profile>, Error> {
+    ) -> Result<Encrypted<Profile>, Error> {
         match self.state {
-            State::Ciphertext(ciphertext) => ciphertext.decrypt_with(context, keys),
+            State::Ciphertext(ciphertext) => ciphertext.decrypt_with(keys),
             State::Plaintext(value) => Ok(value),
             State::Legacy(bytes) => decode_legacy(&bytes, Some(legacy)),
         }
     }
 }
 
-impl<T, Profile> MaybeEncrypted<T, Profile>
+impl<Profile> MaybeEncrypted<Profile>
 where
-    Profile: EncryptionProfile<T>,
-    Profile::Binding: Binding<Context = ()>,
+    Profile: EncryptionProfile,
 {
     /// Consumes the read and decrypts with the profile's global key context.
     ///
@@ -244,7 +226,7 @@ where
     ///
     /// Returns an error when providers are uninitialized, decryption fails, or
     /// legacy bytes cannot be decoded by the profile's codec.
-    pub fn decrypt(self) -> Result<Encrypted<T, Profile>, Error> {
+    pub fn decrypt(self) -> Result<Encrypted<Profile>, Error> {
         match self.state {
             State::Ciphertext(ciphertext) => ciphertext.decrypt(),
             State::Plaintext(value) => Ok(value),
@@ -259,7 +241,7 @@ where
     ///
     /// Returns an error when legacy recovery, codec decoding, provider lookup,
     /// or envelope decryption fails.
-    pub fn decrypt_legacy(self, legacy: &dyn LegacyFormat) -> Result<Encrypted<T, Profile>, Error> {
+    pub fn decrypt_legacy(self, legacy: &dyn LegacyFormat) -> Result<Encrypted<Profile>, Error> {
         match self.state {
             State::Ciphertext(ciphertext) => ciphertext.decrypt(),
             State::Plaintext(value) => Ok(value),
@@ -268,7 +250,7 @@ where
     }
 }
 
-impl<T, Profile> MaybeEncrypted<T, Profile> {
+impl<Profile: EncryptionProfile> MaybeEncrypted<Profile> {
     /// Returns whether the value represents legacy, non-envelope storage.
     #[doc(alias = "is_plaintext")]
     #[must_use]
@@ -278,7 +260,7 @@ impl<T, Profile> MaybeEncrypted<T, Profile> {
 
     /// Returns the envelope when the stored bytes were classified as one.
     #[must_use]
-    pub fn as_ciphertext(&self) -> Option<&Ciphertext<T, Profile>> {
+    pub fn as_ciphertext(&self) -> Option<&Ciphertext<Profile>> {
         match &self.state {
             State::Ciphertext(ciphertext) => Some(ciphertext),
             State::Plaintext(_) | State::Legacy(_) => None,
@@ -286,15 +268,15 @@ impl<T, Profile> MaybeEncrypted<T, Profile> {
     }
 }
 
-impl<T, Profile> From<Ciphertext<T, Profile>> for MaybeEncrypted<T, Profile> {
-    fn from(ciphertext: Ciphertext<T, Profile>) -> Self {
+impl<Profile: EncryptionProfile> From<Ciphertext<Profile>> for MaybeEncrypted<Profile> {
+    fn from(ciphertext: Ciphertext<Profile>) -> Self {
         Self {
             state: State::Ciphertext(ciphertext),
         }
     }
 }
 
-impl<T, Profile> fmt::Debug for MaybeEncrypted<T, Profile> {
+impl<Profile: EncryptionProfile> fmt::Debug for MaybeEncrypted<Profile> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("MaybeEncrypted([REDACTED])")
     }

@@ -44,11 +44,11 @@ keys are needed and where plaintext becomes available:
 | Approach | Behavior and consequence |
 | --- | --- |
 | Explicit encryption or preparation | Produce ciphertext before calling storage. Key failures happen at that explicit step; the stored representation can then cross a database or serialization boundary. |
-| Read as `Ciphertext<T, Profile>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to authenticate and decrypt. Useful when only some loaded values need plaintext. |
-| Automatic SQLx `Encrypted<T, Profile>` | The adapter encrypts on encode and authenticates/decrypts on decode. It resolves providers through the profile's key context, so ordinary database conversion needs that context available. |
+| Read as `Ciphertext<Profile>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to authenticate and decrypt. Useful when only some loaded values need plaintext. |
+| Automatic SQLx `Encrypted<Profile>` | The adapter encrypts on encode and authenticates/decrypts on decode. It resolves providers through the profile's key context, so ordinary database conversion needs that context available. |
 
 Automatic SQLx adapters are available for unit-context profiles. Both current
-bindings, `Unbound` and `FieldBound<F>`, use unit context; field binding still
+bindings, `Unbound` and `F`, use unit context; field binding still
 applies. Explicit-provider operations are useful when dependencies and plaintext
 access should be visible at the call site. Automatic adapters are useful when
 encryption belongs consistently at the database boundary.

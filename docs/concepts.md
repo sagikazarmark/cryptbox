@@ -30,9 +30,9 @@ removes any profile padding and decodes the bytes back into a string.
 
 Two types make the application/storage distinction explicit:
 
-- **`Encrypted<T, Profile>` holds plaintext**, despite its name. It associates a
+- **`Encrypted<Profile>` holds plaintext**, despite its name. It associates a
   value with its encryption policy. `expose_secret()` deliberately exposes that value.
-- **`Ciphertext<T, Profile>` holds the stored encrypted envelope.** It can be
+- **`Ciphertext<Profile>` holds the stored encrypted envelope.** It can be
   loaded and passed around before deciding when to decrypt it.
 
 Encryption borrows the source value, so the original plaintext remains available.

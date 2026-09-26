@@ -8,16 +8,15 @@ cryptbox::profile! {
         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
         name: "user-email",
         codec: cryptbox::Utf8,
-        binding: field_bound,
     }
 }
 
 fn main() -> Result<(), cryptbox::Error> {
     // Ephemeral demo keys: a new key and generation ID on every run.
     let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-    let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
-    let ciphertext = email.encrypt_with(&(), &keys)?;
-    let decrypted = ciphertext.decrypt_with(&(), &keys)?;
+    let email = Encrypted::<UserEmail>::new("mark@example.com".to_owned());
+    let ciphertext = email.encrypt_with(&keys)?;
+    let decrypted = ciphertext.decrypt_with(&keys)?;
     assert_eq!(decrypted.expose_secret(), "mark@example.com");
     assert_eq!(email.expose_secret(), "mark@example.com"); // Source retained.
     println!("Field-bound round trip succeeded.");
@@ -34,7 +33,6 @@ mod tests {
             id: "124f036a-39c6-4197-a9bb-c92c471285ad",
             name: "billing-email",
             codec: cryptbox::Utf8,
-            binding: field_bound,
         }
     }
 
@@ -46,13 +44,12 @@ mod tests {
     #[test]
     fn stored_email_cannot_be_read_as_another_field() -> Result<(), cryptbox::Error> {
         let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-        let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
-        let ciphertext = email.encrypt_with(&(), &keys)?;
-        let substituted = cryptbox::Ciphertext::<String, BillingEmail>::from_bytes(
-            ciphertext.as_bytes().to_vec(),
-        )?;
+        let email = Encrypted::<UserEmail>::new("mark@example.com".to_owned());
+        let ciphertext = email.encrypt_with(&keys)?;
+        let substituted =
+            cryptbox::Ciphertext::<BillingEmail>::from_bytes(ciphertext.as_bytes().to_vec())?;
         assert!(matches!(
-            substituted.decrypt_with(&(), &keys),
+            substituted.decrypt_with(&keys),
             Err(cryptbox::Error::AuthenticationFailed)
         ));
         Ok(())

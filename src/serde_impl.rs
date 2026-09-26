@@ -13,7 +13,7 @@ trait DeserializeFromBytes: Sized {
     fn deserialize_from_bytes(bytes: Vec<u8>) -> Result<Self, Error>;
 }
 
-impl<T, Profile> DeserializeFromBytes for Ciphertext<T, Profile> {
+impl<Profile> DeserializeFromBytes for Ciphertext<Profile> {
     const EXPECTING: &'static str = "a structurally valid CryptBox ciphertext envelope";
 
     fn deserialize_from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
@@ -66,7 +66,7 @@ impl<'de, Value: DeserializeFromBytes> Visitor<'de> for BytesVisitor<Value> {
     }
 }
 
-impl<T, Profile> Serialize for Ciphertext<T, Profile> {
+impl<Profile> Serialize for Ciphertext<Profile> {
     fn serialize<SerializerType>(
         &self,
         serializer: SerializerType,
@@ -78,7 +78,7 @@ impl<T, Profile> Serialize for Ciphertext<T, Profile> {
     }
 }
 
-impl<'de, T, Profile> Deserialize<'de> for Ciphertext<T, Profile> {
+impl<'de, Profile> Deserialize<'de> for Ciphertext<Profile> {
     fn deserialize<DeserializerType>(
         deserializer: DeserializerType,
     ) -> Result<Self, DeserializerType::Error>

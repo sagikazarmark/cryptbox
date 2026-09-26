@@ -1,8 +1,8 @@
 //! Public-boundary tests for declarative encryption profiles.
 
 use cryptbox::{
-    BlindIndexKeyProvider, EncryptionKeyProvider, EncryptionProfile, Field, FieldBound,
-    GlobalKeyContext, KeyContext, KeyProviderError, NoPadding, PadToBlock, Raw, Unbound, Utf8,
+    BlindIndexKeyProvider, EncryptionKeyProvider, EncryptionProfile, Field, GlobalKeyContext,
+    KeyContext, KeyProviderError, NoPadding, PadToBlock, Raw, Utf8,
 };
 
 cryptbox::profile! {
@@ -11,7 +11,6 @@ cryptbox::profile! {
         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
         name: "user-email",
         codec: Utf8,
-        binding: field_bound,
     }
 }
 
@@ -21,7 +20,6 @@ cryptbox::profile! {
         id: "b49a65a7-93e6-4b09-8f04-a502578045c1",
         name: "padded-email",
         codec: Utf8,
-        binding: field_bound,
         padding: PadToBlock<16>,
     }
 }
@@ -40,25 +38,22 @@ impl KeyContext for ApplicationKeys {
 }
 
 cryptbox::profile! {
-    /// API token encrypted without field binding.
+    /// API token encrypted with an application key context.
     pub ApiToken: Vec<u8> {
         id: "de8c983c-7d2b-4c4f-8162-f7193010de55",
         name: "api-token",
         codec: Raw,
-        binding: unbound,
         keys: ApplicationKeys,
     }
 }
 
 #[test]
-fn field_bound_profile_declares_field_metadata_and_policy() {
+fn profile_declares_field_metadata_and_policy() {
     fn assert_policy<P>()
     where
-        P: Field
-            + EncryptionProfile<
-                String,
+        P: EncryptionProfile<
+                Value = String,
                 Codec = Utf8,
-                Binding = FieldBound<P>,
                 Keys = GlobalKeyContext,
                 Padding = NoPadding,
             >,
@@ -74,14 +69,12 @@ fn field_bound_profile_declares_field_metadata_and_policy() {
 }
 
 #[test]
-fn unbound_profile_requires_explicit_binding_and_accepts_custom_keys() {
+fn profile_accepts_custom_keys() {
     fn assert_policy<P>()
     where
-        P: Field
-            + EncryptionProfile<
-                Vec<u8>,
+        P: EncryptionProfile<
+                Value = Vec<u8>,
                 Codec = Raw,
-                Binding = Unbound,
                 Keys = ApplicationKeys,
                 Padding = NoPadding,
             >,
@@ -100,11 +93,9 @@ fn unbound_profile_requires_explicit_binding_and_accepts_custom_keys() {
 fn profile_accepts_an_explicit_padding_policy() {
     fn assert_policy<P>()
     where
-        P: Field
-            + EncryptionProfile<
-                String,
+        P: EncryptionProfile<
+                Value = String,
                 Codec = Utf8,
-                Binding = FieldBound<P>,
                 Keys = GlobalKeyContext,
                 Padding = PadToBlock<16>,
             >,

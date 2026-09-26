@@ -113,8 +113,8 @@ buffers and does not include their contents in errors.
 
 The example prepares with a local encryption key provider, binds
 `prepared.ciphertext()` into a `BLOB`, and reads
-`Ciphertext<String, UserEmail>` with `row.try_get("email")`. SQLx decoding checks
-structure; `decrypt_with(&(), keys)` authenticates and decodes. Preparation borrows
+`Ciphertext<UserEmail>` with `row.try_get("email")`. SQLx decoding checks
+structure; `decrypt_with(keys)` authenticates and decodes. Preparation borrows
 the original plaintext, and no global provider is installed. `&()` is the unit
 binding context; `keys` supplies the key separately.
 

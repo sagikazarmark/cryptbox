@@ -4,8 +4,8 @@ use std::{env, error::Error, path::Path};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, FieldBound, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
-    blind_index_probes, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    EncryptionKey, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, blind_index_probes,
+    index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
     verify_blind_index_candidate,
 };
 use sqlx::{Connection, QueryBuilder, Row};
@@ -26,14 +26,13 @@ type Db = sqlx::Postgres;
 type Db = sqlx::Sqlite;
 type DbConnection = <Db as sqlx::Database>::Connection;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-type EmailCiphertext = Ciphertext<String, UserEmail>;
+type EmailCiphertext = Ciphertext<UserEmail>;
 
 cryptbox::profile! {
     UserEmail: String {
         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
         name: "user-email",
         codec: cryptbox::Utf8,
-        binding: field_bound,
     }
 }
 
@@ -221,13 +220,12 @@ async fn audit_current(
         for row in rows {
             // This maintenance fixture requires non-NULL values, as does its packaged sweep.
             let ciphertext: EmailCiphertext = row.try_get("email")?;
-            let value = ciphertext.decrypt_with(&(), encryption)?;
+            let value = ciphertext.decrypt_with(encryption)?;
             validate_email(value.expose_secret())?;
-            let expected = cryptbox::derive_blind_index::<
-                EmailLookup,
-                String,
-                FieldBound<UserEmail>,
-            >(value.expose_secret(), &(), indexes)?;
+            let expected = cryptbox::derive_blind_index::<EmailLookup, String, UserEmail>(
+                value.expose_secret(),
+                indexes,
+            )?;
             if expected.as_bytes() != row.try_get::<Vec<u8>, _>("email_lookup")? {
                 return Err("index consistency check failed".into());
             }
@@ -256,8 +254,7 @@ async fn maintenance(
     let table = SweepTable::new("users", "id", "email")
         .with_index_column("email_lookup")
         .with_progress("cryptbox_migration_progress", run);
-    let planner = RowPlanner::<String, UserEmail>::new(&(), encryption)
-        .with_index_with::<EmailLookup>(indexes);
+    let planner = RowPlanner::<UserEmail>::new(encryption).with_index_with::<EmailLookup>(indexes);
     #[cfg(feature = "legacy-migration")]
     let legacy = migration::PreviousEncryption::load()?;
     #[cfg(feature = "legacy-migration")]
@@ -271,8 +268,8 @@ async fn maintenance(
             // Fixture only: interleave an application write after loading the exact old pair.
             let rows = store.load_batch(None, 1).await?;
             let row = rows.first().ok_or("conflict rehearsal needs a stale row")?;
-            let planner = RowPlanner::<String, UserEmail>::new(&(), encryption)
-                .with_index_with::<EmailLookup>(indexes);
+            let planner =
+                RowPlanner::<UserEmail>::new(encryption).with_index_with::<EmailLookup>(indexes);
             let plan = planner.plan_row(&row.ciphertext, &[&row.indexes[0]])?;
             let replacement = plan.write().ok_or("conflict rehearsal needs a stale row")?;
             let mut writer = DbConnection::connect(&database_url()?).await?;
@@ -338,9 +335,9 @@ fn rotation_canary(
     encryption: &LocalEncryptionKeyring,
     indexes: &LocalBlindIndexKeyring,
 ) -> Result<()> {
-    let value = Encrypted::<_, UserEmail>::new(CANARY.to_owned());
+    let value = Encrypted::<UserEmail>::new(CANARY.to_owned());
     let prepared = value
-        .prepare_with(&(), encryption)?
+        .prepare_with(encryption)?
         .with_index_with::<EmailLookup>(indexes)?;
     // Out-of-band synthetic data: never put a future generation in the live users table.
     std::fs::write(
@@ -366,12 +363,11 @@ fn rotation_ready(
         return Err("invalid canary".into());
     }
     let ciphertext = EmailCiphertext::from_bytes(hex::decode(lines[0])?)?;
-    if ciphertext.decrypt_with(&(), encryption)?.expose_secret() != CANARY {
+    if ciphertext.decrypt_with(encryption)?.expose_secret() != CANARY {
         return Err("canary plaintext mismatch".into());
     }
     let token = hex::decode(lines[1])?;
-    let probes =
-        blind_index_probes::<EmailLookup, str, FieldBound<UserEmail>>(CANARY, &(), indexes)?;
+    let probes = blind_index_probes::<EmailLookup, str, UserEmail>(CANARY, indexes)?;
     if !probes.iter().any(|probe| probe.as_bytes() == token) {
         return Err("canary index generation unavailable or mismatched".into());
     }
@@ -390,12 +386,12 @@ async fn put(
     if let Some(email) = &email {
         validate_email(email)?;
     }
-    let value = email.map(Encrypted::<_, UserEmail>::new);
+    let value = email.map(Encrypted::<UserEmail>::new);
     let prepared = value
         .as_ref()
         .map(|value| {
             value
-                .prepare_with(&(), encryption)?
+                .prepare_with(encryption)?
                 .with_index_with::<EmailLookup>(indexes)
         })
         .transpose()?;
@@ -423,10 +419,7 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyri
     // Decode the stored envelope now; choose when to authenticate/decrypt later.
     let stored: Option<EmailCiphertext> = row.try_get("email")?;
     match stored {
-        Some(ciphertext) => println!(
-            "{id}: {}",
-            ciphertext.decrypt_with(&(), keys)?.expose_secret()
-        ),
+        Some(ciphertext) => println!("{id}: {}", ciphertext.decrypt_with(keys)?.expose_secret()),
         None => println!("{id}: NULL"),
     }
     Ok(())
@@ -440,8 +433,7 @@ async fn search(
     encryption: &LocalEncryptionKeyring,
     indexes: &LocalBlindIndexKeyring,
 ) -> Result<()> {
-    let probes =
-        blind_index_probes::<EmailLookup, str, FieldBound<UserEmail>>(query, &(), indexes)?;
+    let probes = blind_index_probes::<EmailLookup, str, UserEmail>(query, indexes)?;
     let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
     let mut values = sql.separated(", ");
     for probe in &probes {
@@ -453,7 +445,7 @@ async fn search(
     let mut rejected = 0;
     for row in rows {
         let ciphertext: EmailCiphertext = row.try_get("email")?;
-        let candidate = ciphertext.decrypt_with(&(), encryption)?;
+        let candidate = ciphertext.decrypt_with(encryption)?;
         if verify_blind_index_candidate::<EmailLookup, str>(query, candidate.expose_secret())? {
             matches.push(row.try_get("id")?);
         } else {
@@ -474,9 +466,9 @@ async fn macro_put(
     indexes: &LocalBlindIndexKeyring,
 ) -> Result<()> {
     validate_email(&email)?;
-    let value = Encrypted::<_, UserEmail>::new(email);
+    let value = Encrypted::<UserEmail>::new(email);
     let prepared = value
-        .prepare_with(&(), encryption)?
+        .prepare_with(encryption)?
         .with_index_with::<EmailLookup>(indexes)?;
     let ciphertext = prepared.ciphertext();
     let index = prepared.index::<EmailLookup>()?.as_bytes();
@@ -507,10 +499,7 @@ async fn macro_get(
     .await?;
     // ANCHOR_END: searchable-macro-get
     match row.email {
-        Some(ciphertext) => println!(
-            "{id}: {}",
-            ciphertext.decrypt_with(&(), keys)?.expose_secret()
-        ),
+        Some(ciphertext) => println!("{id}: {}", ciphertext.decrypt_with(keys)?.expose_secret()),
         None => println!("{id}: NULL"),
     }
     Ok(())

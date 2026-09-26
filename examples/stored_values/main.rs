@@ -3,9 +3,9 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext,
-    Encrypted, EncryptionKey, Error, FieldBound, IndexId, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, blind_index_probes, derive_blind_index, index_id, index_key_id,
-    inspect_blind_index, inspect_ciphertext, key_id, profile, verify_blind_index_candidate,
+    Encrypted, EncryptionKey, Error, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
+    blind_index_probes, derive_blind_index, index_id, index_key_id, inspect_blind_index,
+    inspect_ciphertext, key_id, profile, verify_blind_index_candidate,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -15,7 +15,6 @@ profile! {
         id: "70000000-0000-4000-8000-000000000007",
         name: "user-email",
         codec: cryptbox::Utf8,
-        binding: field_bound,
     }
 }
 
@@ -38,7 +37,7 @@ impl BlindIndexSpec<String> for EmailLookup {
 
 #[derive(Serialize, Deserialize)]
 struct StoredUser {
-    email: Ciphertext<String, UserEmail>,
+    email: Ciphertext<UserEmail>,
     email_lookup: BlindIndex<EmailLookup>,
 }
 
@@ -57,11 +56,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         [],
     )?;
 
-    let email = Encrypted::<_, UserEmail>::new("Mark@Example.com".to_owned());
-    // &() supplies the unit runtime context; the profile still binds to UserEmail.
+    let email = Encrypted::<UserEmail>::new("Mark@Example.com".to_owned());
+    // The profile binds the ciphertext and index to the UserEmail field.
     // prepare_with borrows email: it does not remove plaintext from memory.
     let prepared = email
-        .prepare_with(&(), &keys)?
+        .prepare_with(&keys)?
         .with_index_with::<EmailLookup>(&index_keys)?;
     let stored = StoredUser {
         email: prepared.ciphertext().clone(),
@@ -79,29 +78,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(!restored.email.needs_reencryption_with(&keys)?);
 
     // Explicit decryption authenticates, unpads, and decodes with the chosen profile.
-    let plaintext = restored.email.decrypt_with(&(), &keys)?;
+    let plaintext = restored.email.decrypt_with(&keys)?;
     assert_eq!(plaintext.expose_secret(), "Mark@Example.com");
 
     // Separately check index consistency, here after convergence to the current key.
-    let recomputed = derive_blind_index::<EmailLookup, String, FieldBound<UserEmail>>(
+    let recomputed = derive_blind_index::<EmailLookup, String, UserEmail>(
         plaintext.expose_secret(),
-        &(),
         &index_keys,
     )?;
     assert_eq!(restored.email_lookup, recomputed);
 
     // Lookup searches every readable generation and compares authenticated plaintext.
     let query = "mark@example.com".to_owned();
-    let probes =
-        blind_index_probes::<EmailLookup, String, FieldBound<UserEmail>>(&query, &(), &index_keys)?;
+    let probes = blind_index_probes::<EmailLookup, String, UserEmail>(&query, &index_keys)?;
     let matches = probes.iter().any(|probe| probe == &restored.email_lookup)
         && verify_blind_index_candidate::<EmailLookup, String>(&query, plaintext.expose_secret())?;
     assert!(matches);
 
     // Plaintext comparison alone cannot detect a stored index for another value.
-    let unrelated_index = derive_blind_index::<EmailLookup, String, FieldBound<UserEmail>>(
+    let unrelated_index = derive_blind_index::<EmailLookup, String, UserEmail>(
         &"other@example.com".to_owned(),
-        &(),
         &index_keys,
     )?;
     assert_ne!(unrelated_index, recomputed);
@@ -114,10 +110,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut damaged = restored.email.into_bytes();
     *damaged.last_mut().ok_or("empty ciphertext")? ^= 1;
     let damaged_json = serde_json::to_vec(&damaged)?;
-    let damaged: Ciphertext<String, UserEmail> = serde_json::from_slice(&damaged_json)?;
+    let damaged: Ciphertext<UserEmail> = serde_json::from_slice(&damaged_json)?;
     assert!(!damaged.needs_reencryption_with(&keys)?);
     assert_eq!(
-        damaged.decrypt_with(&(), &keys).unwrap_err(),
+        damaged.decrypt_with(&keys).unwrap_err(),
         Error::AuthenticationFailed
     );
 

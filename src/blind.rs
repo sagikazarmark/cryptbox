@@ -4,7 +4,7 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
-    Binding, BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, Error, IndexId,
+    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, Error, Field, IndexId,
     IndexKeyId,
     crypto::{hkdf_sha256_32, hmac_sha256},
 };
@@ -20,7 +20,7 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 ///
 /// `BITS` must be between 1 and 256. The logical [`IndexId`] is part of key
 /// derivation but is not stored in the index bytes. Changing the ID,
-/// normalization, binding, or precision creates a new logical index and
+/// normalization, field, or precision creates a new logical index and
 /// requires a migration.
 ///
 /// Invalid precision is rejected when the specification is used:
@@ -78,7 +78,7 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
 /// queries, and candidate verification. Return only the bytes relevant to
 /// equality. The indexed value may itself be sensitive; do not incorporate
 /// unrelated secrets, key material, randomness, or unstable formatting state.
-/// Changes to normalization, index ID, binding, or precision require a migration
+/// Changes to normalization, index ID, field, or precision require a migration
 /// and compatible queries while old projections remain stored.
 ///
 /// # Implementor obligations
@@ -94,7 +94,7 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
 /// same normalization after authenticated decryption, not accept an index hit alone.
 ///
 /// See the [custom-profile example] and [ownership reference].
-/// Bindings and padding remain sealed; a custom normalizer does not add row binding.
+/// Padding remains sealed; a custom normalizer does not add row binding.
 ///
 #[doc = concat!(
     "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
@@ -134,7 +134,7 @@ impl<Spec: BlindIndexMetadata> BlindIndex<Spec> {
     /// Returns [`Error::InvalidBlindIndex`] for malformed, noncanonical, or
     /// incorrectly sized values. `Spec::BITS` is checked at compile time. This
     /// does not authenticate the representation or prove that it was derived
-    /// with `Spec::ID`, the expected binding, or the expected input.
+    /// with `Spec::ID`, the expected field, or the expected input.
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
         assert_valid_bits::<Spec>();
         let bytes = bytes.into();
@@ -269,7 +269,7 @@ impl BlindIndexInfo {
 ///
 /// This does not authenticate the returned key ID, precision, or digest. Treat
 /// all metadata as untrusted. To check index consistency, decrypt the associated
-/// ciphertext, recompute with the intended specification, binding, and an allowed
+/// ciphertext, recompute with the intended specification, field, and an allowed
 /// key generation, and compare the complete stored representation. A match is
 /// consistency at the configured precision, not proof of provenance or freshness.
 /// [`verify_blind_index_candidate`] only compares plaintexts; it does not perform
@@ -309,29 +309,24 @@ pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
     })
 }
 
-/// Derives the current stored candidate index for `input`.
+/// Derives the current stored candidate index for `input` in field `F`.
 ///
 /// # Errors
 ///
 /// Returns an error for normalization failure or an unavailable key provider.
-pub fn derive_blind_index<Spec, Input, B>(
+pub fn derive_blind_index<Spec, Input, F>(
     input: &Input,
-    context: &B::Context,
     keys: &dyn BlindIndexKeyProvider,
 ) -> Result<BlindIndex<Spec>, Error>
 where
     Input: ?Sized,
     Spec: BlindIndexSpec<Input>,
-    B: Binding,
+    F: Field,
 {
     let normalized = Spec::normalize(input)?;
     let key = keys.current_key()?;
 
-    derive_normalized::<Spec>(
-        &normalized,
-        &BindingDomain::from_binding::<B>(context),
-        &key,
-    )
+    derive_normalized::<Spec>(&normalized, &BindingDomain::field::<F>(), &key)
 }
 
 /// Derives one candidate probe for every currently readable index generation.
@@ -347,18 +342,17 @@ where
 /// # Errors
 ///
 /// Returns an error for normalization failure or an unavailable key provider.
-pub fn blind_index_probes<Spec, Input, B>(
+pub fn blind_index_probes<Spec, Input, F>(
     input: &Input,
-    context: &B::Context,
     keys: &dyn BlindIndexKeyProvider,
 ) -> Result<Vec<BlindIndex<Spec>>, Error>
 where
     Input: ?Sized,
     Spec: BlindIndexSpec<Input>,
-    B: Binding,
+    F: Field,
 {
     let normalized = Spec::normalize(input)?;
-    let domain = BindingDomain::from_binding::<B>(context);
+    let domain = BindingDomain::field::<F>();
 
     keys.readable_keys()?
         .iter()
@@ -369,7 +363,7 @@ where
 /// Compares normalized query and candidate plaintext after candidate lookup.
 ///
 /// Decrypt and authenticate the candidate ciphertext before calling this.
-/// This function receives no stored index, keys, or binding context: it rejects
+/// This function receives no stored index, keys, or field: it rejects
 /// false plaintext matches but does not authenticate index metadata or establish
 /// index/ciphertext consistency.
 ///
@@ -396,21 +390,6 @@ where
     }
 
     Ok(query.as_slice().ct_eq(candidate.as_slice()).into())
-}
-
-pub(crate) fn derive_with_domain<Spec, Input>(
-    input: &Input,
-    domain: &BindingDomain,
-    keys: &dyn BlindIndexKeyProvider,
-) -> Result<BlindIndex<Spec>, Error>
-where
-    Input: ?Sized,
-    Spec: BlindIndexSpec<Input>,
-{
-    let normalized = Spec::normalize(input)?;
-    let key = keys.current_key()?;
-
-    derive_normalized::<Spec>(&normalized, domain, &key)
 }
 
 fn derive_normalized<Spec: BlindIndexMetadata>(

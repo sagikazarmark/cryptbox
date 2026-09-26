@@ -25,7 +25,7 @@ and write ciphertext and indexes atomically.
 
 - `Encrypted` holds plaintext and deliberately has **no Serde implementation**.
   Prepare/encrypt explicitly; preparation borrows rather than erases the source.
-- `StoredUser` owns `Ciphertext<String, UserEmail>` and `BlindIndex<EmailLookup>`.
+- `StoredUser` owns `Ciphertext<UserEmail>` and `BlindIndex<EmailLookup>`.
   Serde stores their complete bytes (integer arrays in JSON).
 - Deserialization, like `from_bytes`, checks **structure only**: no key lookup,
   authentication, decryption or index recomputation. Typed wrappers express the

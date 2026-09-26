@@ -5,7 +5,7 @@ use std::error::Error;
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexMetadata,
     BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey, EncryptionKeyProvider, EncryptionProfile,
-    Field, FieldBound, GlobalKeyContext, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring,
+    Field, GlobalKeyContext, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring,
     LocalEncryptionKeyring, Utf8, blind_index_probes, derive_blind_index, field_id, index_id,
     index_key_id, inspect_blind_index, key_id,
 };
@@ -27,8 +27,8 @@ impl Field for UserEmail {
     const NAME: &'static str = "user-email";
 }
 
-impl EncryptionProfile<String> for UserEmail {
-    type Binding = FieldBound<Self>;
+impl EncryptionProfile for UserEmail {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = cryptbox::NoPadding;
@@ -133,9 +133,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let current_index_keys = LocalBlindIndexKeyring::new(current_index_key, [])?;
     assert!(verify_sweep(&mut connection, &current_keys, &current_index_keys).await?);
     assert_eq!(
-        blind_index_probes::<EmailLookup, String, FieldBound<UserEmail>>(
+        blind_index_probes::<EmailLookup, String, UserEmail>(
             &"first@example.com".to_owned(),
-            &(),
             &current_index_keys,
         )?
         .len(),
@@ -143,9 +142,9 @@ async fn run() -> Result<(), Box<dyn Error>> {
     );
 
     // Fresh verification must see a late stale write even at a negative cursor.
-    let late = Encrypted::<_, UserEmail>::new("late@example.com".to_owned());
+    let late = Encrypted::<UserEmail>::new("late@example.com".to_owned());
     let prepared = late
-        .prepare_with(&(), &old_keys)?
+        .prepare_with(&old_keys)?
         .with_index_with::<EmailLookup>(&old_index_keys)?;
     sqlx::query("UPDATE users SET email_ciphertext = ?, email_bidx = ? WHERE id = -1")
         .bind(prepared.ciphertext())
@@ -164,9 +163,9 @@ async fn insert_email(
     keys: &dyn EncryptionKeyProvider,
     index_keys: &dyn BlindIndexKeyProvider,
 ) -> Result<(), Box<dyn Error>> {
-    let value = Encrypted::<_, UserEmail>::new(email.to_owned());
+    let value = Encrypted::<UserEmail>::new(email.to_owned());
     let prepared = value
-        .prepare_with(&(), keys)?
+        .prepare_with(keys)?
         .with_index_with::<EmailLookup>(index_keys)?;
 
     sqlx::query("INSERT INTO users (id, email_ciphertext, email_bidx) VALUES (?, ?, ?)")
@@ -206,7 +205,7 @@ async fn sweep_batch(
         let id: i64 = row.try_get("id")?;
         let old_ciphertext_bytes: Vec<u8> = row.try_get("email_ciphertext")?;
         let old_index_bytes: Vec<u8> = row.try_get("email_bidx")?;
-        let ciphertext = Ciphertext::<String, UserEmail>::from_bytes(old_ciphertext_bytes.clone())?;
+        let ciphertext = Ciphertext::<UserEmail>::from_bytes(old_ciphertext_bytes.clone())?;
         let index = BlindIndex::<EmailLookup>::from_bytes(old_index_bytes.clone())?;
         let ciphertext_is_stale = ciphertext.needs_reencryption_with(keys)?;
         let index_is_stale =
@@ -217,15 +216,14 @@ async fn sweep_batch(
         }
 
         let rewritten_ciphertext = if ciphertext_is_stale {
-            ciphertext.reencrypt_with(&(), keys)?
+            ciphertext.reencrypt_with(keys)?
         } else {
             ciphertext
         };
         let rewritten_index = if index_is_stale {
-            let plaintext = rewritten_ciphertext.decrypt_with(&(), keys)?;
-            derive_blind_index::<EmailLookup, String, FieldBound<UserEmail>>(
+            let plaintext = rewritten_ciphertext.decrypt_with(keys)?;
+            derive_blind_index::<EmailLookup, String, UserEmail>(
                 plaintext.expose_secret(),
-                &(),
                 index_keys,
             )?
         } else {
@@ -285,7 +283,7 @@ async fn verify_sweep(
         }
         for row in rows {
             after_id = Some(row.try_get::<i64, _>("id")?);
-            let ciphertext: Ciphertext<String, UserEmail> = row.try_get("email_ciphertext")?;
+            let ciphertext: Ciphertext<UserEmail> = row.try_get("email_ciphertext")?;
             let index: BlindIndex<EmailLookup> = row.try_get("email_bidx")?;
             if ciphertext.needs_reencryption_with(keys)?
                 || inspect_blind_index(index.as_bytes())?.index_key_id() != current_index_key_id

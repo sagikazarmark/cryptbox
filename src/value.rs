@@ -3,48 +3,73 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Binding, Codec, EncryptionKeyProvider, EncryptionProfile, Error, KeyContext, Padding, decrypt,
-    encrypt, needs_reencryption,
+    Codec, EncryptionKeyProvider, EncryptionProfile, Error, KeyContext, Padding, decrypt, encrypt,
+    needs_reencryption,
 };
-
-/// The runtime binding context selected by an encryption profile.
-pub type ProfileContext<T, Profile> =
-    <<Profile as EncryptionProfile<T>>::Binding as Binding>::Context;
 
 /// A plaintext application value that must be encrypted at storage boundaries.
 ///
 /// This type contains plaintext while it is in application memory. It redacts
 /// `Debug`, does not implement `Display` or `Deref`, and requires explicit
-/// access through [`Self::expose_secret`]. It does not zeroize arbitrary `T`;
+/// access through [`Self::expose_secret`]. It does not zeroize arbitrary values;
 /// use [`Secret`] when the application value supports [`Zeroize`].
 /// It deliberately has no Serde implementation: encrypt to [`Ciphertext`] before
 /// serialization, then deserialize and decrypt explicitly when reading.
-/// Encryption/preparation borrows and retains this source. Cloning clones `T`,
-/// potentially creating another plaintext allocation; decryption creates another
-/// owned `T`. See the [ownership reference].
+/// Encryption/preparation borrows and retains this source. Cloning clones the
+/// value, potentially creating another plaintext allocation; decryption creates
+/// another owned value. See the [ownership reference].
+///
+/// The profile selects the value type: `Encrypted<UserEmail>` contains the
+/// `String` declared by `UserEmail`.
+///
+/// ```
+/// cryptbox::profile! {
+///     UserEmail: String {
+///         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
+///         name: "user-email",
+///         codec: cryptbox::Utf8,
+///     }
+/// }
+///
+/// let email = cryptbox::Encrypted::<UserEmail>::new("user@example.com");
+/// let plaintext: &String = email.expose_secret();
+/// assert_eq!(plaintext, "user@example.com");
+/// ```
 ///
 /// Plaintext comparison must also be explicit:
 ///
 /// ```compile_fail
-/// use cryptbox::Encrypted;
+/// cryptbox::profile! {
+///     UserEmail: String {
+///         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
+///         name: "user-email",
+///         codec: cryptbox::Utf8,
+///     }
+/// }
 ///
-/// struct Profile;
-/// let left = Encrypted::<_, Profile>::new("secret");
-/// let right = Encrypted::<_, Profile>::new("secret");
+/// let left = cryptbox::Encrypted::<UserEmail>::new("secret");
+/// let right = cryptbox::Encrypted::<UserEmail>::new("secret");
 /// let _ = left == right;
 /// ```
 ///
 #[doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub struct Encrypted<T, Profile> {
-    value: T,
+pub struct Encrypted<Profile: EncryptionProfile> {
+    value: Profile::Value,
     profile: PhantomData<fn() -> Profile>,
 }
 
-impl<T, Profile> Encrypted<T, Profile> {
+impl<Profile: EncryptionProfile> Encrypted<Profile> {
     /// Wraps a plaintext application value.
-    pub const fn new(value: T) -> Self {
+    ///
+    /// Accepts anything convertible into the profile's value type, so a `&str`
+    /// can initialize a `String` profile.
+    pub fn new(value: impl Into<Profile::Value>) -> Self {
+        Self::from_value(value.into())
+    }
+
+    pub(crate) const fn from_value(value: Profile::Value) -> Self {
         Self {
             value,
             profile: PhantomData,
@@ -53,7 +78,7 @@ impl<T, Profile> Encrypted<T, Profile> {
 
     /// Explicitly exposes the plaintext application value.
     #[must_use]
-    pub const fn expose_secret(&self) -> &T {
+    pub const fn expose_secret(&self) -> &Profile::Value {
         &self.value
     }
 
@@ -62,51 +87,49 @@ impl<T, Profile> Encrypted<T, Profile> {
     /// The name does not mean it creates a [`Secret`]. For a decoded `String`,
     /// use `Secret::new(decrypted.into_secret())` to move it into zeroizing ownership.
     #[must_use]
-    pub fn into_secret(self) -> T {
+    pub fn into_secret(self) -> Profile::Value {
         self.value
     }
 }
 
-impl<T: Clone, Profile> Clone for Encrypted<T, Profile> {
+impl<Profile> Clone for Encrypted<Profile>
+where
+    Profile: EncryptionProfile,
+    Profile::Value: Clone,
+{
     fn clone(&self) -> Self {
-        Self::new(self.value.clone())
+        Self::from_value(self.value.clone())
     }
 }
 
-impl<T, Profile> From<T> for Encrypted<T, Profile> {
-    fn from(value: T) -> Self {
-        Self::new(value)
-    }
-}
-
-impl<T, Profile> fmt::Debug for Encrypted<T, Profile> {
+impl<Profile: EncryptionProfile> fmt::Debug for Encrypted<Profile> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Encrypted([REDACTED])")
     }
 }
 
-/// An encrypted envelope with phantom plaintext and profile types.
+/// An encrypted envelope with a phantom profile type.
 ///
 /// Construction validates only the envelope structure. Authenticity is
-/// established by decryption. `T` and `Profile` are not encoded in the envelope,
-/// so the type parameters express caller intent rather than proving that stored
-/// bytes were created for that profile. With the `serde` feature, this type
+/// established by decryption. `Profile` is not encoded in the envelope, so the
+/// type parameter expresses caller intent rather than proving that stored bytes
+/// were created for that profile. With the `serde` feature, this type
 /// serializes only the binary envelope. [`Encrypted`] deliberately has no Serde
 /// implementation because it contains plaintext.
 /// Deserialization performs the same structural checks as [`Self::from_bytes`];
 /// it uses no keys and leaves the bytes and their metadata unauthenticated.
-pub struct Ciphertext<T, Profile> {
+pub struct Ciphertext<Profile> {
     bytes: Vec<u8>,
-    marker: PhantomData<fn() -> (T, Profile)>,
+    marker: PhantomData<fn() -> Profile>,
 }
 
-impl<T, Profile> Ciphertext<T, Profile> {
+impl<Profile> Ciphertext<Profile> {
     /// Validates and wraps a binary `CryptBox` envelope.
     ///
     /// # Errors
     ///
     /// Returns an error when the bytes are not a supported, structurally valid
-    /// `CryptBox` envelope. Authentication, profile binding, and codec
+    /// `CryptBox` envelope. Authentication, field binding, and codec
     /// compatibility are deferred until decryption.
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
         let bytes = bytes.into();
@@ -135,7 +158,7 @@ impl<T, Profile> Ciphertext<T, Profile> {
     }
 }
 
-impl<T, Profile> TryFrom<Vec<u8>> for Ciphertext<T, Profile> {
+impl<Profile> TryFrom<Vec<u8>> for Ciphertext<Profile> {
     type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
@@ -143,36 +166,33 @@ impl<T, Profile> TryFrom<Vec<u8>> for Ciphertext<T, Profile> {
     }
 }
 
-impl<T, Profile> AsRef<[u8]> for Ciphertext<T, Profile> {
+impl<Profile> AsRef<[u8]> for Ciphertext<Profile> {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
     }
 }
 
-impl<T, Profile> Clone for Ciphertext<T, Profile> {
+impl<Profile> Clone for Ciphertext<Profile> {
     fn clone(&self) -> Self {
         Self::from_validated_bytes(self.bytes.clone())
     }
 }
 
-impl<T, Profile> PartialEq for Ciphertext<T, Profile> {
+impl<Profile> PartialEq for Ciphertext<Profile> {
     fn eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
 
-impl<T, Profile> Eq for Ciphertext<T, Profile> {}
+impl<Profile> Eq for Ciphertext<Profile> {}
 
-impl<T, Profile> fmt::Debug for Ciphertext<T, Profile> {
+impl<Profile> fmt::Debug for Ciphertext<Profile> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Ciphertext([REDACTED])")
     }
 }
 
-impl<T, Profile> Encrypted<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-{
+impl<Profile: EncryptionProfile> Encrypted<Profile> {
     /// Encodes and encrypts this value with an explicitly injected provider.
     ///
     /// # Errors
@@ -181,43 +201,34 @@ where
     /// encryption fails.
     pub fn encrypt_with(
         &self,
-        context: &ProfileContext<T, Profile>,
         keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Ciphertext<T, Profile>, Error> {
+    ) -> Result<Ciphertext<Profile>, Error> {
         let plaintext = Profile::Codec::encode(&self.value)?;
         let plaintext = Profile::Padding::pad(plaintext)?;
-        let ciphertext = encrypt::<Profile::Binding>(&plaintext, context, keys)?;
+        let ciphertext = encrypt::<Profile>(&plaintext, keys)?;
 
         Ok(Ciphertext::from_validated_bytes(ciphertext))
     }
-}
 
-impl<T, Profile> Encrypted<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-    Profile::Binding: Binding<Context = ()>,
-{
     /// Encodes and encrypts this value with the profile's global key context.
     ///
     /// # Errors
     ///
     /// Returns an error when providers are uninitialized or when encoding or
     /// encryption fails.
-    pub fn encrypt(&self) -> Result<Ciphertext<T, Profile>, Error> {
-        self.encrypt_with(&(), Profile::Keys::encryption_keys()?)
+    pub fn encrypt(&self) -> Result<Ciphertext<Profile>, Error> {
+        self.encrypt_with(Profile::Keys::encryption_keys()?)
     }
 }
 
-impl<T, Profile> Ciphertext<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-{
+impl<Profile: EncryptionProfile> Ciphertext<Profile> {
     /// Authenticates, decrypts, and decodes this value with an injected provider.
     ///
     /// Success establishes ciphertext authenticity under the supplied key and
-    /// binding, valid padding, and successful decoding with the selected codec.
-    /// Apply application-level validation separately. This does not establish
-    /// freshness, row identity, or consistency with a separately stored blind index.
+    /// the profile's field, valid padding, and successful decoding with the
+    /// selected codec. Apply application-level validation separately. This does
+    /// not establish freshness, row identity, or consistency with a separately
+    /// stored blind index.
     ///
     /// # Errors
     ///
@@ -225,14 +236,22 @@ where
     /// failure, unavailable providers, invalid padding, or codec failure.
     pub fn decrypt_with(
         &self,
-        context: &ProfileContext<T, Profile>,
         keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Encrypted<T, Profile>, Error> {
-        let plaintext = decrypt::<Profile::Binding>(&self.bytes, context, keys)?;
+    ) -> Result<Encrypted<Profile>, Error> {
+        let plaintext = decrypt::<Profile>(&self.bytes, keys)?;
         let plaintext = Profile::Padding::unpad(plaintext)?;
         let value = Profile::Codec::decode(&plaintext)?;
 
-        Ok(Encrypted::new(value))
+        Ok(Encrypted::from_value(value))
+    }
+
+    /// Decrypts this value with the profile's global key context.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when providers are uninitialized or decryption fails.
+    pub fn decrypt(&self) -> Result<Encrypted<Profile>, Error> {
+        self.decrypt_with(Profile::Keys::encryption_keys()?)
     }
 
     /// Reports whether this envelope uses a non-current suite or key.
@@ -263,31 +282,12 @@ where
     /// # Errors
     ///
     /// Returns any decryption, padding, or encryption error.
-    pub fn reencrypt_with(
-        &self,
-        context: &ProfileContext<T, Profile>,
-        keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Self, Error> {
-        let plaintext = decrypt::<Profile::Binding>(&self.bytes, context, keys)?;
+    pub fn reencrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Self, Error> {
+        let plaintext = decrypt::<Profile>(&self.bytes, keys)?;
         let plaintext = Profile::Padding::unpad(plaintext)?;
         let plaintext = Profile::Padding::pad(plaintext)?;
 
-        encrypt::<Profile::Binding>(&plaintext, context, keys).map(Self::from_validated_bytes)
-    }
-}
-
-impl<T, Profile> Ciphertext<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-    Profile::Binding: Binding<Context = ()>,
-{
-    /// Decrypts this value with the profile's global key context.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when providers are uninitialized or decryption fails.
-    pub fn decrypt(&self) -> Result<Encrypted<T, Profile>, Error> {
-        self.decrypt_with(&(), Profile::Keys::encryption_keys()?)
+        encrypt::<Profile>(&plaintext, keys).map(Self::from_validated_bytes)
     }
 }
 
@@ -296,7 +296,7 @@ where
 /// Drop invokes `T`'s [`Zeroize`] implementation. Cloning creates a separate `T`
 /// with its own lifetime; it does not share a single erasure boundary. This cannot
 /// erase previous copies, superseded allocations, or OS copies. For a decrypted
-/// `Encrypted<String, Profile>`, use `Secret::new(decrypted.into_secret())`.
+/// `Encrypted<Profile>` over `String`, use `Secret::new(decrypted.into_secret())`.
 /// If the profile value itself is `Secret<String>`, supply `Codec<Secret<String>>`;
 /// [`crate::Utf8`] implements only `Codec<String>`.
 /// See the [custom-profile example] and [ownership reference].

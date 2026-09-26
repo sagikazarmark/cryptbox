@@ -181,12 +181,12 @@ async fn put(
     if let Some(email) = &email {
         validate_email(email)?;
     }
-    let value = email.map(Encrypted::<_, UserEmail>::new);
+    let value = email.map(Encrypted::<UserEmail>::new);
     let prepared = value
         .as_ref()
         .map(|value| {
             value
-                .prepare_with(&(), encryption)?
+                .prepare_with(encryption)?
                 .with_index_with::<EmailLookup>(indexes)
         })
         .transpose()?;
@@ -225,10 +225,7 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyri
     // Decode the stored envelope now; choose when to authenticate/decrypt later.
     let stored: Option<EmailCiphertext> = row.try_get("email")?;
     match stored {
-        Some(ciphertext) => println!(
-            "{id}: {}",
-            ciphertext.decrypt_with(&(), keys)?.expose_secret()
-        ),
+        Some(ciphertext) => println!("{id}: {}", ciphertext.decrypt_with(keys)?.expose_secret()),
         None => println!("{id}: NULL"),
     }
     Ok(())
@@ -237,7 +234,7 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyri
 
 <!-- END SHARED: searchable-get -->
 
-`EmailCiphertext` aliases `Ciphertext<String, UserEmail>`. SQLx decoding checks
+`EmailCiphertext` aliases `Ciphertext<UserEmail>`. SQLx decoding checks
 structure; only `decrypt_with` authenticates. Explicit local providers need no
 global installation; `&()` is unit binding context. Plaintext output and shell
 arguments are demonstration conveniences; keep real user values out of logs/history.
@@ -253,8 +250,7 @@ async fn search(
     encryption: &LocalEncryptionKeyring,
     indexes: &LocalBlindIndexKeyring,
 ) -> Result<()> {
-    let probes =
-        blind_index_probes::<EmailLookup, str, FieldBound<UserEmail>>(query, &(), indexes)?;
+    let probes = blind_index_probes::<EmailLookup, str, UserEmail>(query, indexes)?;
     let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
     let mut values = sql.separated(", ");
     for probe in &probes {
@@ -266,7 +262,7 @@ async fn search(
     let mut rejected = 0;
     for row in rows {
         let ciphertext: EmailCiphertext = row.try_get("email")?;
-        let candidate = ciphertext.decrypt_with(&(), encryption)?;
+        let candidate = ciphertext.decrypt_with(encryption)?;
         if verify_blind_index_candidate::<EmailLookup, str>(query, candidate.expose_secret())? {
             matches.push(row.try_get("id")?);
         } else {

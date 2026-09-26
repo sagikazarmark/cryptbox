@@ -128,21 +128,21 @@ where
 /// surface as conflicts, which makes summed per-batch reports advisory;
 /// [`Self::verify`] remains the authoritative terminal-state check.
 #[derive(Debug)]
-pub struct Sweep<'a, T, Profile>
+pub struct Sweep<'a, Profile>
 where
-    Profile: EncryptionProfile<T>,
+    Profile: EncryptionProfile,
 {
-    planner: RowPlanner<'a, T, Profile>,
+    planner: RowPlanner<'a, Profile>,
     batch_size: usize,
 }
 
-impl<'a, T, Profile> Sweep<'a, T, Profile>
+impl<'a, Profile> Sweep<'a, Profile>
 where
-    Profile: EncryptionProfile<T>,
+    Profile: EncryptionProfile,
 {
     /// Creates a driver over a configured row planner.
     #[must_use]
-    pub const fn new(planner: RowPlanner<'a, T, Profile>) -> Self {
+    pub const fn new(planner: RowPlanner<'a, Profile>) -> Self {
         Self {
             planner,
             batch_size: 100,
@@ -346,7 +346,7 @@ where
     /// recompute indexes, or establish ciphertext/index consistency. Even a
     /// terminal report can contain ciphertext that fails authentication. For
     /// additional assurance, separately decrypt every value with its intended
-    /// profile/context and recompute each index from that plaintext under the
+    /// profile and recompute each index from that plaintext under the
     /// intended specification and allowed generation, comparing complete bytes.
     ///
     /// The pass observes rows as loaded, not a library-provided snapshot. Ensure

@@ -2,10 +2,17 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexMetadata, BlindIndexSpec,
-    EncryptionKey, Error, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Unbound,
+    EncryptionKey, Error, Field, FieldId, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
     decrypt, derive_blind_index, encrypt, index_id, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
+
+struct TestField;
+
+impl Field for TestField {
+    const ID: FieldId = cryptbox::field_id!("5d3a1f7e-2b8c-4e69-a0d4-7f1b3c5e9a82");
+    const NAME: &'static str = "test";
+}
 
 struct ExactValue;
 
@@ -27,12 +34,10 @@ fn encryption_keys_can_be_generated_for_immediate_use() {
     assert_ne!(first.id(), second.id());
 
     let keys = LocalEncryptionKeyring::new(first, []).unwrap();
-    let ciphertext = encrypt::<Unbound>(b"generated key", &(), &keys).unwrap();
+    let ciphertext = encrypt::<TestField>(b"generated key", &keys).unwrap();
 
     assert_eq!(
-        decrypt::<Unbound>(&ciphertext, &(), &keys)
-            .unwrap()
-            .as_slice(),
+        decrypt::<TestField>(&ciphertext, &keys).unwrap().as_slice(),
         b"generated key"
     );
 }
@@ -62,10 +67,10 @@ fn encryption_keys_load_from_hex_and_base64() {
 
     let writing_keys = LocalEncryptionKeyring::new(hex_key, []).unwrap();
     let reading_keys = LocalEncryptionKeyring::new(base64_key, []).unwrap();
-    let ciphertext = encrypt::<Unbound>(b"loaded key", &(), &writing_keys).unwrap();
+    let ciphertext = encrypt::<TestField>(b"loaded key", &writing_keys).unwrap();
 
     assert_eq!(
-        decrypt::<Unbound>(&ciphertext, &(), &reading_keys)
+        decrypt::<TestField>(&ciphertext, &reading_keys)
             .unwrap()
             .as_slice(),
         b"loaded key"
@@ -87,8 +92,8 @@ fn blind_index_keys_load_from_hex_and_base64() {
     let base64_keys = LocalBlindIndexKeyring::new(base64_key, []).unwrap();
 
     assert_eq!(
-        derive_blind_index::<ExactValue, str, Unbound>("loaded key", &(), &hex_keys).unwrap(),
-        derive_blind_index::<ExactValue, str, Unbound>("loaded key", &(), &base64_keys).unwrap(),
+        derive_blind_index::<ExactValue, str, TestField>("loaded key", &hex_keys).unwrap(),
+        derive_blind_index::<ExactValue, str, TestField>("loaded key", &base64_keys).unwrap(),
     );
 }
 

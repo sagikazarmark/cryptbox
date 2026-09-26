@@ -78,14 +78,14 @@ fn recover(
     collision: bool,
     keys: &LocalEncryptionKeyring,
     legacy: &PreviousEncryption,
-) -> Result<Encrypted<String, UserEmail>> {
-    let stored: MaybeEncrypted<String, UserEmail> = if collision {
+) -> Result<Encrypted<UserEmail>> {
+    let stored: MaybeEncrypted<UserEmail> = if collision {
         // Only a trusted application discriminator can authorize this bypass.
         MaybeEncrypted::from_legacy_bytes(bytes)
     } else {
         MaybeEncrypted::from_bytes(bytes)?
     };
-    let value = stored.decrypt_with_legacy(&(), keys, legacy)?;
+    let value = stored.decrypt_with_legacy(keys, legacy)?;
     validate_email(value.expose_secret())?;
     Ok(value)
 }
@@ -140,9 +140,9 @@ async fn seed(
         (40, keys, indexes),
         (50, keys, indexes),
     ] {
-        let value = Encrypted::<_, UserEmail>::new("mixed@example.com".to_owned());
+        let value = Encrypted::<UserEmail>::new("mixed@example.com".to_owned());
         let prepared = value
-            .prepare_with(&(), encryption)?
+            .prepare_with(encryption)?
             .with_index_with::<EmailLookup>(index)?;
         let token = if id == 50 {
             &[]
@@ -174,8 +174,7 @@ async fn lookup(
     // The quarantine gate and candidate read must observe the same snapshot.
     quarantine_gate(&mut tx).await?;
     let legacy = PreviousEncryption::load()?;
-    let probes =
-        blind_index_probes::<EmailLookup, str, FieldBound<UserEmail>>(query, &(), indexes)?;
+    let probes = blind_index_probes::<EmailLookup, str, UserEmail>(query, indexes)?;
     // One statement selects a row once, even when it matches both predicates.
     // A single statement snapshot avoids moving rows between a scan and probe query.
     let mut sql = QueryBuilder::<Db>::new(
@@ -243,7 +242,7 @@ async fn repair(
         &PreviousEncryption::load()?,
     )?;
     let prepared = value
-        .prepare_with(&(), keys)?
+        .prepare_with(keys)?
         .with_index_with::<EmailLookup>(indexes)?;
     let changed = sqlx::query("UPDATE users SET email = $1, email_lookup = $2 WHERE id = $3 AND email = $4 AND email_lookup = $5")
         .bind(prepared.ciphertext()).bind(prepared.index::<EmailLookup>()?.as_bytes())
@@ -286,8 +285,7 @@ async fn close(
     use cryptbox::migrate::SqliteSweepStore as Store;
     use cryptbox::migrate::{RowPlanner, Sweep, SweepTable};
     let table = SweepTable::new("users", "id", "email").with_index_column("email_lookup");
-    let planner =
-        RowPlanner::<String, UserEmail>::new(&(), keys).with_index_with::<EmailLookup>(indexes);
+    let planner = RowPlanner::<UserEmail>::new(keys).with_index_with::<EmailLookup>(indexes);
     let report = Sweep::new(planner)
         .with_batch_size(2)
         .verify(&mut Store::new(db, &table))
@@ -351,9 +349,9 @@ pub(super) async fn command(
         }
         ["migration-restore"] => {
             // Fixture-only trusted source. In production require investigated, approved data.
-            let value = Encrypted::<_, UserEmail>::new("mixed@example.com".to_owned());
+            let value = Encrypted::<UserEmail>::new("mixed@example.com".to_owned());
             let prepared = value
-                .prepare_with(&(), keys)?
+                .prepare_with(keys)?
                 .with_index_with::<EmailLookup>(indexes)?;
             let mut tx = db.begin().await?;
             // INSERT, not upsert: a concurrently recreated row must not be overwritten.
@@ -379,7 +377,7 @@ pub(super) async fn command(
                 .bind(id.parse::<i64>()?)
                 .fetch_one(db)
                 .await?;
-            MaybeEncrypted::<String, UserEmail>::from_bytes(bytes)?;
+            MaybeEncrypted::<UserEmail>::from_bytes(bytes)?;
             println!("Ordinary classification succeeded.");
         }
         ["migration-repair-collision"] => {

@@ -84,10 +84,10 @@ impl std::io::Write for ZeroizingByteBuffer {
 ///
 /// # Implementor obligations
 ///
-/// This interface is extensible; [`crate::Binding`] and [`crate::Padding`] are
-/// sealed policies. Encode only the intended value, and decode into an owned
-/// value that does not borrow the temporary input. Returned encoding buffers
-/// must be [`Zeroizing<Vec<u8>>`]; protect intermediate plaintext allocations on
+/// This interface is extensible; [`crate::Padding`] is a sealed policy. Encode
+/// only the intended value, and decode into an owned value that does not borrow
+/// the temporary input. Returned encoding buffers must be
+/// [`Zeroizing<Vec<u8>>`]; protect intermediate plaintext allocations on
 /// success and error paths too. Wrapping a growable buffer does not erase an old
 /// allocation abandoned by reallocation. Preallocate before writing sensitive
 /// bytes, or copy into a new zeroizing allocation and wipe the old one before

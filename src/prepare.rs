@@ -1,9 +1,8 @@
 use std::fmt;
 
 use crate::{
-    Binding, BindingDomain, BlindIndexKeyProvider, BlindIndexMetadata, BlindIndexRef,
-    BlindIndexSpec, Ciphertext, Encrypted, EncryptionKeyProvider, EncryptionProfile, Error,
-    KeyContext, ProfileContext, blind::derive_with_domain,
+    BlindIndexKeyProvider, BlindIndexMetadata, BlindIndexRef, BlindIndexSpec, Ciphertext,
+    Encrypted, EncryptionKeyProvider, EncryptionProfile, Error, KeyContext, derive_blind_index,
 };
 
 struct PreparedIndex {
@@ -22,19 +21,18 @@ struct PreparedIndex {
 #[doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub struct Prepared<'a, T, Profile>
+pub struct Prepared<'a, Profile>
 where
-    Profile: EncryptionProfile<T>,
+    Profile: EncryptionProfile,
 {
-    source: &'a T,
-    ciphertext: Ciphertext<T, Profile>,
-    domain: BindingDomain,
+    source: &'a Profile::Value,
+    ciphertext: Ciphertext<Profile>,
     indexes: Vec<PreparedIndex>,
 }
 
-impl<T, Profile> fmt::Debug for Prepared<'_, T, Profile>
+impl<Profile> fmt::Debug for Prepared<'_, Profile>
 where
-    Profile: EncryptionProfile<T>,
+    Profile: EncryptionProfile,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -46,9 +44,9 @@ where
     }
 }
 
-impl<T, Profile> Encrypted<T, Profile>
+impl<Profile> Encrypted<Profile>
 where
-    Profile: EncryptionProfile<T>,
+    Profile: EncryptionProfile,
 {
     /// Encrypts this value into a prepared storage representation.
     ///
@@ -59,40 +57,32 @@ where
     /// Returns any codec, provider, randomness, or encryption error.
     pub fn prepare_with<'a>(
         &'a self,
-        context: &ProfileContext<T, Profile>,
         keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Prepared<'a, T, Profile>, Error> {
+    ) -> Result<Prepared<'a, Profile>, Error> {
         Ok(Prepared {
             source: self.expose_secret(),
-            ciphertext: self.encrypt_with(context, keys)?,
-            domain: BindingDomain::from_binding::<Profile::Binding>(context),
+            ciphertext: self.encrypt_with(keys)?,
             indexes: Vec::new(),
         })
     }
-}
 
-impl<T, Profile> Encrypted<T, Profile>
-where
-    Profile: EncryptionProfile<T>,
-    Profile::Binding: Binding<Context = ()>,
-{
     /// Prepares this value with the profile's global encryption provider.
     ///
     /// # Errors
     ///
     /// Returns an error when providers are uninitialized or encryption fails.
-    pub fn prepare(&self) -> Result<Prepared<'_, T, Profile>, Error> {
-        self.prepare_with(&(), Profile::Keys::encryption_keys()?)
+    pub fn prepare(&self) -> Result<Prepared<'_, Profile>, Error> {
+        self.prepare_with(Profile::Keys::encryption_keys()?)
     }
 }
 
-impl<T, Profile> Prepared<'_, T, Profile>
+impl<Profile> Prepared<'_, Profile>
 where
-    Profile: EncryptionProfile<T>,
+    Profile: EncryptionProfile,
 {
     /// Returns the encrypted storage value.
     #[must_use]
-    pub const fn ciphertext(&self) -> &Ciphertext<T, Profile> {
+    pub const fn ciphertext(&self) -> &Ciphertext<Profile> {
         &self.ciphertext
     }
 
@@ -104,13 +94,13 @@ where
     /// invalid precision, or an unavailable provider.
     pub fn with_index_with<Spec>(mut self, keys: &dyn BlindIndexKeyProvider) -> Result<Self, Error>
     where
-        Spec: BlindIndexSpec<T>,
+        Spec: BlindIndexSpec<Profile::Value>,
     {
         if self.indexes.iter().any(|index| index.id == Spec::ID) {
             return Err(Error::DuplicatePreparedIndex(Spec::ID));
         }
 
-        let index = derive_with_domain::<Spec, T>(self.source, &self.domain, keys)?;
+        let index = derive_blind_index::<Spec, Profile::Value, Profile>(self.source, keys)?;
         self.indexes.push(PreparedIndex {
             id: Spec::ID,
             bytes: index.into_bytes(),
@@ -127,7 +117,7 @@ where
     /// failed index derivation.
     pub fn with_index<Spec>(self) -> Result<Self, Error>
     where
-        Spec: BlindIndexSpec<T>,
+        Spec: BlindIndexSpec<Profile::Value>,
     {
         self.with_index_with::<Spec>(Profile::Keys::blind_index_keys()?)
     }

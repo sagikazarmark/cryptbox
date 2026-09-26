@@ -2,9 +2,9 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Encrypted, EncryptionKey,
-    EncryptionProfile, Field, FieldBound, GlobalKeyContext, IndexId, IndexKeyId, KeyId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, blind_index_probes, field_id, index_id,
-    index_key_id, key_id, verify_blind_index_candidate,
+    EncryptionProfile, Field, GlobalKeyContext, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring,
+    LocalEncryptionKeyring, Utf8, blind_index_probes, field_id, index_id, index_key_id, key_id,
+    verify_blind_index_candidate,
 };
 use zeroize::Zeroizing;
 
@@ -19,8 +19,8 @@ impl Field for UserEmail {
     const NAME: &'static str = "user-email";
 }
 
-impl EncryptionProfile<String> for UserEmail {
-    type Binding = FieldBound<Self>;
+impl EncryptionProfile for UserEmail {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = cryptbox::NoPadding;
@@ -54,9 +54,9 @@ fn main() -> Result<(), cryptbox::Error> {
     let old_index_key = BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x42; 32]);
     let old_index_keys = LocalBlindIndexKeyring::new(old_index_key.clone(), [])?;
 
-    let value = Encrypted::<_, UserEmail>::new("Mark@Example.com".to_owned());
+    let value = Encrypted::<UserEmail>::new("Mark@Example.com".to_owned());
     let prepared = value
-        .prepare_with(&(), &encryption_keys)?
+        .prepare_with(&encryption_keys)?
         .with_index_with::<EmailLookup>(&old_index_keys)?;
     let stored_ciphertext = prepared.ciphertext().clone();
     let stored_index = prepared.index::<EmailLookup>()?.as_bytes().to_vec();
@@ -66,8 +66,7 @@ fn main() -> Result<(), cryptbox::Error> {
         [old_index_key],
     )?;
     let query = "mark@example.com";
-    let probes =
-        blind_index_probes::<EmailLookup, str, FieldBound<UserEmail>>(query, &(), &index_keys)?;
+    let probes = blind_index_probes::<EmailLookup, str, UserEmail>(query, &index_keys)?;
 
     // Stored indexes are lookup tokens, not plaintext secrets, so ordinary
     // equality is appropriate when matching every probe during key rotation.
@@ -75,7 +74,7 @@ fn main() -> Result<(), cryptbox::Error> {
     assert!(is_candidate);
 
     // A blind-index hit is only a candidate: decrypt and compare normalized plaintext.
-    let candidate = stored_ciphertext.decrypt_with(&(), &encryption_keys)?;
+    let candidate = stored_ciphertext.decrypt_with(&encryption_keys)?;
     assert!(verify_blind_index_candidate::<EmailLookup, str>(
         query,
         candidate.expose_secret(),

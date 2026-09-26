@@ -3,7 +3,7 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Encrypted, EncryptionKey,
-    FieldBound, LocalBlindIndexKeyring, LocalEncryptionKeyring, blind_index_probes,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, blind_index_probes,
     verify_blind_index_candidate,
 };
 use zeroize::Zeroizing;
@@ -13,7 +13,6 @@ cryptbox::profile! {
         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
         name: "user-email",
         codec: cryptbox::Utf8,
-        binding: field_bound,
     }
 }
 
@@ -64,26 +63,22 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
         ),
         [],
     )?;
-    let value = Encrypted::<_, UserEmail>::new(plaintext.to_owned());
-    let ciphertext = value.encrypt_with(&(), &keys)?;
-    assert_eq!(
-        ciphertext.decrypt_with(&(), &keys)?.expose_secret(),
-        plaintext
-    );
+    let value = Encrypted::<UserEmail>::new(plaintext.to_owned());
+    let ciphertext = value.encrypt_with(&keys)?;
+    assert_eq!(ciphertext.decrypt_with(&keys)?.expose_secret(), plaintext);
 
     let prepared = value
-        .prepare_with(&(), &keys)?
+        .prepare_with(&keys)?
         .with_index_with::<EmailLookup>(&indexes)?;
     let query = plaintext.to_owned();
-    let probes =
-        blind_index_probes::<EmailLookup, String, FieldBound<UserEmail>>(&query, &(), &indexes)?;
+    let probes = blind_index_probes::<EmailLookup, String, UserEmail>(&query, &indexes)?;
     let stored_index = prepared.index::<EmailLookup>()?;
     assert!(
         probes
             .iter()
             .any(|probe| probe.as_bytes() == stored_index.as_bytes())
     );
-    let candidate = prepared.ciphertext().decrypt_with(&(), &keys)?;
+    let candidate = prepared.ciphertext().decrypt_with(&keys)?;
     assert!(verify_blind_index_candidate::<EmailLookup, String>(
         &query,
         candidate.expose_secret(),
