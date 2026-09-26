@@ -143,7 +143,7 @@ pub use blind::{
 pub use codec::Json;
 #[cfg(feature = "postcard")]
 pub use codec::Postcard;
-pub use codec::{Codec, Raw, Utf8};
+pub use codec::{Codec, DefaultCodec, Raw, Utf8};
 pub use crypto::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, decrypt, encrypt, inspect_ciphertext,
     is_ciphertext, needs_reencryption, reencrypt,

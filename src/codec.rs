@@ -121,6 +121,40 @@ pub trait Codec<T>: Sized + 'static {
     fn decode(bytes: &[u8]) -> Result<T, CodecError>;
 }
 
+/// Selects the codec used by [`crate::profile!`] when a declaration omits `codec`.
+///
+/// Only `String` ([`Utf8`]) and `Vec<u8>` ([`Raw`]) have a default. These
+/// mappings are persistent schema: ciphertext does not record its codec, and a
+/// different codec can decode existing bytes into a wrong value without an
+/// error. They are therefore permanent, and this trait is sealed so neither
+/// this crate's features nor another crate can change them. Every other type,
+/// including Serde types, must name its codec explicitly.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` has no default codec",
+    label = "declare a codec for this value type",
+    note = "add a `codec` key, for example `codec: cryptbox::Json`; the codec is persistent schema"
+)]
+pub trait DefaultCodec: private::Sealed + Sized {
+    /// The codec selected for this value type.
+    type Codec: Codec<Self>;
+}
+
+impl private::Sealed for String {}
+
+impl DefaultCodec for String {
+    type Codec = Utf8;
+}
+
+impl private::Sealed for Vec<u8> {}
+
+impl DefaultCodec for Vec<u8> {
+    type Codec = Raw;
+}
+
+mod private {
+    pub trait Sealed {}
+}
+
 /// Encodes an owned byte vector without transformation.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Raw;
