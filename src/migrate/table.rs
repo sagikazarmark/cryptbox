@@ -1,5 +1,7 @@
 /// Identifies the table, cursor, and columns a `SQLx` sweep operates on.
 ///
+/// Available with `migrate` and either `sqlx-postgres` or `sqlx-sqlite`.
+///
 /// Identifiers are operator configuration: they are interpolated into SQL
 /// after double-quote escaping, while every value goes through bind
 /// parameters. Never derive identifiers from untrusted input.
@@ -23,6 +25,8 @@ impl SweepTable {
     ///
     /// The progress table defaults to `cryptbox_migration_progress` and the
     /// migration name to `table.ciphertext_column`.
+    /// That default identifies a column, not a rotation: use [`Self::with_progress`]
+    /// with a fresh name for each new target or recovery pass from the beginning.
     #[must_use]
     pub fn new(table: &str, cursor_column: &str, ciphertext_column: &str) -> Self {
         Self {
@@ -49,6 +53,11 @@ impl SweepTable {
     }
 
     /// Overrides the progress table and this sweep's durable checkpoint name.
+    ///
+    /// Resume with the same name and fixed target generations. Use a fresh name
+    /// to revisit rows behind a completed checkpoint or start another rotation.
+    /// Only the name and cursor are persisted: the application owns target
+    /// configuration and exclusive progress ownership, including across restarts.
     #[must_use]
     pub fn with_progress(mut self, table: &str, migration_name: &str) -> Self {
         table.clone_into(&mut self.progress_table);
@@ -133,8 +142,10 @@ impl SweepTable {
 #[derive(Clone, Copy)]
 pub(crate) enum ParamStyle {
     /// SQLite-style `?` placeholders.
+    #[cfg(any(feature = "sqlx-sqlite", test))]
     Question,
     /// PostgreSQL-style `$n` placeholders.
+    #[cfg(any(feature = "sqlx-postgres", test))]
     Dollar,
 }
 
@@ -156,7 +167,9 @@ impl Params {
     fn next(&mut self) -> String {
         self.count += 1;
         match self.style {
+            #[cfg(any(feature = "sqlx-sqlite", test))]
             ParamStyle::Question => "?".to_owned(),
+            #[cfg(any(feature = "sqlx-postgres", test))]
             ParamStyle::Dollar => format!("${}", self.count),
         }
     }

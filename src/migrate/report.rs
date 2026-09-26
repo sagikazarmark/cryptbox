@@ -6,7 +6,8 @@ use super::RowState;
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct SweepReport {
-    /// Rows whose envelope and blind indexes use the current generations.
+    /// Rows whose envelope and blind indexes structurally parse and name current generations.
+    /// This does not establish authenticity or index consistency.
     pub current: u64,
     /// Rows rewritten from (or, during verification, still naming) a
     /// historical generation.
@@ -44,13 +45,20 @@ impl SweepReport {
         self.conflicts += other.conflicts;
     }
 
-    /// Returns whether a full pass observed no legacy, stale, or malformed
-    /// rows.
+    /// Returns whether the legacy, stale, and malformed counts are all zero.
     ///
-    /// This is the terminal-state predicate for the migration window: only a
-    /// complete verification pass for which this returns `true` justifies
-    /// removing permissive reads. If writes continue during verification,
+    /// This predicate does not know whether a pass is complete: even an empty
+    /// default report returns `true`, and conflicts are not considered. Use the
+    /// result of a successful full [`super::Sweep::verify`] pass, or merge every
+    /// verification batch from the start through exhaustion. A run report or
+    /// partial verification report is insufficient to close permissive reads.
+    /// Ensure every writer uses the target generations; if writes continue,
     /// repeat until one complete pass is clean.
+    ///
+    /// A terminal report establishes migration-state convergence for the rows
+    /// observed, not authenticated readability, codec validity, or ciphertext/index
+    /// consistency. Those require separate decryption and index recomputation.
+    /// It says nothing about historical keys needed by backups or other stores.
     #[must_use]
     pub const fn is_terminal(&self) -> bool {
         self.legacy == 0 && self.stale == 0 && self.malformed == 0

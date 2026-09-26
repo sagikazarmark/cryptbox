@@ -28,10 +28,11 @@ jobs:
       - name: Run Clippy
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
-      - name: Check SQLx features independently
-        run: |
-          cargo check --locked --all-targets --features sqlx-postgres
-          cargo check --locked --all-targets --features sqlx-sqlite
+      - name: Install cargo-hack
+        run: cargo install cargo-hack --version 0.6.45 --locked
+
+      - name: Test feature combinations
+        run: cargo hack test --locked --feature-powerset --depth 2
 
       - name: Install cargo-deny
         run: cargo install cargo-deny --version 0.20.2 --locked
@@ -49,15 +50,29 @@ jobs:
           cargo run --locked --example plaintext_migration --features migrate,sqlx-sqlite
           cargo run --locked --example legacy_migration --features migrate,sqlx-sqlite
           cargo run --locked --example blind_indexes
+          cargo run --locked --example stored_values --features serde
           cargo run --locked --example sqlx_sqlite --features sqlx-sqlite
 
       - name: Run documentation tests
-        run: cargo test --locked --doc --all-features
+        run: |
+          cargo test --locked --doc
+          cargo test --locked --doc --all-features
 
       - name: Build API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
         run: |
           cargo doc --locked --no-deps --no-default-features
           cargo doc --locked --no-deps --all-features
+
+      - name: Check shared snippets
+        run: node scripts/doc-snippets.mjs
+
+      - name: Check generated lifecycle diagram
+        run: |
+          docker run --rm --entrypoint sh -v "$PWD:/data" -w /data \
+            ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.12.0@sha256:bad64c9d9ad917c8dfbe9d9e9c162b96f6615ff019b37058638d16eb27ce7783 \
+            scripts/check-diagrams.sh
 
       - name: Check current compatible dependencies
         run: |

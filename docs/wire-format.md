@@ -1,11 +1,21 @@
 # Experimental Wire Format
 
-This document records the provisional v0.1 formats implemented by CryptBox.
+**Reference · current experimental formats.** [All tasks and versions](README.md).
+
+This document records ciphertext format **1**, blind-index format **1**, and
+encryption suite ID **1**, implemented by crate **0.5.0**. The original design
+generation called “v0.1” is a separate historical label.
 They are not stable protocol commitments and must receive focused cryptographic
 review plus independently generated vectors before a production release.
 
+Next: follow the [security review path](security.md#security-review-path) for
+suite research, proposed policy, and outstanding gates.
+
 All identifiers use their 16-byte RFC UUID network-order representation. All
 multibyte integers are unsigned big-endian values.
+In the recipes, `||` concatenates raw bytes, `\0` is one NUL byte (`00`), and
+slice endpoints are exclusive. Quoted labels are ASCII bytes, without quotes;
+UUID strings and hexadecimal displays must be decoded, not hashed as text.
 
 ## Encryption Suite 1
 
@@ -27,7 +37,8 @@ FieldBound(FieldId): 01 || field_id[16]
 ```
 
 The profile supplies the expected binding. The envelope does not select whether
-decryption is bound or unbound.
+decryption is bound or unbound. Codec identity/version is also absent: decoding
+is an application-schema decision after authentication and unpadding.
 
 ### Envelope
 
@@ -45,6 +56,8 @@ offset  size  field
 The minimum envelope is 62 bytes and represents empty AEAD plaintext. For an
 unpadded profile, ciphertext leaks encoded plaintext length exactly plus this
 fixed overhead. A padded profile reveals its padded bucket length instead.
+See [size semantics and enforcement](#size-semantics-and-enforcement) for exact
+encoded, padded, and stored lengths and the suite's functional limit.
 
 Exact domain labels include the terminating NUL byte:
 
@@ -64,10 +77,39 @@ key_info = key_info_label
 aad = aad_label || envelope[0..46] || binding
 ```
 
-HKDF performs RFC 5869 extract-and-expand using the 32-byte root key and derives
-a 32-byte operational key. Wrong binding, modified metadata, nonce, ciphertext,
-or tag all fail authentication. An unknown `KeyId` is reported before
-authentication because no key is available.
+### Encryption recipe
+
+Inputs are an independent 32-byte encryption root, its immutable 16-byte
+`KeyId`, the expected profile binding, and AEAD plaintext bytes (encoded and
+optionally padded as below). Encode `format_version` and `suite_id` as single
+bytes `01`; encode `KeyId` and any `FieldId` as 16 UUID network-order bytes.
+The binding is exactly `00` for `Unbound`, or `01 || field_id[16]` for
+`FieldBound`. Rust names and field diagnostic names are not inputs.
+
+1. Construct `key_info` in the order above. Perform **both** RFC 5869 stages:
+   `PRK = HKDF-Extract-SHA256(salt, root_key)` (32-byte PRK), then
+   `operational_key = HKDF-Expand-SHA256(PRK, key_info, L=32)`.
+   The salt is the literal 24-byte `cryptbox/hkdf-sha256/v1\0`; it is neither
+   absent nor the nonce. The key-info label is 27 bytes including its NUL.
+2. Generate a fresh 24-byte nonce from the operating-system random source for
+   each encryption, failing if randomness is unavailable. The fixed nonces in
+   the vectors are test inputs only, not a supported application nonce policy.
+3. Construct the 46-byte prefix from magic, version, suite, `KeyId`, and nonce
+   using the offset table. Form `aad = aad_label || prefix || binding` using
+   the 25-byte label including NUL. AAD is 72 bytes unbound or 88 bytes
+   field-bound. The binding comes from the expected profile, not stored metadata.
+4. Seal the complete AEAD plaintext with XChaCha20-Poly1305 using the 32-byte
+   operational key, nonce, and AAD. Append the ciphertext (same length as AEAD
+   plaintext) and the full 16-byte tag to the prefix. No text encoding, tag
+   truncation, or additional delimiters are applied.
+
+For decryption, structurally validate the envelope, resolve only its exact
+`KeyId`, reconstruct the key and AAD with the **expected** binding, and verify
+the tag before returning any plaintext. Only after authentication may a typed
+profile remove padding and decode. Wrong binding or changes to supported
+metadata, nonce, ciphertext, or tag fail authentication. Malformed/unsupported
+envelopes and unknown keys can fail before authentication. Successful decryption
+does not establish freshness or row identity.
 
 ### Plaintext padding
 
@@ -76,6 +118,13 @@ it to the encryption suite. Padding appends one `80` byte followed by `00`
 bytes to the selected block or fixed length. Removal scans backward over zero
 bytes, requires the `80` marker, and strips it. It does not depend on the block
 size or fixed length that produced the padding.
+
+For encoded length `E`, `NoPadding` passes through `E` bytes;
+`PadToBlock<N>` (`N >= 2`) produces `N * ceil((E + 1) / N)` bytes; and
+`PadToLength<N>` (`N >= 1`) produces exactly `N` bytes, rejecting `E >= N`
+because the marker must fit. An aligned block input receives a whole extra
+block, and even an empty padded input contains a marker. The byte-level
+`encrypt`/`decrypt` functions do not apply or remove profile padding.
 
 The envelope does not record whether padding is enabled or which parameters
 were used, and its format version remains unchanged. Enabling or disabling
@@ -92,13 +141,57 @@ padded plaintext: 6372797074626f7820766563746f7280
 envelope:         43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b9368a9985aacb04ff8f7b6a677d9665a9ba
 ```
 
-The implementation uses the RustCrypto HKDF and HMAC crates and enables HMAC,
-SHA-256, and Poly1305 zeroization support. This erases keyed digest state,
-buffered hash input, and direct HMAC outputs on drop. CryptBox also immediately
-erases the HKDF extract output and holds derived keys and returned MACs in
-zeroizing buffers. As with other Rust cryptography implementations, transient
-crate- and compiler-generated stack copies remain part of the targeted
-zeroization and compiler review boundary.
+### Size semantics and enforcement
+
+All lengths are byte counts, not character counts or Rust memory sizes:
+
+| Quantity | Definition |
+| --- | --- |
+| Application value | The typed value before encoding, such as a string or JSON object. |
+| `E`: encoded bytes | Codec output before padding. `Utf8` counts UTF-8 bytes: `"é"` has `E = 2`. |
+| `P`: AEAD plaintext | Encoded bytes after padding, including the marker and zero fill when enabled. `NoPadding` gives `P = E`. |
+| `W`: envelope bytes | Complete binary ciphertext: 46-byte prefix, `P` ciphertext bytes, 16-byte tag. `W = P + 62`; excludes text encoding, database framing, and separate indexes. |
+
+Padding boundary examples (ASCII input, one encoded byte per character):
+
+| Padding policy | `E` | Padding bytes | `P` | `W` | Current library result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `NoPadding` | 0 | 0 | 0 | 62 | Accepted |
+| `NoPadding` | 1,048,576 | 0 | 1,048,576 | 1,048,638 | Accepted |
+| `NoPadding` | 1,048,577 | 0 | 1,048,577 | 1,048,639 | Accepted |
+| `PadToBlock<16>` | 0 | 16 | 16 | 78 | Empty input still padded |
+| `PadToBlock<16>` | 15 | 1 | 16 | 78 | Marker fills block |
+| `PadToBlock<16>` | 16 | 16 | 32 | 94 | Marker starts next block |
+| `PadToBlock<16>` | 1,048,575 | 1 | 1,048,576 | 1,048,638 | Accepted |
+| `PadToBlock<16>` | 1,048,576 | 16 | 1,048,592 | 1,048,654 | Accepted |
+| `PadToLength<1048576>` | 0 | 1,048,576 | 1,048,576 | 1,048,638 | Empty input uses entire target |
+| `PadToLength<1048576>` | 1,048,575 | 1 | 1,048,576 | 1,048,638 | Largest fitting input |
+| `PadToLength<1048576>` | 1,048,576 | — | — | — | `PaddingOverflow`: marker cannot fit |
+
+These cases are exercised by [`tests/padding.rs`](../tests/padding.rs). The
+1 MiB examples illustrate behavior around a historical **proposed**, unaccepted
+cap; they are not an operational recommendation or enforced threshold. See the
+[historical proposal](security.md#historical-references).
+
+Suite 1 enforces RFC 8439's functional maximum `P <= 274,877,906,880`
+(`(2^32 - 1) * 64`) on encryption and rejects parsed/decrypted payloads implying
+a larger `P`, with `MessageTooLong`. Padding/envelope size arithmetic is checked;
+fixed padding rejects `E >= N` with `PaddingOverflow`. These checks do not enforce
+an operational field-size, encryption-count, key-age, or failed-decryption budget.
+
+For an application-selected padded cap `L`, `NoPadding` permits `E <= L`;
+`PadToBlock<N>` permits `E <= N * floor(L / N) - 1` if at least one block fits;
+`PadToLength<N>` requires `N <= L` and `E <= N - 1`. Bound encoding and compute
+padded size with checked arithmetic before allocating/encrypting. Bound incoming
+binary envelopes to `W <= L + 62` before copying/decrypting, and bound decoding
+expansion separately. Current padding parameters do not cap historical reads:
+unpadding accepts a valid marker independently of the original block/target size.
+A size check is not authentication.
+
+### Key and buffer lifetime
+
+See [plaintext and key ownership](concepts.md#plaintext-and-key-ownership) for
+buffer lifetimes and erasure obligations.
 
 ### Provisional Envelope Vector
 
@@ -143,6 +236,7 @@ Exact domain labels include the terminating NUL byte:
 ```text
 key info label: "cryptbox/blind-index-key/v1\0"
 MAC label:      "cryptbox/blind-index-value/v1\0"
+HKDF salt:      "cryptbox/hkdf-sha256/v1\0"
 ```
 
 ```text
@@ -151,6 +245,46 @@ context = header || binding || index_id
 key_info = key_info_label || context
 mac_input = MAC_label || context || normalized_length_be_u64 || normalized_bytes
 ```
+
+### Blind-index recipe
+
+Inputs are an independent 32-byte blind-index root (never an encryption root),
+its immutable `IndexKeyId`, the expected binding, logical `IndexId`, retained
+bit count, and normalized bytes. `IndexKeyId`, `IndexId`, and any `FieldId` are
+each 16 UUID network-order bytes. The version is one byte `01`; `bits_be` is
+a two-byte unsigned big-endian count in `1..=256`. The binding is exactly `00`
+for `Unbound`, or `01 || field_id[16]` for `FieldBound`.
+
+1. Run the application's deterministic normalizer for this logical index.
+   There is no built-in case folding, Unicode normalization, or text encoding
+   at this layer. Use identical normalization for writes, probes, and candidate
+   comparisons. Normalized bytes are independent of the encryption codec and
+   padding. Their length is a **byte count**, encoded as unsigned big-endian
+   `u64` (eight bytes); a length that cannot fit is invalid.
+2. Construct the 19-byte `header`, then `context`, then `key_info` in the exact
+   order above. Perform **both** RFC 5869 stages:
+   `PRK = HKDF-Extract-SHA256(salt, blind_index_root)` (32-byte PRK), then
+   `index_key = HKDF-Expand-SHA256(PRK, key_info, L=32)`.
+   The salt is the literal 24-byte `cryptbox/hkdf-sha256/v1\0` including NUL;
+   the key-info label is 28 bytes including NUL. No nonce is used.
+3. Compute the full 32-byte `HMAC-SHA256(index_key, mac_input)` with the 30-byte
+   MAC label including NUL. Concatenation adds no separators or terminators
+   beyond those explicitly shown; in particular, normalized bytes have no
+   implicit NUL terminator.
+4. Retain the first `ceil(bits / 8)` digest bytes, keeping the most-significant
+   `bits` bits. If `r = bits mod 8` is nonzero, AND the final byte with
+   `(ff << (8 - r)) & ff`. Append this canonical truncated digest to `header`.
+   The stored representation is exactly `19 + ceil(bits / 8)` bytes, with no
+   encryption envelope, nonce, or additional tag.
+
+Structural parsing rejects unsupported versions, precision outside `1..=256`,
+incorrect total length (including trailing bytes), or nonzero unused low bits.
+A typed `BlindIndex<Spec>` additionally requires the stored precision to equal
+`Spec::BITS`. Binding, `IndexId`, and normalization are not stored and must be
+supplied by the application schema. These inputs domain-separate derivation;
+parsing the representation does not authenticate it or prove consistency with
+ciphertext. Index hits remain candidates requiring authenticated decryption
+and normalized plaintext comparison.
 
 ### Provisional Blind-Index Vector
 

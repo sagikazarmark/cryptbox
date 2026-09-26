@@ -108,7 +108,8 @@ where
 /// Drives a batched, resumable migration sweep over one column family.
 ///
 /// [`Self::run`] resumes from the durable checkpoint and rewrites legacy and
-/// stale rows; [`Self::verify`] is the read-only terminal-state check.
+/// stale rows; [`Self::verify`] is the read-only migration-state check, not an
+/// authenticated-read or index-consistency check.
 /// Both operate through a [`SweepStore`], keeping the driver independent of
 /// any storage backend.
 ///
@@ -165,7 +166,7 @@ where
     /// Rows that lose their compare-and-swap to a concurrent writer are
     /// counted as conflicts and deliberately not retried: once every writer
     /// uses current keys, the newer value is already current, and
-    /// [`Self::verify`] catches anything a misconfigured writer left behind.
+    /// [`Self::verify`] detects legacy or stale generations left behind.
     ///
     /// # Errors
     ///
@@ -285,6 +286,9 @@ where
     /// The read-only counterpart of [`Self::process_batch`] for stepped
     /// verification: the caller holds the cursor between steps and sums the
     /// per-batch reports with [`SweepReport::merge`].
+    /// Start with `after = None`, follow every returned checkpoint until `None`,
+    /// then check the merged report. A clean batch does not establish a clean
+    /// full pass. Like [`Self::verify`], this checks migration state only.
     ///
     /// # Errors
     ///
@@ -334,6 +338,21 @@ where
     /// The pass ignores the durable checkpoint, never writes, and counts
     /// unclassifiable rows as malformed instead of stopping, so the returned
     /// report is complete. Check [`SweepReport::is_terminal`] on the result.
+    /// A storage or configuration error aborts the pass; no complete report is
+    /// returned in that case.
+    ///
+    /// This uses [`RowPlanner::classify_row`]: ciphertext and index metadata
+    /// remain unauthenticated. It does not decrypt, validate decoded values,
+    /// recompute indexes, or establish ciphertext/index consistency. Even a
+    /// terminal report can contain ciphertext that fails authentication. For
+    /// additional assurance, separately decrypt every value with its intended
+    /// profile/context and recompute each index from that plaintext under the
+    /// intended specification and allowed generation, comparing complete bytes.
+    ///
+    /// The pass observes rows as loaded, not a library-provided snapshot. Ensure
+    /// all writers use the target generations and repeat a full pass as needed.
+    /// Its scope is this store; retained backups and other stores may still need
+    /// historical keys after live-data convergence.
     ///
     /// # Errors
     ///

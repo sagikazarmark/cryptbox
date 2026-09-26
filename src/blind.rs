@@ -12,6 +12,7 @@ use crate::{
 const INDEX_FORMAT_VERSION: u8 = 1;
 const INDEX_HEADER_LEN: usize = 19;
 const MAX_INDEX_BITS: usize = 256;
+// NUL-terminated labels separate key and value roles: ../docs/wire-format.md#blind-index-recipe.
 const INDEX_KEY_LABEL: &[u8] = b"cryptbox/blind-index-key/v1\0";
 const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 
@@ -75,7 +76,28 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
 ///
 /// Normalization is persistent schema and must be identical for writes,
 /// queries, and candidate verification. Return only the bytes relevant to
-/// equality; do not include secrets or unstable formatting state.
+/// equality. The indexed value may itself be sensitive; do not incorporate
+/// unrelated secrets, key material, randomness, or unstable formatting state.
+/// Changes to normalization, index ID, binding, or precision require a migration
+/// and compatible queries while old projections remain stored.
+///
+/// # Implementor obligations
+///
+/// This interface is extensible. Return a zeroizing buffer and protect all
+/// intermediate normalized/plaintext allocations on success and error paths.
+/// `Zeroizing<Vec<u8>>` alone does not wipe superseded allocations during growth:
+/// preallocate before copying sensitive bytes, or copy into a new zeroizing
+/// allocation and wipe the old one before releasing it. Normalize deterministically
+/// with stable application-defined equality rules, independent of locale or process
+/// configuration. Return only sanitized [`BlindIndexError`] values; do not log or
+/// retain the input in third-party errors. Candidate verification must use the
+/// same normalization after authenticated decryption, not accept an index hit alone.
+///
+/// See the development [custom-profile recipe] and canonical [ownership explanation].
+/// Bindings and padding remain sealed; a custom normalizer does not add row binding.
+///
+/// [custom-profile recipe]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md
+/// [ownership explanation]: https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership
 pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
     /// Returns normalized bytes owned by a zeroizing buffer.
     ///
@@ -93,6 +115,10 @@ pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
 /// `Spec` is phantom and its [`BlindIndexMetadata::ID`] is not stored in the
 /// representation. With the `serde` feature, this type serializes only its
 /// complete stored binary representation.
+/// Deserialization uses [`Self::from_bytes`] for structural and precision checks,
+/// without keys. Neither operation authenticates stored metadata or establishes
+/// consistency with a ciphertext. Candidate plaintext comparison is a separate
+/// operation; see [`verify_blind_index_candidate`].
 pub struct BlindIndex<Spec> {
     bytes: Vec<u8>,
     marker: PhantomData<fn() -> Spec>,
@@ -224,7 +250,7 @@ impl BlindIndexInfo {
         self.format_version
     }
 
-    /// Returns the index-key generation used to produce the value.
+    /// Returns the unauthenticated index-key generation named by the value.
     #[must_use]
     pub const fn index_key_id(self) -> IndexKeyId {
         self.index_key_id
@@ -240,7 +266,12 @@ impl BlindIndexInfo {
 /// Parses and structurally validates a stored blind-index representation.
 ///
 /// This does not authenticate the returned key ID, precision, or digest. Treat
-/// all metadata as untrusted until the candidate is recomputed and verified.
+/// all metadata as untrusted. To check index consistency, decrypt the associated
+/// ciphertext, recompute with the intended specification, binding, and an allowed
+/// key generation, and compare the complete stored representation. A match is
+/// consistency at the configured precision, not proof of provenance or freshness.
+/// [`verify_blind_index_candidate`] only compares plaintexts; it does not perform
+/// this recomputation or authenticate stored index metadata.
 ///
 /// # Errors
 ///
@@ -307,7 +338,9 @@ where
 /// normalized plaintext with [`verify_blind_index_candidate`].
 /// See the complete [blind-index example].
 ///
-/// [blind-index example]: https://docs.rs/crate/cryptbox/latest/source/examples/blind_indexes.rs
+/// The example link describes the 0.5.0 release archive.
+///
+/// [blind-index example]: https://docs.rs/crate/cryptbox/0.5.0/source/examples/blind_indexes.rs
 ///
 /// # Errors
 ///
@@ -332,6 +365,11 @@ where
 }
 
 /// Compares normalized query and candidate plaintext after candidate lookup.
+///
+/// Decrypt and authenticate the candidate ciphertext before calling this.
+/// This function receives no stored index, keys, or binding context: it rejects
+/// false plaintext matches but does not authenticate index metadata or establish
+/// index/ciphertext consistency.
 ///
 /// Equal-length normalized values are compared in constant time. A normalized
 /// length mismatch returns early, so callers must treat normalized lengths as
@@ -385,6 +423,8 @@ fn derive_normalized<Spec: BlindIndexMetadata>(
     header[1..17].copy_from_slice(key.id().as_bytes());
     header[17..19].copy_from_slice(&bits.to_be_bytes());
 
+    // Both HKDF and HMAC commit to this canonical order; changing it breaks stored lookups.
+    // See ../docs/wire-format.md#blind-index-recipe.
     let mut context = Vec::with_capacity(header.len() + domain.as_bytes().len() + 16);
     context.extend_from_slice(&header);
     context.extend_from_slice(domain.as_bytes());
@@ -409,6 +449,8 @@ fn derive_normalized<Spec: BlindIndexMetadata>(
     stored.extend_from_slice(&digest[..digest_len]);
 
     if Spec::BITS % 8 != 0 {
+        // One encoding per retained bit string; unused bits must not leak extra precision.
+        // Parsing enforces the same rule: ../docs/wire-format.md#blind-index-recipe.
         let retained_bits = Spec::BITS % 8;
         let mask = u8::MAX << (8 - retained_bits);
         let final_byte = stored.last_mut().ok_or(Error::InvalidBlindIndex)?;

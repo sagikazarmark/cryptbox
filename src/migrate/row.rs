@@ -11,10 +11,13 @@ use super::{LegacyFormat, legacy};
 /// The classification of one stored row against the current key generations.
 ///
 /// Malformed rows are not a state: classification returns an error for them.
+/// Classification inspects unauthenticated structure and generation metadata,
+/// not authenticated readability, decoded-value validity, or index consistency.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum RowState {
-    /// The envelope and every blind index use the current generations.
+    /// The envelope and every blind index structurally parse and name current generations.
+    /// Ciphertext is not decrypted and indexes are not recomputed.
     Current,
     /// The envelope or at least one blind index names a historical generation.
     Stale,
@@ -114,6 +117,9 @@ where
 /// re-encrypted, stale blind indexes are re-derived from the authoritative
 /// (decrypted) ciphertext, and recovered legacy data is encrypted with every
 /// registered index derived alongside.
+/// Current rows are skipped without authentication or decoding, and current
+/// index bytes are retained without checking consistency. Use a separate
+/// authenticated-read and index-recomputation pass when those checks are required.
 pub struct RowPlanner<'a, T, Profile>
 where
     Profile: EncryptionProfile<T>,
@@ -171,6 +177,13 @@ where
 
     /// Classifies one stored row without producing writes or consuming nonces.
     ///
+    /// Checks structure and compares unauthenticated generation IDs. It does not
+    /// decrypt, decode, recover legacy data, or recompute indexes. Index parsing
+    /// checks the stored format, not agreement with the registered specification's
+    /// precision or logical ID. Classification may stop at the first legacy or
+    /// stale component, so later columns need not have been inspected.
+    /// [`RowState::Current`] does not establish authenticated readability.
+    ///
     /// # Errors
     ///
     /// Returns an error for malformed envelopes or blind indexes, an index
@@ -198,6 +211,11 @@ where
     }
 
     /// Classifies one stored row and builds its replacement bytes when needed.
+    ///
+    /// Current rows are returned without decryption. Current index columns keep
+    /// their bytes even when another component is rewritten. Re-encryption alone
+    /// authenticates and checks padding but does not decode with the codec;
+    /// stale-index derivation also decrypts and decodes the value.
     ///
     /// # Errors
     ///

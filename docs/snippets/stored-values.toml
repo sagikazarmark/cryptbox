@@ -1,0 +1,10 @@
+[package]
+name = "stored-values-consumer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cryptbox = { path = "../cryptbox", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zeroize = "1"

@@ -64,6 +64,61 @@ impl EncryptionProfile<String> for BlockPadded {
     type Padding = PadToBlock<16>;
 }
 
+struct PolicyFixedLength;
+
+impl EncryptionProfile<String> for PolicyFixedLength {
+    type Binding = Unbound;
+    type Codec = Utf8;
+    type Keys = GlobalKeyContext;
+    type Padding = PadToLength<1_048_576>;
+}
+
+// Padding/envelope arithmetic from docs/wire-format.md#size-semantics-and-enforcement.
+// The 1 MiB cases test size boundaries, not an enforced operational cap.
+fn assert_stored_sizes<P: EncryptionProfile<String>>(cases: &[(usize, usize)])
+where
+    P::Binding: cryptbox::Binding<Context = ()>,
+{
+    let keys = keyring();
+    for &(encoded_bytes, envelope_bytes) in cases {
+        let input = "x".repeat(encoded_bytes);
+        let ciphertext = Encrypted::<_, P>::new(input.clone())
+            .encrypt_with(&(), &keys)
+            .unwrap();
+        assert_eq!(ciphertext.as_bytes().len(), envelope_bytes);
+        assert_eq!(
+            ciphertext.decrypt_with(&(), &keys).unwrap().expose_secret(),
+            &input
+        );
+    }
+}
+
+#[test]
+fn documented_unpadded_policy_sizes_match_stored_values() {
+    assert_stored_sizes::<Unpadded>(&[(0, 62), (1_048_576, 1_048_638), (1_048_577, 1_048_639)]);
+}
+
+#[test]
+fn documented_block_padding_sizes_include_the_marker_at_boundaries() {
+    assert_stored_sizes::<BlockPadded>(&[
+        (0, 78),
+        (15, 78),
+        (16, 94),
+        (1_048_575, 1_048_638),
+        (1_048_576, 1_048_654),
+    ]);
+}
+
+#[test]
+fn documented_fixed_padding_sizes_reserve_room_for_the_marker() {
+    assert_stored_sizes::<PolicyFixedLength>(&[(0, 1_048_638), (1_048_575, 1_048_638)]);
+    let value = Encrypted::<_, PolicyFixedLength>::new("x".repeat(1_048_576));
+    assert!(matches!(
+        value.encrypt_with(&(), &keyring()),
+        Err(Error::PaddingOverflow)
+    ));
+}
+
 #[test]
 fn block_padded_values_round_trip_without_revealing_length_within_a_bucket() {
     let keys = keyring();

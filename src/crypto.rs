@@ -14,6 +14,8 @@ const PREFIX_LEN: usize = HEADER_LEN + NONCE_LEN;
 const TAG_LEN: usize = 16;
 const MAX_PLAINTEXT_LEN: u64 = 274_877_906_880;
 
+// Labels, including NULs, are persistent domain separators, not display strings.
+// See ../docs/wire-format.md#encryption-recipe.
 const HKDF_SALT: &[u8] = b"cryptbox/hkdf-sha256/v1\0";
 const ENCRYPTION_KEY_LABEL: &[u8] = b"cryptbox/encryption-key/v1\0";
 const ENVELOPE_AAD_LABEL: &[u8] = b"cryptbox/envelope-aad/v1\0";
@@ -95,6 +97,9 @@ pub fn is_ciphertext(bytes: &[u8]) -> bool {
 
 /// Parses supported envelope metadata without authenticating it.
 ///
+/// The bytes and returned metadata remain untrusted until authenticated
+/// decryption succeeds. Parsing does not look up keys or validate a codec.
+///
 /// # Errors
 ///
 /// Returns a structured error when the envelope is malformed or unsupported.
@@ -128,6 +133,9 @@ pub fn encrypt<B: Binding>(
 /// Authenticates and decrypts opaque ciphertext bytes.
 ///
 /// The provider is asked only for the exact key ID named by the envelope.
+/// Success authenticates the envelope under the supplied key and binding;
+/// it does not establish freshness, row identity, padding, or codec validity.
+/// Use [`crate::Ciphertext::decrypt_with`] to also unpad and decode a typed value.
 ///
 /// # Errors
 ///
@@ -151,6 +159,8 @@ pub fn decrypt<B: Binding>(
 /// Reports whether an envelope does not use the active suite or current key.
 ///
 /// This reads unauthenticated metadata and does not decrypt the payload.
+/// A `false` result means only that the parsed suite and key IDs are current,
+/// not that the ciphertext can be authenticated or decoded.
 ///
 /// # Errors
 ///
@@ -226,6 +236,8 @@ fn derive_encryption_key(
     domain: &BindingDomain,
     suite_id: SuiteId,
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
+    // Preserve this canonical order: changing it makes stored ciphertext unreadable.
+    // See ../docs/wire-format.md#encryption-recipe.
     let mut info = Vec::with_capacity(ENCRYPTION_KEY_LABEL.len() + 18 + domain.as_bytes().len());
     info.extend_from_slice(ENCRYPTION_KEY_LABEL);
     info.push(FORMAT_VERSION);
@@ -237,6 +249,8 @@ fn derive_encryption_key(
 }
 
 fn envelope_aad(prefix: &[u8], domain: &BindingDomain) -> Vec<u8> {
+    // Authenticate the exact stored prefix together with the caller's expected binding.
+    // The envelope must not choose its own binding: ../docs/wire-format.md#encryption-recipe.
     let mut aad =
         Vec::with_capacity(ENVELOPE_AAD_LABEL.len() + prefix.len() + domain.as_bytes().len());
     aad.extend_from_slice(ENVELOPE_AAD_LABEL);
@@ -276,6 +290,8 @@ impl XChaCha20Poly1305Suite {
         let cipher =
             XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
         let aad = envelope_aad(&prefix, domain);
+        // The working copy can still contain plaintext if sealing fails; erase on every exit.
+        // See ../docs/wire-format.md#key-and-buffer-lifetime.
         let mut sealed = Zeroizing::new(plaintext.to_vec());
         cipher
             .encrypt_in_place(&nonce, &aad, &mut *sealed)
@@ -317,6 +333,8 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         domain: &BindingDomain,
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
+        // Fresh OS randomness avoids caller-managed nonce reuse; failure must stop encryption.
+        // See ../docs/wire-format.md#encryption-recipe.
         let mut nonce = [0_u8; NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(|_| Error::RandomnessUnavailable)?;
 
@@ -343,6 +361,8 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         let cipher =
             XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
         let aad = envelope_aad(&prefix, domain);
+        // Never return unauthenticated bytes, even if the AEAD mutates before failing.
+        // Zeroizing also covers that error path: ../docs/wire-format.md#key-and-buffer-lifetime.
         let mut plaintext = Zeroizing::new(payload[NONCE_LEN..].to_vec());
         cipher
             .decrypt_in_place(nonce, &aad, &mut *plaintext)
@@ -388,6 +408,7 @@ fn hkdf_sha256_32_with_salt(
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
     let (mut pseudo_random_key, hkdf) = Hkdf::<Sha256>::extract(Some(salt), input_key_material);
     // HKDF retains keyed expansion state, so the separately returned PRK is no longer needed.
+    // Keep outputs zeroizing too: ../docs/wire-format.md#key-and-buffer-lifetime.
     pseudo_random_key.as_mut_slice().zeroize();
     let mut output = Zeroizing::new([0_u8; 32]);
 

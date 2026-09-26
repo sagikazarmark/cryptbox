@@ -1,5 +1,4 @@
 # Plaintext Migration Guide Moved
 
-Plaintext is the identity case of legacy migration. See the canonical
-[legacy migration guide](legacy-migration.md), including its bounded-window,
-verification, and closing guidance.
+Plaintext is the identity-recovery case of [legacy migration](legacy-migration.md).
+Follow its bounded-window rollout and [closure gates](legacy-migration.md#verification-and-closing-the-window).

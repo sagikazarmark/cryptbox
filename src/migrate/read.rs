@@ -17,6 +17,10 @@ use super::{LegacyFormat, legacy};
 /// buffer and recovered at decrypt time. Bytes that carry the magic but fail
 /// structural validation remain hard errors rather than falling back to a
 /// legacy handler.
+/// Construction and `SQLx` decoding only classify structure; ciphertext and its
+/// metadata remain unauthenticated until decryption succeeds. Identity recovery
+/// of legacy plaintext does not establish authenticity, and re-encrypting it
+/// cannot retroactively establish its provenance.
 ///
 /// [`Self::decrypt_with`] and [`Self::decrypt`] use identity recovery for
 /// plaintext-only migrations. [`Self::decrypt_with_legacy`] and

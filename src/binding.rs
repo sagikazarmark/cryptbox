@@ -3,6 +3,13 @@ use std::marker::PhantomData;
 use crate::FieldId;
 
 /// Supplies stable cryptographic context for an encrypted value.
+///
+/// This trait is sealed: applications select [`Unbound`] or [`FieldBound<F>`],
+/// both with unit context `()`, rather than implementing it externally. Row/tenant
+/// binding is future work; generic context parameters do not make it available.
+/// Codecs, index normalizers, profiles, and key providers are extensible instead.
+/// See the development [custom-profile recipe](https://github.com/sagikazarmark/cryptbox/blob/main/docs/custom-profile.md)
+/// and [ownership explanation](https://github.com/sagikazarmark/cryptbox/blob/main/docs/concepts.md#plaintext-and-key-ownership).
 pub trait Binding: private::Sealed + Sized + 'static {
     /// Runtime context required to construct the binding domain.
     type Context: ?Sized;
@@ -45,8 +52,11 @@ pub trait Field: Sized + 'static {
 
 /// Binds ciphertext and blind indexes to the [`Field::ID`] declared by `F`.
 ///
-/// This prevents values from authenticating under another logical field, but
-/// does not prevent substitution between rows of the same field.
+/// Ciphertext authentication fails under a different logical field. For blind
+/// indexes, the field domain-separates derivation; it does not authenticate the
+/// stored index representation. Neither property prevents substitution between
+/// rows of the same field. Compare decrypted candidate plaintext for lookup, and
+/// recompute indexes separately when stored-index consistency is required.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FieldBound<F>(PhantomData<fn() -> F>);
 
@@ -72,6 +82,8 @@ pub struct BindingDomain {
 }
 
 impl BindingDomain {
+    // Tags and UUID bytes are persistent KDF/AAD inputs, independent of diagnostic names.
+    // See ../docs/wire-format.md#binding.
     const fn unbound() -> Self {
         Self {
             encoded: [0_u8; 17],
