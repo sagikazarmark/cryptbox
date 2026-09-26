@@ -15,12 +15,11 @@
 
 ## Features
 
-- 🛡️ **Integrates with your models.** Add encryption directly to your data model. CryptBox handles encryption, so you don't have to write that glue code yourself.
-- 🔌 **Database and serialization support.** SQLx integration for PostgreSQL and SQLite, batch migrations, and Serde support for stored bytes.
-- 🔑 **Rotate keys at your own pace.** Encrypted values track which key they need, so you can switch keys without rewriting all your data at once.
-- 🔎 **Search encrypted data.** Find possible exact matches using separately keyed search indexes (blind indexes), then decrypt and compare to confirm each match.
-- 🧹 **Limit exposure in memory and logs.** CryptBox wipes the key and unencrypted-data buffers it owns and hides sensitive values in debug output.
-
+- 🛡️ **Encryption for your Rust data models.**
+- 🔌 **Database and serialization support.**
+- 🔑 **Rotate keys at your own pace.**
+- 🔎 **Search encrypted data using blind indexes.**
+- 🧹 **Prevent sensitive data exposure in logs.**
 
 It can protect encrypted fields in a stolen database dump when keys stay
 separate. It does not protect a compromised application, prevent replay or
