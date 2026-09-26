@@ -1,5 +1,5 @@
 //! Serializes stored bytes, then deliberately authenticates and checks consistency.
-//! See docs/stored-values.md for the complete consumer manifest and trust boundaries.
+//! See README.md beside this source for usage and trust boundaries.
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext,

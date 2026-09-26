@@ -42,13 +42,13 @@ not a reset because valid cursors may be zero or negative.
 ## Run the automated scenario
 
 This section runs an automated rehearsal. It is separate from the nullable
-dataset created by the [searchable tutorial](searchable-sqlx.md): the runner
+dataset created by the [searchable example](../examples/searchable/README.md): the runner
 provisions a fresh non-NULL population. To operate your own nullable application,
 use the explicit NULL policy and custom-store/manual-loop boundary described below.
 
 ### Prepare the consumer
 
-Use the [consumer setup](searchable-sqlx.md), [complete source](snippets/searchable.rs)
+Use the [example setup](../examples/searchable/README.md), [complete source](../examples/searchable/main.rs)
 and its `maintenance` feature. The [runnable sweep scenario](../tests/e2e/sweep.rs)
 contains the interruption, replay, stale-write recovery, second rotation and
 competing-write rehearsal. Use Rust/Cargo 1.85+, a native C compiler

@@ -1,4 +1,5 @@
 //! Writes and reads a persistent `SQLite` field in separate processes through `SQLx`.
+//! See README.md beside this source for provisioning and restart instructions.
 
 use std::{error::Error, fs::File, io::Read, path::Path};
 

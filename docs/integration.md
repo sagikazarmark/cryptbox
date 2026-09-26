@@ -4,7 +4,7 @@ After a first round trip, the main design questions are where encryption happens
 which policy remains stable with stored data, and how keys reach each operation.
 This page explains those choices and their consequences. It builds on
 [how CryptBox works](concepts.md); for a runnable next step, follow the
-[durable SQLite tutorial](first-field-sqlite.md).
+[durable SQLite example](../examples/sqlite/README.md).
 
 ## Persistent schema
 
@@ -59,9 +59,9 @@ or TLS configuration. Serde handles stored bytes only and supplies neither
 encryption nor atomic persistence. See [features and platforms](features.md) for
 exact availability and configuration requirements.
 
-Try [explicit SQLite storage](first-field-sqlite.md), the
+Try [explicit SQLite storage](../examples/sqlite/README.md), the
 [automatic-adapter example](testing.md#automatic-adapters), or
-[stored-value serialization](stored-values.md).
+[stored-value serialization](../examples/stored_values/README.md).
 
 ## Key providers and key contexts
 
@@ -90,10 +90,10 @@ stored data needs them. Replacing a missing key with a newly generated one canno
 recover existing ciphertext. Encryption and blind-index roles use independently
 generated roots; encryption-only applications need no index roots.
 
-The [SQLite tutorial](first-field-sqlite.md#2-provision-the-demonstration-key-once) shows
-a single durable encryption generation. The [searchable tutorial](searchable-sqlx.md#2-provision-durable-key-generations-once)
+The [SQLite example](../examples/sqlite/README.md#2-provision-the-demonstration-key-once) shows
+a single durable encryption generation. The [searchable example](../examples/searchable/README.md#provision-durable-key-generations-once)
 adds independent index generations. For a custom key source, see
-[provider contracts](custom-profile.md#implementor-obligations); for changing a
+[provider contracts](../examples/custom_profile/README.md#implementor-obligations); for changing a
 serving keyset, see [key lifecycle](key-rotation.md).
 
 ## Search and atomic writes
@@ -121,7 +121,7 @@ corresponding index generation is unavailable. Checking candidate plaintext and
 checking stored-index consistency are separate tasks; see
 [what each check establishes](security.md#what-each-check-establishes).
 
-The [searchable SQLx tutorial](searchable-sqlx.md) demonstrates the complete write
+The [searchable storage example](../examples/searchable/README.md) demonstrates the complete write
 and lookup path together. Adding search to existing data also requires a plan to
 populate and verify indexes before relying on index-only queries.
 
@@ -135,7 +135,7 @@ and buffer.
 
 Codecs, normalizers, profiles, and key providers are extensible. Bindings and
 padding policies are sealed to the built-in choices; a custom codec cannot add
-row or tenant authentication. The [custom-profile example](custom-profile.md)
+row or tenant authentication. The [custom-profile example](../examples/custom_profile/README.md)
 shows a zeroizing value, codec, normalizer, and provider working together.
 
 ## From design to a working application

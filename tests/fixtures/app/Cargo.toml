@@ -22,10 +22,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 zeroize = { version = "1", features = ["alloc"] }
 
 [[bin]]
-name = "searchable"
-path = "../../../docs/snippets/searchable.rs"
-
-[[bin]]
 name = "automatic"
 path = "../../../docs/snippets/testing-automatic.rs"
 required-features = ["sqlite"]

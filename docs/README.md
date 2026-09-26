@@ -11,11 +11,11 @@ Choose the entry point that fits your question:
 ## Integrate into a project
 
 - [Integration design and trade-offs](integration.md): persistent schema, storage boundaries, providers, and search.
-- [Store a field durably in SQLite](first-field-sqlite.md): encryption-only tutorial with a separate-process read.
-- [Build searchable SQLx storage](searchable-sqlx.md): a complete tutorial for atomic writes and verified equality lookup on PostgreSQL or SQLite.
+- [SQLite example](../examples/sqlite/README.md): run and adapt durable encrypted storage with a separate-process read.
+- [Searchable storage example](../examples/searchable/README.md): atomic writes and verified equality lookup on PostgreSQL or SQLite.
 - [Automatic SQLx adapters](testing.md#automatic-adapters): a runnable example and its key-context lifetime.
-- [Serialize stored values](stored-values.md): explicit ciphertext and index serialization with Serde.
-- [Customize profiles and providers](custom-profile.md): codecs, normalization, key sources, and wrapped plaintext.
+- [Stored-values example](../examples/stored_values/README.md): ciphertext and index serialization with Serde.
+- [Custom-profile example](../examples/custom_profile/README.md): codecs, normalization, key sources, and wrapped plaintext.
 - [Testing and diagnostics](testing.md): isolated providers and sanitized failures.
 - [Adopt existing data](legacy-migration.md): prerequisites and rollout for plaintext or previous-solution ciphertext.
 
@@ -37,19 +37,9 @@ Choose the entry point that fits your question:
 
 ## Runnable examples
 
-Run from a checkout. SQLx examples need the indicated backend feature.
-
-| Example | Command |
-| --- | --- |
-| [First field](../examples/first_field.rs) | `cargo run --locked --example first_field` |
-| [Custom profile](../examples/custom_profile.rs) | `cargo run --locked --example custom_profile` |
-| [Key rotation](../examples/key_rotation.rs) | `cargo run --locked --example key_rotation` |
-| [Maintenance sweep](../examples/reencryption_sweep.rs) | `cargo run --locked --example reencryption_sweep --features sqlx-sqlite` |
-| [Legacy migration](../examples/legacy_migration.rs) | `cargo run --locked --example legacy_migration --features migrate,sqlx-sqlite` |
-| [Plaintext migration](../examples/plaintext_migration.rs) | `cargo run --locked --example plaintext_migration --features migrate,sqlx-sqlite` |
-| [Blind-index lookup](../examples/blind_indexes.rs) | `cargo run --locked --example blind_indexes` |
-| [Stored values](../examples/stored_values.rs) | `cargo run --locked --example stored_values --features serde` |
-| [SQLite](../examples/sqlx_sqlite.rs) | `cargo run --locked --example sqlx_sqlite --features sqlx-sqlite -- --help` (see [provisioning and write/read steps](first-field-sqlite.md)) |
+The [example index](../examples/README.md) lists runnable commands and prerequisites.
+Each complete example keeps its source, setup, expected results, and adaptation
+notes together. The first-field example remains the minimal quickstart.
 
 ## Contribute
 

@@ -246,7 +246,7 @@ fn initialize_key_material<Id>(
 /// See the [custom-profile example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait EncryptionKeyProvider: Send + Sync {
@@ -290,7 +290,7 @@ pub trait EncryptionKeyProvider: Send + Sync {
 /// See the [custom-profile example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait BlindIndexKeyProvider: Send + Sync {

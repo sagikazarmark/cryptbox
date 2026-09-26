@@ -30,7 +30,7 @@
 //!
 #![doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md",
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md",
 )]
 //!
 //! [`Binding`] is sealed to [`Unbound`] and [`FieldBound`], both with unit context
@@ -61,7 +61,7 @@
 //!
 // Markdown uses the first definition: qualify the shared page's relative links for rustdoc.
 #![doc = concat!(
-    "\n[stored-value walkthrough]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/stored-values.md\n",
+    "\n[stored-value walkthrough]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/stored_values/README.md\n",
     "[live-backend check instructions]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/documentation.md#live-postgresql\n",
     "[task index]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/README.md\n\n",
     include_str!("../docs/features.md"),

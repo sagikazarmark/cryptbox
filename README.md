@@ -72,10 +72,10 @@ context. `Encrypted` holds plaintext; `Ciphertext` holds the encrypted envelope.
 field binding. `&keys` supplies keys explicitly. Encryption borrows `email`, so
 the original plaintext remains in memory. See [how CryptBox works](docs/concepts.md).
 
-Next, [store the field durably in SQLite](docs/first-field-sqlite.md), or read
+Next, [run the durable SQLite example](examples/sqlite/README.md), or read
 [integration design and trade-offs](docs/integration.md) before applying it to your
 project. If you need equality lookup, continue with the
-[searchable SQLx tutorial](docs/searchable-sqlx.md). For existing plaintext or
+[searchable storage example](examples/searchable/README.md). For existing plaintext or
 foreign ciphertext, review [legacy adoption](docs/legacy-migration.md) before
 changing writes.
 

@@ -1,3 +1,5 @@
+//! Searchable storage example; see README.md for setup, commands, and expected output.
+
 use std::{env, error::Error, path::Path};
 
 use cryptbox::{

@@ -118,7 +118,7 @@ of a SQLx column does not maintain its separate index column.
 ## What to read next
 
 - **Try it:** [encrypt your first field](first-field.md), then
-  [store it durably in SQLite](first-field-sqlite.md).
+  [store it durably in SQLite](../examples/sqlite/README.md).
 - **Apply it:** [integration design and trade-offs](integration.md) explains
   persistent schema, storage boundaries, providers, and search.
 - **Assess it:** [security and threat model](security.md) covers protections,

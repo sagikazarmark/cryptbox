@@ -4,6 +4,7 @@ version = "0.5.0"
 description = "Strongly typed application-layer encryption for Rust values"
 edition = "2024"
 rust-version = "1.85"
+autoexamples = false
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sagikazarmark/cryptbox"
 keywords = ["cryptography", "database", "encryption", "security", "sqlx"]
@@ -12,7 +13,7 @@ categories = ["cryptography", "database"]
 exclude = ["/tests/e2e.rs", "/tests/e2e/"]
 
 [workspace]
-members = ["tests/fixtures/app"]
+members = ["examples/searchable", "tests/fixtures/app"]
 default-members = ["."]
 resolver = "2"
 
@@ -67,12 +68,27 @@ broken_intra_doc_links = "deny"
 missing_crate_level_docs = "deny"
 
 [[example]]
+name = "first_field"
+
+[[example]]
+name = "blind_indexes"
+
+[[example]]
+name = "key_rotation"
+
+[[example]]
 name = "stored_values"
+path = "examples/stored_values/main.rs"
 required-features = ["serde"]
 
 [[example]]
 name = "sqlx_sqlite"
+path = "examples/sqlite/main.rs"
 required-features = ["sqlx-sqlite"]
+
+[[example]]
+name = "custom_profile"
+path = "examples/custom_profile/main.rs"
 
 [[example]]
 name = "reencryption_sweep"

@@ -49,7 +49,11 @@ pub fn build(directory: &Path, binary: &str, features: &str, database: Option<&s
             "build",
             "--locked",
             "-p",
-            "cryptbox-e2e",
+            if binary == "searchable" {
+                "cryptbox-searchable"
+            } else {
+                "cryptbox-e2e"
+            },
             "--bin",
             binary,
             "--no-default-features",

@@ -165,7 +165,7 @@ requires rollback, reload and investigation.
 All writers must coordinate format metadata with value changes transactionally,
 or exceptional rows must be fenced. The fixture's ordinary `put` does not manage
 legacy metadata, so its collision row stays under exclusive maintenance ownership
-until repaired. See `repair` in [migration.rs](snippets/migration.rs).
+until repaired. See `repair` in [migration.rs](../examples/searchable/migration.rs).
 
 ## Verification and closing the window
 
@@ -183,7 +183,7 @@ and strict-reader cutover, or supply equivalent application-owned consistency.
    evidence for unauthenticated legacy values. Successful encryption cannot supply it.
 4. Replace `MaybeEncrypted` with strict reads. Remove online handler references,
    migration commands/configuration and the `migrate` feature. In the consumer,
-   remove `src/migration.rs`, its module/dispatch/planner-injection blocks, the
+    remove `migration.rs`, its module/dispatch/planner-injection blocks, the
    `legacy-migration` feature/dependencies, and `maintenance` if no longer needed.
 5. Rebuild/restart strict readers; verify historical converted reads, complete
    searches and a prepared write/read/search round trip before reopening traffic.
@@ -202,11 +202,11 @@ for online key removal and eventual destruction; live closure alone permits neit
 ## Run the automated scenario
 
 This is an automated rehearsal with its own fresh non-NULL dataset, not a manual
-continuation of the nullable searchable tutorial. The general operating procedure
+continuation of the nullable searchable example. The general operating procedure
 is described in the sections above; the test runner exercises it using the sample
 consumer and records expected outcomes in the scenario source.
 
-The [consumer module](snippets/migration.rs) and [migration scenario](../tests/e2e/migration.rs)
+The [example module](../examples/searchable/migration.rs) and [migration scenario](../tests/e2e/migration.rs)
 exercise plaintext, authenticated illustrative legacy ciphertext, historical/current
 CryptBox rows, missing indexes and a trusted magic collision. The scenario drives
 failure/quarantine/recovery, replay and manual repairs, then verifies closure.
@@ -222,8 +222,8 @@ cargo test --locked --test e2e --all-features sqlite_migration
 
 For live PostgreSQL, see the [test instructions](documentation.md#live-postgresql).
 The runner creates independent keys and fresh persistent fixtures; damage/repair
-commands are for those fixtures only. For manual setup, use the [SQLx tutorial](searchable-sqlx.md),
-copy `migration.rs` to `src/migration.rs`, enable `legacy-migration`, and provision
+commands are for those fixtures only. For manual setup, use the [searchable example](../examples/searchable/README.md),
+enable `legacy-migration` for its included `migration.rs` module, and provision
 `legacy.hex` once without replacing material needed by stored legacy ciphertext.
 The illustrative previous protocol is not a recommended format for new storage.
 The smaller [legacy](../examples/legacy_migration.rs) and

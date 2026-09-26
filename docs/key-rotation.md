@@ -21,7 +21,7 @@ Record acknowledgments against a configuration revision and trusted canary set
 from each serving instance. Missing, failed or outdated instances block promotion.
 The deployment owns this gate and controls who can change write selection.
 
-The [consumer](snippets/searchable.rs) has independent `CRYPTBOX_ENCRYPTION` and
+The [sample application](../examples/searchable/main.rs) has independent `CRYPTBOX_ENCRYPTION` and
 `CRYPTBOX_INDEX` selectors; set both and unset `CRYPTBOX_GENERATION` for explicit
 rollouts. For each role, `1` loads only generation 1; `staged` writes 1 and reads
 1/2; `2` writes 2 and reads 1/2; `2-only` loads only 2 after retirement gates.
@@ -86,7 +86,7 @@ the process. For automatic adapters, `GlobalKeyContext::install` is immutable an
 one-time per process. Restart, or have the originally installed custom provider
 refresh its own synchronized snapshot. That provider owns consistency, refresh
 failures and readiness; synchronous CryptBox calls do not distribute secrets or
-refresh KMS state. See [provider obligations](custom-profile.md#implementor-obligations).
+refresh KMS state. See [provider obligations](../examples/custom_profile/README.md#implementor-obligations).
 
 ## Sequence and later maintenance
 
@@ -211,7 +211,7 @@ destruction of all copies. CryptBox supplies no inventory, escrow or erasure ser
 
 ## Runnable scenarios
 
-Use the [consumer setup](searchable-sqlx.md) and [test runner](documentation.md#local-checks).
+Use the [example setup](../examples/searchable/README.md) and [test runner](documentation.md#local-checks).
 The [rotation scenario](../tests/e2e/rotation.rs) exercises staggered
 role promotion and rollback; the [recovery scenario](../tests/e2e/recovery.rs)
 exercises preflight restore, online removal and isolated historical lookup.

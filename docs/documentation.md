@@ -42,10 +42,11 @@ cargo test --locked --test e2e --all-features sqlite_rotation
 cargo test --locked --test e2e --all-features sqlite_migration
 ```
 
-The unpublished `tests/fixtures/app` package builds the documented CLI against the
-local library. Its app-specific features allow tests to rebuild with SQLx macros
-or without legacy migration support. Executables are copied into each scenario's
-temporary directory; keys and databases persist across child processes and are
+The `examples/searchable` workspace package builds the sample application against
+the local library. Its app-specific features allow tests to rebuild with SQLx
+macros or without legacy migration support. The `tests/fixtures/app` package
+contains the automatic-adapter and diagnostics fixtures. Executables are copied
+into each scenario's temporary directory; keys and databases persist across child processes and are
 removed afterwards. Builds share `target/e2e` (under `CARGO_TARGET_DIR` if set).
 These fixture-driven tests are checkout-only and excluded from the crate archive.
 
@@ -75,6 +76,9 @@ database copies. These scenarios modify their test database.
 - Edit runnable sources under `examples/` or `docs/snippets/`, then run
   `node scripts/doc-snippets.mjs --write` to refresh marked excerpts. Keep excerpts
   small; link complete programs rather than embedding them.
+- Complete demonstrations live in example directories with a README explaining
+  how to run, inspect, and adapt them. Keep example-specific SQL and modules there.
+  The searchable README's excerpts are checked against its adjacent `main.rs`.
 - Mermaid sources are in `docs/diagrams/`. The lifecycle SVG is included in
   rustdoc; regenerate and validate diagrams with:
 

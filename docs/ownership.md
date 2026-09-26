@@ -49,7 +49,7 @@ owner; the original encryption source and any prior clones still exist independe
 `Encrypted<Secret<String>, Profile>` requires a codec for `Secret<String>`.
 The built-in `Utf8` implements `Codec<String>`, not every wrapper type. Normalizers
 also require an implementation for the exact input type. The
-[custom-profile example](custom-profile.md) demonstrates a codec that decodes
+[custom-profile example](../examples/custom_profile/README.md) demonstrates a codec that decodes
 directly into `Secret<String>`.
 
 ## Temporary buffers and erasure limits
@@ -62,7 +62,7 @@ of the outstanding review boundary.
 `Zeroizing<Vec<u8>>` wipes its current allocation, not allocations previously
 released by growth. Custom implementations must protect intermediate allocations
 and failure paths as well as returned buffers. See the
-[implementor guidance](custom-profile.md#implementor-obligations) for allocation handling.
+[implementor guidance](../examples/custom_profile/README.md#implementor-obligations) for allocation handling.
 
 Zeroization does not promise erasure of compiler-generated copies, registers,
 OS copies, or arbitrary application allocations. Behavioral tests can verify

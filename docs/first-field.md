@@ -4,6 +4,15 @@ Encrypt and decrypt a field-bound value in a small Rust application.
 CryptBox is experimental and [not production-ready](security.md).
 [Documentation](README.md).
 
+To run the complete example from a checkout:
+
+```sh
+cargo run --locked --example first_field
+```
+
+Expect `Field-bound round trip succeeded.` To build it yourself, follow the two
+steps below using the same source.
+
 ## 1. Create a consumer project
 
 Use current stable Rust/Cargo (minimum Rust 1.85) on Linux or macOS with OS
@@ -84,7 +93,7 @@ See [how CryptBox works](concepts.md) for the complete picture.
 ## Next: use durable storage
 
 The round trip is complete. To keep values across restarts, follow
-[store your first field in SQLite](first-field-sqlite.md). That tutorial provisions
+[run the SQLite example](../examples/sqlite/README.md). It provisions
 one durable encryption generation and reads the stored value in a new process.
 
 In your own project, preserve the same key ID/material pairs and the field's
@@ -92,7 +101,7 @@ In your own project, preserve the same key ID/material pairs and the field's
 silently replaced. The [integration explanation](integration.md) covers these
 choices before you commit data to storage.
 
-If you need lookup, the [searchable SQLx tutorial](searchable-sqlx.md) adds
+If you need lookup, the [searchable storage example](../examples/searchable/README.md) adds
 independently keyed blind indexes. If the project already has plaintext or
 previous-solution ciphertext, review [legacy adoption](legacy-migration.md)
 before enabling encrypted writes.

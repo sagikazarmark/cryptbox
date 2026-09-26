@@ -73,5 +73,5 @@ only field context plus `error=authentication_failed`. Create a binary with
 [testing-diagnostics.toml](snippets/testing-diagnostics.toml) as its manifest,
 copy the source to `src/main.rs`, and run `cargo run`.
 
-See [durable SQLx integration](searchable-sqlx.md) for restart and database behavior,
+See the [searchable storage example](../examples/searchable/README.md) for restart and database behavior,
 or [documentation checks](documentation.md) to run the repository's consumer checks.

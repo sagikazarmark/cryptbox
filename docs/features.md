@@ -76,6 +76,6 @@ Next: use the [task index]
 or consult the [API reference](https://docs.rs/cryptbox/latest/cryptbox/).
 
 <!-- Rustdoc supplies repository-qualified definitions before including this page. -->
-[stored-value walkthrough]: stored-values.md
+[stored-value walkthrough]: ../examples/stored_values/README.md
 [live-backend check instructions]: documentation.md#live-postgresql
 [task index]: README.md

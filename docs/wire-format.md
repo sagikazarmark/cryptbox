@@ -370,7 +370,7 @@ A typed `BlindIndex<Spec>` additionally requires the stored precision to equal
 metadata or prove consistency with ciphertext. Because truncation allows different
 values to share an index, index hits remain candidates requiring authenticated
 decryption and normalized plaintext comparison. See the
-[verified search workflow](searchable-sqlx.md) for using these bytes in a query.
+[verified search example](../examples/searchable/README.md) for using these bytes in a query.
 
 ### Provisional blind-index vector
 

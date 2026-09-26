@@ -20,7 +20,7 @@ const sources = {
   ...Object.fromEntries([
     'searchable-put', 'searchable-get', 'searchable-search',
     'searchable-macro-get', 'searchable-macro-put',
-  ].map((name) => [name, ['rust', anchored('docs/snippets/searchable.rs', name)]])),
+  ].map((name) => [name, ['rust', anchored('examples/searchable/main.rs', name)]])),
   rotation: ['mermaid', read('docs/diagrams/rotation.mmd')],
   'trust-boundary': ['mermaid', read('docs/diagrams/trust-boundary.mmd')],
 };
@@ -28,7 +28,7 @@ const pages = {
   'README.md': ['first-field'],
   'docs/first-field.md': ['first-field-manifest', 'first-field'],
   'docs/ownership.md': ['lifecycle'],
-  'docs/searchable-sqlx.md': [
+  'examples/searchable/README.md': [
     'searchable-put', 'searchable-get', 'searchable-search',
     'searchable-macro-get', 'searchable-macro-put',
   ],

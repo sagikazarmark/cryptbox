@@ -97,7 +97,7 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
 /// Bindings and padding remain sealed; a custom normalizer does not add row binding.
 ///
 #[doc = concat!(
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
