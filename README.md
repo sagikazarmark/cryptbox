@@ -30,7 +30,7 @@ equality/frequency; every hit requires decrypted, normalized comparison.
 [Security](docs/security.md) · [Documentation](docs/README.md) ·
 [API](https://docs.rs/cryptbox/latest/cryptbox/)
 
-## Quick Start
+## Quick start
 
 This in-memory demonstration uses no optional features.
 Keys are ephemeral: do not use this provisioning pattern for durable data.

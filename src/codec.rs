@@ -99,11 +99,11 @@ impl std::io::Write for ZeroizingByteBuffer {
 /// over [`crate::Secret<String>`] needs a codec for that exact type; [`Utf8`]
 /// implements only `Codec<String>`, not arbitrary secret wrappers.
 ///
-/// See the development [custom-profile recipe] and canonical [ownership explanation].
+/// See the [custom-profile example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
-    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait Codec<T>: Sized + 'static {
     /// Encodes `value` into an owned, zeroizing plaintext buffer.

@@ -1,4 +1,4 @@
-# Wire Format
+# Wire format
 
 CryptBox stores encrypted values as binary **envelopes**: public metadata followed
 by encrypted bytes and an authentication tag. Searchable fields may also have a
@@ -12,11 +12,8 @@ needed to reproduce them.
 | [Blind index](#blind-index-format-1) | 1 | — |
 
 > [!WARNING]
-> **These wire formats are under development.**
->
-> Although they are in reasonably good
-> shape, there are no commitments to stability or backward compatibility, and
-> they may change. **Use them at your own risk.**
+> **These wire formats are experimental.** They may change without backward
+> compatibility.
 >
 > No cryptography review has been conducted yet. A focused review and independently
 > generated test vectors are still required.
@@ -34,8 +31,8 @@ The ciphertext envelope carries three identifiers with different jobs:
 
 Format version `1` and suite ID `1` are separate identifiers that happen to have
 the same value. They identify separate parts of the protocol. Rotating keys
-changes the key generation used for new values;
-it does not change the format or suite.
+changes the key generation used for new values; it does not change the format
+or suite.
 
 Blind indexes have their own format version and `IndexKeyId`. Their format
 defines the derivation construction directly, so they have no separate suite ID.
@@ -54,7 +51,7 @@ The format layouts and cryptographic recipes below use these conventions:
 - UUID strings and hexadecimal displays represent raw bytes; decode them before
   use rather than hashing their text representation.
 
-## Encryption Suite 1
+## Encryption suite 1
 
 An encryption suite is a complete recipe, rather than just a cipher name.
 Agreeing on XChaCha20-Poly1305 alone would not tell another implementation which
@@ -76,8 +73,8 @@ so that a reader can reconstruct exactly the same operation as the writer.
 This is authenticated encryption with associated data (**AEAD**): decryption
 returns plaintext only if authentication succeeds. Suite 1 is currently the only
 suite CryptBox writes or reads. Suites are built into the library; applications
-cannot register their own combinations. An unknown suite ID is rejected before authentication
-because the reader has no construction with which to verify it.
+cannot register their own combinations. An unknown suite ID is rejected before
+authentication because the reader has no construction with which to verify it.
 
 ### Binding
 
@@ -190,8 +187,8 @@ not require padding; it can encrypt any byte length within its size limit.
 Profiles that enable padding use ISO/IEC 7816-4 padding before passing encoded
 plaintext to the encryption suite. Padding appends one `80` byte followed by as
 many `00` bytes as needed to reach the selected block or fixed length. Removal
-scans backward over zero bytes, requires the `80` marker, and strips it. It does not depend on the block
-size or fixed length that produced the padding.
+scans backward over zero bytes, requires the `80` marker, and strips it. It does
+not depend on the block size or fixed length that produced the padding.
 
 For encoded length `E`, `NoPadding` passes through `E` bytes;
 `PadToBlock<N>` (`N >= 2`) produces `N * ceil((E + 1) / N)` bytes; and
@@ -235,7 +232,8 @@ Suite 1 enforces RFC 8439's functional maximum `P <= 274,877,906,880`
 a larger `P`, with `MessageTooLong`. Padding/envelope size arithmetic is checked;
 fixed padding rejects `E >= N` with `PaddingOverflow`. This is an algorithmic
 ceiling, not a recommended field size. Applications must choose smaller limits
-appropriate to their workloads; see [application responsibilities](security.md#application-responsibilities).
+appropriate to their workloads; see
+[application responsibilities](security.md#application-responsibilities).
 
 For an application-selected padded cap `L`, `NoPadding` permits `E <= L`;
 `PadToBlock<N>` permits `E <= N * floor(L / N) - 1` if at least one block fits;
@@ -248,10 +246,10 @@ A size check is not authentication.
 
 ### Key and buffer lifetime
 
-See [plaintext and key ownership](ownership.md) for
-buffer lifetimes and erasure obligations.
+See [plaintext and key ownership](ownership.md) for buffer lifetimes and erasure
+obligations.
 
-### Provisional Envelope Vector
+### Provisional envelope vector
 
 These fixed inputs and expected outputs help check byte-for-byte compatibility.
 The first vector encrypts unpadded plaintext with `Unbound`:
@@ -284,14 +282,14 @@ padded plaintext: 6372797074626f7820766563746f7280
 envelope:         43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b9368a9985aacb04ff8f7b6a677d9665a9ba
 ```
 
-## Blind-Index Format 1
+## Blind-index format 1
 
 A blind index supports equality-style lookup without decrypting every stored
 value. Normalization gives values the application considers equivalent the same
 bytes—for example, by lowercasing text for a case-insensitive index. For a given
 index policy and key generation, the same normalized bytes produce the same
-index bytes. Unlike randomized ciphertext, this deliberately
-reveals equality and frequency information.
+index bytes. Unlike randomized ciphertext, this deliberately reveals equality
+and frequency information.
 
 Format `1` defines both the stored layout and the derivation recipe:
 HKDF-SHA-256 derives an index-specific key, HMAC-SHA-256 computes a keyed digest
@@ -374,7 +372,7 @@ values to share an index, index hits remain candidates requiring authenticated
 decryption and normalized plaintext comparison. See the
 [verified search workflow](searchable-sqlx.md) for using these bytes in a query.
 
-### Provisional Blind-Index Vector
+### Provisional blind-index vector
 
 ```text
 root key:     2222222222222222222222222222222222222222222222222222222222222222

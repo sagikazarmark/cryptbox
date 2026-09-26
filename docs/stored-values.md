@@ -1,9 +1,9 @@
-# Serialize And Read Stored Values
+# Serialize and read stored values
 
-**Example.** Serialize ciphertext and blind indexes with the `serde` feature.
-[All tasks](README.md).
+Serialize ciphertext and blind indexes with the `serde` feature.
+[Documentation](README.md).
 
-## Run The Consumer Example
+## Run the consumer example
 
 [`examples/stored_values.rs`](../examples/stored_values.rs) round-trips a JSON
 document, authenticates its ciphertext, and separately checks its blind index.
@@ -22,7 +22,7 @@ feature is unnecessary because the plaintext codec is `Utf8`.
 The fixed keys are public fixtures. For persistence, use [durable key/ID pairs](integration.md#key-providers-and-key-contexts)
 and write ciphertext and indexes atomically.
 
-## Follow The Value Through Storage
+## Follow the value through storage
 
 - `Encrypted` holds plaintext and deliberately has **no Serde implementation**.
   Prepare/encrypt explicitly; preparation borrows rather than erases the source.

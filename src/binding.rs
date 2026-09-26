@@ -8,11 +8,11 @@ use crate::FieldId;
 /// both with unit context `()`, rather than implementing it externally. Row/tenant
 /// binding is future work; generic context parameters do not make it available.
 /// Codecs, index normalizers, profiles, and key providers are extensible instead.
-/// See the development [custom-profile recipe] and [ownership explanation].
+/// See the [custom-profile example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
-    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait Binding: private::Sealed + Sized + 'static {
     /// Runtime context required to construct the binding domain.

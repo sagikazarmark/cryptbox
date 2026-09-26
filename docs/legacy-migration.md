@@ -1,7 +1,7 @@
-# Migrating Legacy Data To CryptBox
+# Migrating legacy data to CryptBox
 
-**How-to.** Adopt encryption over plaintext, previous-solution
-ciphertext or mixed storage. [All tasks](README.md) · [Sweep operations](reencryption-sweep.md).
+Adopt encryption over plaintext, previous-solution ciphertext or mixed storage.
+[Documentation](README.md) · [Sweep operations](reencryption-sweep.md).
 
 The `migrate` feature supplies explicit permissive reads, an application-owned
 legacy handler and a resumable driver for a bounded migration window. Normal
@@ -40,7 +40,7 @@ cutover. Rollback requires a migrated-format-compatible build or a coordinated
 full data restore while traffic remains stopped; a plaintext-only binary is no
 longer compatible after encrypted writes.
 
-## Recovering Legacy Values
+## Recovering legacy values
 
 Implement and explicitly inject `LegacyFormat`; its synchronous
 `recover(&self, bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError>` returns
@@ -64,7 +64,7 @@ accepted value, or an explicitly approved disposition. Codec success is insuffic
 (`Raw` rejects no bytes), and sampling cannot establish unsampled provenance.
 Re-encryption protects recovered bytes going forward, not their historical origin.
 
-## The Bounded Window
+## The bounded window
 
 Read as `cryptbox::migrate::MaybeEncrypted<T, Profile>` only where legacy values
 may still occur. `from_bytes` and SQLx `Decode` classify without accessing keys:
@@ -117,7 +117,7 @@ all unindexed rows. Larger deployments need bounded streaming under a consistent
 snapshot and a complete-result contract, not independently paged moving populations.
 Switch to blind-index-only lookup only after the [closure gates](#verification-and-closing-the-window).
 
-## Running The Sweep
+## Running the sweep
 
 Configure `RowPlanner::<T, Profile>::new(context, encryption_provider)`, add the
 explicit handler with `with_legacy`, and register indexes in stored order with
@@ -130,7 +130,7 @@ The packaged planner repairs missing indexes on **legacy** bytes by deriving the
 but rejects empty/malformed indexes on existing CryptBox ciphertext. It also
 rejects magic collisions. Handle these exceptional rows explicitly below.
 
-### Stepped Execution And Durable Runtimes
+### Stepped execution and durable runtimes
 
 Use `Sweep::run` to exhaust the store, `run_batch` for durable checkpointed steps,
 or `process_batch` when an orchestrator journals its own cursor. Follow the
@@ -167,7 +167,7 @@ or exceptional rows must be fenced. The fixture's ordinary `put` does not manage
 legacy metadata, so its collision row stays under exclusive maintenance ownership
 until repaired. See `repair` in [migration.rs](snippets/migration.rs).
 
-## Verification And Closing The Window
+## Verification and closing the window
 
 Fence old writers, imports and restores. Pause/drain writes through verification
 and strict-reader cutover, or supply equivalent application-owned consistency.
@@ -199,7 +199,7 @@ backups, rollback artifacts and quarantine. Test restore with historical probes 
 verified re-indexing. Follow [retirement and recovery](key-rotation.md#retirement-and-recovery)
 for online key removal and eventual destruction; live closure alone permits neither.
 
-## Durable mixed-format walkthrough
+## Run the automated scenario
 
 This is an automated rehearsal with its own fresh non-NULL dataset, not a manual
 continuation of the nullable searchable tutorial. The general operating procedure

@@ -1,11 +1,10 @@
 # Store your first field in SQLite
 
-**Tutorial.** Continue from
-[your first field](first-field.md). [All tasks](README.md).
-
 Store one field-bound email, let the writing process exit, then authenticate and
 decrypt it in a new process. You will keep both the SQLite database and one
 independently provisioned encryption root across the restart.
+
+Continue from [your first field](first-field.md). [Documentation](README.md).
 
 ## 1. Create a consumer project
 
@@ -24,10 +23,10 @@ cp "$CRYPTBOX_REPO/examples/sqlx_sqlite.rs" src/main.rs
 cargo build
 ```
 
-The [manifest](snippets/sqlite.toml) enables CryptBox's `sqlx-sqlite` adapter
-and uses SQLx 0.8 with `futures-executor` for
-this SQLite-only program. The [complete example](../examples/sqlx_sqlite.rs) is
-the program you just copied. Running it without arguments only prints usage.
+The [manifest](snippets/sqlite.toml) enables CryptBox's `sqlx-sqlite` adapter and
+uses SQLx 0.8 with `futures-executor` for this SQLite-only program. The
+[complete example](../examples/sqlx_sqlite.rs) is the program you just copied.
+Running it without arguments only prints usage.
 
 ## 2. Provision the demonstration key once
 

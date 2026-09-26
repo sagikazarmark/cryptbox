@@ -1,7 +1,7 @@
 # Testing and diagnostics
 
-**How-to.** Use local providers for ordinary tests
-and process isolation for static key contexts. [All tasks](README.md).
+Use local providers for ordinary tests and process isolation for static key
+contexts. [Documentation](README.md).
 
 ## Local providers
 

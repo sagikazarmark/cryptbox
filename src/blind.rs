@@ -93,12 +93,12 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
 /// retain the input in third-party errors. Candidate verification must use the
 /// same normalization after authenticated decryption, not accept an index hit alone.
 ///
-/// See the development [custom-profile recipe] and canonical [ownership explanation].
+/// See the [custom-profile example] and [ownership reference].
 /// Bindings and padding remain sealed; a custom normalizer does not add row binding.
 ///
 #[doc = concat!(
-    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
-    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
     /// Returns normalized bytes owned by a zeroizing buffer.

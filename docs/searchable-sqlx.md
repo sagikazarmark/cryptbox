@@ -1,8 +1,8 @@
 # Build a durable, searchable SQLx application
 
-**Tutorial.** Build a sample application with
-prepared writes, nullable/deferred reads, verified lookup, and process restarts.
-[All tasks](README.md) · [Security](security.md).
+Build a sample application with prepared writes, nullable/deferred reads,
+verified lookup, and process restarts.
+[Documentation](README.md) · [Security](security.md).
 
 Choose PostgreSQL or SQLite and follow steps 1–5 for the core exercise. Query
 macros and operations are optional follow-ups. For encryption without search,
@@ -23,7 +23,7 @@ cargo new searchable-consumer
 cd searchable-consumer
 ```
 
-Copy these canonical files into the new project:
+Copy these files into the new project:
 
 | Source | Destination |
 | --- | --- |
@@ -304,7 +304,7 @@ when those features are relevant to your application.
 
 Dynamic `query`/`QueryBuilder` needs no build-time database. `query!` needs a
 reachable `DATABASE_URL` with the schema already applied (or a matching SQLx
-offline cache). The canonical macro read forces nullable output and the custom decoder:
+offline cache). The example's macro read forces nullable output and the custom decoder:
 
 <!-- BEGIN SHARED: searchable-macro-get -->
 
@@ -358,8 +358,8 @@ when adapting the application to your project.
 This application's providers are startup snapshots. Follow [fleet rotation](key-rotation.md)
 to stage readable generations on every reader before promoting writers. Promotion
 does not rewrite old rows; retain keys required by data and recoverable backups.
-The [maintenance](reencryption-sweep.md#durable-postgresql-and-sqlite-walkthrough)
-and [legacy migration](legacy-migration.md#durable-mixed-format-walkthrough)
+The [maintenance](reencryption-sweep.md#run-the-automated-scenario)
+and [legacy migration](legacy-migration.md#run-the-automated-scenario)
 automated scenarios provision their own data. They are separate rehearsals, not
 commands to run unchanged against this tutorial's resulting database: row 2 is
 NULL, while the packaged sweep and audit require non-NULL values in every swept

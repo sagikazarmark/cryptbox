@@ -1,7 +1,8 @@
 # Encrypt your first field
 
-**Tutorial.** CryptBox is experimental and
-[not production-ready](security.md). [All tasks](README.md).
+Encrypt and decrypt a field-bound value in a small Rust application.
+CryptBox is experimental and [not production-ready](security.md).
+[Documentation](README.md).
 
 ## 1. Create a consumer project
 

@@ -24,13 +24,13 @@
 #![doc = include_str!("../docs/diagrams/lifecycle.svg")]
 #![doc = "</div>"]
 //!
-//! See the [ownership explanation] for clones, temporary buffers,
-//! `Secret`, and shared key lifetimes, and the [custom-profile recipe] for public
+//! See the [ownership reference] for clones, temporary buffers,
+//! `Secret`, and shared key lifetimes, and the [custom-profile example] for public
 //! codec, normalizer, and synchronous provider implementations.
 //!
 #![doc = concat!(
-    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
-    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md",
 )]
 //!
 //! [`Binding`] is sealed to [`Unbound`] and [`FieldBound`], both with unit context

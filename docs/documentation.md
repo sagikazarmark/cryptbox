@@ -124,10 +124,11 @@ order. Security and reference should be directly accessible at every stage.
 Improve pages [incrementally](https://diataxis.fr/how-to-use-diataxis/) rather than
 creating empty categories or a separate page for every change of subject.
 
-Keep one maintained explanation per fact, with brief point-of-use warnings where needed. Run relevant
-automated checks; for materially changed instructions, have an unfamiliar reader
-attempt the affected task and record blockers in the PR. Research, review results,
-and unfinished work belong in issues/PRs, not recurring documentation reports.
+Keep one maintained explanation per fact, with brief point-of-use warnings where
+needed. Run relevant automated checks; for materially changed instructions, have
+an unfamiliar reader attempt the affected task and record blockers in the PR.
+Research, review results, and unfinished work belong in issues/PRs, not recurring
+documentation reports.
 
 Historical reader trials are frozen at the pre-consolidation revision:
 [adoption](https://github.com/sagikazarmark/cryptbox/blob/0c3627e1817b88cfdc681efec20335fde525c526/docs/adoption-walk.md),

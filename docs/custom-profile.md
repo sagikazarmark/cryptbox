@@ -1,9 +1,8 @@
 # Extend a profile with explicit plaintext ownership
 
-**Example.**
 [`examples/custom_profile.rs`](../examples/custom_profile.rs) combines a codec,
 normalizer and synchronous provider for a 1–64 character ASCII account handle.
-[All tasks](README.md).
+[Documentation](README.md).
 
 ## Run the example
 

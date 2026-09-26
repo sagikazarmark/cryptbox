@@ -1,7 +1,7 @@
-# Re-encryption Maintenance Sweeps
+# Re-encryption maintenance sweeps
 
-**How-to.** Rewrite stored values in bounded, resumable batches.
-[All tasks](README.md) · [Key lifecycle](key-rotation.md) · [Legacy adoption](legacy-migration.md).
+Rewrite stored values in bounded, resumable batches.
+[Documentation](README.md) · [Key lifecycle](key-rotation.md) · [Legacy adoption](legacy-migration.md).
 
 Rotation selects keys for future writes; a later sweep converges existing
 ciphertext and indexes. The `migrate` feature supplies `RowPlanner`, `Sweep` and
@@ -39,7 +39,7 @@ Alternatively, delete that exact progress row with application-owned SQL while
 workers are stopped; there is no packaged reset method. Saving cursor zero is
 not a reset because valid cursors may be zero or negative.
 
-## Durable PostgreSQL and SQLite walkthrough
+## Run the automated scenario
 
 This section runs an automated rehearsal. It is separate from the nullable
 dataset created by the [searchable tutorial](searchable-sqlx.md): the runner
@@ -70,7 +70,7 @@ filtered populations, other cursor shapes and snapshot/high-water policies need
 an application-owned `SweepStore` or manual loop with appropriate atomic predicates.
 Do not infer a NULL policy from backend decoding behavior.
 
-## Sweep Loop
+## Sweep loop
 
 Register each index in the same order in `RowPlanner::with_index_with` and
 `SweepTable::with_index_column`; create the store's progress table with
@@ -124,7 +124,7 @@ finite point-in-time claim, coordinate a write pause or implement a snapshot/
 high-water policy for rewriting **and** verification. A high-water mark alone
 does not solve late commits behind it; packaged stores provide neither mechanism.
 
-## Blind Indexes
+## Blind indexes
 
 Encryption and index roots rotate independently. Continue lookup with every
 readable-generation probe and authenticated, normalized candidate comparison.
@@ -137,10 +137,11 @@ without recomputation even when another component changes. Re-encryption alone
 authenticates and checks padding but does not decode through the profile codec.
 These behaviors make the following separate audit necessary.
 
-## Verification And Retirement
+## Verification and retirement
 
-This is the canonical whole-store audit procedure. The [assurance reference](security.md#what-each-check-establishes)
-explain what each check establishes. Fix the intended profile, binding context,
+This is the canonical whole-store audit procedure. The
+[assurance reference](security.md#what-each-check-establishes) explains what each
+check establishes. Fix the intended profile, binding context,
 codec, index specifications, normalization, precision and allowed generations
 from trusted application schema, not stored metadata.
 

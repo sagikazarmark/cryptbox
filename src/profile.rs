@@ -12,12 +12,12 @@ use crate::{Binding, Codec, KeyContext, Padding};
 /// Applications can implement this trait, [`Codec`], index normalizers, and key
 /// providers. [`Binding`] and [`Padding`] are sealed to built-in policies;
 /// row/tenant binding is future work. The codec must implement `Codec<T>` for the
-/// exact application type, including any secret wrapper. See the development
-/// [custom-profile recipe] and canonical [ownership explanation].
+/// exact application type, including any secret wrapper. See the
+/// [custom-profile example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-profile recipe]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
-    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/custom-profile.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait EncryptionProfile<T>: Sized + 'static {
     /// The codec used before encryption and after decryption.

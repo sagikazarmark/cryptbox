@@ -17,11 +17,10 @@ struct PreparedIndex {
 /// the same value that was encrypted. Keep it short-lived, copy its ciphertext
 /// and index bytes into the storage operation, then let it drop.
 /// Dropping preparation releases its borrow, not the source plaintext. The
-/// application owns persistence and atomicity. See the development
-/// [ownership explanation].
+/// application owns persistence and atomicity. See the [ownership reference].
 ///
 #[doc = concat!(
-    "[ownership explanation]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub struct Prepared<'a, T, Profile>
 where

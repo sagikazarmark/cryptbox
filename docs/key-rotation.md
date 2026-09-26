@@ -1,7 +1,7 @@
 # Key lifecycle
 
-**How-to.** Stage readers, promote writers, then retire online
-access while preserving recovery. [All tasks](README.md) · [Maintenance sweeps](reencryption-sweep.md).
+Stage readers, promote writers, then retire online access while preserving
+recovery. [Documentation](README.md) · [Maintenance sweeps](reencryption-sweep.md).
 
 ## Key states and the promotion gate
 
