@@ -72,6 +72,8 @@ database copies. These scenarios modify their test database.
 
 ## Editing shared sources
 
+- Edit the README quickstart directly; it is independent of the first-field
+  tutorial and checked by doctests.
 - `docs/features.md` is included directly in rustdoc.
 - Edit runnable sources under `examples/` or `docs/snippets/`, then run
   `node scripts/doc-snippets.mjs --write` to refresh marked excerpts. Keep excerpts

@@ -32,12 +32,8 @@ equality/frequency; every hit requires decrypted, normalized comparison.
 
 ## Quick start
 
-This in-memory demonstration uses no optional features.
-Keys are ephemeral: do not use this provisioning pattern for durable data.
-For the complete manifest, file placement, and expected output, follow
+Encrypt and decrypt a string with an in-memory key. For setup instructions, follow
 [encrypt your first field](docs/first-field.md).
-
-<!-- BEGIN SHARED: first-field -->
 
 ```rust
 use cryptbox::{Encrypted, EncryptionKey, LocalEncryptionKeyring};
@@ -52,25 +48,20 @@ cryptbox::profile! {
 }
 
 fn main() -> Result<(), cryptbox::Error> {
-    // Ephemeral demo keys: a new key and generation ID on every run.
+    // Demo only: this key is lost when the process exits.
     let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
     let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
+
     let ciphertext = email.encrypt_with(&(), &keys)?;
     let decrypted = ciphertext.decrypt_with(&(), &keys)?;
     assert_eq!(decrypted.expose_secret(), "mark@example.com");
-    assert_eq!(email.expose_secret(), "mark@example.com"); // Source retained.
-    println!("Field-bound round trip succeeded.");
     Ok(())
 }
 ```
 
-<!-- END SHARED: first-field -->
-
-The macro selects UTF-8 encoding, field binding, no padding, and the default key
-context. `Encrypted` holds plaintext; `Ciphertext` holds the encrypted envelope.
-`&()` is the unit **binding context**, not a key provider or an opt-out from
-field binding. `&keys` supplies keys explicitly. Encryption borrows `email`, so
-the original plaintext remains in memory. See [how CryptBox works](docs/concepts.md).
+`profile!` declares the field's encryption policy. `Encrypted` holds plaintext;
+`Ciphertext` holds the encrypted value. `&()` supplies the binding context and
+`&keys` supplies the keys. See [how CryptBox works](docs/concepts.md).
 
 Next, [run the durable SQLite example](examples/sqlite/README.md), or read
 [integration design and trade-offs](docs/integration.md) before applying it to your

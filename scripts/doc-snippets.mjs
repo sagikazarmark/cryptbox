@@ -25,7 +25,6 @@ const sources = {
   'trust-boundary': ['mermaid', read('docs/diagrams/trust-boundary.mmd')],
 };
 const pages = {
-  'README.md': ['first-field'],
   'docs/first-field.md': ['first-field-manifest', 'first-field'],
   'docs/ownership.md': ['lifecycle'],
   'examples/searchable/README.md': [
