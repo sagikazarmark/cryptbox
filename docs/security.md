@@ -38,7 +38,7 @@ randomness and a compatible target are required; see [platform constraints](feat
 | --- | --- |
 | Read dumps, snapshots, backups, or detached volumes | Selected values remain confidential under the assumptions above. Other columns, IDs, and metadata remain visible. |
 | Modify stored ciphertext | Authenticated decryption rejects tampering. Parsing alone does not authenticate; malformed formats or unknown keys may fail earlier. |
-| Copy ciphertext to another logical field | `FieldBound` rejects a different field at authentication; `Unbound` explicitly opts out. |
+| Copy ciphertext to another logical field | Authentication rejects a field with a different field ID. |
 | Copy ciphertext between rows of the same field | Substitution can succeed. Row/tenant binding is unavailable. |
 | Restore an older authentic value | No replay, rollback, or freshness protection. |
 | Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency; access patterns remain visible. |

@@ -4,11 +4,7 @@
 use cryptbox::{Encrypted, EncryptionKey, LocalEncryptionKeyring};
 
 cryptbox::profile! {
-    UserEmail: String {
-        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-        name: "user-email",
-        codec: cryptbox::Utf8,
-    }
+    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
 }
 
 fn main() -> Result<(), cryptbox::Error> {
@@ -29,11 +25,7 @@ mod tests {
     use super::*;
 
     cryptbox::profile! {
-        BillingEmail: String {
-            id: "124f036a-39c6-4197-a9bb-c92c471285ad",
-            name: "billing-email",
-            codec: cryptbox::Utf8,
-        }
+        BillingEmail: String { id: "124f036a-39c6-4197-a9bb-c92c471285ad" }
     }
 
     #[test]

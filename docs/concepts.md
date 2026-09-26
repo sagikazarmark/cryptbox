@@ -43,18 +43,21 @@ their structure; only successful decryption authenticates them.
 
 A `UserEmail` profile says how an email should be handled every time it is written
 or read. Reusing that policy avoids having to repeat independent choices at each
-call site. A profile selects:
+call site. A profile declares:
 
+- A **field ID**, the stable identity of the logical field. Every ciphertext and
+  blind index is bound to it.
+- The **value type**, such as `String`, held by `Encrypted<UserEmail>`.
 - A **codec**, such as `Utf8`, to convert between the Rust value and bytes.
 - A **padding policy**, which can group different plaintext lengths into the same
   stored size. The default, `NoPadding`, preserves the encoded length.
-- A **binding**, identifying the cryptographic domain in which the value belongs.
 - A **key context**, giving context-less operations access to key providers.
 
-With field binding, an email is tied to a stable field ID. Its ciphertext will not
-authenticate under a different field's binding, even if the fields share a root
-key. This identifies a logical field, not a row or tenant: copying ciphertext
-between rows of the same field can still succeed. `Unbound` omits field identity.
+Field binding ties an email to its field ID. Its ciphertext will not authenticate
+under a different field, even if the fields share a root key. Profiles that should
+read each other's ciphertext declare the same field ID. Binding identifies a
+logical field, not a row or tenant: copying ciphertext between rows of the same
+field can still succeed.
 
 The profile is different from an encryption **suite**. The profile describes
 application policy; the suite defines the complete cryptographic construction.
@@ -73,10 +76,9 @@ The provider selects a **current generation** for new encryption and resolves
 current generation changes future writes; existing ciphertext still needs its
 original generation. This is the foundation of key rotation.
 
-The quickstart passes a local provider explicitly as `&keys`. Its other argument,
-`&()`, supplies no runtime binding information: the profile already knows the
-field ID. It does not disable field binding or supply keys. For provider and
-key-context choices, see [integration design](integration.md#key-providers-and-key-contexts).
+The quickstart passes a local provider explicitly as `&keys`, so no global
+installation is needed. For provider and key-context choices, see
+[integration design](integration.md#key-providers-and-key-contexts).
 
 ## Search uses a separate representation
 

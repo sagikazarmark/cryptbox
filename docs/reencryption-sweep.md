@@ -141,7 +141,7 @@ These behaviors make the following separate audit necessary.
 
 This is the canonical whole-store audit procedure. The
 [assurance reference](security.md#what-each-check-establishes) explains what each
-check establishes. Fix the intended profile, binding context,
+check establishes. Fix the intended profile, field ID,
 codec, index specifications, normalization, precision and allowed generations
 from trusted application schema, not stored metadata.
 

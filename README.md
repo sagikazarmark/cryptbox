@@ -39,11 +39,7 @@ Encrypt and decrypt a string with an in-memory key. For setup instructions, foll
 use cryptbox::{Encrypted, EncryptionKey, LocalEncryptionKeyring};
 
 cryptbox::profile! {
-    UserEmail: String {
-        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-        name: "user-email",
-        codec: cryptbox::Utf8,
-    }
+    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
 }
 
 fn main() -> Result<(), cryptbox::Error> {
@@ -58,9 +54,10 @@ fn main() -> Result<(), cryptbox::Error> {
 }
 ```
 
-`profile!` declares the field's encryption policy. `Encrypted` holds plaintext;
-`Ciphertext` holds the encrypted value. `&()` supplies the binding context and
-`&keys` supplies the keys. See [how CryptBox works](docs/concepts.md).
+`profile!` declares the field: its ID binds every ciphertext to this field, and
+the other policy choices use defaults. `Encrypted` holds plaintext; `Ciphertext`
+holds the encrypted value. `&keys` supplies the keys. See
+[how CryptBox works](docs/concepts.md).
 
 Next, [run the durable SQLite example](examples/sqlite/README.md), or read
 [integration design and trade-offs](docs/integration.md) before applying it to your

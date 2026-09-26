@@ -2,11 +2,7 @@
 use cryptbox::{Encrypted, EncryptionKey, LocalEncryptionKeyring};
 
 cryptbox::profile! {
-    UserEmail: String {
-        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-        name: "user-email",
-        codec: cryptbox::Utf8,
-    }
+    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
 }
 
 fn main() -> Result<(), cryptbox::Error> {

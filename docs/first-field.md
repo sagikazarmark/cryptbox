@@ -50,11 +50,7 @@ Replace `src/main.rs` with this [example](../examples/first_field.rs).
 use cryptbox::{Encrypted, EncryptionKey, LocalEncryptionKeyring};
 
 cryptbox::profile! {
-    UserEmail: String {
-        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-        name: "user-email",
-        codec: cryptbox::Utf8,
-    }
+    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
 }
 
 fn main() -> Result<(), cryptbox::Error> {
@@ -82,8 +78,9 @@ Expect `Field-bound round trip succeeded.` and exit status 0.
 
 - `Encrypted` holds **plaintext**; encryption borrows it. `Ciphertext` holds the
   encrypted envelope. Decryption authenticates and returns a new plaintext value.
-- `&()` is the unit **binding context**; `&keys` supplies keys separately. These
-  explicit-provider calls need no global installation.
+- `profile!` declares the field. Its `id` binds the ciphertext to this field; the
+  omitted keys select UTF-8 encoding, no padding, and the default key context.
+- `&keys` supplies keys explicitly, so these calls need no global installation.
 - Field binding identifies a logical field, not a row or tenant; it does not stop
   same-field substitution or replay. The default `NoPadding` reveals encoded length.
 

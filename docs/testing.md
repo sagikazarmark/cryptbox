@@ -7,7 +7,7 @@ contexts. [Documentation](README.md).
 
 Give each test its own encryption and blind-index keyrings. Explicit
 `encrypt_with`, `decrypt_with` and `prepare_with` calls bypass the profile's
-global key context. `&()` supplies unit binding context; field binding still applies.
+global key context; field binding still applies.
 
 For runnable tests, create a library with `cargo new --lib testing-local-consumer`,
 use [testing-local.toml](snippets/testing-local.toml) as `Cargo.toml`, and copy

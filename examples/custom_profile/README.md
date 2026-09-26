@@ -48,7 +48,8 @@ copy into a new zeroizing allocation, then wipe the old allocation before releas
 Protect failure paths too. See the [ownership contracts](../../docs/ownership.md).
 
 `EncryptionProfile`, `Field` and `KeyContext` are also extension points;
-**`Binding` and `Padding` are sealed**. Choose built-in policies. A codec or
+**`Padding` is sealed**. Choose a built-in policy. Every profile is bound to its
+field ID. A codec or
 normalizer cannot add row/tenant authentication. Preserve the
 [persistent schema](../../docs/integration.md#persistent-schema)
 when adapting this example, then integrate it into [SQLx storage](../sqlite/README.md).

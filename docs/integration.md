@@ -10,15 +10,15 @@ This page explains those choices and their consequences. It builds on
 
 Encrypted storage is not entirely self-describing. An envelope identifies its
 format, suite, and encryption-key generation, but the application supplies the
-expected binding, codec, and padding policy. A blind index additionally depends
+expected field ID, codec, and padding policy. A blind index additionally depends
 on a logical index ID and normalization rule that are not stored with it.
 
 These choices form persistent schema just as database column types do:
 
 | Choice | Why it must remain compatible |
 | --- | --- |
-| Codec | Authenticated bytes still need to decode into the intended application value. |
-| Binding and field ID | Decryption uses the expected domain; a different domain fails authentication. |
+| Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
+| Field ID | Every value is bound to its field ID; a different ID fails authentication. |
 | Padding enabled/disabled | The envelope does not say whether the decrypted bytes contain padding. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
@@ -29,6 +29,12 @@ policies requires a compatibility and migration plan, not just a new deployment.
 The [legacy migration guide](legacy-migration.md) covers adopting CryptBox over
 plaintext or another encryption solution; it is not a general profile-schema
 migration procedure.
+
+Keys omitted from `profile!` select permanent defaults: `Utf8` for `String`,
+`Raw` for `Vec<u8>`, and no padding. Omitting a key never changes how stored
+data is read, but converting an existing declaration must keep any codec or
+padding that differs from those defaults. Other value types, including Serde
+types, have no default codec and must name one.
 
 Padding has one useful exception: removal depends on the padding marker, not the
 original block size or target length. Changing parameters of an already-padded
@@ -47,9 +53,7 @@ keys are needed and where plaintext becomes available:
 | Read as `Ciphertext<Profile>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to authenticate and decrypt. Useful when only some loaded values need plaintext. |
 | Automatic SQLx `Encrypted<Profile>` | The adapter encrypts on encode and authenticates/decrypts on decode. It resolves providers through the profile's key context, so ordinary database conversion needs that context available. |
 
-Automatic SQLx adapters are available for unit-context profiles. Both current
-bindings, `Unbound` and `F`, use unit context; field binding still
-applies. Explicit-provider operations are useful when dependencies and plaintext
+Automatic SQLx adapters are available for every profile. Explicit-provider operations are useful when dependencies and plaintext
 access should be visible at the call site. Automatic adapters are useful when
 encryption belongs consistently at the database boundary.
 
@@ -67,9 +71,8 @@ Try [explicit SQLite storage](../examples/sqlite/README.md), the
 
 A provider is the source of current and readable key generations. A **key
 context** selects the providers used by context-less operations and automatic
-adapters. A **binding context** supplies runtime information for a binding; it
-does not supply keys. These are separate responsibilities even though both
-appear in the profile API.
+adapters. The field ID, in contrast, determines where a value belongs and never
+supplies keys.
 
 Explicit `encrypt_with`, `decrypt_with`, and `prepare_with` calls use the provider
 passed by the caller. This allows each test or application component to own its

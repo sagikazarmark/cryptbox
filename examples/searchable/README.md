@@ -236,7 +236,7 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyri
 
 `EmailCiphertext` aliases `Ciphertext<UserEmail>`. SQLx decoding checks
 structure; only `decrypt_with` authenticates. Explicit local providers need no
-global installation; `&()` is unit binding context. Plaintext output and shell
+global installation. Plaintext output and shell
 arguments are demonstration conveniences; keep real user values out of logs/history.
 
 ### Why lookup needs verification

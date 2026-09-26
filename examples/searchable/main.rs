@@ -29,11 +29,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type EmailCiphertext = Ciphertext<UserEmail>;
 
 cryptbox::profile! {
-    UserEmail: String {
-        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-        name: "user-email",
-        codec: cryptbox::Utf8,
-    }
+    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
 }
 
 struct EmailLookup;

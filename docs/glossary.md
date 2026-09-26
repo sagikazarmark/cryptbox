@@ -2,7 +2,8 @@
 
 **Binding**:
 The expected cryptographic domain of a value, independent of where its stored
-bytes are found. Field binding identifies a logical field, not a row or tenant.
+bytes are found. Every value is bound to its field ID. Field binding identifies a
+logical field, not a row or tenant.
 
 **Blind index**:
 A separately keyed, truncated searchable projection of a normalized value.
@@ -21,6 +22,11 @@ plaintext-bearing application wrapper.
 
 **Current generation**:
 The generation selected for new encryption or new stored blind indexes.
+
+**Field ID**:
+The stable identity of a logical encrypted field, independent of Rust and
+database names. Profiles that declare the same field ID can read each other's
+ciphertext; a different field ID fails authentication.
 
 **Index precision**:
 The number of retained blind-index bits. Fewer bits increase false candidates
@@ -55,7 +61,7 @@ A blind-index lookup value for one readable index-key generation. A lookup uses
 all probes to cover the readable generations.
 
 **Profile**:
-A policy for an application value's encoding, padding, binding, and key context.
+A field declaration: its field ID, value type, encoding, padding, and key context.
 <!-- Agent guidance: avoid “key” or “cipher suite” as synonyms. -->
 
 **Readable generation**:
@@ -67,7 +73,3 @@ may be staged before first use.
 **Suite**:
 A complete encryption construction identified by a suite ID, specifying key
 derivation, authenticated encryption, and how metadata and binding are authenticated.
-
-**Unit context**:
-A binding context with no runtime information. It does not mean that a value is
-unbound, and it does not supply keys.

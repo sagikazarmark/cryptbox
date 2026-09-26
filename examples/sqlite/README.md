@@ -115,8 +115,8 @@ The example prepares with a local encryption key provider, binds
 `prepared.ciphertext()` into a `BLOB`, and reads
 `Ciphertext<UserEmail>` with `row.try_get("email")`. SQLx decoding checks
 structure; `decrypt_with(keys)` authenticates and decodes. Preparation borrows
-the original plaintext, and no global provider is installed. `&()` is the unit
-binding context; `keys` supplies the key separately.
+the original plaintext, and no global provider is installed: `keys` supplies
+the key explicitly.
 
 Field binding identifies a logical field, not a row or tenant. Preserve the field
 ID, codec compatibility, binding, and padding choices with your stored data; see

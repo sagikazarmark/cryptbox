@@ -11,11 +11,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 profile! {
-    UserEmail: String {
-        id: "70000000-0000-4000-8000-000000000007",
-        name: "user-email",
-        codec: cryptbox::Utf8,
-    }
+    UserEmail: String { id: "70000000-0000-4000-8000-000000000007" }
 }
 
 struct EmailLookup;
