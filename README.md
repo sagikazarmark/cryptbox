@@ -5,32 +5,22 @@
 [![crates.io](https://img.shields.io/crates/v/cryptbox?style=flat-square)](https://crates.io/crates/cryptbox)
 [![docs.rs](https://img.shields.io/docsrs/cryptbox?style=flat-square)](https://docs.rs/cryptbox/0.5.0/cryptbox/)
 
-**Type-safe encryption for sensitive data in Rust.**
-
-CryptBox encrypts sensitive data before you store it in a database.
-
-```mermaid
----
-config:
-  flowchart:
-    curve: step
----
-flowchart LR
-    values[Readable values]
-    cryptbox[CryptBox]
-    keys[Encryption keys]
-    values -->|Encrypt| cryptbox
-    cryptbox -->|Decrypt| values
-    keys -.-> cryptbox
-    cryptbox -->|Store encrypted data| database[(Database)]
-    database -->|Load encrypted data| cryptbox
-```
+**Application-layer encryption for sensitive data in Rust.**
 
 > [!WARNING]
-> CryptBox is early in development and **not yet production-ready**.
+> CryptBox is early in development. **Use it at your own risk.**
 >
 > Read the [threat model](docs/security.md) for its security boundaries and
 > outstanding review work.
+
+## Features
+
+- 🛡️ **Integrates with your models.** Add encryption directly to your data model. CryptBox handles encryption, so you don't have to write that glue code yourself.
+- 🔌 **Database and serialization support.** SQLx integration for PostgreSQL and SQLite, batch migrations, and Serde support for stored bytes.
+- 🔑 **Rotate keys at your own pace.** Encrypted values track which key they need, so you can switch keys without rewriting all your data at once.
+- 🔎 **Search encrypted data.** Find possible exact matches using separately keyed search indexes (blind indexes), then decrypt and compare to confirm each match.
+- 🧹 **Limit exposure in memory and logs.** CryptBox wipes the key and unencrypted-data buffers it owns and hides sensitive values in debug output.
+
 
 It can protect encrypted fields in a stolen database dump when keys stay
 separate. It does not protect a compromised application, prevent replay or
@@ -43,14 +33,6 @@ equality/frequency; every hit requires decrypted, normalized comparison.
 Repository docs describe development; select your dependency version on docs.rs.
 Stored-byte Serde support is unreleased.
 
-## Features
-
-- Typed profiles select codecs, padding, stable field binding, and key providers.
-- Generation-tagged ciphertext supports key rotation without immediate rewrites.
-- Separately keyed blind indexes support equality **candidate** lookup.
-- Prepared storage derives ciphertext and indexes from one value for atomic writes.
-- Optional Serde stored bytes (unreleased), SQLx PostgreSQL/SQLite adapters, and bounded migration support.
-- CryptBox-owned keys/plaintext buffers are zeroized and debug output is redacted.
 
 ## Quick Start
 
