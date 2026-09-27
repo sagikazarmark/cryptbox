@@ -104,6 +104,15 @@ pub enum Error {
     /// Ciphertext authentication failed.
     #[error("ciphertext authentication failed")]
     AuthenticationFailed,
+    /// The envelope was sealed with a different binding shape than the
+    /// reader's field declares.
+    ///
+    /// Reported from the envelope's shape fingerprint before any key lookup or
+    /// authentication, so the value was likely written before a binding
+    /// migration, or read as the wrong field. Different binding values under
+    /// the same shape report [`Error::AuthenticationFailed`].
+    #[error("ciphertext binding shape does not match the field")]
+    BindingMismatch,
     /// Encoding or decoding the typed value failed.
     #[error("codec failed: {0}")]
     CodecFailed(#[from] CodecError),
@@ -160,6 +169,12 @@ pub enum Error {
     /// is checked only after successful authenticated decryption.
     #[error("plaintext padding is invalid")]
     InvalidPadding,
+    /// A binding's declared parts or supplied values are invalid.
+    ///
+    /// For example, part IDs repeat, a value's kind differs from its part's, or
+    /// a `keys` part value is empty.
+    #[error("binding is invalid")]
+    InvalidBinding,
     /// A blind-index representation or bit count is invalid.
     #[error("blind index is invalid")]
     InvalidBlindIndex,

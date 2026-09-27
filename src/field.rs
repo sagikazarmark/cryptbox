@@ -94,27 +94,3 @@ pub trait Field: 'static {
     /// Use `<Self::Value as Plaintext>::Codec` for the value type's default codec.
     type Codec: Codec<Self::Value>;
 }
-
-/// Canonical field-binding bytes passed to the cryptographic core.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct BindingDomain {
-    encoded: [u8; 17],
-}
-
-impl BindingDomain {
-    // The tag and UUID bytes are persistent KDF/AAD inputs, independent of
-    // Rust names. Tag `00` is reserved. See ../docs/wire-format.md#binding.
-    const FIELD_TAG: u8 = 1;
-
-    pub(crate) fn field(id: FieldId) -> Self {
-        let mut encoded = [0_u8; 17];
-        encoded[0] = Self::FIELD_TAG;
-        encoded[1..].copy_from_slice(id.as_bytes());
-
-        Self { encoded }
-    }
-
-    pub(crate) fn as_bytes(&self) -> &[u8] {
-        &self.encoded
-    }
-}

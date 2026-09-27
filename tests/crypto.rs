@@ -113,14 +113,66 @@ fn flipping_the_padding_flag_fails_authentication() {
 #[test]
 fn reserved_flag_bits_are_rejected_before_authentication() {
     let keys = keyring(CURRENT_KEY_ID, 9);
-    let mut ciphertext = encrypt(EmailField::ID, Padding::NONE, b"flagged", &keys).unwrap();
+
+    for bit in [0x04, 0x08, 0x10, 0x20, 0x40, 0x80] {
+        let mut ciphertext = encrypt(EmailField::ID, Padding::NONE, b"flagged", &keys).unwrap();
+        ciphertext[6] |= bit;
+
+        assert_eq!(inspect_ciphertext(&ciphertext), Err(Error::InvalidEnvelope));
+        assert_eq!(
+            decrypt(EmailField::ID, &ciphertext, &keys),
+            Err(Error::InvalidEnvelope)
+        );
+    }
+}
+
+#[test]
+fn field_only_envelopes_carry_no_shape_fingerprint() {
+    let keys = keyring(CURRENT_KEY_ID, 9);
+    let ciphertext = encrypt(EmailField::ID, Padding::NONE, b"field only", &keys).unwrap();
+
+    assert_eq!(
+        inspect_ciphertext(&ciphertext).unwrap().shape_fingerprint(),
+        None
+    );
+}
+
+#[test]
+fn a_scoped_flag_on_a_field_only_envelope_reports_binding_mismatch() {
+    let keys = keyring(CURRENT_KEY_ID, 9);
+    let mut ciphertext = encrypt(
+        EmailField::ID,
+        Padding::NONE,
+        b"long enough to reparse",
+        &keys,
+    )
+    .unwrap();
+    // Reparsed as scoped: the first nonce bytes now read as a shape fingerprint.
+    ciphertext[6] |= 0x02;
+
+    assert!(
+        inspect_ciphertext(&ciphertext)
+            .unwrap()
+            .shape_fingerprint()
+            .is_some()
+    );
+    assert_eq!(
+        decrypt(EmailField::ID, &ciphertext, &keys),
+        Err(Error::BindingMismatch)
+    );
+    assert_eq!(
+        needs_reencryption(EmailField::ID, Padding::NONE, &ciphertext, &keys),
+        Err(Error::BindingMismatch)
+    );
+}
+
+#[test]
+fn a_scoped_flag_without_room_for_the_fingerprint_is_malformed() {
+    let keys = keyring(CURRENT_KEY_ID, 9);
+    let mut ciphertext = encrypt(EmailField::ID, Padding::NONE, b"", &keys).unwrap();
     ciphertext[6] |= 0x02;
 
     assert_eq!(inspect_ciphertext(&ciphertext), Err(Error::InvalidEnvelope));
-    assert_eq!(
-        decrypt(EmailField::ID, &ciphertext, &keys),
-        Err(Error::InvalidEnvelope)
-    );
 }
 
 #[test]

@@ -160,6 +160,15 @@
   `routing(field) -> Routing`, which defaults to `Routing::Direct`; `Router`, `Keys`,
   and `Arc<P>` report `Routed`, `Fallback`, or `Unrouted`. `Padding` implements
   `Display`.
+- Define the wire format for scoped binding (ADR-0005): binding tag `02`
+  frames sorted, kind-tagged scope parts and an optional record, and a scoped
+  envelope sets flag bit `02` and carries a 64-bit shape fingerprint after the
+  `KeyId`. Field-only envelopes and blind indexes are byte-identical.
+  `CiphertextInfo::shape_fingerprint` reports the fingerprint as a
+  `ShapeFingerprint`. Reading an envelope sealed with a different binding shape
+  fails with the new `Error::BindingMismatch` before any key lookup. The new
+  `Error::InvalidBinding` rejects malformed binding declarations or values.
+  Flag bit `02` is no longer reserved.
 - `Json` decodes every float to exactly the value that was encoded
   (`serde_json/float_roundtrip`). Before this, some stored floats were read back one ulp off.
 

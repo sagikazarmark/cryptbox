@@ -80,10 +80,13 @@ authentication because the reader has no construction with which to verify it.
 
 A binding identifies the expected cryptographic domain of a value. Every value is
 bound to a stable `FieldId`, so an email field's ciphertext is not accepted under
-a different field, even when both use the same root key. Field binding identifies
-a logical field, not a particular row or tenant.
+a different field, even when both use the same root key. A field-only binding
+identifies a logical field, not a particular row or tenant. A
+[scoped binding](#scoped-binding) also binds declared scope parts, such as a
+tenant, and optionally a record ID. See
+[ADR-0005](adr/0005-runtime-binding-is-the-core.md).
 
-The binding is encoded as:
+A field-only binding is encoded as:
 
 ```text
 Field(FieldId): 01 || field_id[16]
@@ -95,6 +98,89 @@ releases neither write nor read it.
 The field supplies the expected binding; it is not stored in the envelope.
 This makes the application decide where a value belongs, rather than allowing
 stored bytes to select their own binding.
+
+#### Scoped binding
+
+A field declares its binding **shape**: a fixed set of parts, each with a part
+ID (a UUID), a value kind, and a role, plus whether it binds a record. The shape
+is persistent schema. The **values** are supplied at each call. A scoped binding
+is encoded as:
+
+```text
+Scoped: 02 || field_id[16] || record || count[2] || part*
+
+record = 00                                (no record)
+       | kind[1] || len[4] || value[len]   (record present)
+part   = part_id[16] || kind[1] || len[4] || value[len]
+```
+
+- `count` is the number of parts, as an unsigned 16-bit integer.
+- Parts are sorted by part ID in ascending byte order, whatever order the field
+  declares them in. Part IDs are unique and never the nil UUID.
+- There is at least one part or a record. With neither, the binding is
+  field-only and uses tag `01`.
+- `len` is an unsigned 32-bit byte count. Every value is length-prefixed, so
+  `"ab", "c"` and `"a", "bc"` encode differently.
+- A record's kind code is never `00`, so an empty record differs from no record.
+
+Value kinds are fixed and canonical. There is no text kind:
+
+| Kind | Code | Value bytes |
+| --- | --- | --- |
+| uuid | `01` | 16 raw UUID bytes |
+| i64 | `02` | 8 bytes, big-endian two's complement |
+| bytes | `03` | raw bytes, as given |
+
+Every part and record value carries its kind code, so the same bytes under
+different kinds, such as an `i64` and its 8 big-endian bytes, never collide.
+A `keys` part value can't be empty.
+
+#### Shape fingerprint
+
+A scoped envelope's header carries a 64-bit **shape fingerprint**. It covers
+the part IDs, kinds, and roles, and the record flag, but no values:
+
+```text
+shape label: "cryptbox/binding-shape/v1\0"
+
+fingerprint = SHA-256(shape_label
+                      || record_flag[1]
+                      || count[2]
+                      || (part_id[16] || kind[1] || role[1])*)[0..8]
+```
+
+`record_flag` is `01` when the shape binds a record and `00` otherwise. Parts
+are sorted by part ID as in the binding, so declaration order does not change
+the fingerprint.
+
+| Role | Code | Scopes |
+| --- | --- | --- |
+| `keys` | `01` | key custody and blind indexes; the unit you shred |
+| `index` | `02` | blind indexes only |
+| bound only | `03` | the ciphertext only |
+
+Roles are included because a role change alters index derivation and custody,
+so it is a migration even though the binding bytes don't change. Field-only
+envelopes carry no fingerprint. A record's kind is a runtime value, not part of
+the shape: a record of another kind fails authentication rather than reporting
+`BindingMismatch`.
+
+#### Reader rules
+
+The fingerprint is diagnostic only. The reader always takes the expected shape
+from its own field, never from the envelope:
+
+1. After structural parsing, and before any key lookup or AEAD work, compare the
+   envelope's fingerprint with the fingerprint of the reader's shape. A
+   field-only reader expects none. Any difference, including a fingerprint
+   where none is expected or the reverse, reports `BindingMismatch`.
+2. Otherwise, decrypt with the binding built from the reader's shape and the
+   caller's values. Different part or record values under a matching shape fail
+   authentication.
+
+The fingerprint is part of the authenticated prefix. Changing it to match
+another shape that has the same binding bytes, such as a role change, still
+fails authentication.
 
 Codec identity and version are also absent: the application schema must supply
 them to interpret the plaintext after authentication. Whether the payload is
@@ -118,17 +204,36 @@ offset  size  field
 47+N    16    Poly1305 tag
 ```
 
+A [scoped binding](#scoped-binding) extends the header to 31 bytes with its
+[shape fingerprint](#shape-fingerprint). For suite 1 the prefix is then 55
+bytes:
+
+```text
+offset  size  field
+0       23    header, as above, with flag bit 02 set
+23      8     shape fingerprint
+31      24    XChaCha20 nonce
+55      N     ciphertext
+55+N    16    Poly1305 tag
+```
+
 Flag bit `01` records that the AEAD plaintext is [padded](#plaintext-padding).
-All other bits are reserved and must be zero; readers reject an envelope with a
-reserved bit set before authentication. The flags are part of the authenticated
-prefix, so changing them fails authentication.
+Flag bit `02` records a scoped binding, so the shape fingerprint follows the
+`KeyId`. A field-only envelope leaves it clear and is byte-identical to earlier
+format 2 envelopes. The format version stays `2`: readers that predate bit `02`
+reject it as reserved, so they never misparse a scoped header. All other bits
+are reserved and must be zero; readers reject an envelope with a reserved bit
+set before authentication. The flags are part of the authenticated prefix, so
+changing them fails authentication or, for bit `02`, reports `BindingMismatch`
+under the [reader rules](#reader-rules).
 
 There is no embedded payload-length field: the enclosing storage or transport
 must supply the envelope boundary. Within that boundary, the last 16 bytes are
 the tag and the bytes between the prefix and tag are the encrypted payload.
 The prefix is readable without a key, but remains untrusted until authentication.
 
-The minimum envelope is 63 bytes and represents empty AEAD plaintext. For an
+The minimum envelope is 63 bytes (71 when scoped) and represents empty AEAD
+plaintext. For an
 unpadded value, ciphertext leaks encoded plaintext length exactly plus this
 fixed overhead. A padded value reveals its padded bucket length instead.
 See [size semantics and enforcement](#size-semantics-and-enforcement) for exact
@@ -153,8 +258,11 @@ key_info = key_info_label
         || key_id
         || binding
 
-aad = aad_label || envelope[0..47] || binding
+aad = aad_label || prefix || binding
 ```
+
+`prefix` is the whole suite prefix, including the shape fingerprint when
+present: `envelope[0..47]`, or `envelope[0..55]` when scoped.
 
 ### Encryption recipe
 
@@ -173,21 +281,24 @@ conventions and binding bytes above, with `format_version = 02` and
    the vectors are test inputs only, not a supported application nonce policy.
 3. Construct the 47-byte prefix from magic, version, suite, flags, `KeyId`, and
    nonce using the offset table. Set flag bit `01` exactly when the AEAD
-   plaintext is padded. Form `aad = aad_label || prefix || binding`.
+   plaintext is padded. For a scoped binding, set flag bit `02` and insert the
+   shape fingerprint before the nonce, giving a 55-byte prefix. Form
+   `aad = aad_label || prefix || binding`.
 4. Seal the complete AEAD plaintext with XChaCha20-Poly1305 using the 32-byte
    operational key, nonce, and AAD. Append the ciphertext (same length as AEAD
    plaintext) and the full 16-byte tag to the prefix. No text encoding, tag
    truncation, or additional delimiters are applied.
 
-For decryption, structurally validate the envelope, resolve only its exact
-`KeyId`, reconstruct the key and AAD with the **expected** binding, and verify
+For decryption, structurally validate the envelope, check its shape fingerprint
+under the [reader rules](#reader-rules), resolve only its exact `KeyId`,
+reconstruct the key and AAD with the **expected** binding, and verify
 the tag before returning any plaintext. Only after authentication is padding
 removed, when the authenticated flag is set, and the value decoded; the reader's
 current padding policy never decides whether to remove padding. Wrong binding
-or changes to supported metadata, flags, nonce, ciphertext, or tag fail
-authentication. Malformed/unsupported envelopes and unknown keys can fail
-before authentication. Successful decryption does not establish freshness or
-row identity.
+values or changes to supported metadata, flags, nonce, ciphertext, or tag fail
+authentication. Malformed/unsupported envelopes, a different binding shape, and
+unknown keys can fail before authentication. Successful decryption does not
+establish freshness or row identity.
 
 ### Plaintext padding
 
@@ -229,7 +340,7 @@ All lengths are byte counts, not character counts or Rust memory sizes:
 | --- | --- |
 | `E`: encoded bytes | Codec output before padding. `Utf8` counts UTF-8 bytes: `"é"` has `E = 2`. |
 | `P`: AEAD plaintext | Encoded bytes after padding, including the marker and zero fill when enabled. `Padding::NONE` gives `P = E`. |
-| `W`: envelope bytes | Complete binary ciphertext: 47-byte prefix, `P` ciphertext bytes, 16-byte tag. `W = P + 63`; excludes text encoding, database framing, and separate indexes. |
+| `W`: envelope bytes | Complete binary ciphertext: 47-byte prefix, `P` ciphertext bytes, 16-byte tag. `W = P + 63`, or `P + 71` with a scoped binding's 55-byte prefix; excludes text encoding, database framing, and separate indexes. |
 
 Padding boundary examples (ASCII input, one encoded byte per character):
 
@@ -256,7 +367,8 @@ For an application-selected padded cap `L`, `Padding::NONE` permits `E <= L`;
 `Padding::block(N)` permits `E <= N * floor(L / N) - 1` if at least one block fits;
 `Padding::length(N)` requires `N <= L` and `E <= N - 1`. Bound encoding and compute
 padded size with checked arithmetic before allocating/encrypting. Bound incoming
-binary envelopes to `W <= L + 63` before copying/decrypting, and bound decoding
+binary envelopes to `W <= L + 63` (`L + 71` for a scoped field) before
+copying/decrypting, and bound decoding
 expansion separately; a [format 1](#format-1) envelope is one byte shorter, so
 the same bound admits it. Current padding parameters do not cap historical reads:
 unpadding accepts a valid marker independently of the original block/target size.
@@ -293,6 +405,34 @@ envelope:         43425800020101111111112222433384445555555555550001020304050607
 
 Both decrypt to `"cryptbox vector"` whatever the reader's padding policy. The
 vectors are generated and consumed in separate tests, but they have not yet been
+cross-checked against an independent implementation.
+
+### Provisional scoped vectors
+
+These vectors use the root key, `KeyId`, `FieldId`, plaintext, and nonce above,
+unpadded, with a [scoped binding](#scoped-binding) of two parts:
+
+```text
+part 11111111-1111-1111-1111-111111111111  uuid   keys        33333333-3333-3333-3333-333333333333
+part 22222222-2222-2222-2222-222222222222  bytes  bound only  77732d31 ("ws-1")
+```
+
+Without a record, the shape fingerprint is `cda083fe6eae1bf1`:
+
+```text
+binding:  02123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
+envelope: 4342580002010211111111222243338444555555555555cda083fe6eae1bf1000102030405060708090a0b0c0d0e0f1011121314151617b51d411fdf173c5725d9000dae571d2bc413649bd09198dd576ab7879aeb42
+```
+
+With the `i64` record `7`, the shape fingerprint is `505a9cd2bc286636`:
+
+```text
+binding:  02123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
+envelope: 4342580002010211111111222243338444555555555555505a9cd2bc286636000102030405060708090a0b0c0d0e0f10111213141516172619b76ce657aac8910c65d99b49a02880a201078edb80702123597f908f71
+```
+
+Both fingerprints and bindings were computed independently of the
+implementation from the recipes above. The envelopes have not yet been
 cross-checked against an independent implementation.
 
 ### Format 1

@@ -53,6 +53,7 @@ fn experimental_envelope_vectors_record_their_padding() {
 
         assert_eq!(info.format_version(), 2);
         assert_eq!(info.padded(), Some(padded));
+        assert_eq!(info.shape_fingerprint(), None);
         assert_eq!(
             decrypt(VectorField::ID, &envelope, &keys())
                 .unwrap()

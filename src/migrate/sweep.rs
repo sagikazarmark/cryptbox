@@ -398,6 +398,7 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::UnknownEncryptionKey(_)
         | Error::UnknownBlindIndexKey(_)
         | Error::AuthenticationFailed
+        | Error::BindingMismatch
         | Error::CodecFailed(_)
         | Error::BlindIndexNormalizationFailed
         | Error::MessageTooLong
@@ -415,6 +416,7 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::DuplicateBlindIndexKey(_)
         | Error::RandomnessUnavailable
         | Error::InvalidKeyEncoding
+        | Error::InvalidBinding
         | Error::Internal
         | Error::DuplicatePreparedIndex(_)
         | Error::BlindIndexNotPrepared(_)

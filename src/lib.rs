@@ -126,6 +126,7 @@ pub struct ReadmeDoctests;
 #[doc = include_str!("../docs/first-field.md")]
 pub struct FirstFieldDoctests;
 
+mod binding;
 mod blind;
 mod codec;
 mod crypto;
@@ -149,6 +150,8 @@ mod sqlx_sqlite;
 pub mod testing;
 mod value;
 
+pub(crate) use binding::BindingDomain;
+pub use binding::ShapeFingerprint;
 pub use blind::{BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, inspect_blind_index};
 #[cfg(feature = "json")]
 pub use codec::Json;
@@ -162,7 +165,6 @@ pub use crypto::{
     is_ciphertext, needs_reencryption, reencrypt,
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error, KeyProviderError};
-pub(crate) use field::BindingDomain;
 pub use field::Field;
 pub use id::{FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, SuiteId};
 pub use key::{
