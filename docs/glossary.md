@@ -55,6 +55,14 @@ The stable identity of a logical encrypted field, independent of Rust and
 database names. Fields that declare the same field ID can read each other's
 ciphertext; a different field ID fails authentication.
 
+**Index binding**:
+The binding a blind index is derived under: the field ID and the values of the
+binding's `keys` and `index` parts, without bound-only parts or a record. A
+query supplies it as the index arguments (`IndexArgs`); a prepared value takes
+it from the binding it was sealed with. A field without `keys` or `index`
+parts has a field-only index binding.
+<!-- Agent guidance: code calls the encoded form the index domain (`BindingDomain::index`), as it calls a binding's encoding `BindingDomain`; say “index binding” in prose. Avoid “index scope”, which blurs it with the key scope. -->
+
 **Index precision**:
 The number of retained blind-index bits. Fewer bits increase false candidates
 and obscure equality more, without eliminating index leakage.
