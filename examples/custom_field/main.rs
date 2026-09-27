@@ -19,6 +19,8 @@ fn valid_handle(bytes: &[u8]) -> bool {
 }
 
 impl Codec<Secret<String>> for HandleCodec {
+    const ID: &'static str = "handle/1";
+
     fn encode(value: &Secret<String>) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         let bytes = value.expose_secret().as_bytes();
         if !valid_handle(bytes) {
@@ -55,6 +57,7 @@ impl BlindIndexSpec for HandleEquality {
     type Field = Handle;
     const ID: cryptbox::IndexId = cryptbox::index_id!("6c0e20d5-cb30-4b84-8dd1-995f872b417c");
     const BITS: u16 = 128;
+    const NORMALIZER: &'static str = "handle-lowercase/1";
     type Query = Secret<String>;
 
     fn normalize_query(input: &Secret<String>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -219,6 +222,29 @@ mod tests {
             cryptbox::Error::CodecFailed(encode)
         );
         Ok(())
+    }
+
+    #[test]
+    fn stored_bytes_and_schema_match_their_committed_fixtures() {
+        use cryptbox::{schema::Manifest, testing::assert_encoding};
+
+        assert_encoding::<Handle>(&Secret::new("Alice-7".to_owned()), "416c6963652d37");
+
+        let manifest = Manifest::new().field::<Handle>().index::<HandleEquality>();
+        assert!(manifest.duplicates().is_empty());
+        assert_eq!(
+            manifest.to_string(),
+            "\
+field dcaa3c69-1767-49a1-8476-36555eaf54bf custom_field::Handle
+  value: cryptbox::value::Secret<alloc::string::String>
+  codec: handle/1
+  padding: none
+index 6c0e20d5-cb30-4b84-8dd1-995f872b417c custom_field::HandleEquality
+  field: dcaa3c69-1767-49a1-8476-36555eaf54bf
+  bits: 128
+  normalizer: handle-lowercase/1
+"
+        );
     }
 
     #[test]

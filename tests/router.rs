@@ -3,10 +3,10 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, EncryptionKeyProvider, Error,
-    Field, FieldId, IndexId, IndexKeyId, KeyId, KeyProviderError, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Padding, Raw, Router, decrypt, encrypt, field_id, index_id,
-    index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyProvider, Error, Field, FieldId, IndexId, IndexKeyId, KeyId, KeyProviderError,
+    Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, Router, Routing, decrypt,
+    encrypt, field_id, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -83,6 +83,7 @@ impl<F: Field<Value = Vec<u8>>> BlindIndexSpec for Exact<F> {
     type Field = F;
     const ID: IndexId = index_id!("50000000-0000-4000-8000-000000000005");
     const BITS: u16 = 32;
+    const NORMALIZER: &'static str = "exact/1";
     type Query = [u8];
 
     fn normalize_query(query: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -244,4 +245,62 @@ fn fields_can_route_to_providers_of_different_types() {
         decrypt(Iban::ID, &iban, &router).unwrap().as_slice(),
         b"DE89370400440532013000"
     );
+}
+
+#[test]
+fn providers_report_how_they_serve_each_field() {
+    let strict = Router::strict()
+        .route::<Email>(keyring(GENERAL_KEY_ID, 1))
+        .unwrap();
+    let fallback = Router::new(keyring(GENERAL_KEY_ID, 1))
+        .route::<Iban>(keyring(PAYMENTS_KEY_ID, 2))
+        .unwrap();
+
+    assert_eq!(strict.routing(Email::ID), Routing::Routed);
+    assert_eq!(strict.routing(Iban::ID), Routing::Unrouted);
+    assert_eq!(fallback.routing(Email::ID), Routing::Fallback);
+    assert_eq!(fallback.routing(Iban::ID), Routing::Routed);
+    assert_eq!(
+        keyring(GENERAL_KEY_ID, 1).routing(Email::ID),
+        Routing::Direct
+    );
+}
+
+#[test]
+fn keys_report_the_route_of_each_role() {
+    let encryption: Arc<dyn EncryptionKeyProvider> = Arc::new(
+        Router::strict()
+            .route::<Email>(keyring(GENERAL_KEY_ID, 1))
+            .unwrap(),
+    );
+    let without_indexes = Keys::new(Arc::clone(&encryption));
+    let keys = Keys::new(encryption)
+        .with_blind_indexes(Router::new(index_keyring(GENERAL_INDEX_KEY_ID, 1)));
+
+    assert_eq!(
+        EncryptionKeyProvider::routing(&keys, Email::ID),
+        Routing::Routed
+    );
+    assert_eq!(
+        EncryptionKeyProvider::routing(&keys, Iban::ID),
+        Routing::Unrouted
+    );
+    assert_eq!(
+        BlindIndexKeyProvider::routing(&keys, Email::ID),
+        Routing::Fallback
+    );
+    assert_eq!(
+        BlindIndexKeyProvider::routing(&without_indexes, Email::ID),
+        Routing::Unrouted
+    );
+}
+
+#[test]
+fn a_nested_router_reports_its_own_fallback() {
+    let inner_fallback = Router::new(keyring(GENERAL_KEY_ID, 1));
+    let outer = Router::strict().route::<Email>(inner_fallback).unwrap();
+    let rejecting = Router::new(Router::<LocalEncryptionKeyring>::strict());
+
+    assert_eq!(outer.routing(Email::ID), Routing::Fallback);
+    assert_eq!(rejecting.routing(Email::ID), Routing::Unrouted);
 }

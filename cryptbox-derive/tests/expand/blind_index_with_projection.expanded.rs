@@ -44,6 +44,7 @@ const _: () = {
             0x3f5d8c2b_6e40_4b97_8c31_8a2f7d9e5b64,
         );
         const BITS: u16 = 64;
+        const NORMALIZER: &'static str = "normalize_street(street)";
         type Query = str;
         fn normalize_query(
             query: &str,

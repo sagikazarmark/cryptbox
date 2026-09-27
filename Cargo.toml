@@ -34,14 +34,15 @@ chacha20poly1305 = { version = "0.11.0", features = ["alloc"], default-features 
 # Lockstep: generated code names this exact version's public items.
 cryptbox-derive = { version = "=0.5.0", path = "cryptbox-derive", optional = true }
 getrandom = "0.4.3"
-hex = { version = "0.4.3", default-features = false }
+hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
 hkdf = "0.13.0"
 hmac = { version = "0.13.0", features = ["zeroize"] }
 postcard = { version = "1.1.3", features = ["alloc"], default-features = false, optional = true }
 # Activate erasure of one-time MAC state used through chacha20poly1305.
 poly1305 = { version = "0.9.1", features = ["zeroize"], default-features = false }
 serde = { version = "1.0.219", optional = true }
-serde_json = { version = "1.0.140", optional = true }
+# `float_roundtrip` decodes every float to exactly the value that was encoded.
+serde_json = { version = "1.0.140", features = ["float_roundtrip"], optional = true }
 sha2 = { version = "0.11.0", features = ["zeroize"] }
 sqlx = { version = "0.8.6", default-features = false, optional = true }
 subtle = "2.6.1"

@@ -21,6 +21,8 @@ struct Address {
 struct AddressCodec;
 
 impl Codec<Address> for AddressCodec {
+    const ID: &'static str = "address/1";
+
     fn encode(value: &Address) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         let mut bytes = Zeroizing::new(Vec::with_capacity(
             value.street.len() + 1 + value.city.len(),

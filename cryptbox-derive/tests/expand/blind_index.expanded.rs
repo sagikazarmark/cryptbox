@@ -32,6 +32,7 @@ const _: () = {
             0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53,
         );
         const BITS: u16 = 32;
+        const NORMALIZER: &'static str = "normalize_email";
         type Query = str;
         fn normalize_query(
             query: &str,

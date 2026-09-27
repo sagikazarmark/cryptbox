@@ -119,6 +119,7 @@ impl BlindIndexSpec for VectorIndex {
     type Field = VectorField;
     const ID: IndexId = index_id!("abcdefab-cdef-4def-8def-abcdefabcdef");
     const BITS: u16 = 13;
+    const NORMALIZER: &'static str = "exact/1";
     type Query = str;
 
     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {

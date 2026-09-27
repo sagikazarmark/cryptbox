@@ -1,3 +1,5 @@
+use std::fmt;
+
 use zeroize::Zeroizing;
 
 use crate::Error;
@@ -114,6 +116,17 @@ impl Padding {
             unpad(plaintext)
         } else {
             Ok(plaintext)
+        }
+    }
+}
+
+/// Formats the policy as `none`, `block(size)`, or `length(len)`.
+impl fmt::Display for Padding {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Policy::None => formatter.write_str("none"),
+            Policy::Block(size) => write!(formatter, "block({size})"),
+            Policy::Length(len) => write!(formatter, "length({len})"),
         }
     }
 }

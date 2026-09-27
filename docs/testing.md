@@ -64,6 +64,13 @@ keys can change between encryption and decryption or ciphertext/index preparatio
 Use separate processes, or serialize each case's entire setup/operation/cleanup
 lifetime, including background work. Separate database connections are insufficient.
 
+## Schema guardrails
+
+Stored bytes do not describe codecs, IDs, or normalization, so a schema change
+compiles and deploys silently. Pin the schema with golden-bytes fixtures
+(`testing::assert_encoding`), a `schema::Manifest` snapshot, and
+`assert_unique_ids!`. See [guarding the schema in CI](integration.md#guarding-the-schema-in-ci).
+
 ## Diagnostics
 
 Allowlist the stable `Field::ID`, a caller-owned static label, operation and sanitized

@@ -132,6 +132,7 @@ where
     ///     type Field = InviteEmail;
     ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
     ///     const BITS: u16 = 32;
+    ///     const NORMALIZER: &'static str = "exact/1";
     ///     type Query = str;
     ///
     ///     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {

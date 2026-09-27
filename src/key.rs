@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt, sync::Arc};
 use base64::Engine as _;
 use zeroize::Zeroizing;
 
-use crate::{Error, FieldId, IndexKeyId, KeyId, KeyProviderError};
+use crate::{Error, FieldId, IndexKeyId, KeyId, KeyProviderError, Routing};
 
 #[derive(Clone)]
 struct KeyMaterial<Id> {
@@ -275,6 +275,17 @@ pub trait EncryptionKeyProvider: Send + Sync {
     /// Returns an error when local key material is unavailable, or when this
     /// provider does not serve `field`.
     fn key(&self, field: FieldId, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError>;
+
+    /// Reports how this provider serves `field`, for the
+    /// [schema manifest](crate::schema::Manifest).
+    ///
+    /// The default, [`Routing::Direct`], suits a provider that serves every field
+    /// alike. A provider that routes fields must override it, and a wrapper must
+    /// forward it.
+    fn routing(&self, field: FieldId) -> Routing {
+        let _ = field;
+        Routing::Direct
+    }
 }
 
 /// Resolves current and historical root blind-index keys synchronously.
@@ -337,6 +348,17 @@ pub trait BlindIndexKeyProvider: Send + Sync {
     /// Returns an error when local key material is unavailable, or when this
     /// provider does not serve `field`.
     fn readable_keys(&self, field: FieldId) -> Result<Vec<BlindIndexKey>, KeyProviderError>;
+
+    /// Reports how this provider serves `field`, for the
+    /// [schema manifest](crate::schema::Manifest).
+    ///
+    /// The default, [`Routing::Direct`], suits a provider that serves every field
+    /// alike. A provider that routes fields must override it, and a wrapper must
+    /// forward it.
+    fn routing(&self, field: FieldId) -> Routing {
+        let _ = field;
+        Routing::Direct
+    }
 }
 
 impl<P: EncryptionKeyProvider + ?Sized> EncryptionKeyProvider for Arc<P> {
@@ -346,6 +368,10 @@ impl<P: EncryptionKeyProvider + ?Sized> EncryptionKeyProvider for Arc<P> {
 
     fn key(&self, field: FieldId, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
         (**self).key(field, id)
+    }
+
+    fn routing(&self, field: FieldId) -> Routing {
+        (**self).routing(field)
     }
 }
 
@@ -364,6 +390,10 @@ impl<P: BlindIndexKeyProvider + ?Sized> BlindIndexKeyProvider for Arc<P> {
 
     fn readable_keys(&self, field: FieldId) -> Result<Vec<BlindIndexKey>, KeyProviderError> {
         (**self).readable_keys(field)
+    }
+
+    fn routing(&self, field: FieldId) -> Routing {
+        (**self).routing(field)
     }
 }
 
@@ -487,7 +517,8 @@ impl BlindIndexKeyProvider for LocalBlindIndexKeyring {
 /// Each role is usually a [`Router`](crate::Router) that assigns fields to
 /// providers.
 ///
-/// Blind-index operations fail with [`Error::BlindIndexKeysNotConfigured`] when no
+/// Blind-index operations fail with [`Error::BlindIndexKeysNotConfigured`], and
+/// [`BlindIndexKeyProvider::routing`] reports [`Routing::Unrouted`], when no
 /// blind-index provider was added.
 ///
 /// # Examples
@@ -549,6 +580,10 @@ impl EncryptionKeyProvider for Keys {
     fn key(&self, field: FieldId, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
         self.encryption.key(field, id)
     }
+
+    fn routing(&self, field: FieldId) -> Routing {
+        self.encryption.routing(field)
+    }
 }
 
 impl BlindIndexKeyProvider for Keys {
@@ -566,6 +601,12 @@ impl BlindIndexKeyProvider for Keys {
 
     fn readable_keys(&self, field: FieldId) -> Result<Vec<BlindIndexKey>, KeyProviderError> {
         self.blind_indexes()?.readable_keys(field)
+    }
+
+    fn routing(&self, field: FieldId) -> Routing {
+        self.blind_indexes
+            .as_ref()
+            .map_or(Routing::Unrouted, |provider| provider.routing(field))
     }
 }
 

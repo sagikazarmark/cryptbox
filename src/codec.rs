@@ -86,7 +86,9 @@ impl std::io::Write for ZeroizingByteBuffer {
 ///
 /// A field's codec is part of its persistent schema: ciphertext does not
 /// contain a codec identifier or codec version. Changing the emitted bytes or
-/// decode compatibility requires migrating existing data.
+/// decode compatibility requires migrating existing data. [`Self::ID`] names
+/// the representation for the [schema manifest](crate::schema::Manifest), and
+/// [`assert_encoding`](crate::testing::assert_encoding) pins its bytes in tests.
 ///
 /// # Implementor obligations
 ///
@@ -116,6 +118,15 @@ impl std::io::Write for ZeroizingByteBuffer {
     note = "use `<{T} as cryptbox::Plaintext>::Codec`, or name a codec that implements `Codec<{T}>`"
 )]
 pub trait Codec<T>: 'static {
+    /// A stable name for this codec's byte representation, such as `"json/1"`.
+    ///
+    /// The [schema manifest](crate::schema::Manifest) reports it; ciphertext
+    /// does not store it. Give every representation its own ID, and change the
+    /// ID whenever the emitted bytes or decode compatibility change, so a
+    /// manifest snapshot flags the migration. The crate's codecs are `"utf8"`,
+    /// `"raw"`, `"json/1"`, and `"postcard/1"`.
+    const ID: &'static str;
+
     /// Encodes `value` into an owned, zeroizing plaintext buffer.
     ///
     /// # Errors
@@ -154,6 +165,8 @@ pub trait Codec<T>: 'static {
 /// pub struct PostcodeCodec;
 ///
 /// impl Codec<Postcode> for PostcodeCodec {
+///     const ID: &'static str = "postcode/1";
+///
 ///     fn encode(value: &Postcode) -> Result<Zeroizing<Vec<u8>>, CodecError> {
 ///         Ok(Zeroizing::new(value.0.as_bytes().to_vec()))
 ///     }
@@ -207,6 +220,8 @@ impl Plaintext for Secret<Vec<u8>> {
 pub struct Raw;
 
 impl Codec<Vec<u8>> for Raw {
+    const ID: &'static str = "raw";
+
     fn encode(value: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         Ok(Zeroizing::new(value.clone()))
     }
@@ -217,6 +232,8 @@ impl Codec<Vec<u8>> for Raw {
 }
 
 impl Codec<Secret<Vec<u8>>> for Raw {
+    const ID: &'static str = "raw";
+
     fn encode(value: &Secret<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         Self::encode(value.expose_secret())
     }
@@ -233,6 +250,8 @@ impl Codec<Secret<Vec<u8>>> for Raw {
 pub struct Utf8;
 
 impl Codec<String> for Utf8 {
+    const ID: &'static str = "utf8";
+
     fn encode(value: &String) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         Ok(Zeroizing::new(value.as_bytes().to_vec()))
     }
@@ -245,6 +264,8 @@ impl Codec<String> for Utf8 {
 }
 
 impl Codec<Secret<String>> for Utf8 {
+    const ID: &'static str = "utf8";
+
     fn encode(value: &Secret<String>) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         Self::encode(value.expose_secret())
     }
@@ -256,7 +277,14 @@ impl Codec<Secret<String>> for Utf8 {
 
 /// Encodes Serde values as JSON.
 ///
-/// Available with the `json` feature (which implies `serde`).
+/// Available with the `json` feature (which implies `serde`). Its [`Codec::ID`]
+/// is `"json/1"`. Floats decode to exactly the value that was encoded.
+///
+/// The value type's Serde representation is persistent schema. A serde
+/// attribute change such as `rename_all` changes the stored bytes of every field
+/// that uses the type, and a renamed field fails to decode or silently takes its
+/// default. Pin each field's bytes with
+/// [`assert_encoding`](crate::testing::assert_encoding).
 #[cfg(feature = "json")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Json;
@@ -266,6 +294,8 @@ impl<T> Codec<T> for Json
 where
     T: serde::Serialize + serde::de::DeserializeOwned,
 {
+    const ID: &'static str = "json/1";
+
     fn encode(value: &T) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         let mut bytes = ZeroizingByteBuffer::new();
 
@@ -281,7 +311,15 @@ where
 
 /// Encodes Serde values with Postcard.
 ///
-/// Available with the `postcard` feature (which implies `serde`).
+/// Available with the `postcard` feature (which implies `serde`). Its
+/// [`Codec::ID`] is `"postcard/1"`.
+///
+/// Postcard is positional: it stores no field or variant names. Reordering
+/// struct fields or enum variants, or changing an integer type, decodes existing
+/// bytes into wrong values without an error. Serde attribute changes such as
+/// `rename_all` can change the stored bytes as well, for every field that uses
+/// the value type. Pin each field's bytes with
+/// [`assert_encoding`](crate::testing::assert_encoding).
 #[cfg(feature = "postcard")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Postcard;
@@ -291,6 +329,8 @@ impl<T> Codec<T> for Postcard
 where
     T: serde::Serialize + serde::de::DeserializeOwned,
 {
+    const ID: &'static str = "postcard/1";
+
     fn encode(value: &T) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         let bytes = ZeroizingByteBuffer::new();
 

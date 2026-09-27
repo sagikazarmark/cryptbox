@@ -128,6 +128,28 @@
   exactly its inner value's bytes. Add `from_u128` to the identifier types,
   which the derives emit.
 
+- **Breaking:** codecs and blind indexes name their persistent schema.
+  `Codec` requires `const ID: &'static str`, a stable name for its byte
+  representation: `"utf8"`, `"raw"`, `"json/1"`, and `"postcard/1"` for the
+  crate's codecs. A derived transparent `Plaintext` codec reuses its inner
+  codec's ID. `BlindIndexSpec` requires `const NORMALIZER: &'static str`, a
+  name for its normalization rules. `#[derive(BlindIndexSpec)]` takes it from
+  the new `normalizer = "…"` key, or else from the `normalize` and `project`
+  paths. Neither is stored; the schema manifest reports both.
+- Add schema guardrails for CI. `cryptbox::testing::assert_encoding::<F>(&value, hex)`
+  pins a field's codec bytes to a committed fixture in both directions.
+  `cryptbox::schema::Manifest` lists registered fields with their ID, value type,
+  codec ID, and padding, and indexes with their ID, field, bits, and normalizer,
+  for snapshot tests. Given `Keys`, it also reports each route.
+  `Manifest::duplicates` reports IDs shared by several markers.
+  `cryptbox::assert_unique_ids!` fails compilation when listed field (or
+  `indexes:`) markers share an ID. Both provider traits gain
+  `routing(field) -> Routing`, which defaults to `Routing::Direct`; `Router`, `Keys`,
+  and `Arc<P>` report `Routed`, `Fallback`, or `Unrouted`. `Padding` implements
+  `Display`.
+- `Json` decodes every float to exactly the value that was encoded
+  (`serde_json/float_roundtrip`). Before this, some stored floats were read back one ulp off.
+
 - Add the opt-in `serde` feature for explicit stored-byte serialization of
   ciphertext and blind indexes (not included in the published 0.5.0 crate).
 

@@ -1,8 +1,8 @@
 //! Expands `#[derive(BlindIndexSpec)]`.
 
 use proc_macro2::{Span, TokenStream};
-use quote::{quote, quote_spanned};
-use syn::{DeriveInput, Ident, spanned::Spanned};
+use quote::{ToTokens, quote, quote_spanned};
+use syn::{DeriveInput, Ident, LitStr, Path, spanned::Spanned};
 
 use crate::attr::{Attrs, Errors, Key, required};
 
@@ -12,6 +12,7 @@ const KEYS: &[Key] = &[
     Key::Bits,
     Key::Query,
     Key::Normalize,
+    Key::Normalizer,
     Key::Project,
     Key::Crate,
 ];
@@ -84,6 +85,20 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         quote_spanned!(normalize.span()=> #normalize(#value))
     };
 
+    // Without an explicit name, the paths name the normalization, so rewiring
+    // it changes the schema manifest.
+    let normalizer_name = attrs.normalizer.as_ref().map_or_else(
+        || {
+            let path = |path: &Path| path.to_token_stream().to_string().replace(' ', "");
+            let name = match &attrs.project {
+                Some(project) => format!("{}({})", path(&normalize), path(project)),
+                None => path(&normalize),
+            };
+            LitStr::new(&name, normalize.span())
+        },
+        Clone::clone,
+    );
+
     let normalized = quote! {
         ::core::result::Result<
             #krate::__private::Zeroizing<::std::vec::Vec<u8>>,
@@ -99,6 +114,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
                 type Field = #field;
                 const ID: #krate::IndexId = #krate::IndexId::from_u128(#id);
                 const BITS: u16 = #bits;
+                const NORMALIZER: &'static str = #normalizer_name;
                 type Query = #query;
 
                 fn normalize_query(#query_arg: &#query) -> #normalized {

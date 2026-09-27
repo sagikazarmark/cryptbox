@@ -66,6 +66,8 @@ struct Address {
 struct AddressCodec;
 
 impl Codec<Address> for AddressCodec {
+    const ID: &'static str = "address/1";
+
     fn encode(value: &Address) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         Ok(Zeroizing::new(
             format!("{}\0{}", value.street, value.city).into_bytes(),
@@ -163,6 +165,7 @@ impl BlindIndexSpec for ManualEmailLookup {
     type Field = ManualUserEmail;
     const ID: IndexId = index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
     const BITS: u16 = 32;
+    const NORMALIZER: &'static str = "normalize_text";
     type Query = str;
 
     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -216,6 +219,7 @@ impl BlindIndexSpec for ManualStreetLookup {
     type Field = BillingAddress;
     const ID: IndexId = index_id!("3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64");
     const BITS: u16 = 64;
+    const NORMALIZER: &'static str = "normalize_text(street)";
     type Query = str;
 
     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -291,6 +295,8 @@ struct Postcode {
 struct PostcodeCodec;
 
 impl Codec<Postcode> for PostcodeCodec {
+    const ID: &'static str = "postcode/1";
+
     fn encode(value: &Postcode) -> Result<Zeroizing<Vec<u8>>, CodecError> {
         Ok(Zeroizing::new(value.code.as_bytes().to_vec()))
     }
@@ -326,4 +332,27 @@ struct RenamedCratePostcode;
 fn derives_can_name_cryptbox_through_another_path() {
     assert_eq!(RenamedCratePostcode::ID, UserEmail::ID);
     assert_codec::<RenamedCratePostcode, PostcodeCodec>();
+}
+
+#[derive(BlindIndexSpec)]
+#[cryptbox(
+    id = "4a6e9d3c-7f51-4ca8-9d42-9b3e8f0a6c75",
+    field = UserEmail,
+    bits = 32,
+    query = str,
+    normalize = normalize_text,
+    normalizer = "email/2",
+)]
+struct VersionedEmailLookup;
+
+#[test]
+fn a_derived_blind_index_names_its_normalizer() {
+    assert_eq!(EmailLookup::NORMALIZER, "normalize_text");
+    assert_eq!(StreetLookup::NORMALIZER, "normalize_text(street)");
+    assert_eq!(VersionedEmailLookup::NORMALIZER, "email/2");
+}
+
+#[test]
+fn a_transparent_value_type_shares_its_inner_codec_id() {
+    assert_eq!(<<Email as Plaintext>::Codec as Codec<Email>>::ID, "utf8");
 }

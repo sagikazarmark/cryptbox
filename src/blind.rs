@@ -53,6 +53,7 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 ///     type Field = UserEmail;
 ///     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
 ///     const BITS: u16 = 32;
+///     const NORMALIZER: &'static str = "email/1";
 ///     type Query = str;
 ///
 ///     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -88,6 +89,7 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 ///     type Field = Bytes;
 ///     const ID: IndexId = IndexId::from_bytes([0; 16]);
 ///     const BITS: u16 = 0;
+///     const NORMALIZER: &'static str = "exact/1";
 ///     type Query = [u8];
 /// #   fn normalize_query(q: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(q.to_vec())) }
 /// #   fn normalize_value(v: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(v.clone())) }
@@ -112,6 +114,7 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 ///     type Field = Bytes;
 ///     const ID: IndexId = IndexId::from_bytes([0; 16]);
 ///     const BITS: u16 = 300;
+///     const NORMALIZER: &'static str = "exact/1";
 ///     type Query = [u8];
 /// #   fn normalize_query(q: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(q.to_vec())) }
 /// #   fn normalize_value(v: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(v.clone())) }
@@ -158,6 +161,15 @@ pub trait BlindIndexSpec: Sized + 'static {
 
     /// The number of most-significant HMAC bits retained for candidate lookup.
     const BITS: u16;
+
+    /// A stable name for the normalization rules, such as `"email/1"`.
+    ///
+    /// Normalization is persistent schema, but neither stored indexes nor code
+    /// review reliably reveal a change to it. The
+    /// [schema manifest](crate::schema::Manifest) reports this name; change it
+    /// whenever [`Self::normalize_query`] or [`Self::normalize_value`] would
+    /// produce different bytes, so a manifest snapshot flags the migration.
+    const NORMALIZER: &'static str;
 
     /// The lookup input, such as `str` for an index over `String` values.
     type Query: ?Sized;

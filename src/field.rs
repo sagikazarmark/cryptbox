@@ -18,7 +18,8 @@ use crate::{Codec, FieldId, Padding};
 /// The value type, codec representation, and field ID define persistent schema.
 /// The ciphertext envelope does not store a codec identifier, so incompatible
 /// changes require an explicit data migration. Padding is write policy instead:
-/// the envelope records whether a value is padded.
+/// the envelope records whether a value is padded. See [`crate::schema`] and
+/// [`crate::testing`] for CI checks of this schema.
 ///
 /// For blind indexes, the field domain-separates derivation; it does not
 /// authenticate the stored index representation. Field binding does not prevent

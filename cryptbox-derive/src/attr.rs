@@ -16,11 +16,12 @@ pub(crate) enum Key {
     Bits,
     Query,
     Normalize,
+    Normalizer,
     Project,
 }
 
 impl Key {
-    const ALL: [Self; 10] = [
+    const ALL: [Self; 11] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -30,6 +31,7 @@ impl Key {
         Self::Bits,
         Self::Query,
         Self::Normalize,
+        Self::Normalizer,
         Self::Project,
     ];
 
@@ -44,6 +46,7 @@ impl Key {
             Self::Bits => "bits",
             Self::Query => "query",
             Self::Normalize => "normalize",
+            Self::Normalizer => "normalizer",
             Self::Project => "project",
         }
     }
@@ -104,6 +107,7 @@ pub(crate) struct Attrs {
     pub(crate) bits: Option<LitInt>,
     pub(crate) query: Option<Type>,
     pub(crate) normalize: Option<Path>,
+    pub(crate) normalizer: Option<LitStr>,
     pub(crate) project: Option<Path>,
     seen: Vec<Key>,
 }
@@ -175,6 +179,7 @@ impl Attrs {
             Key::Bits => self.bits = Some(parse_bits(input)?),
             Key::Query => self.query = Some(input.parse()?),
             Key::Normalize => self.normalize = Some(input.parse()?),
+            Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
         }
 

@@ -82,7 +82,8 @@
 //! are persistent schema. Stored bytes do not describe them; changing them
 //! requires a migration plan. Padding is not schema: the envelope records it
 //! (except in format 1, which is read with the current policy).
-//! See [schema rules].
+//! Guard them in CI with [`testing::assert_encoding`] fixtures, a
+//! [`schema::Manifest`] snapshot, and [`assert_unique_ids!`]; see [schema rules].
 //!
 #![doc = concat!(
     "[schema rules]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/integration.md#persistent-schema",
@@ -138,12 +139,14 @@ pub mod migrate;
 mod padding;
 mod prepare;
 mod router;
+pub mod schema;
 #[cfg(feature = "serde")]
 mod serde_impl;
 #[cfg(feature = "sqlx-postgres")]
 mod sqlx_postgres;
 #[cfg(feature = "sqlx-sqlite")]
 mod sqlx_sqlite;
+pub mod testing;
 mod value;
 
 pub use blind::{BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, inspect_blind_index};
@@ -168,11 +171,13 @@ pub use key::{
 };
 pub use padding::Padding;
 pub use prepare::Prepared;
-pub use router::Router;
+pub use router::{Router, Routing};
 pub use value::{Ciphertext, Encrypted, Secret};
 
 // Paths that derive-generated code names; not public API.
 #[doc(hidden)]
 pub mod __private {
     pub use zeroize::Zeroizing;
+
+    pub use crate::schema::has_duplicate;
 }

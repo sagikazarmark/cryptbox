@@ -38,8 +38,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         return Err(transparent_error(input));
     };
 
-    // Transparent: the type is its own codec and stores exactly the bytes of its
-    // inner value's default codec.
+    // Transparent: the type is its own codec and stores exactly the bytes, under
+    // the same codec ID, of its inner value's default codec.
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
@@ -49,6 +49,9 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
             #[automatically_derived]
             impl #impl_generics #krate::Codec<Self> for #name #type_generics #where_clause {
+                const ID: &'static str =
+                    <<#inner as #krate::Plaintext>::Codec as #krate::Codec<#inner>>::ID;
+
                 fn encode(
                     value: &Self,
                 ) -> ::core::result::Result<

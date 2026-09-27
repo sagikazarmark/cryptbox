@@ -22,6 +22,7 @@ impl BlindIndexSpec for ExactValue {
     type Field = TestField;
     const ID: IndexId = index_id!("abcdefab-cdef-4abc-8def-abcdefabcdef");
     const BITS: u16 = 128;
+    const NORMALIZER: &'static str = "exact/1";
     type Query = [u8];
 
     fn normalize_query(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {

@@ -17,6 +17,9 @@ const _: () = {
     }
     #[automatically_derived]
     impl ::cryptbox::Codec<Self> for Email {
+        const ID: &'static str = <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<
+            String,
+        >>::ID;
         fn encode(
             value: &Self,
         ) -> ::core::result::Result<

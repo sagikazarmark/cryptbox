@@ -8,6 +8,37 @@ use crate::{
     FieldId, IndexKeyId, KeyId, KeyProviderError,
 };
 
+/// How a key provider serves one field, as reported by
+/// [`EncryptionKeyProvider::routing`] and [`BlindIndexKeyProvider::routing`].
+///
+/// Routes are deployment configuration, not persistent schema. The
+/// [schema manifest](crate::schema::Manifest) reports them so that a field that
+/// silently relies on a fallback is visible in review. A router reports the
+/// fallback or rejection of a nested router it selects, not just its own route.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[non_exhaustive]
+pub enum Routing {
+    /// The provider serves every field itself, without routing.
+    Direct,
+    /// A router assigns the field to a provider.
+    Routed,
+    /// A router has no route for the field and serves it from its fallback.
+    Fallback,
+    /// No provider serves the field, so operations on it fail.
+    Unrouted,
+}
+
+impl fmt::Display for Routing {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Direct => "direct",
+            Self::Routed => "routed",
+            Self::Fallback => "fallback",
+            Self::Unrouted => "unrouted",
+        })
+    }
+}
+
 /// A key provider that routes each field to the provider that protects it.
 ///
 /// A router serves the encryption role when `P` is an [`EncryptionKeyProvider`]
@@ -127,6 +158,21 @@ impl<P> Router<P> {
         self.fallback.is_some() && !self.routes.contains_key(&field)
     }
 
+    /// Combines this router's choice with how the chosen provider serves `field`,
+    /// so a nested router's fallback or rejection stays visible.
+    fn resolve_routing(&self, field: FieldId, inner: impl FnOnce(&P) -> Routing) -> Routing {
+        let (route, provider) = match (self.routes.get(&field), &self.fallback) {
+            (Some(provider), _) => (Routing::Routed, provider),
+            (None, Some(provider)) => (Routing::Fallback, provider),
+            (None, None) => return Routing::Unrouted,
+        };
+
+        match inner(provider) {
+            Routing::Direct | Routing::Routed => route,
+            nested => nested,
+        }
+    }
+
     fn provider(&self, field: FieldId) -> Result<&P, KeyProviderError> {
         self.routes
             .get(&field)
@@ -153,6 +199,10 @@ impl<P: EncryptionKeyProvider> EncryptionKeyProvider for Router<P> {
     fn key(&self, field: FieldId, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
         self.provider(field)?.key(field, id)
     }
+
+    fn routing(&self, field: FieldId) -> Routing {
+        self.resolve_routing(field, |provider| provider.routing(field))
+    }
 }
 
 impl<P: BlindIndexKeyProvider> BlindIndexKeyProvider for Router<P> {
@@ -170,5 +220,9 @@ impl<P: BlindIndexKeyProvider> BlindIndexKeyProvider for Router<P> {
 
     fn readable_keys(&self, field: FieldId) -> Result<Vec<BlindIndexKey>, KeyProviderError> {
         self.provider(field)?.readable_keys(field)
+    }
+
+    fn routing(&self, field: FieldId) -> Routing {
+        self.resolve_routing(field, |provider| provider.routing(field))
     }
 }

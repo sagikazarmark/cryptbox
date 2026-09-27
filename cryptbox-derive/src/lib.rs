@@ -72,6 +72,7 @@ pub fn derive_field(input: TokenStream) -> TokenStream {
 /// | `query = Type` | yes | The lookup input, such as `str`. |
 /// | `normalize = path` | yes | A `fn(&Query) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>`. |
 /// | `project = path` | no | A `fn(&Value) -> P` where `&P` coerces to `&Query`. |
+/// | `normalizer = "…"` | no | The normalizer name the schema manifest reports. Defaults to the `normalize` path, as `normalize(project)` with `project`. |
 ///
 /// One normalizer serves both lookups and stored values. Without `project`, it
 /// receives the field's value directly, so `&Value` must coerce to `&Query`,
@@ -79,6 +80,9 @@ pub fn derive_field(input: TokenStream) -> TokenStream {
 /// such as one part of a larger value; prefer projections that borrow, because
 /// an owned projection is a plaintext copy the normalizer cannot erase. Write
 /// the impl by hand when a projection can fail or needs its own normalization.
+///
+/// Prefer a versioned `normalizer`, such as `"email/1"`, as `BlindIndexSpec::NORMALIZER`
+/// describes: the default name changes only when the paths do.
 ///
 /// ```
 /// use cryptbox::BlindIndexError;
@@ -123,6 +127,7 @@ pub fn derive_field(input: TokenStream) -> TokenStream {
 ///         const ID: ::cryptbox::IndexId =
 ///             ::cryptbox::IndexId::from_u128(0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53);
 ///         const BITS: u16 = 32;
+///         const NORMALIZER: &'static str = "normalize_email";
 ///         type Query = str;
 ///
 ///         fn normalize_query(
@@ -141,7 +146,8 @@ pub fn derive_field(input: TokenStream) -> TokenStream {
 /// ```
 ///
 /// With `project = street`, where `fn street(address: &Address) -> &str`,
-/// `normalize_value` calls `normalize_email(&street(value))` instead.
+/// `normalize_value` calls `normalize_email(&street(value))` instead, and
+/// `NORMALIZER` is `"normalize_email(street)"`.
 #[proc_macro_derive(BlindIndexSpec, attributes(cryptbox))]
 pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
     derive(input, blind_index::expand)
@@ -180,7 +186,8 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// ```
 ///
 /// Without `codec`, a single-field tuple struct is transparent: it is its own
-/// codec and stores exactly the bytes its inner value's default codec stores.
+/// codec, stores exactly the bytes its inner value's default codec stores, and
+/// shares that codec's `ID`.
 ///
 /// ```
 /// #[derive(cryptbox::Plaintext)]
@@ -201,6 +208,9 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///
 ///     #[automatically_derived]
 ///     impl ::cryptbox::Codec<Self> for Email {
+///         const ID: &'static str =
+///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::ID;
+///
 ///         fn encode(value: &Self) -> Result<Zeroizing<Vec<u8>>, ::cryptbox::CodecError> {
 ///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::encode(
 ///                 &value.0,

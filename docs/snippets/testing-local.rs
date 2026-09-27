@@ -22,6 +22,7 @@ impl BlindIndexSpec for EmailLookup {
     type Field = UserEmail;
     const ID: cryptbox::IndexId = cryptbox::index_id!("80000000-0000-4000-8000-000000000008");
     const BITS: u16 = 128;
+    const NORMALIZER: &'static str = "exact/1";
     type Query = str;
 
     fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {

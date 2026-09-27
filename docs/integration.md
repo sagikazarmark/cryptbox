@@ -38,6 +38,49 @@ themselves; that mapping is persistent schema too. Two fields over one value typ
 (`HomeAddress` and `BillingAddress` over `Address`) have separate field IDs, so
 their ciphertext cannot be swapped.
 
+Serde codecs make the value type's Serde representation persistent schema.
+A serde attribute change on a value type, such as adding `rename_all`,
+`rename`, or `tag`, changes the stored bytes of every field that uses that
+type. `Postcard` is positional: it stores no field or variant names. Reordering
+struct fields or enum variants, or changing an integer type, can decode existing
+bytes into wrong values without an error. `Json` stores names, so a renamed
+field fails to decode or silently takes its default.
+
+Normalizers are persistent schema too. A blind index stores only the keyed
+projection of normalized bytes, so a normalizer that now trims, folds case, or
+projects differently silently stops matching existing indexes. Name its rules
+with `BlindIndexSpec::NORMALIZER`, such as `"email/1"`, and bump the version
+with every change.
+
+### Guarding the schema in CI
+
+Stored bytes do not describe this schema, so check it in tests:
+
+- **Golden bytes.** `cryptbox::testing::assert_encoding::<F>(&value, "…hex…")`
+  checks that a field still encodes a representative value to the committed bytes
+  and decodes them back. Commit one fixture per field, and treat it as essential
+  for `Json` and `Postcard` fields, whose bytes follow the value type's
+  derives and attributes. A failure means stored values would change; plan a
+  migration or revert.
+- **Schema manifest.** `cryptbox::schema::Manifest` lists each registered field
+  (ID, value type, codec ID, padding) and index (ID, field, bits, normalizer).
+  With `.keys(&keys)`, it also lists whether each field is routed, falls back, or
+  is unrouted. Compare its `Display` output with a committed snapshot, and
+  assert that `duplicates()` is empty. A snapshot diff needs review: for
+  example, a codec ID or normalizer change needs a migration.
+- **Unique IDs.** `cryptbox::assert_unique_ids!(HomeAddress, BillingAddress)`
+  fails compilation when listed fields share a field ID, and
+  `assert_unique_ids!(indexes: EmailLookup, EmailDomain)` does the same for
+  index IDs. It is a constant check, so it works with manual impls.
+
+The [custom-field example](../examples/custom_field/main.rs)'s
+`stored_bytes_and_schema_match_their_committed_fixtures` test runs the golden-bytes
+and manifest checks.
+The manifest names markers and value types with `std::any::type_name`. Its
+output includes module paths, including private ones such as
+`cryptbox::value::Secret`, and Rust does not guarantee it across compiler
+versions. Review such a diff, then update the snapshot.
+
 Padding is not persistent schema. The envelope records, under authentication,
 whether its payload is padded, and readers remove padding only when that flag is
 set. A field's padding policy describes how new values are written: enabling,

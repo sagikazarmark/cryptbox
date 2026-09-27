@@ -39,6 +39,7 @@ impl BlindIndexSpec for EmailExact {
     type Field = EmailField;
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 13;
+    const NORMALIZER: &'static str = "email/1";
     type Query = str;
 
     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -57,6 +58,7 @@ impl BlindIndexSpec for PhoneExact {
     type Field = PhoneField;
     const ID: IndexId = EmailExact::ID;
     const BITS: u16 = EmailExact::BITS;
+    const NORMALIZER: &'static str = "email/1";
     type Query = str;
 
     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -178,6 +180,7 @@ impl BlindIndexSpec for EmailDomain {
     type Field = EmailField;
     const ID: IndexId = index_id!("c0000000-0000-4000-8000-00000000000c");
     const BITS: u16 = 16;
+    const NORMALIZER: &'static str = "email-domain/1";
     type Query = str;
 
     fn normalize_query(domain: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -221,6 +224,8 @@ impl Field for PersonField {
 struct PersonCodec;
 
 impl cryptbox::Codec<Person> for PersonCodec {
+    const ID: &'static str = "person/1";
+
     fn encode(value: &Person) -> Result<Zeroizing<Vec<u8>>, cryptbox::CodecError> {
         Ok(Zeroizing::new(
             format!("{}\0{}", value.name, value.postal_code).into_bytes(),
@@ -239,6 +244,7 @@ impl BlindIndexSpec for NameAndPostalCode {
     type Field = PersonField;
     const ID: IndexId = index_id!("b0000000-0000-4000-8000-00000000000b");
     const BITS: u16 = 128;
+    const NORMALIZER: &'static str = "name-postal-code/1";
     type Query = (&'static str, &'static str);
 
     fn normalize_query(query: &Self::Query) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -303,6 +309,7 @@ macro_rules! truncation_spec {
             type Field = EmailField;
             const ID: IndexId = IndexId::from_bytes([$id_byte; 16]);
             const BITS: u16 = $bits;
+            const NORMALIZER: &'static str = "exact/1";
             type Query = str;
 
             fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {

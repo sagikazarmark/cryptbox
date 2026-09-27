@@ -68,7 +68,8 @@ authenticated readability and from stored-index consistency.
 
 **Normalization**:
 The application-defined conversion that gives equivalent values the same bytes
-for blind-index derivation and candidate comparison.
+for blind-index derivation and candidate comparison. It is persistent schema;
+the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 
 **Plaintext type**:
 A value type that names a default codec. `String` and `Secret<String>` default
@@ -95,8 +96,16 @@ The assignment of a field ID to the key provider that protects it. Routes are
 deployment configuration, not persistent schema: the envelope records the key
 ID, so a field can move to another provider that resolves the same generations.
 A strict router rejects unrouted fields; a fallback router serves them from a
-default provider and reports that it does.
-<!-- Agent guidance: avoid “falls back” for strict routers; they reject unrouted fields. -->
+default provider and reports that it does. A provider reports its *routing* of
+a field as direct (it serves every field itself), routed, fallback, or unrouted.
+<!-- Agent guidance: avoid “falls back” for strict routers; they reject unrouted fields. `Routing` is how a field is served; a route is the assignment itself. -->
+
+**Schema manifest**:
+A reviewable listing of registered fields and blind indexes with their
+persistent schema: field ID, value type, codec ID, padding, index ID,
+precision, and normalizer name. Given keys, it also lists each field's route.
+Applications compare it with a committed snapshot in CI.
+<!-- Agent guidance: the codec ID and normalizer name are reported, never stored in ciphertext or indexes. -->
 
 **Suite**:
 A complete encryption construction identified by a suite ID, specifying key
