@@ -2,46 +2,60 @@
 
 ## Unreleased
 
-- **Breaking:** every profile is bound to its field. `EncryptionProfile` now
-  extends `Field` and declares its plaintext type as `type Value`, so wrapper
-  types take only the profile: `Encrypted<UserEmail>`,
-  `Ciphertext<UserEmail>`, `MaybeEncrypted<UserEmail>`, `Prepared<'_, UserEmail>`,
-  `RowPlanner<'_, UserEmail>`, and `Sweep<'_, UserEmail>`. `Binding`, `Unbound`,
-  `FieldBound`, and `ProfileContext` are removed, and the unit `&()` binding
-  context argument is dropped from every `*_with` method and from
-  `RowPlanner::new`. Stored field-bound ciphertext and blind indexes are
-  unchanged and need no data migration. Binding tag `00` is reserved, so data
-  written with `Unbound` is no longer readable.
-- **Breaking:** `Encrypted::new` accepts `impl Into<Profile::Value>` and is no
+- **Breaking:** profiles are replaced by field marker types over the
+  application's own value types (ADR-0001). `Field` merges the old `Field` and
+  `EncryptionProfile`: it declares `const ID`, `const PADDING`, `type Value`,
+  and `type Codec`, and every value is bound to its field. `Field::NAME`, the
+  per-profile `Keys` context, `Binding`, `Unbound`, `FieldBound`,
+  `ProfileContext`, and the `profile!` macro are removed. Wrapper types take
+  only the field:
+  `Encrypted<UserEmail>`, `Ciphertext<UserEmail>` (which now requires
+  `F: Field`), `MaybeEncrypted<UserEmail>`, `Prepared<'_, UserEmail>`,
+  `RowPlanner<'_, UserEmail>`, and `Sweep<'_, UserEmail>`. The unit `&()`
+  binding context argument is dropped from every `*_with` method and from
+  `RowPlanner::new`. Implicit forms (`encrypt()`, `decrypt()`, `prepare()`, and
+  the automatic SQLx adapters) read `GlobalKeyContext`; a custom `KeyContext`
+  can no longer be selected per field. Stored field-bound ciphertext and blind
+  indexes are unchanged and need no data migration.
+  Binding tag `00` is reserved, so data written with `Unbound` is no longer
+  readable.
+- **Breaking:** `Padding` is a const value instead of a sealed trait:
+  `Padding::NONE`, `Padding::block(n)`, and `Padding::length(n)` replace
+  `NoPadding`, `PadToBlock<N>`, and `PadToLength<N>`, with byte-identical
+  output.
+- Add `Plaintext`, which names a value type's default codec. The crate
+  implements it permanently for `String` and `Secret<String>` (`Utf8`) and for
+  `Vec<u8>` and `Secret<Vec<u8>>` (`Raw`), independent of features; `Utf8` and
+  `Raw` now also encode the `Secret` wrappers with identical bytes. Applications
+  can implement it for their own value types.
+- **Breaking:** `Encrypted::new` accepts `impl Into<F::Value>` and is no
   longer `const`. The `From<T>` implementation for `Encrypted` is removed; use
   `Encrypted::new`.
-- **Breaking:** low-level primitives take the field as a type parameter instead
-  of a binding and context: `encrypt::<F>(plaintext, keys)`,
-  `decrypt::<F>`, `reencrypt::<F>`, `derive_blind_index::<Spec, Input, F>`, and
+- **Breaking:** low-level primitives take the field instead of a binding and
+  context: `encrypt(F::ID, plaintext, keys)`, `decrypt(F::ID, …)`,
+  `reencrypt(F::ID, …)`, `needs_reencryption(F::ID, …)`,
+  `derive_blind_index::<Spec, Input, F>`, and
   `blind_index_probes::<Spec, Input, F>`.
-- `profile!` requires only `id`. `name` defaults to the marker identifier,
-  `codec` defaults through the sealed `DefaultCodec` trait (`Utf8` for `String`,
-  `Raw` for `Vec<u8>`, permanently), and optional keys may appear in any order.
-  The `binding` key is removed. Other value types must name their codec.
 
   Migrating from 0.5:
 
   | 0.5 | Now |
   | --- | --- |
-  | `binding: field_bound,` in `profile!` | remove the line |
-  | `binding: unbound,` in `profile!` | remove the line; re-encrypt existing data under the field ID first |
-  | `impl EncryptionProfile<String> for P { type Binding = FieldBound<Self>; … }` | `impl EncryptionProfile for P { type Value = String; … }` |
-  | `type Binding = FieldBound<Other>;` | implement `Field` for the profile with `Other::ID` |
+  | `cryptbox::profile! { P: String { id: "…", name: "…", codec: Utf8 } }` | `struct P;` plus `impl Field for P { const ID: FieldId = field_id!("…"); const PADDING: Padding = Padding::NONE; type Value = String; type Codec = Utf8; }` |
+  | `impl EncryptionProfile<String> for P { type Binding = FieldBound<Self>; … }` | `impl Field for P { type Value = String; … }` |
+  | `type Binding = FieldBound<Other>;` | `const ID: FieldId = Other::ID;` |
+  | `binding: unbound,` | re-encrypt existing data under a field ID first |
+  | `type Padding = PadToBlock<16>;` | `const PADDING: Padding = Padding::block(16);` |
+  | `type Keys = …;`, `Field::NAME` | remove; install keys with `GlobalKeyContext::install` |
   | `Encrypted<String, P>`, `Encrypted::<_, P>` | `Encrypted<P>`, `Encrypted::<P>` |
   | `value.encrypt_with(&(), &keys)` | `value.encrypt_with(&keys)` |
   | `value.into()` into `Encrypted` | `Encrypted::new(value)` |
-  | `encrypt::<FieldBound<F>>(bytes, &(), &keys)` | `encrypt::<F>(bytes, &keys)` |
+  | `encrypt::<FieldBound<F>>(bytes, &(), &keys)` | `encrypt(F::ID, bytes, &keys)` |
 
 - **Breaking:** key providers receive the field they serve.
   `EncryptionKeyProvider::current_key(field)` and `key(field, id)`, and the
   same for `BlindIndexKeyProvider`, including `readable_keys(field)`. The local
-  keyrings ignore the field. `needs_reencryption` takes the field as a type
-  parameter: `needs_reencryption::<F>(bytes, keys)`.
+  keyrings ignore the field.
 - Add `Router`, a key provider that routes fields to providers by field ID for
   both encryption and blind-index roles. `Router::strict()` rejects unrouted
   fields with `Error::UnroutedField`; `Router::new(default)` falls back and

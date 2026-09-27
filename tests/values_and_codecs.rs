@@ -5,26 +5,21 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use cryptbox::{Codec, Encrypted, EncryptionProfile, GlobalKeyContext, Raw, Secret, Utf8};
+use cryptbox::{Codec, Encrypted, Field, Padding, Raw, Secret, Utf8};
 use zeroize::Zeroize;
 
-struct ExampleProfile;
+struct ExampleField;
 
-impl cryptbox::Field for ExampleProfile {
+impl Field for ExampleField {
     const ID: cryptbox::FieldId = cryptbox::field_id!("7c1e6a52-0d3b-4f8e-9a61-2b5c4d7e8f90");
-    const NAME: &'static str = "example";
-}
-
-impl EncryptionProfile for ExampleProfile {
+    const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
 }
 
 #[test]
 fn encrypted_values_require_explicit_plaintext_access() {
-    let value = Encrypted::<ExampleProfile>::new("mark@example.com".to_owned());
+    let value = Encrypted::<ExampleField>::new("mark@example.com".to_owned());
 
     assert_eq!(value.expose_secret(), "mark@example.com");
     assert_eq!(format!("{value:?}"), "Encrypted([REDACTED])");

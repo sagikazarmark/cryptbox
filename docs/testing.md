@@ -6,8 +6,8 @@ contexts. [Documentation](README.md).
 ## Local providers
 
 Give each test its own encryption and blind-index keyrings. Explicit
-`encrypt_with`, `decrypt_with` and `prepare_with` calls bypass the profile's
-global key context; field binding still applies.
+`encrypt_with`, `decrypt_with` and `prepare_with` calls bypass the process-wide
+`GlobalKeyContext`; field binding still applies.
 
 For runnable tests, create a library with `cargo new --lib testing-local-consumer`,
 use [testing-local.toml](snippets/testing-local.toml) as `Cargo.toml`, and copy
@@ -27,9 +27,10 @@ For the design choice between automatic adapters and explicit ciphertext storage
 see [storage boundaries](integration.md#storage-boundaries). This example shows
 how to exercise the automatic path with isolated process-lifetime key contexts.
 
-Automatic SQLx encryption/decryption resolves providers through the profile's
-`Keys: KeyContext`. The [automatic example](snippets/testing-automatic.rs) selects
-`keys: TestKeys` and holds both providers in an application-owned `OnceLock`.
+Automatic SQLx encryption/decryption resolves providers through the process-wide
+`GlobalKeyContext`; a field does not select its own key context. The
+[automatic example](snippets/testing-automatic.rs) installs both providers with
+`GlobalKeyContext::install` once per process, so each fixture runs in its own process.
 Automatic encryption does not maintain index columns; the example also uses
 `prepare().with_index()` and writes the pair atomically.
 
@@ -49,7 +50,6 @@ Each prints `Automatic adapter round trip succeeded.`
 
 `GlobalKeyContext::install` is once per process: it cannot be reset or replaced.
 Install at the binary entry point; reusable libraries let their host own it.
-A custom static context also lives for the whole process.
 
 An `RwLock` around individual provider calls does not isolate fixture replacement:
 keys can change between encryption and decryption or ciphertext/index preparation.
@@ -58,8 +58,8 @@ lifetime, including background work. Separate database connections are insuffici
 
 ## Diagnostics
 
-Allowlist the stable `Field::ID`, static `Field::NAME`, operation and sanitized
-error category. Names must not contain record data or secrets; even schema labels
+Allowlist the stable `Field::ID`, a caller-owned static label, operation and sanitized
+error category. Labels must not contain record data or secrets; even schema labels
 should go only to approved destinations. CryptBox does not emit logs.
 
 Do not log plaintext, normalized/encoded values, keys, ciphertext/index dumps,

@@ -1,43 +1,22 @@
 //! One automatic-adapter fixture per process.
 
-use std::{error::Error, sync::OnceLock};
+use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexMetadata, BlindIndexSpec,
-    Encrypted, EncryptionKey, EncryptionKeyProvider, KeyContext, KeyProviderError,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring,
+    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Encrypted, EncryptionKey,
+    Field, FieldId, GlobalKeyContext, GlobalProviders, LocalBlindIndexKeyring,
+    LocalEncryptionKeyring, Padding, Utf8,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
-struct TestKeys {
-    encryption: LocalEncryptionKeyring,
-    indexes: LocalBlindIndexKeyring,
-}
+struct UserEmail;
 
-static TEST_KEYS: OnceLock<TestKeys> = OnceLock::new();
-
-impl KeyContext for TestKeys {
-    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, KeyProviderError> {
-        TEST_KEYS
-            .get()
-            .map(|keys| &keys.encryption as &dyn EncryptionKeyProvider)
-            .ok_or(KeyProviderError::NotInitialized)
-    }
-
-    fn blind_index_keys() -> Result<&'static dyn BlindIndexKeyProvider, KeyProviderError> {
-        TEST_KEYS
-            .get()
-            .map(|keys| &keys.indexes as &dyn BlindIndexKeyProvider)
-            .ok_or(KeyProviderError::NotInitialized)
-    }
-}
-
-cryptbox::profile! {
-    UserEmail: String {
-        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-        keys: TestKeys,
-    }
+impl Field for UserEmail {
+    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
 }
 
 struct EmailLookup;
@@ -61,25 +40,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some("second") => ("second@example.test", 0x12, 0x22),
         _ => return Err("expected first or second fixture".into()),
     };
-    let keys = TestKeys {
-        encryption: LocalEncryptionKeyring::new(
-            EncryptionKey::new(
-                cryptbox::key_id!("40000000-0000-4000-8000-000000000004"),
-                [encryption_root; 32],
-            ),
-            [],
-        )?,
-        indexes: LocalBlindIndexKeyring::new(
-            BlindIndexKey::new(
-                cryptbox::index_key_id!("50000000-0000-4000-8000-000000000005"),
-                [index_root; 32],
-            ),
-            [],
-        )?,
-    };
-    TEST_KEYS
-        .set(keys)
-        .map_err(|_| "test keys already installed")?;
+    let encryption = LocalEncryptionKeyring::new(
+        EncryptionKey::new(
+            cryptbox::key_id!("40000000-0000-4000-8000-000000000004"),
+            [encryption_root; 32],
+        ),
+        [],
+    )?;
+    let indexes = LocalBlindIndexKeyring::new(
+        BlindIndexKey::new(
+            cryptbox::index_key_id!("50000000-0000-4000-8000-000000000005"),
+            [index_root; 32],
+        ),
+        [],
+    )?;
+    // Once per process: the global cannot be replaced, so each fixture runs in its own process.
+    GlobalKeyContext::install(GlobalProviders::new(encryption).with_blind_indexes(indexes))?;
     futures_executor::block_on(round_trip(plaintext))?;
     println!("Automatic adapter round trip succeeded.");
     Ok(())
@@ -104,7 +80,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     assert_eq!(read.expose_secret(), plaintext); // Automatic authenticated decryption.
     assert!(row.try_get::<Option<Vec<u8>>, _>("email_idx")?.is_none());
 
-    // Context-less preparation resolves BOTH providers through TestKeys.
+    // Context-less preparation resolves BOTH providers through the global key context.
     // One statement maintains the ciphertext/index pair atomically.
     let prepared = email.prepare()?.with_index::<EmailLookup>()?;
     sqlx::query("UPDATE users SET email = ?, email_idx = ?")

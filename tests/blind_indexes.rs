@@ -2,9 +2,9 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Encrypted,
-    EncryptionKey, EncryptionProfile, Field, GlobalKeyContext, IndexId, IndexKeyId, KeyId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, blind_index_probes, derive_blind_index,
-    field_id, index_id, index_key_id, inspect_blind_index, key_id, verify_blind_index_candidate,
+    EncryptionKey, Field, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring,
+    LocalEncryptionKeyring, Padding, Raw, Utf8, blind_index_probes, derive_blind_index, field_id,
+    index_id, index_key_id, inspect_blind_index, key_id, verify_blind_index_candidate,
 };
 use zeroize::Zeroizing;
 
@@ -16,14 +16,18 @@ struct EmailField;
 
 impl Field for EmailField {
     const ID: cryptbox::FieldId = field_id!("80000000-0000-4000-8000-000000000008");
-    const NAME: &'static str = "email";
+    const PADDING: Padding = Padding::NONE;
+    type Value = Vec<u8>;
+    type Codec = Raw;
 }
 
 struct PhoneField;
 
 impl Field for PhoneField {
     const ID: cryptbox::FieldId = field_id!("90000000-0000-4000-8000-000000000009");
-    const NAME: &'static str = "phone";
+    const PADDING: Padding = Padding::NONE;
+    type Value = Vec<u8>;
+    type Codec = Raw;
 }
 
 struct EmailExact;
@@ -125,18 +129,13 @@ fn candidate_hits_require_normalized_plaintext_verification() {
     assert!(!verify_blind_index_candidate::<EmailExact, str>("mark@example.com", "short").unwrap());
 }
 
-struct EmailProfile;
+struct TypedEmail;
 
-impl Field for EmailProfile {
+impl Field for TypedEmail {
     const ID: cryptbox::FieldId = EmailField::ID;
-    const NAME: &'static str = EmailField::NAME;
-}
-
-impl EncryptionProfile for EmailProfile {
+    const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
 }
 
 #[test]
@@ -144,7 +143,7 @@ fn prepared_values_derive_ciphertext_and_indexes_from_one_source() {
     let encryption_keys =
         LocalEncryptionKeyring::new(EncryptionKey::new(ENCRYPTION_KEY_ID, [53; 32]), []).unwrap();
     let index_keys = index_keys();
-    let value = Encrypted::<EmailProfile>::new("Mark@Example.com".to_owned());
+    let value = Encrypted::<TypedEmail>::new("Mark@Example.com".to_owned());
 
     let prepared = value
         .prepare_with(&encryption_keys)

@@ -22,7 +22,7 @@ it handles plaintext. Log sanitized metadata, not values, tokens or key material
 ## Run identity and progress ownership
 
 Record the database/schema/table, ciphertext and index columns in planner order,
-cursor, profile/index schema revision, fixed target encryption/index IDs, readable
+cursor, field/index schema revision, fixed target encryption/index IDs, readable
 keyset revision, policy, run name and progress table. **Do not change provider
 current selections during a run.** Assign one owner to serialize batches and
 stop/join the old worker before handover.
@@ -134,14 +134,14 @@ full original-tuple guard whether both roles are swept together or separately.
 
 Current rows are skipped without decryption. Current index bytes are retained
 without recomputation even when another component changes. Re-encryption alone
-authenticates and checks padding but does not decode through the profile codec.
+authenticates and checks padding but does not decode through the field codec.
 These behaviors make the following separate audit necessary.
 
 ## Verification and retirement
 
 This is the canonical whole-store audit procedure. The
 [assurance reference](security.md#what-each-check-establishes) explains what each
-check establishes. Fix the intended profile, field ID,
+check establishes. Fix the intended field ID, value type,
 codec, index specifications, normalization, precision and allowed generations
 from trusted application schema, not stored metadata.
 

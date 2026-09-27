@@ -4,7 +4,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{BindingDomain, EncryptionKey, EncryptionKeyProvider, Error, Field, KeyId, SuiteId};
+use crate::{BindingDomain, EncryptionKey, EncryptionKeyProvider, Error, FieldId, KeyId, SuiteId};
 
 const MAGIC: &[u8; 4] = b"CBX\0";
 const FORMAT_VERSION: u8 = 1;
@@ -107,28 +107,29 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
     parse_envelope(bytes).map(|parsed| parsed.info)
 }
 
-/// Encrypts opaque plaintext bytes for field `F` with the provider's current key.
+/// Encrypts opaque plaintext bytes for `field` with the provider's current key.
 ///
 /// # Errors
 ///
 /// Returns an error for unavailable keys, an unrouted field, failed OS
 /// randomness, or messages longer than the active suite's 274,877,906,880-byte
 /// limit.
-pub fn encrypt<F: Field>(
+pub fn encrypt(
+    field: FieldId,
     plaintext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Vec<u8>, Error> {
-    let key = keys.current_key(F::ID)?;
+    let key = keys.current_key(field)?;
     let suite = active_suite();
     let header = envelope_header(suite.id(), key.id());
 
-    suite.seal(&header, plaintext, &BindingDomain::field::<F>(), &key)
+    suite.seal(&header, plaintext, &BindingDomain::field(field), &key)
 }
 
 /// Authenticates and decrypts opaque ciphertext bytes.
 ///
 /// The provider is asked only for the exact key ID named by the envelope.
-/// Success authenticates the envelope under the supplied key and field `F`;
+/// Success authenticates the envelope under the supplied key and `field`;
 /// it does not establish freshness, row identity, padding, or codec validity.
 /// Use [`crate::Ciphertext::decrypt_with`] to also unpad and decode a typed value.
 ///
@@ -138,20 +139,21 @@ pub fn encrypt<F: Field>(
 /// unknown-key, or authentication
 /// error. A different field and modified ciphertext both report authentication
 /// failure.
-pub fn decrypt<F: Field>(
+pub fn decrypt(
+    field: FieldId,
     ciphertext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
     let parsed = parse_envelope(ciphertext)?;
     let key = keys
-        .key(F::ID, parsed.info.key_id)?
+        .key(field, parsed.info.key_id)?
         .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id))?;
-    let domain = BindingDomain::field::<F>();
+    let domain = BindingDomain::field(field);
 
     registered_suite(parsed.info.suite_id)?.open(parsed.header, parsed.suite_payload, &domain, &key)
 }
 
-/// Reports whether an envelope does not use the active suite or field `F`'s current key.
+/// Reports whether an envelope does not use the active suite or `field`'s current key.
 ///
 /// This reads unauthenticated metadata and does not decrypt the payload.
 /// A `false` result means only that the parsed suite and key IDs are current,
@@ -161,12 +163,13 @@ pub fn decrypt<F: Field>(
 ///
 /// Returns an error for malformed or unsupported envelopes, unavailable
 /// providers, or an unrouted field.
-pub fn needs_reencryption<F: Field>(
+pub fn needs_reencryption(
+    field: FieldId,
     ciphertext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<bool, Error> {
     let info = inspect_ciphertext(ciphertext)?;
-    let current = keys.current_key(F::ID)?;
+    let current = keys.current_key(field)?;
 
     Ok(info.suite_id != active_suite().id() || info.key_id != current.id())
 }
@@ -176,13 +179,14 @@ pub fn needs_reencryption<F: Field>(
 /// # Errors
 ///
 /// Returns any decryption or encryption error.
-pub fn reencrypt<F: Field>(
+pub fn reencrypt(
+    field: FieldId,
     ciphertext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Vec<u8>, Error> {
-    let plaintext = decrypt::<F>(ciphertext, keys)?;
+    let plaintext = decrypt(field, ciphertext, keys)?;
 
-    encrypt::<F>(&plaintext, keys)
+    encrypt(field, &plaintext, keys)
 }
 
 #[cfg(test)]
@@ -429,14 +433,10 @@ pub(crate) fn hmac_sha256(key: &[u8], input: &[&[u8]]) -> Result<Zeroizing<[u8; 
 #[cfg(test)]
 mod tests {
     use super::{NONCE_LEN, hkdf_sha256_32_with_salt, seal_with_nonce};
-    use crate::{BindingDomain, EncryptionKey, Field, FieldId, KeyId};
+    use crate::{BindingDomain, EncryptionKey, FieldId, KeyId};
 
-    struct VectorField;
-
-    impl Field for VectorField {
-        const ID: FieldId = FieldId::from_uuid_literal("12345678-1234-4234-8234-1234567890ab");
-        const NAME: &'static str = "vector-field";
-    }
+    const VECTOR_FIELD: FieldId =
+        FieldId::from_uuid_literal("12345678-1234-4234-8234-1234567890ab");
 
     #[test]
     fn hkdf_matches_rfc_5869_case_one() {
@@ -466,7 +466,7 @@ mod tests {
 
         let envelope = seal_with_nonce(
             b"cryptbox vector\x80",
-            BindingDomain::field::<VectorField>(),
+            BindingDomain::field(VECTOR_FIELD),
             &key,
             nonce,
         )
@@ -492,7 +492,7 @@ mod tests {
 
         let envelope = seal_with_nonce(
             b"cryptbox vector",
-            BindingDomain::field::<VectorField>(),
+            BindingDomain::field(VECTOR_FIELD),
             &key,
             nonce,
         )

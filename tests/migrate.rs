@@ -9,10 +9,10 @@ use std::{
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, EncryptionKeyProvider, EncryptionProfile, Error, Field, FieldId,
-    GlobalKeyContext, IndexId, IndexKeyId, KeyId, KeyProviderError, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Utf8, derive_blind_index, field_id, index_id, index_key_id,
-    inspect_blind_index, inspect_ciphertext, key_id,
+    EncryptionKey, EncryptionKeyProvider, Error, Field, FieldId, IndexId, IndexKeyId, KeyId,
+    KeyProviderError, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
+    derive_blind_index, field_id, index_id, index_key_id, inspect_blind_index, inspect_ciphertext,
+    key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
@@ -29,28 +29,18 @@ struct UserEmail;
 
 impl Field for UserEmail {
     const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
-    const NAME: &'static str = "user-email";
-}
-
-impl EncryptionProfile for UserEmail {
+    const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
 }
 
 struct PaddedUserEmail;
 
 impl Field for PaddedUserEmail {
     const ID: cryptbox::FieldId = UserEmail::ID;
-    const NAME: &'static str = UserEmail::NAME;
-}
-
-impl EncryptionProfile for PaddedUserEmail {
+    const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::PadToBlock<16>;
 }
 
 struct EmailLookup;
@@ -181,7 +171,7 @@ fn classification_treats_bytes_without_magic_as_legacy() {
     assert!(read.as_ciphertext().is_none());
 
     // A legacy plaintext read never touches key providers, including the
-    // uninstalled process-global context selected by the profile.
+    // uninstalled process-global context.
     assert_eq!(read.decrypt().unwrap().expose_secret(), "mark@example.com");
 }
 
@@ -447,7 +437,7 @@ fn planner_encrypts_legacy_plaintext_and_derives_every_index() {
 }
 
 #[test]
-fn planner_encrypts_legacy_plaintext_with_the_profile_padding_policy() {
+fn planner_encrypts_legacy_plaintext_with_the_field_padding_policy() {
     let keys = rotated_keys();
     let planner = RowPlanner::<PaddedUserEmail>::new(&keys);
 

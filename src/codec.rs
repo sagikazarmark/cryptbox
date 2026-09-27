@@ -1,6 +1,6 @@
 use zeroize::Zeroizing;
 
-use crate::{CodecError, CodecErrorKind};
+use crate::{CodecError, CodecErrorKind, Secret};
 
 #[cfg(any(feature = "json", feature = "postcard"))]
 struct ZeroizingByteBuffer {
@@ -78,15 +78,19 @@ impl std::io::Write for ZeroizingByteBuffer {
 
 /// Encodes and decodes typed values independently from encryption.
 ///
-/// A profile's codec is part of its persistent schema: ciphertext does not
+/// A codec is a strategy: it does not decide which values use it. A field names
+/// its codec with [`Field::Codec`](crate::Field::Codec), and a value type can name
+/// a default with [`Plaintext`].
+///
+/// A field's codec is part of its persistent schema: ciphertext does not
 /// contain a codec identifier or codec version. Changing the emitted bytes or
 /// decode compatibility requires migrating existing data.
 ///
 /// # Implementor obligations
 ///
-/// This interface is extensible; [`crate::Padding`] is a sealed policy. Encode
-/// only the intended value, and decode into an owned value that does not borrow
-/// the temporary input. Returned encoding buffers must be
+/// This interface is extensible; [`crate::Padding`] is a closed set of policies.
+/// Encode only the intended value, and decode into an owned value that does not
+/// borrow the temporary input. Returned encoding buffers must be
 /// [`Zeroizing<Vec<u8>>`]; protect intermediate plaintext allocations on
 /// success and error paths too. Wrapping a growable buffer does not erase an old
 /// allocation abandoned by reallocation. Preallocate before writing sensitive
@@ -95,17 +99,21 @@ impl std::io::Write for ZeroizingByteBuffer {
 ///
 /// Discard parser/serializer errors that retain input; return only a sanitized
 /// [`CodecError`] category without logging plaintext. The decoded `T` belongs to
-/// the application: [`crate::Encrypted`] does not zeroize arbitrary `T`. A profile
-/// over [`crate::Secret<String>`] needs a codec for that exact type; [`Utf8`]
-/// implements only `Codec<String>`, not arbitrary secret wrappers.
+/// the application: [`crate::Encrypted`] does not zeroize arbitrary `T`; use
+/// [`Secret`] for values that must be erased on drop.
 ///
-/// See the [custom-profile example] and [ownership reference].
+/// See the [custom-field example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
+    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub trait Codec<T>: Sized + 'static {
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot encode `{T}`",
+    label = "not a codec for `{T}`",
+    note = "use `<{T} as cryptbox::Plaintext>::Codec`, or name a codec that implements `Codec<{T}>`"
+)]
+pub trait Codec<T>: 'static {
     /// Encodes `value` into an owned, zeroizing plaintext buffer.
     ///
     /// # Errors
@@ -121,41 +129,73 @@ pub trait Codec<T>: Sized + 'static {
     fn decode(bytes: &[u8]) -> Result<T, CodecError>;
 }
 
-/// Selects the codec used by [`crate::profile!`] when a declaration omits `codec`.
+/// Names the default codec of an application value type.
 ///
-/// Only `String` ([`Utf8`]) and `Vec<u8>` ([`Raw`]) have a default. These
-/// mappings are persistent schema: ciphertext does not record its codec, and a
+/// A field over a `Plaintext` type can use `<Value as Plaintext>::Codec` instead
+/// of naming a codec. The crate provides permanent mappings that no feature
+/// changes: `String` and [`Secret<String>`] use [`Utf8`], and `Vec<u8>` and
+/// [`Secret<Vec<u8>>`] use [`Raw`]. A `Secret` value is stored with exactly the
+/// same bytes as the value it wraps.
+///
+/// Implement this trait for your own value types to give them a default. The
+/// mapping is persistent schema: ciphertext does not record its codec, and a
 /// different codec can decode existing bytes into a wrong value without an
-/// error. They are therefore permanent, and this trait is sealed so neither
-/// this crate's features nor another crate can change them. Every other type,
-/// including Serde types, must name its codec explicitly.
+/// error. Never change it for a type with stored data, and do not let a Cargo
+/// feature select it.
+///
+/// ```
+/// use cryptbox::{Codec, CodecError, CodecErrorKind, Plaintext};
+/// use zeroize::Zeroizing;
+///
+/// pub struct Postcode(String);
+///
+/// pub struct PostcodeCodec;
+///
+/// impl Codec<Postcode> for PostcodeCodec {
+///     fn encode(value: &Postcode) -> Result<Zeroizing<Vec<u8>>, CodecError> {
+///         Ok(Zeroizing::new(value.0.as_bytes().to_vec()))
+///     }
+///
+///     fn decode(bytes: &[u8]) -> Result<Postcode, CodecError> {
+///         std::str::from_utf8(bytes)
+///             .map(|text| Postcode(text.to_owned()))
+///             .map_err(|_| CodecError::new(CodecErrorKind::InvalidUtf8))
+///     }
+/// }
+///
+/// impl Plaintext for Postcode {
+///     type Codec = PostcodeCodec;
+/// }
+/// ```
 #[diagnostic::on_unimplemented(
     message = "`{Self}` has no default codec",
-    label = "declare a codec for this value type",
-    note = "add a `codec` key, for example `codec: cryptbox::Json`; the codec is persistent schema"
+    label = "`{Self}` does not implement `cryptbox::Plaintext`",
+    note = "implement `cryptbox::Plaintext` for `{Self}`, or name an explicit codec such as `cryptbox::Json`; the codec is persistent schema"
 )]
-pub trait DefaultCodec: private::Sealed + Sized {
-    /// The codec selected for this value type.
+pub trait Plaintext: Sized {
+    /// The codec used for this value type by default.
     type Codec: Codec<Self>;
 }
 
-impl private::Sealed for String {}
-
-impl DefaultCodec for String {
+impl Plaintext for String {
     type Codec = Utf8;
 }
 
-impl private::Sealed for Vec<u8> {}
-
-impl DefaultCodec for Vec<u8> {
+impl Plaintext for Vec<u8> {
     type Codec = Raw;
 }
 
-mod private {
-    pub trait Sealed {}
+impl Plaintext for Secret<String> {
+    type Codec = Utf8;
+}
+
+impl Plaintext for Secret<Vec<u8>> {
+    type Codec = Raw;
 }
 
 /// Encodes an owned byte vector without transformation.
+///
+/// Also encodes [`Secret<Vec<u8>>`] with identical bytes.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Raw;
 
@@ -169,7 +209,19 @@ impl Codec<Vec<u8>> for Raw {
     }
 }
 
+impl Codec<Secret<Vec<u8>>> for Raw {
+    fn encode(value: &Secret<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, CodecError> {
+        Self::encode(value.expose_secret())
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Secret<Vec<u8>>, CodecError> {
+        <Self as Codec<Vec<u8>>>::decode(bytes).map(Secret::new)
+    }
+}
+
 /// Encodes an owned string as UTF-8.
+///
+/// Also encodes [`Secret<String>`] with identical bytes.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Utf8;
 
@@ -182,6 +234,16 @@ impl Codec<String> for Utf8 {
         std::str::from_utf8(bytes)
             .map(str::to_owned)
             .map_err(|_| CodecError::new(CodecErrorKind::InvalidUtf8))
+    }
+}
+
+impl Codec<Secret<String>> for Utf8 {
+    fn encode(value: &Secret<String>) -> Result<Zeroizing<Vec<u8>>, CodecError> {
+        Self::encode(value.expose_secret())
+    }
+
+    fn decode(bytes: &[u8]) -> Result<Secret<String>, CodecError> {
+        <Self as Codec<String>>::decode(bytes).map(Secret::new)
     }
 }
 

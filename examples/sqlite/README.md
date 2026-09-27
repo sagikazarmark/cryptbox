@@ -128,7 +128,7 @@ continue with [verified searchable storage](../searchable/README.md).
 ## Use it in your application
 
 The `write` and `read` functions in [main.rs](main.rs) show the storage boundary.
-Adapt the table and value profile, and replace `load_keys` with your application's
+Adapt the table and field declaration, and replace `load_keys` with your application's
 key source. Enable `sqlx-sqlite` and add SQLx with your chosen runtime. The example
 also uses `hex` and `zeroize` for its file loader; those are choices of this sample,
 not requirements for every integration.

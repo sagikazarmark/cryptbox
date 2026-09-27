@@ -40,7 +40,7 @@ use zeroize::Zeroizing;
 pub trait LegacyFormat {
     /// Recovers the plaintext bytes of one stored legacy value.
     ///
-    /// The caller decodes the returned bytes through the profile's codec.
+    /// The caller decodes the returned bytes through the field's codec.
     ///
     /// # Errors
     ///

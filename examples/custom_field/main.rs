@@ -1,10 +1,10 @@
-//! Custom profile for an application-defined ASCII handle, with explicit ownership.
+//! Custom field for an application-defined ASCII handle, with explicit ownership.
 
-// ANCHOR: custom-profile
+// ANCHOR: custom-field
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, Encrypted, EncryptionKey, EncryptionKeyProvider, FieldId, KeyId,
-    KeyProviderError, LocalBlindIndexKeyring, LocalEncryptionKeyring, Secret,
+    CodecErrorKind, Encrypted, EncryptionKey, EncryptionKeyProvider, Field, FieldId, KeyId,
+    KeyProviderError, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Secret,
 };
 use zeroize::Zeroizing;
 
@@ -38,12 +38,15 @@ impl Codec<Secret<String>> for HandleCodec {
     }
 }
 
-cryptbox::profile! {
-    Handle: Secret<String> {
-        id: "dcaa3c69-1767-49a1-8476-36555eaf54bf",
-        name: "account-handle",
-        codec: HandleCodec,
-    }
+// The field names the validating codec explicitly. `<Secret<String> as Plaintext>::Codec`
+// (plain UTF-8) would store the same bytes but skip the handle policy.
+struct Handle;
+
+impl Field for Handle {
+    const ID: FieldId = cryptbox::field_id!("dcaa3c69-1767-49a1-8476-36555eaf54bf");
+    const PADDING: Padding = Padding::NONE;
+    type Value = Secret<String>;
+    type Codec = HandleCodec;
 }
 
 struct HandleEquality;
@@ -115,15 +118,14 @@ fn main() -> Result<(), cryptbox::Error> {
     )?);
     assert_eq!(decrypted.expose_secret(), "Alice-7");
     assert_eq!(value.expose_secret().expose_secret(), "Alice-7");
-    println!("Custom profile round trip and normalized lookup succeeded.");
+    println!("Custom field round trip and normalized lookup succeeded.");
     Ok(())
 }
-// ANCHOR_END: custom-profile
+// ANCHOR_END: custom-field
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cryptbox::Field;
 
     #[test]
     fn custom_secret_codec_round_trips_without_consuming_the_source() -> Result<(), cryptbox::Error>
@@ -221,13 +223,15 @@ mod tests {
 
     #[test]
     fn a_decrypted_string_can_be_moved_into_secret() -> Result<(), cryptbox::Error> {
-        cryptbox::profile! {
-            PlainHandle: String {
-                id: "dcaa3c69-1767-49a1-8476-36555eaf54bf",
-                name: "account-handle",
-                codec: cryptbox::Utf8,
-            }
+        struct PlainHandle;
+
+        impl Field for PlainHandle {
+            const ID: FieldId = Handle::ID;
+            const PADDING: Padding = Padding::NONE;
+            type Value = String;
+            type Codec = cryptbox::Utf8;
         }
+
         let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
         let value = Encrypted::<PlainHandle>::new("Alice-7".to_owned());
         let ciphertext = value.encrypt_with(&keys)?;

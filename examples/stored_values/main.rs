@@ -3,15 +3,20 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext,
-    Encrypted, EncryptionKey, Error, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
-    blind_index_probes, derive_blind_index, index_id, index_key_id, inspect_blind_index,
-    inspect_ciphertext, key_id, profile, verify_blind_index_candidate,
+    Encrypted, EncryptionKey, Error, Field, FieldId, IndexId, LocalBlindIndexKeyring,
+    LocalEncryptionKeyring, Padding, Utf8, blind_index_probes, derive_blind_index, index_id,
+    index_key_id, inspect_blind_index, inspect_ciphertext, key_id, verify_blind_index_candidate,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-profile! {
-    UserEmail: String { id: "70000000-0000-4000-8000-000000000007" }
+struct UserEmail;
+
+impl Field for UserEmail {
+    const ID: FieldId = cryptbox::field_id!("70000000-0000-4000-8000-000000000007");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
 }
 
 struct EmailLookup;
@@ -53,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let email = Encrypted::<UserEmail>::new("Mark@Example.com".to_owned());
-    // The profile binds the ciphertext and index to the UserEmail field.
+    // The UserEmail field binds the ciphertext and index to its field ID.
     // prepare_with borrows email: it does not remove plaintext from memory.
     let prepared = email
         .prepare_with(&keys)?
@@ -73,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _index_info = inspect_blind_index(restored.email_lookup.as_bytes())?;
     assert!(!restored.email.needs_reencryption_with(&keys)?);
 
-    // Explicit decryption authenticates, unpads, and decodes with the chosen profile.
+    // Explicit decryption authenticates, unpads, and decodes with the chosen field's codec.
     let plaintext = restored.email.decrypt_with(&keys)?;
     assert_eq!(plaintext.expose_secret(), "Mark@Example.com");
 

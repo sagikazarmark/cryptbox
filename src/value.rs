@@ -3,7 +3,7 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Codec, EncryptionKeyProvider, EncryptionProfile, Error, KeyContext, Padding, decrypt, encrypt,
+    Codec, EncryptionKeyProvider, Error, Field, GlobalKeyContext, KeyContext, decrypt, encrypt,
     needs_reencryption,
 };
 
@@ -19,16 +19,19 @@ use crate::{
 /// value, potentially creating another plaintext allocation; decryption creates
 /// another owned value. See the [ownership reference].
 ///
-/// The profile selects the value type: `Encrypted<UserEmail>` contains the
+/// The field selects the value type: `Encrypted<UserEmail>` contains the
 /// `String` declared by `UserEmail`.
 ///
 /// ```
-/// cryptbox::profile! {
-///     UserEmail: String {
-///         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-///         name: "user-email",
-///         codec: cryptbox::Utf8,
-///     }
+/// use cryptbox::{Field, FieldId, Padding, Utf8};
+///
+/// struct UserEmail;
+///
+/// impl Field for UserEmail {
+///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+///     const PADDING: Padding = Padding::NONE;
+///     type Value = String;
+///     type Codec = Utf8;
 /// }
 ///
 /// let email = cryptbox::Encrypted::<UserEmail>::new("user@example.com");
@@ -39,12 +42,15 @@ use crate::{
 /// Plaintext comparison must also be explicit:
 ///
 /// ```compile_fail
-/// cryptbox::profile! {
-///     UserEmail: String {
-///         id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-///         name: "user-email",
-///         codec: cryptbox::Utf8,
-///     }
+/// use cryptbox::{Field, FieldId, Padding, Utf8};
+///
+/// struct UserEmail;
+///
+/// impl Field for UserEmail {
+///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+///     const PADDING: Padding = Padding::NONE;
+///     type Value = String;
+///     type Codec = Utf8;
 /// }
 ///
 /// let left = cryptbox::Encrypted::<UserEmail>::new("secret");
@@ -55,30 +61,30 @@ use crate::{
 #[doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub struct Encrypted<Profile: EncryptionProfile> {
-    value: Profile::Value,
-    profile: PhantomData<fn() -> Profile>,
+pub struct Encrypted<F: Field> {
+    value: F::Value,
+    field: PhantomData<fn() -> F>,
 }
 
-impl<Profile: EncryptionProfile> Encrypted<Profile> {
+impl<F: Field> Encrypted<F> {
     /// Wraps a plaintext application value.
     ///
-    /// Accepts anything convertible into the profile's value type, so a `&str`
-    /// can initialize a `String` profile.
-    pub fn new(value: impl Into<Profile::Value>) -> Self {
+    /// Accepts anything convertible into the field's value type, so a `&str`
+    /// can initialize a `String` field.
+    pub fn new(value: impl Into<F::Value>) -> Self {
         Self::from_value(value.into())
     }
 
-    pub(crate) const fn from_value(value: Profile::Value) -> Self {
+    pub(crate) const fn from_value(value: F::Value) -> Self {
         Self {
             value,
-            profile: PhantomData,
+            field: PhantomData,
         }
     }
 
     /// Explicitly exposes the plaintext application value.
     #[must_use]
-    pub const fn expose_secret(&self) -> &Profile::Value {
+    pub const fn expose_secret(&self) -> &F::Value {
         &self.value
     }
 
@@ -87,43 +93,43 @@ impl<Profile: EncryptionProfile> Encrypted<Profile> {
     /// The name does not mean it creates a [`Secret`]. For a decoded `String`,
     /// use `Secret::new(decrypted.into_secret())` to move it into zeroizing ownership.
     #[must_use]
-    pub fn into_secret(self) -> Profile::Value {
+    pub fn into_secret(self) -> F::Value {
         self.value
     }
 }
 
-impl<Profile> Clone for Encrypted<Profile>
+impl<F> Clone for Encrypted<F>
 where
-    Profile: EncryptionProfile,
-    Profile::Value: Clone,
+    F: Field,
+    F::Value: Clone,
 {
     fn clone(&self) -> Self {
         Self::from_value(self.value.clone())
     }
 }
 
-impl<Profile: EncryptionProfile> fmt::Debug for Encrypted<Profile> {
+impl<F: Field> fmt::Debug for Encrypted<F> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Encrypted([REDACTED])")
     }
 }
 
-/// An encrypted envelope with a phantom profile type.
+/// An encrypted envelope with a phantom field type.
 ///
 /// Construction validates only the envelope structure. Authenticity is
-/// established by decryption. `Profile` is not encoded in the envelope, so the
+/// established by decryption. `F` is not encoded in the envelope, so the
 /// type parameter expresses caller intent rather than proving that stored bytes
-/// were created for that profile. With the `serde` feature, this type
+/// were created for that field. With the `serde` feature, this type
 /// serializes only the binary envelope. [`Encrypted`] deliberately has no Serde
 /// implementation because it contains plaintext.
 /// Deserialization performs the same structural checks as [`Self::from_bytes`];
 /// it uses no keys and leaves the bytes and their metadata unauthenticated.
-pub struct Ciphertext<Profile> {
+pub struct Ciphertext<F: Field> {
     bytes: Vec<u8>,
-    marker: PhantomData<fn() -> Profile>,
+    marker: PhantomData<fn() -> F>,
 }
 
-impl<Profile> Ciphertext<Profile> {
+impl<F: Field> Ciphertext<F> {
     /// Validates and wraps a binary `CryptBox` envelope.
     ///
     /// # Errors
@@ -158,7 +164,7 @@ impl<Profile> Ciphertext<Profile> {
     }
 }
 
-impl<Profile> TryFrom<Vec<u8>> for Ciphertext<Profile> {
+impl<F: Field> TryFrom<Vec<u8>> for Ciphertext<F> {
     type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
@@ -166,66 +172,63 @@ impl<Profile> TryFrom<Vec<u8>> for Ciphertext<Profile> {
     }
 }
 
-impl<Profile> AsRef<[u8]> for Ciphertext<Profile> {
+impl<F: Field> AsRef<[u8]> for Ciphertext<F> {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
     }
 }
 
-impl<Profile> Clone for Ciphertext<Profile> {
+impl<F: Field> Clone for Ciphertext<F> {
     fn clone(&self) -> Self {
         Self::from_validated_bytes(self.bytes.clone())
     }
 }
 
-impl<Profile> PartialEq for Ciphertext<Profile> {
+impl<F: Field> PartialEq for Ciphertext<F> {
     fn eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
 
-impl<Profile> Eq for Ciphertext<Profile> {}
+impl<F: Field> Eq for Ciphertext<F> {}
 
-impl<Profile> fmt::Debug for Ciphertext<Profile> {
+impl<F: Field> fmt::Debug for Ciphertext<F> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Ciphertext([REDACTED])")
     }
 }
 
-impl<Profile: EncryptionProfile> Encrypted<Profile> {
+impl<F: Field> Encrypted<F> {
     /// Encodes and encrypts this value with an explicitly injected provider.
     ///
     /// # Errors
     ///
     /// Returns an error when encoding, padding, key lookup, randomness, or
     /// encryption fails.
-    pub fn encrypt_with(
-        &self,
-        keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Ciphertext<Profile>, Error> {
-        let plaintext = Profile::Codec::encode(&self.value)?;
-        let plaintext = Profile::Padding::pad(plaintext)?;
-        let ciphertext = encrypt::<Profile>(&plaintext, keys)?;
+    pub fn encrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Ciphertext<F>, Error> {
+        let plaintext = F::Codec::encode(&self.value)?;
+        let plaintext = F::PADDING.pad(plaintext)?;
+        let ciphertext = encrypt(F::ID, &plaintext, keys)?;
 
         Ok(Ciphertext::from_validated_bytes(ciphertext))
     }
 
-    /// Encodes and encrypts this value with the profile's global key context.
+    /// Encodes and encrypts this value with the process-wide [`GlobalKeyContext`].
     ///
     /// # Errors
     ///
     /// Returns an error when providers are uninitialized or when encoding or
     /// encryption fails.
-    pub fn encrypt(&self) -> Result<Ciphertext<Profile>, Error> {
-        self.encrypt_with(Profile::Keys::encryption_keys()?)
+    pub fn encrypt(&self) -> Result<Ciphertext<F>, Error> {
+        self.encrypt_with(GlobalKeyContext::encryption_keys()?)
     }
 }
 
-impl<Profile: EncryptionProfile> Ciphertext<Profile> {
+impl<F: Field> Ciphertext<F> {
     /// Authenticates, decrypts, and decodes this value with an injected provider.
     ///
     /// Success establishes ciphertext authenticity under the supplied key and
-    /// the profile's field, valid padding, and successful decoding with the
+    /// the field `F`, valid padding, and successful decoding with the
     /// selected codec. Apply application-level validation separately. This does
     /// not establish freshness, row identity, or consistency with a separately
     /// stored blind index.
@@ -234,24 +237,21 @@ impl<Profile: EncryptionProfile> Ciphertext<Profile> {
     ///
     /// Returns an error for invalid envelopes, unknown keys, authentication
     /// failure, unavailable providers, invalid padding, or codec failure.
-    pub fn decrypt_with(
-        &self,
-        keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Encrypted<Profile>, Error> {
-        let plaintext = decrypt::<Profile>(&self.bytes, keys)?;
-        let plaintext = Profile::Padding::unpad(plaintext)?;
-        let value = Profile::Codec::decode(&plaintext)?;
+    pub fn decrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Encrypted<F>, Error> {
+        let plaintext = decrypt(F::ID, &self.bytes, keys)?;
+        let plaintext = F::PADDING.unpad(plaintext)?;
+        let value = F::Codec::decode(&plaintext)?;
 
         Ok(Encrypted::from_value(value))
     }
 
-    /// Decrypts this value with the profile's global key context.
+    /// Decrypts this value with the process-wide [`GlobalKeyContext`].
     ///
     /// # Errors
     ///
     /// Returns an error when providers are uninitialized or decryption fails.
-    pub fn decrypt(&self) -> Result<Encrypted<Profile>, Error> {
-        self.decrypt_with(Profile::Keys::encryption_keys()?)
+    pub fn decrypt(&self) -> Result<Encrypted<F>, Error> {
+        self.decrypt_with(GlobalKeyContext::encryption_keys()?)
     }
 
     /// Reports whether this envelope uses a non-current suite or key.
@@ -270,24 +270,24 @@ impl<Profile: EncryptionProfile> Ciphertext<Profile> {
     /// Returns an error for a malformed or unsupported envelope, or unavailable
     /// provider.
     pub fn needs_reencryption_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<bool, Error> {
-        needs_reencryption::<Profile>(&self.bytes, keys)
+        needs_reencryption(F::ID, &self.bytes, keys)
     }
 
     /// Decrypts and rewrites this envelope with the active suite and current key.
     ///
     /// This authenticates the ciphertext and checks padding, but does not decode
-    /// the value with the profile's codec or check any stored blind indexes.
+    /// the value with the field's codec or check any stored blind indexes.
     /// Use [`Self::decrypt_with`] when decoded-value readability is required.
     ///
     /// # Errors
     ///
     /// Returns any decryption, padding, or encryption error.
     pub fn reencrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Self, Error> {
-        let plaintext = decrypt::<Profile>(&self.bytes, keys)?;
-        let plaintext = Profile::Padding::unpad(plaintext)?;
-        let plaintext = Profile::Padding::pad(plaintext)?;
+        let plaintext = decrypt(F::ID, &self.bytes, keys)?;
+        let plaintext = F::PADDING.unpad(plaintext)?;
+        let plaintext = F::PADDING.pad(plaintext)?;
 
-        encrypt::<Profile>(&plaintext, keys).map(Self::from_validated_bytes)
+        encrypt(F::ID, &plaintext, keys).map(Self::from_validated_bytes)
     }
 }
 
@@ -296,13 +296,13 @@ impl<Profile: EncryptionProfile> Ciphertext<Profile> {
 /// Drop invokes `T`'s [`Zeroize`] implementation. Cloning creates a separate `T`
 /// with its own lifetime; it does not share a single erasure boundary. This cannot
 /// erase previous copies, superseded allocations, or OS copies. For a decrypted
-/// `Encrypted<Profile>` over `String`, use `Secret::new(decrypted.into_secret())`.
-/// If the profile value itself is `Secret<String>`, supply `Codec<Secret<String>>`;
-/// [`crate::Utf8`] implements only `Codec<String>`.
-/// See the [custom-profile example] and [ownership reference].
+/// `Encrypted<F>` over `String`, use `Secret::new(decrypted.into_secret())`.
+/// A field can also store `Secret<String>` or `Secret<Vec<u8>>` directly: their
+/// [`crate::Plaintext`] codecs ([`crate::Utf8`], [`crate::Raw`]) write the same bytes.
+/// See the [custom-field example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
+    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub struct Secret<T: Zeroize> {

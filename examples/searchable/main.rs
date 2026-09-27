@@ -4,9 +4,9 @@ use std::{env, error::Error, path::Path};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, blind_index_probes,
-    index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
-    verify_blind_index_candidate,
+    EncryptionKey, Field, FieldId, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
+    Padding, Utf8, blind_index_probes, index_id, index_key_id, inspect_blind_index,
+    inspect_ciphertext, key_id, verify_blind_index_candidate,
 };
 use sqlx::{Connection, QueryBuilder, Row};
 use zeroize::Zeroizing;
@@ -28,8 +28,13 @@ type DbConnection = <Db as sqlx::Database>::Connection;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type EmailCiphertext = Ciphertext<UserEmail>;
 
-cryptbox::profile! {
-    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
+struct UserEmail;
+
+impl Field for UserEmail {
+    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
 }
 
 struct EmailLookup;

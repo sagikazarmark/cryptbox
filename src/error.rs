@@ -144,12 +144,12 @@ pub enum Error {
     /// The input exceeds the suite's message-size limit.
     #[error("message is too long")]
     MessageTooLong,
-    /// The encoded plaintext does not fit the profile's fixed padding length.
+    /// The encoded plaintext does not fit the field's fixed padding length.
     #[error("encoded plaintext exceeds the padding length")]
     PaddingOverflow,
     /// Authenticated plaintext does not carry valid padding.
     ///
-    /// This indicates a profile/schema mismatch, such as enabling padding for
+    /// This indicates a field/schema mismatch, such as enabling padding for
     /// existing unpadded ciphertext. Padding is checked only after successful
     /// authenticated decryption.
     #[error("plaintext padding is invalid")]

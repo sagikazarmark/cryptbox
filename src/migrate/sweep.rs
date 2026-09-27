@@ -2,7 +2,7 @@ use std::{fmt, future::Future};
 
 use zeroize::Zeroize;
 
-use crate::{EncryptionProfile, Error};
+use crate::{Error, Field};
 
 use super::{RowPlanner, RowState, RowWrite, SweepReport};
 
@@ -128,21 +128,21 @@ where
 /// surface as conflicts, which makes summed per-batch reports advisory;
 /// [`Self::verify`] remains the authoritative terminal-state check.
 #[derive(Debug)]
-pub struct Sweep<'a, Profile>
+pub struct Sweep<'a, F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
-    planner: RowPlanner<'a, Profile>,
+    planner: RowPlanner<'a, F>,
     batch_size: usize,
 }
 
-impl<'a, Profile> Sweep<'a, Profile>
+impl<'a, F> Sweep<'a, F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     /// Creates a driver over a configured row planner.
     #[must_use]
-    pub const fn new(planner: RowPlanner<'a, Profile>) -> Self {
+    pub const fn new(planner: RowPlanner<'a, F>) -> Self {
         Self {
             planner,
             batch_size: 100,
@@ -346,7 +346,7 @@ where
     /// recompute indexes, or establish ciphertext/index consistency. Even a
     /// terminal report can contain ciphertext that fails authentication. For
     /// additional assurance, separately decrypt every value with its intended
-    /// profile and recompute each index from that plaintext under the
+    /// field and recompute each index from that plaintext under the
     /// intended specification and allowed generation, comparing complete bytes.
     ///
     /// The pass observes rows as loaded, not a library-provided snapshot. Ensure

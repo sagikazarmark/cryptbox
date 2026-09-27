@@ -4,25 +4,20 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Encrypted,
-    EncryptionKey, EncryptionProfile, GlobalKeyContext, IndexId, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Utf8, derive_blind_index, index_id, index_key_id, key_id,
+    EncryptionKey, Field, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
+    derive_blind_index, index_id, index_key_id, key_id,
 };
 #[cfg(feature = "json")]
 use serde_json::Value;
 use zeroize::Zeroizing;
 
-struct EmailProfile;
+struct EmailField;
 
-impl cryptbox::Field for EmailProfile {
+impl Field for EmailField {
     const ID: cryptbox::FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
-    const NAME: &'static str = "email";
-}
-
-impl EncryptionProfile for EmailProfile {
+    const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
 }
 
 struct EmailExact;
@@ -48,7 +43,7 @@ fn blind_index() -> BlindIndex<EmailExact> {
     )
     .unwrap();
 
-    derive_blind_index::<EmailExact, str, EmailProfile>("mark@example.com", &keys).unwrap()
+    derive_blind_index::<EmailExact, str, EmailField>("mark@example.com", &keys).unwrap()
 }
 
 fn encryption_keys() -> LocalEncryptionKeyring {
@@ -59,8 +54,8 @@ fn encryption_keys() -> LocalEncryptionKeyring {
     .unwrap()
 }
 
-fn ciphertext(keys: &LocalEncryptionKeyring) -> cryptbox::Ciphertext<EmailProfile> {
-    Encrypted::<EmailProfile>::new("mark@example.com".to_owned())
+fn ciphertext(keys: &LocalEncryptionKeyring) -> cryptbox::Ciphertext<EmailField> {
+    Encrypted::<EmailField>::new("mark@example.com".to_owned())
         .encrypt_with(keys)
         .unwrap()
 }
@@ -99,7 +94,7 @@ fn ciphertext_serde_round_trips_only_the_envelope_bytes() {
 #[test]
 #[cfg(feature = "json")]
 fn ciphertext_serde_rejects_malformed_envelopes() {
-    let error = serde_json::from_str::<cryptbox::Ciphertext<EmailProfile>>("[1,2,3]").unwrap_err();
+    let error = serde_json::from_str::<cryptbox::Ciphertext<EmailField>>("[1,2,3]").unwrap_err();
 
     assert!(
         error
@@ -142,7 +137,7 @@ fn binary_serde_round_trips_ciphertext_and_blind_index_bytes() {
     let index = blind_index();
 
     let bytes = postcard::to_allocvec(&(ciphertext.clone(), index.clone())).unwrap();
-    let restored: (cryptbox::Ciphertext<EmailProfile>, BlindIndex<EmailExact>) =
+    let restored: (cryptbox::Ciphertext<EmailField>, BlindIndex<EmailExact>) =
         postcard::from_bytes(&bytes).unwrap();
 
     assert_eq!(restored, (ciphertext, index));

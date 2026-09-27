@@ -87,8 +87,8 @@ path = "examples/sqlite/main.rs"
 required-features = ["sqlx-sqlite"]
 
 [[example]]
-name = "custom_profile"
-path = "examples/custom_profile/main.rs"
+name = "custom_field"
+path = "examples/custom_field/main.rs"
 
 [[example]]
 name = "reencryption_sweep"

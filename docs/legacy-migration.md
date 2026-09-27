@@ -44,7 +44,7 @@ longer compatible after encrypted writes.
 
 Implement and explicitly inject `LegacyFormat`; its synchronous
 `recover(&self, bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError>` returns
-plaintext bytes for the profile codec. Keep network recovery in a custom store
+plaintext bytes for the field codec. Keep network recovery in a custom store
 or prefetch stage. The handler owns zeroization of its keys/intermediates and
 sanitized errors; CryptBox zeroizes the legacy/recovered buffers it owns, not
 SQLx buffers, application clones, storage or backups. Protect quarantine copies
@@ -66,7 +66,7 @@ Re-encryption protects recovered bytes going forward, not their historical origi
 
 ## The bounded window
 
-Read as `cryptbox::migrate::MaybeEncrypted<Profile>` only where legacy values
+Read as `cryptbox::migrate::MaybeEncrypted<F>` only where legacy values
 may still occur. `from_bytes` and SQLx `Decode` classify without accessing keys:
 
 - Valid envelopes are retained structurally; explicit decryption authenticates
@@ -82,7 +82,7 @@ new writes; other database clients still need fencing.
 
 For legacy bytes colliding with `CBX\0`, a **trusted out-of-band discriminator**
 may authorize `MaybeEncrypted::from_legacy_bytes`, which bypasses classification.
-`from_plaintext` takes an already decoded `Encrypted<Profile>`;
+`from_plaintext` takes an already decoded `Encrypted<F>`;
 `From<Ciphertext>` wraps known ciphertext. The packaged stores load no discriminator
 and `RowPlanner` uses ordinary classification: use a custom/manual guarded repair
 for collisions, never a general malformed-envelope fallback.
@@ -119,10 +119,10 @@ Switch to blind-index-only lookup only after the [closure gates](#verification-a
 
 ## Running the sweep
 
-Configure `RowPlanner::<Profile>::new(context, encryption_provider)`, add the
+Configure `RowPlanner::<F>::new(context, encryption_provider)`, add the
 explicit handler with `with_legacy`, and register indexes in stored order with
 `with_index_with::<Spec>(index_provider)`. Omit `with_legacy` only for authorized
-plaintext-only data. Recovery decodes through the profile codec, encrypts and
+plaintext-only data. Recovery decodes through the field codec, encrypts and
 derives every registered index. Stale CryptBox components are rewritten; current
 ones are retained under the [sweep rules](reencryption-sweep.md#sweep-loop).
 

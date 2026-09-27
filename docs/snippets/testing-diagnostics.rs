@@ -1,14 +1,21 @@
 //! Application-owned diagnostics with an allowlist of observable fields.
 
-use cryptbox::{Ciphertext, Encrypted, EncryptionKey, Error, Field, LocalEncryptionKeyring};
+use cryptbox::{
+    Ciphertext, Encrypted, EncryptionKey, Error, Field, FieldId, LocalEncryptionKeyring, Padding,
+    Utf8,
+};
 
-cryptbox::profile! {
-    UserEmail: String {
-        id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-        name: "user-email",
-        codec: cryptbox::Utf8,
-    }
+struct UserEmail;
+
+impl Field for UserEmail {
+    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
 }
+
+// An application-owned schema label: no record data or secrets.
+const USER_EMAIL_LABEL: &str = "user-email";
 
 fn error_category(error: &Error) -> &'static str {
     // Allowlisted categories, not arbitrary Display/Debug or error-chain content.
@@ -46,7 +53,7 @@ fn main() -> Result<(), Error> {
     println!(
         "field_id={} field_name={} operation=decrypt error={}",
         UserEmail::ID,
-        UserEmail::NAME,
+        USER_EMAIL_LABEL,
         error_category(&error),
     );
     Ok(())

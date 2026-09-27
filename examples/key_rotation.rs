@@ -1,8 +1,8 @@
 //! Rotates encryption keys without interrupting reads, then rewrites old ciphertext.
 
 use cryptbox::{
-    Encrypted, EncryptionKey, EncryptionProfile, Field, GlobalKeyContext, KeyId,
-    LocalEncryptionKeyring, Router, Utf8, field_id, inspect_ciphertext, key_id,
+    Encrypted, EncryptionKey, Field, KeyId, LocalEncryptionKeyring, Padding, Router, Utf8,
+    field_id, inspect_ciphertext, key_id,
 };
 
 const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
@@ -12,14 +12,9 @@ struct UserEmail;
 
 impl Field for UserEmail {
     const ID: cryptbox::FieldId = field_id!("30000000-0000-4000-8000-000000000003");
-    const NAME: &'static str = "user-email";
-}
-
-impl EncryptionProfile for UserEmail {
+    const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
 }
 
 fn main() -> Result<(), cryptbox::Error> {

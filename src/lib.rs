@@ -11,11 +11,14 @@
 //!
 //! # Type model
 //!
-//! - [`Encrypted<Profile>`] and [`Secret<T>`] contain plaintext.
-//! - [`Ciphertext<Profile>`] contains stored encrypted bytes. Parsing checks
+//! - [`Encrypted<F>`] and [`Secret<T>`] contain plaintext.
+//! - [`Ciphertext<F>`] contains stored encrypted bytes. Parsing checks
 //!   structure; decryption authenticates. Encryption borrows and retains the source.
-//! - [`EncryptionProfile`] declares a [`Field`] and chooses its value type, codec,
-//!   padding, and key context. Every value is bound to its field.
+//! - [`Field`] is a marker type for one logical encrypted field. It declares the
+//!   field ID, value type, codec, and [`Padding`], and every value is bound to
+//!   its field ID. Several fields can share one value type.
+//! - [`Plaintext`] names a value type's default codec: [`Utf8`] for `String`
+//!   and [`Raw`] for `Vec<u8>`, and the same for their [`Secret`] wrappers.
 //! - [`Router`] assigns each field to the key provider that protects it;
 //!   providers receive the [`FieldId`] of every request.
 //! - [`Prepared`] borrows a source value and derives ciphertext/indexes for an
@@ -28,17 +31,19 @@
 #![doc = "</div>"]
 //!
 //! See the [ownership reference] for clones, temporary buffers,
-//! `Secret`, and shared key lifetimes, and the [custom-profile example] for public
+//! `Secret`, and shared key lifetimes, and the [custom-field example] for public
 //! codec, normalizer, and synchronous provider implementations.
 //!
 #![doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md",
+    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md",
 )]
 //!
-//! Row/tenant binding is future work. [`KeyContext`] selects providers for
-//! context-less operations; explicit-provider methods take keys separately.
-//! [`Padding`] is also sealed to built-in policies.
+//! Row/tenant binding is future work. Explicit-provider methods
+//! (`encrypt_with`, `decrypt_with`, `prepare_with`) take keys separately; the
+//! implicit forms (`encrypt()`, `decrypt()`, `prepare()`) and automatic storage
+//! adapters read the process-wide [`GlobalKeyContext`]. [`Padding`] is a closed
+//! set of const policies.
 //!
 //! The [documentation index] links integration and operational guides.
 //!
@@ -49,12 +54,12 @@
 //!
 #![doc = include_str!("../docs/snippets/first-field.md")]
 //!
-//! The macro selects UTF-8 encoding, no padding, and the default key context, and
-//! binds ciphertext to the declared field ID. `Encrypted` contains plaintext;
-//! `Ciphertext` contains the encrypted envelope. `&keys` supplies the provider
-//! explicitly: no global installation is needed. Before durable storage,
-//! settle the persistent schema below and load stable key material and generation
-//! IDs across restarts; see the [first-field tutorial]'s durable-key next step.
+//! The field names UTF-8 encoding and no padding, and binds ciphertext to its
+//! field ID. `Encrypted` contains plaintext; `Ciphertext` contains the encrypted
+//! envelope. `&keys` supplies the provider explicitly: no global installation is
+//! needed. Before durable storage, settle the persistent schema below and load
+//! stable key material and generation IDs across restarts; see the
+//! [first-field tutorial]'s durable-key next step.
 //!
 #![doc = concat!(
     "[first-field tutorial]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/first-field.md",
@@ -115,18 +120,17 @@ pub struct ReadmeDoctests;
 #[doc = include_str!("../docs/first-field.md")]
 pub struct FirstFieldDoctests;
 
-mod binding;
 mod blind;
 mod codec;
 mod crypto;
 mod error;
+mod field;
 mod id;
 mod key;
 #[cfg(feature = "migrate")]
 pub mod migrate;
 mod padding;
 mod prepare;
-mod profile;
 mod router;
 #[cfg(feature = "serde")]
 mod serde_impl;
@@ -136,8 +140,6 @@ mod sqlx_postgres;
 mod sqlx_sqlite;
 mod value;
 
-pub(crate) use binding::BindingDomain;
-pub use binding::Field;
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexMetadata, BlindIndexRef, BlindIndexSpec,
     blind_index_probes, derive_blind_index, inspect_blind_index, verify_blind_index_candidate,
@@ -146,19 +148,20 @@ pub use blind::{
 pub use codec::Json;
 #[cfg(feature = "postcard")]
 pub use codec::Postcard;
-pub use codec::{Codec, DefaultCodec, Raw, Utf8};
+pub use codec::{Codec, Plaintext, Raw, Utf8};
 pub use crypto::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, decrypt, encrypt, inspect_ciphertext,
     is_ciphertext, needs_reencryption, reencrypt,
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error, KeyProviderError};
+pub(crate) use field::BindingDomain;
+pub use field::Field;
 pub use id::{FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, SuiteId};
 pub use key::{
     BlindIndexKey, BlindIndexKeyProvider, EncryptionKey, EncryptionKeyProvider, GlobalKeyContext,
     GlobalProviders, KeyContext, LocalBlindIndexKeyring, LocalEncryptionKeyring,
 };
-pub use padding::{NoPadding, PadToBlock, PadToLength, Padding};
+pub use padding::Padding;
 pub use prepare::Prepared;
-pub use profile::EncryptionProfile;
 pub use router::Router;
 pub use value::{Ciphertext, Encrypted, Secret};

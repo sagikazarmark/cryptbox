@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{
     BlindIndex, BlindIndexKeyProvider, BlindIndexSpec, Ciphertext, Codec, Encrypted,
-    EncryptionKeyProvider, EncryptionProfile, Error, derive_blind_index, inspect_blind_index,
+    EncryptionKeyProvider, Error, Field, derive_blind_index, inspect_blind_index,
     needs_reencryption,
 };
 
@@ -84,27 +84,25 @@ impl RowOutcome {
     }
 }
 
-type IndexDeriver<Profile> = fn(
-    &<Profile as EncryptionProfile>::Value,
-    &dyn BlindIndexKeyProvider,
-) -> Result<Vec<u8>, Error>;
+type IndexDeriver<F> =
+    fn(&<F as Field>::Value, &dyn BlindIndexKeyProvider) -> Result<Vec<u8>, Error>;
 
-fn derive_index_bytes<Profile, Spec>(
-    value: &Profile::Value,
+fn derive_index_bytes<F, Spec>(
+    value: &F::Value,
     keys: &dyn BlindIndexKeyProvider,
 ) -> Result<Vec<u8>, Error>
 where
-    Profile: EncryptionProfile,
-    Spec: BlindIndexSpec<Profile::Value>,
+    F: Field,
+    Spec: BlindIndexSpec<F::Value>,
 {
-    derive_blind_index::<Spec, Profile::Value, Profile>(value, keys).map(BlindIndex::into_bytes)
+    derive_blind_index::<Spec, F::Value, F>(value, keys).map(BlindIndex::into_bytes)
 }
 
-struct IndexColumn<'a, Profile>
+struct IndexColumn<'a, F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
-    derive: IndexDeriver<Profile>,
+    derive: IndexDeriver<F>,
     keys: &'a dyn BlindIndexKeyProvider,
 }
 
@@ -120,20 +118,20 @@ where
 /// Current rows are skipped without authentication or decoding, and current
 /// index bytes are retained without checking consistency. Use a separate
 /// authenticated-read and index-recomputation pass when those checks are required.
-pub struct RowPlanner<'a, Profile>
+pub struct RowPlanner<'a, F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     keys: &'a dyn EncryptionKeyProvider,
     legacy: Option<&'a dyn LegacyFormat>,
-    indexes: Vec<IndexColumn<'a, Profile>>,
+    indexes: Vec<IndexColumn<'a, F>>,
 }
 
-impl<'a, Profile> RowPlanner<'a, Profile>
+impl<'a, F> RowPlanner<'a, F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
-    /// Creates a planner for the profile's field and an encryption key provider.
+    /// Creates a planner for field `F` and an encryption key provider.
     pub fn new(keys: &'a dyn EncryptionKeyProvider) -> Self {
         Self {
             keys,
@@ -145,7 +143,7 @@ where
     /// Configures the handler used to recover non-envelope stored values.
     ///
     /// Without a handler, non-envelope bytes are treated as plaintext and
-    /// decoded directly through the profile's codec.
+    /// decoded directly through the field's codec.
     #[must_use]
     pub fn with_legacy(mut self, legacy: &'a dyn LegacyFormat) -> Self {
         self.legacy = Some(legacy);
@@ -160,10 +158,10 @@ where
     #[must_use]
     pub fn with_index_with<Spec>(mut self, keys: &'a dyn BlindIndexKeyProvider) -> Self
     where
-        Spec: BlindIndexSpec<Profile::Value>,
+        Spec: BlindIndexSpec<F::Value>,
     {
         self.indexes.push(IndexColumn {
-            derive: derive_index_bytes::<Profile, Spec>,
+            derive: derive_index_bytes::<F, Spec>,
             keys,
         });
 
@@ -192,7 +190,7 @@ where
             Err(error) => return Err(error),
         }
 
-        if needs_reencryption::<Profile>(ciphertext, self.keys)? {
+        if needs_reencryption(F::ID, ciphertext, self.keys)? {
             return Ok(RowState::Stale);
         }
 
@@ -226,7 +224,7 @@ where
             Err(error) => return Err(error),
         }
 
-        let envelope_is_stale = needs_reencryption::<Profile>(ciphertext, self.keys)?;
+        let envelope_is_stale = needs_reencryption(F::ID, ciphertext, self.keys)?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
         for (column, bytes) in self.indexes.iter().zip(indexes) {
             stale_columns.push(column.is_stale(bytes)?);
@@ -239,7 +237,7 @@ where
             });
         }
 
-        let parsed = Ciphertext::<Profile>::from_validated_bytes(ciphertext.to_vec());
+        let parsed = Ciphertext::<F>::from_validated_bytes(ciphertext.to_vec());
         let rewritten = if envelope_is_stale {
             parsed.reencrypt_with(self.keys)?
         } else {
@@ -275,7 +273,7 @@ where
 
     fn plan_legacy_row(&self, bytes: &[u8]) -> Result<RowOutcome, Error> {
         let plaintext = legacy::recover(bytes, self.legacy)?;
-        let value = Encrypted::<Profile>::from_value(Profile::Codec::decode(&plaintext)?);
+        let value = Encrypted::<F>::from_value(F::Codec::decode(&plaintext)?);
         let ciphertext = value.encrypt_with(self.keys)?;
         let mut indexes = Vec::with_capacity(self.indexes.len());
         for column in &self.indexes {
@@ -303,18 +301,18 @@ where
     }
 }
 
-impl<Profile> IndexColumn<'_, Profile>
+impl<F> IndexColumn<'_, F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     fn is_stale(&self, bytes: &[u8]) -> Result<bool, Error> {
-        Ok(inspect_blind_index(bytes)?.index_key_id() != self.keys.current_key(Profile::ID)?.id())
+        Ok(inspect_blind_index(bytes)?.index_key_id() != self.keys.current_key(F::ID)?.id())
     }
 }
 
-impl<Profile> fmt::Debug for RowPlanner<'_, Profile>
+impl<F> fmt::Debug for RowPlanner<'_, F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter

@@ -14,7 +14,7 @@ lookup probe. Readable generations may be staged before their first write.
 Before **any writer** promotes a role, **every participating reader** must load
 the same new pair while retaining existing pairs and prove compatibility. Include
 workers, scheduled jobs, read-only services, autoscaling and rollback deployments.
-Preserve the profile/index schema, query all readable probes, and authenticate,
+Preserve the field/index schema, query all readable probes, and authenticate,
 decrypt and normalize-compare candidates. A secret on disk is not readiness.
 
 Record acknowledgments against a configuration revision and trusted canary set
@@ -86,7 +86,7 @@ the process. For automatic adapters, `GlobalKeyContext::install` is immutable an
 one-time per process. Restart, or have the originally installed custom provider
 refresh its own synchronized snapshot. That provider owns consistency, refresh
 failures and readiness; synchronous CryptBox calls do not distribute secrets or
-refresh KMS state. See [provider obligations](../examples/custom_profile/README.md#implementor-obligations).
+refresh KMS state. See [provider obligations](../examples/custom_field/README.md#implementor-obligations).
 
 ## Sequence and later maintenance
 

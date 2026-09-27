@@ -93,11 +93,11 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
 /// retain the input in third-party errors. Candidate verification must use the
 /// same normalization after authenticated decryption, not accept an index hit alone.
 ///
-/// See the [custom-profile example] and [ownership reference].
-/// Padding remains sealed; a custom normalizer does not add row binding.
+/// See the [custom-field example] and [ownership reference].
+/// Padding is a closed set of policies; a custom normalizer does not add row binding.
 ///
 #[doc = concat!(
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
+    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
@@ -327,7 +327,7 @@ where
     let normalized = Spec::normalize(input)?;
     let key = keys.current_key(F::ID)?;
 
-    derive_normalized::<Spec>(&normalized, &BindingDomain::field::<F>(), &key)
+    derive_normalized::<Spec>(&normalized, &BindingDomain::field(F::ID), &key)
 }
 
 /// Derives one candidate probe for every currently readable index generation.
@@ -354,7 +354,7 @@ where
     F: Field,
 {
     let normalized = Spec::normalize(input)?;
-    let domain = BindingDomain::field::<F>();
+    let domain = BindingDomain::field(F::ID);
 
     keys.readable_keys(F::ID)?
         .iter()

@@ -249,10 +249,10 @@ fn initialize_key_material<Id>(
 /// the others rather than substitute keys. Use [`Router`](crate::Router) to
 /// assign fields to providers.
 ///
-/// See the [custom-profile example] and [ownership reference].
+/// See the [custom-field example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
+    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait EncryptionKeyProvider: Send + Sync {
@@ -299,10 +299,10 @@ pub trait EncryptionKeyProvider: Send + Sync {
 /// same rules as for [`EncryptionKeyProvider`]: ignore it when serving every
 /// field, and return [`KeyProviderError::UnroutedField`] for fields not served.
 ///
-/// See the [custom-profile example] and [ownership reference].
+/// See the [custom-field example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
+    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait BlindIndexKeyProvider: Send + Sync {
@@ -479,7 +479,10 @@ impl BlindIndexKeyProvider for LocalBlindIndexKeyring {
     }
 }
 
-/// Supplies statically reachable providers to context-less adapters.
+/// Supplies statically reachable providers to context-less operations.
+///
+/// The implicit forms (`encrypt()`, `decrypt()`, `prepare()`) and automatic
+/// storage adapters read [`GlobalKeyContext`].
 pub trait KeyContext: Sized + 'static {
     /// Returns the installed encryption provider.
     ///
@@ -532,12 +535,11 @@ static GLOBAL_PROVIDERS: OnceLock<GlobalProviders> = OnceLock::new();
 /// therefore call [`Self::install`] only from their binary entry point, not from
 /// reusable library code or test setup. Tests should normally inject providers
 /// through methods such as [`crate::Encrypted::encrypt_with`] and
-/// [`crate::Ciphertext::decrypt_with`]. Tests of automatic storage adapters can
-/// instead define their own [`KeyContext`] backed by synchronized, swappable
-/// providers. Synchronizing individual provider calls does not isolate a whole
-/// test: cases replacing shared keys must be serialized for their entire
-/// setup/use lifetime or run in separate processes. See the
-/// [testing guide].
+/// [`crate::Ciphertext::decrypt_with`]. Tests of automatic storage adapters
+/// install providers once per test process. Synchronizing individual provider
+/// calls does not isolate a whole test: cases replacing shared keys must be
+/// serialized for their entire setup/use lifetime or run in separate processes.
+/// See the [testing guide].
 ///
 #[doc = concat!(
     "[testing guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/testing.md#automatic-adapters",

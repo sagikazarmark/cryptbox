@@ -2,12 +2,12 @@
 
 #![cfg(feature = "sqlx-sqlite")]
 
-use std::sync::OnceLock;
+use std::sync::Once;
 
 use cryptbox::{
     BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted, EncryptionKey,
-    EncryptionKeyProvider, EncryptionProfile, IndexId, KeyContext, KeyId, KeyProviderError,
-    LocalEncryptionKeyring, Utf8, encrypt, index_id, key_id,
+    EncryptionKeyProvider, Field, GlobalKeyContext, GlobalProviders, IndexId, KeyContext, KeyId,
+    LocalEncryptionKeyring, Padding, Utf8, encrypt, index_id, key_id,
 };
 use sqlx::{
     Connection, Decode, Encode, Row, Sqlite, Type,
@@ -16,34 +16,27 @@ use sqlx::{
 
 const KEY_ID: KeyId = key_id!("f0000000-0000-4000-8000-00000000000f");
 
-struct TestKeys;
+/// Installs the process-wide keys that automatic encoding and decoding read.
+///
+/// Each integration-test binary is its own process, so the global is isolated
+/// from other test files; every test here shares the same fixed keyring.
+fn install_keys() -> &'static dyn EncryptionKeyProvider {
+    static INSTALL: Once = Once::new();
+    INSTALL.call_once(|| {
+        let keys = LocalEncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap();
+        GlobalKeyContext::install(GlobalProviders::new(keys)).unwrap();
+    });
 
-impl KeyContext for TestKeys {
-    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, KeyProviderError> {
-        static KEYS: OnceLock<LocalEncryptionKeyring> = OnceLock::new();
-        Ok(KEYS.get_or_init(|| {
-            LocalEncryptionKeyring::new(EncryptionKey::new(KEY_ID, [71; 32]), []).unwrap()
-        }))
-    }
-
-    fn blind_index_keys() -> Result<&'static dyn cryptbox::BlindIndexKeyProvider, KeyProviderError>
-    {
-        Err(KeyProviderError::Unavailable)
-    }
+    GlobalKeyContext::encryption_keys().unwrap()
 }
 
-struct Profile;
+struct TestField;
 
-impl cryptbox::Field for Profile {
+impl Field for TestField {
     const ID: cryptbox::FieldId = cryptbox::field_id!("4e2d8b17-6c3a-4f95-8b0e-1a7c9d3f5e26");
-    const NAME: &'static str = "sqlx-value";
-}
-
-impl EncryptionProfile for Profile {
+    const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Keys = TestKeys;
-    type Padding = cryptbox::NoPadding;
 }
 
 struct IndexSpec;
@@ -77,28 +70,29 @@ fn only_blob<'a>(buffer: &'a [SqliteArgumentValue<'_>]) -> &'a [u8] {
 
 #[test]
 fn encrypted_storage_types_map_to_sqlite_blob() {
-    assert_sqlx_traits::<Encrypted<Profile>>();
-    assert_sqlx_traits::<Ciphertext<Profile>>();
+    assert_sqlx_traits::<Encrypted<TestField>>();
+    assert_sqlx_traits::<Ciphertext<TestField>>();
     assert_sqlx_traits::<BlindIndex<IndexSpec>>();
 
     let blob: SqliteTypeInfo = <Vec<u8> as Type<Sqlite>>::type_info();
-    assert_eq!(<Encrypted<Profile> as Type<Sqlite>>::type_info(), blob);
-    assert_eq!(<Ciphertext<Profile> as Type<Sqlite>>::type_info(), blob);
+    assert_eq!(<Encrypted<TestField> as Type<Sqlite>>::type_info(), blob);
+    assert_eq!(<Ciphertext<TestField> as Type<Sqlite>>::type_info(), blob);
     assert_eq!(<BlindIndex<IndexSpec> as Type<Sqlite>>::type_info(), blob);
 }
 
 #[test]
 fn sqlite_encode_encrypts_plaintext_into_an_owned_blob() {
-    assert_sqlx_encode::<Encrypted<Profile>>();
-    assert_sqlx_encode::<Ciphertext<Profile>>();
+    install_keys();
+    assert_sqlx_encode::<Encrypted<TestField>>();
+    assert_sqlx_encode::<Ciphertext<TestField>>();
     assert_sqlx_encode::<BlindIndex<IndexSpec>>();
     assert_sqlx_encode::<BlindIndexRef<'static, IndexSpec>>();
 
-    let value = Encrypted::<Profile>::new("mark@example.com".to_owned());
+    let value = Encrypted::<TestField>::new("mark@example.com".to_owned());
     let mut buffer = Vec::new();
 
     let result =
-        <Encrypted<Profile> as Encode<'_, Sqlite>>::encode_by_ref(&value, &mut buffer).unwrap();
+        <Encrypted<TestField> as Encode<'_, Sqlite>>::encode_by_ref(&value, &mut buffer).unwrap();
 
     assert!(!result.is_null());
     assert!(only_blob(&buffer).starts_with(b"CBX\0"));
@@ -106,13 +100,13 @@ fn sqlite_encode_encrypts_plaintext_into_an_owned_blob() {
 
 #[test]
 fn sqlite_ciphertext_encoding_preserves_the_binary_envelope() {
-    let keys = TestKeys::encryption_keys().unwrap();
-    let bytes = encrypt::<Profile>(b"value", keys).unwrap();
-    let ciphertext = Ciphertext::<Profile>::from_bytes(bytes.clone()).unwrap();
+    let keys = install_keys();
+    let bytes = encrypt(TestField::ID, b"value", keys).unwrap();
+    let ciphertext = Ciphertext::<TestField>::from_bytes(bytes.clone()).unwrap();
     let mut buffer = Vec::new();
 
     let result =
-        <Ciphertext<Profile> as Encode<'_, Sqlite>>::encode_by_ref(&ciphertext, &mut buffer)
+        <Ciphertext<TestField> as Encode<'_, Sqlite>>::encode_by_ref(&ciphertext, &mut buffer)
             .unwrap();
 
     assert!(!result.is_null());
@@ -121,6 +115,7 @@ fn sqlite_ciphertext_encoding_preserves_the_binary_envelope() {
 
 #[test]
 fn sqlite_round_trips_ciphertext_and_decrypts_encrypted_values() {
+    install_keys();
     futures_executor::block_on(async {
         let mut connection = SqliteConnection::connect("sqlite::memory:").await.unwrap();
         sqlx::query("CREATE TABLE secrets (value BLOB NOT NULL)")
@@ -128,7 +123,7 @@ fn sqlite_round_trips_ciphertext_and_decrypts_encrypted_values() {
             .await
             .unwrap();
 
-        let value = Encrypted::<Profile>::new("mark@example.com".to_owned());
+        let value = Encrypted::<TestField>::new("mark@example.com".to_owned());
         sqlx::query("INSERT INTO secrets (value) VALUES (?)")
             .bind(&value)
             .execute(&mut connection)
@@ -139,8 +134,8 @@ fn sqlite_round_trips_ciphertext_and_decrypts_encrypted_values() {
             .fetch_one(&mut connection)
             .await
             .unwrap();
-        let ciphertext: Ciphertext<Profile> = row.try_get("value").unwrap();
-        let decrypted: Encrypted<Profile> = row.try_get("value").unwrap();
+        let ciphertext: Ciphertext<TestField> = row.try_get("value").unwrap();
+        let decrypted: Encrypted<TestField> = row.try_get("value").unwrap();
 
         assert!(ciphertext.as_bytes().starts_with(b"CBX\0"));
         assert_eq!(decrypted.expose_secret(), "mark@example.com");

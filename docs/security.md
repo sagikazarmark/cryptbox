@@ -13,7 +13,7 @@ tests do not indicate security approval. [Documentation](README.md).
 flowchart TB
     subgraph trusted["Trusted application boundary"]
         K["Key providers: independent encryption and index roots"]
-        A["Application: plaintext, profiles, authorization"]
+        A["Application: plaintext, fields, authorization"]
         C["CryptBox: encode, encrypt, authenticate, decode"]
         K --> C
         A <--> C
@@ -29,7 +29,7 @@ compromised storage. Trust the application, providers, dependencies, and operati
 system: root keys must be cryptographically random, encryption and index roots
 independently generated, and each generation ID permanently paired with the same
 material. IDs are public metadata; generate them independently of key bytes.
-Profiles supply trusted expected bindings and persistent schema. Secure OS
+Fields supply trusted expected bindings and persistent schema. Secure OS
 randomness and a compatible target are required; see [platform constraints](features.md#platforms-and-tested-configurations).
 
 ## Threats and unsuitable uses
@@ -52,7 +52,7 @@ equality-style candidate lookup, not ordering, ranges, or full-text search.
 
 ## Application responsibilities
 
-- Own authorization, key provisioning, stable profile/index schema, and operational
+- Own authorization, key provisioning, stable field/index schema, and operational
   limits. Bound encoded/padded sizes, incoming envelopes, decoding expansion, and
   repeated authentication attempts; the [functional size limit](wire-format.md#size-semantics-and-enforcement)
   is not an operational budget.
@@ -79,7 +79,7 @@ distinct from the independent security review status of the implementation.
 | --- | --- | --- |
 | Parse ciphertext or deserialize stored bytes | Supported structure and lengths | Authenticity or readability |
 | Inspect generations / complete sweep verification | Stored values name the intended generations | Authentication, decodability, or index consistency |
-| Decrypt with the expected profile | Authentication, padding removal, and decoding for that value | Row identity, freshness, or index consistency |
+| Decrypt with the expected field | Authentication, padding removal, and decoding for that value | Row identity, freshness, or index consistency |
 | Verify a lookup candidate | Its normalized plaintext matches the query | Stored-index authenticity or completeness of query results |
 | Recompute a stored index under its recorded generation | Consistency with authenticated plaintext and the expected index policy at the configured precision | Absence of omitted rows or rollback |
 

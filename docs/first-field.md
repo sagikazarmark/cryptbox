@@ -47,10 +47,15 @@ Replace `src/main.rs` with this [example](../examples/first_field.rs).
 <!-- BEGIN SHARED: first-field -->
 
 ```rust
-use cryptbox::{Encrypted, EncryptionKey, LocalEncryptionKeyring};
+use cryptbox::{Encrypted, EncryptionKey, Field, FieldId, LocalEncryptionKeyring, Padding, Utf8};
 
-cryptbox::profile! {
-    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
+struct UserEmail;
+
+impl Field for UserEmail {
+    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
 }
 
 fn main() -> Result<(), cryptbox::Error> {
@@ -78,11 +83,11 @@ Expect `Field-bound round trip succeeded.` and exit status 0.
 
 - `Encrypted` holds **plaintext**; encryption borrows it. `Ciphertext` holds the
   encrypted envelope. Decryption authenticates and returns a new plaintext value.
-- `profile!` declares the field. Its `id` binds the ciphertext to this field; the
-  omitted keys select UTF-8 encoding, no padding, and the default key context.
+- `UserEmail` is a field. Its `ID` binds the ciphertext to this field; it stores
+  a `String` value with the `Utf8` codec and no padding.
 - `&keys` supplies keys explicitly, so these calls need no global installation.
 - Field binding identifies a logical field, not a row or tenant; it does not stop
-  same-field substitution or replay. The default `NoPadding` reveals encoded length.
+  same-field substitution or replay. `Padding::NONE` reveals encoded length.
 
 See [how CryptBox works](concepts.md) for the complete picture.
 

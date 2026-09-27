@@ -37,10 +37,15 @@ Encrypt and decrypt a string with an in-memory key. For setup instructions, foll
 [encrypt your first field](docs/first-field.md).
 
 ```rust
-use cryptbox::{Encrypted, EncryptionKey, LocalEncryptionKeyring};
+use cryptbox::{Encrypted, EncryptionKey, Field, FieldId, LocalEncryptionKeyring, Padding, Utf8};
 
-cryptbox::profile! {
-    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
+struct UserEmail;
+
+impl Field for UserEmail {
+    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
 }
 
 fn main() -> Result<(), cryptbox::Error> {
@@ -55,8 +60,8 @@ fn main() -> Result<(), cryptbox::Error> {
 }
 ```
 
-`profile!` declares the field: its ID binds every ciphertext to this field, and
-the other policy choices use defaults. `Encrypted` holds plaintext; `Ciphertext`
+`UserEmail` is a field: its ID binds every ciphertext to this field, and it
+stores a `String` as UTF-8 without padding. `Encrypted` holds plaintext; `Ciphertext`
 holds the encrypted value. `&keys` supplies the keys. See
 [how CryptBox works](docs/concepts.md).
 

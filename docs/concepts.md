@@ -26,40 +26,44 @@ ciphertext representation that can be stored in a database or serialized.
 
 On the return path, CryptBox uses the envelope's key-generation ID to obtain the
 right key and authenticates the ciphertext before returning plaintext. It then
-removes any profile padding and decodes the bytes back into a string.
+removes any padding and decodes the bytes back into a string.
 
 Two types make the application/storage distinction explicit:
 
-- **`Encrypted<Profile>` holds plaintext**, despite its name. It associates a
-  value with its encryption policy. `expose_secret()` deliberately exposes that value.
-- **`Ciphertext<Profile>` holds the stored encrypted envelope.** It can be
+- **`Encrypted<F>` holds plaintext**, despite its name. It associates a
+  value with its field. `expose_secret()` deliberately exposes that value.
+- **`Ciphertext<F>` holds the stored encrypted envelope.** It can be
   loaded and passed around before deciding when to decrypt it.
 
 Encryption borrows the source value, so the original plaintext remains available.
 Decryption returns a new plaintext-bearing value. Parsing stored bytes checks
 their structure; only successful decryption authenticates them.
 
-## A profile gives a field its policy
+## A field gives a value its policy
 
-A `UserEmail` profile says how an email should be handled every time it is written
-or read. Reusing that policy avoids having to repeat independent choices at each
-call site. A profile declares:
+A `UserEmail` **field** says how an email should be handled every time it is
+written or read. It is a marker type, separate from the value it stores, so the
+same choices are not repeated at each call site. A field declares:
 
 - A **field ID**, the stable identity of the logical field. Every ciphertext and
   blind index is bound to it.
 - The **value type**, such as `String`, held by `Encrypted<UserEmail>`.
 - A **codec**, such as `Utf8`, to convert between the Rust value and bytes.
 - A **padding policy**, which can group different plaintext lengths into the same
-  stored size. The default, `NoPadding`, preserves the encoded length.
-- A **key context**, giving context-less operations access to key providers.
+  stored size. `Padding::NONE` preserves the encoded length.
+
+The value type is your application's own type: it says how it encodes, never
+where it is stored. One `Address` type can back both a `HomeAddress` and a
+`BillingAddress` field, each with its own field ID. A value type can name a
+default codec by implementing `Plaintext`; `String` and `Vec<u8>` already do.
 
 Field binding ties an email to its field ID. Its ciphertext will not authenticate
-under a different field, even if the fields share a root key. Profiles that should
+under a different field, even if the fields share a root key. Fields that should
 read each other's ciphertext declare the same field ID. Binding identifies a
 logical field, not a row or tenant: copying ciphertext between rows of the same
 field can still succeed.
 
-The profile is different from an encryption **suite**. The profile describes
+A field is different from an encryption **suite**. The field describes
 application policy; the suite defines the complete cryptographic construction.
 CryptBox currently uses suite 1, combining HKDF-SHA-256 key derivation with
 XChaCha20-Poly1305 authenticated encryption. The [wire reference](wire-format.md)

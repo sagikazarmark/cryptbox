@@ -15,7 +15,7 @@ Choose the entry point that fits your question:
 - [Searchable storage example](../examples/searchable/README.md): atomic writes and verified equality lookup on PostgreSQL or SQLite.
 - [Automatic SQLx adapters](testing.md#automatic-adapters): a runnable example and its key-context lifetime.
 - [Stored-values example](../examples/stored_values/README.md): ciphertext and index serialization with Serde.
-- [Custom-profile example](../examples/custom_profile/README.md): codecs, normalization, key sources, and wrapped plaintext.
+- [Custom-field example](../examples/custom_field/README.md): codecs, normalization, key sources, and wrapped plaintext.
 - [Testing and diagnostics](testing.md): isolated providers and sanitized failures.
 - [Adopt existing data](legacy-migration.md): prerequisites and rollout for plaintext or previous-solution ciphertext.
 

@@ -2,24 +2,18 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, EncryptionKey,
-    EncryptionProfile, Error, Field, GlobalKeyContext, IndexId, IndexKeyId, KeyId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, PadToBlock, Utf8, decrypt, derive_blind_index,
-    field_id, index_id, index_key_id, key_id,
+    Error, Field, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
+    Padding, Raw, Utf8, decrypt, derive_blind_index, field_id, index_id, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
-struct PaddedVectorProfile;
+struct PaddedVectorField;
 
-impl Field for PaddedVectorProfile {
+impl Field for PaddedVectorField {
     const ID: cryptbox::FieldId = VectorField::ID;
-    const NAME: &'static str = VectorField::NAME;
-}
-
-impl EncryptionProfile for PaddedVectorProfile {
+    const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = PadToBlock<16>;
 }
 
 #[test]
@@ -30,7 +24,7 @@ fn experimental_padded_envelope_vector_decrypts() {
         "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6",
     )
     .unwrap();
-    let ciphertext = Ciphertext::<PaddedVectorProfile>::from_bytes(envelope).unwrap();
+    let ciphertext = Ciphertext::<PaddedVectorField>::from_bytes(envelope).unwrap();
 
     assert_eq!(
         ciphertext.decrypt_with(&keys).unwrap().expose_secret(),
@@ -39,14 +33,14 @@ fn experimental_padded_envelope_vector_decrypts() {
 }
 
 #[test]
-fn unpadded_envelope_vector_is_invalid_for_a_padded_profile() {
+fn unpadded_envelope_vector_is_invalid_for_a_padded_field() {
     let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
     let keys = LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap();
     let envelope = hex::decode(
         "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d",
     )
     .unwrap();
-    let ciphertext = Ciphertext::<PaddedVectorProfile>::from_bytes(envelope).unwrap();
+    let ciphertext = Ciphertext::<PaddedVectorField>::from_bytes(envelope).unwrap();
 
     assert!(matches!(
         ciphertext.decrypt_with(&keys),
@@ -58,7 +52,9 @@ struct VectorField;
 
 impl Field for VectorField {
     const ID: cryptbox::FieldId = field_id!("12345678-1234-4234-8234-1234567890ab");
-    const NAME: &'static str = "vector-field";
+    const PADDING: Padding = Padding::NONE;
+    type Value = Vec<u8>;
+    type Codec = Raw;
 }
 
 #[test]
@@ -71,7 +67,9 @@ fn experimental_envelope_vector_decrypts() {
     .unwrap();
 
     assert_eq!(
-        decrypt::<VectorField>(&envelope, &keys).unwrap().as_slice(),
+        decrypt(VectorField::ID, &envelope, &keys)
+            .unwrap()
+            .as_slice(),
         b"cryptbox vector"
     );
 }

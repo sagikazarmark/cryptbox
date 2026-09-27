@@ -23,9 +23,15 @@ plaintext-bearing application wrapper.
 **Current generation**:
 The generation selected for new encryption or new stored blind indexes.
 
+**Field**:
+A marker type that declares one logical encrypted field: its field ID, value
+type, codec, and padding. One value type can back several fields, such as a
+home and a billing address, each with its own field ID.
+<!-- Agent guidance: “profile” is the retired name for a field; do not reintroduce it. Avoid “column”, “key”, or “cipher suite” as synonyms: a field is a logical location, independent of database names. -->
+
 **Field ID**:
 The stable identity of a logical encrypted field, independent of Rust and
-database names. Profiles that declare the same field ID can read each other's
+database names. Fields that declare the same field ID can read each other's
 ciphertext; a different field ID fails authentication.
 
 **Index precision**:
@@ -33,7 +39,9 @@ The number of retained blind-index bits. Fewer bits increase false candidates
 and obscure equality more, without eliminating index leakage.
 
 **Key context**:
-The policy-selected access point to encryption and blind-index key providers.
+The process-wide access point to encryption and blind-index key providers used
+by operations that do not take keys explicitly. It belongs to the process, not
+to a field.
 <!-- Agent guidance: avoid “binding context” as a synonym. -->
 
 **Key generation**:
@@ -53,6 +61,12 @@ authenticated readability and from stored-index consistency.
 The application-defined conversion that gives equivalent values the same bytes
 for blind-index derivation and candidate comparison.
 
+**Plaintext type**:
+A value type that names a default codec. `String` and `Secret<String>` default
+to UTF-8, and `Vec<u8>` and `Secret<Vec<u8>>` to raw bytes; these defaults
+are permanent. Any other value type names its codec explicitly or declares its
+own default.
+
 **Prepared storage**:
 Ciphertext and optional blind indexes derived from the same source value, ready
 for an application-owned atomic write. Preparation is not persistence.
@@ -60,10 +74,6 @@ for an application-owned atomic write. Preparation is not persistence.
 **Probe**:
 A blind-index lookup value for one readable index-key generation. A lookup uses
 all probes to cover the readable generations.
-
-**Profile**:
-A field declaration: its field ID, value type, encoding, padding, and key context.
-<!-- Agent guidance: avoid “key” or “cipher suite” as synonyms. -->
 
 **Readable generation**:
 A generation available for decryption or blind-index probing, including the
@@ -82,3 +92,8 @@ default provider and reports that it does.
 **Suite**:
 A complete encryption construction identified by a suite ID, specifying key
 derivation, authenticated encryption, and how metadata and binding are authenticated.
+
+**Value type**:
+The application's own type whose values are stored in a field. It says how it
+encodes, never where it is stored: identity belongs to the field.
+<!-- Agent guidance: avoid giving a value type a field ID; the same value type routinely lives in several fields. -->

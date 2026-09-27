@@ -3,13 +3,18 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Encrypted, EncryptionKey,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, blind_index_probes,
-    verify_blind_index_candidate,
+    Field, FieldId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
+    blind_index_probes, verify_blind_index_candidate,
 };
 use zeroize::Zeroizing;
 
-cryptbox::profile! {
-    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
+struct UserEmail;
+
+impl Field for UserEmail {
+    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
 }
 
 struct EmailLookup;

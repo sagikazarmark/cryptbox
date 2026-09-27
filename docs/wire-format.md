@@ -92,7 +92,7 @@ Field(FieldId): 01 || field_id[16]
 Tag `00` is reserved: earlier releases used it for unbound values, and current
 releases neither write nor read it.
 
-The profile supplies the expected binding; it is not stored in the envelope.
+The field supplies the expected binding; it is not stored in the envelope.
 This makes the application decide where a value belongs, rather than allowing
 stored bytes to select their own binding.
 
@@ -122,8 +122,8 @@ the tag and the bytes between the prefix and tag are the encrypted payload.
 The prefix is readable without a key, but remains untrusted until authentication.
 
 The minimum envelope is 62 bytes and represents empty AEAD plaintext. For an
-unpadded profile, ciphertext leaks encoded plaintext length exactly plus this
-fixed overhead. A padded profile reveals its padded bucket length instead.
+unpadded field, ciphertext leaks encoded plaintext length exactly plus this
+fixed overhead. A padded field reveals its padded bucket length instead.
 See [size semantics and enforcement](#size-semantics-and-enforcement) for exact
 encoded, padded, and stored lengths and the suite's functional limit.
 
@@ -152,10 +152,10 @@ aad = aad_label || envelope[0..46] || binding
 ### Encryption recipe
 
 Inputs are an independent 32-byte encryption root, its immutable 16-byte
-`KeyId`, the expected profile binding, and AEAD plaintext bytes (encoded and
+`KeyId`, the expected field binding, and AEAD plaintext bytes (encoded and
 optionally padded as below). Use the encoding conventions and binding bytes
-above, with `format_version = 01` and `suite_id = 01`. Rust names and field
-diagnostic names are not inputs.
+above, with `format_version = 01` and `suite_id = 01`. Rust type names and
+database names are not inputs.
 
 1. Construct `key_info` in the order above. Perform **both** RFC 5869 stages:
    `PRK = HKDF-Extract-SHA256(salt, root_key)` (32-byte PRK), then
@@ -174,36 +174,36 @@ diagnostic names are not inputs.
 For decryption, structurally validate the envelope, resolve only its exact
 `KeyId`, reconstruct the key and AAD with the **expected** binding, and verify
 the tag before returning any plaintext. Only after authentication may a typed
-profile remove padding and decode. Wrong binding or changes to supported
+field remove padding and decode. Wrong binding or changes to supported
 metadata, nonce, ciphertext, or tag fail authentication. Malformed/unsupported
 envelopes and unknown keys can fail before authentication. Successful decryption
 does not establish freshness or row identity.
 
 ### Plaintext padding
 
-Encryption preserves payload length, so padding lets a profile hide the exact
+Encryption preserves payload length, so padding lets a field hide the exact
 encoded length by expanding it to a block boundary or fixed target. Suite 1 does
 not require padding; it can encrypt any byte length within its size limit.
 
-Profiles that enable padding use ISO/IEC 7816-4 padding before passing encoded
+Fields that enable padding use ISO/IEC 7816-4 padding before passing encoded
 plaintext to the encryption suite. Padding appends one `80` byte followed by as
 many `00` bytes as needed to reach the selected block or fixed length. Removal
 scans backward over zero bytes, requires the `80` marker, and strips it. It does
 not depend on the block size or fixed length that produced the padding.
 
-For encoded length `E`, `NoPadding` passes through `E` bytes;
-`PadToBlock<N>` (`N >= 2`) produces `N * ceil((E + 1) / N)` bytes; and
-`PadToLength<N>` (`N >= 1`) produces exactly `N` bytes, rejecting `E >= N`
+For encoded length `E`, `Padding::NONE` passes through `E` bytes;
+`Padding::block(N)` (`N >= 2`) produces `N * ceil((E + 1) / N)` bytes; and
+`Padding::length(N)` (`N >= 1`) produces exactly `N` bytes, rejecting `E >= N`
 because the marker must fit. An aligned block input receives a whole extra
 block, and even an empty padded input contains a marker. The byte-level
-`encrypt`/`decrypt` functions do not apply or remove profile padding.
+`encrypt`/`decrypt` functions do not apply or remove field padding.
 
 The envelope does not record whether padding is enabled or which parameters
 were used, and its format version remains unchanged. Enabling or disabling
 padding is therefore a persistent-schema change requiring migration. Changing
-the parameters of an already-padded profile does not prevent old ciphertext
+the parameters of an already-padded field does not prevent old ciphertext
 from decrypting. Re-encryption rewrites authenticated plaintext with the
-profile's current padding parameters.
+field's current padding parameters.
 
 ### Size semantics and enforcement
 
@@ -212,21 +212,21 @@ All lengths are byte counts, not character counts or Rust memory sizes:
 | Quantity | Definition |
 | --- | --- |
 | `E`: encoded bytes | Codec output before padding. `Utf8` counts UTF-8 bytes: `"é"` has `E = 2`. |
-| `P`: AEAD plaintext | Encoded bytes after padding, including the marker and zero fill when enabled. `NoPadding` gives `P = E`. |
+| `P`: AEAD plaintext | Encoded bytes after padding, including the marker and zero fill when enabled. `Padding::NONE` gives `P = E`. |
 | `W`: envelope bytes | Complete binary ciphertext: 46-byte prefix, `P` ciphertext bytes, 16-byte tag. `W = P + 62`; excludes text encoding, database framing, and separate indexes. |
 
 Padding boundary examples (ASCII input, one encoded byte per character):
 
 | Padding policy | `E` | Padding bytes | `P` | `W` | Result |
 | --- | ---: | ---: | ---: | ---: | --- |
-| `NoPadding` | 0 | 0 | 0 | 62 | Accepted |
-| `NoPadding` | 16 | 0 | 16 | 78 | Exact length preserved |
-| `PadToBlock<16>` | 0 | 16 | 16 | 78 | Empty input still padded |
-| `PadToBlock<16>` | 15 | 1 | 16 | 78 | Marker fills block |
-| `PadToBlock<16>` | 16 | 16 | 32 | 94 | Marker starts next block |
-| `PadToLength<16>` | 0 | 16 | 16 | 78 | Empty input uses entire target |
-| `PadToLength<16>` | 15 | 1 | 16 | 78 | Largest fitting input |
-| `PadToLength<16>` | 16 | — | — | — | `PaddingOverflow`: marker cannot fit |
+| `Padding::NONE` | 0 | 0 | 0 | 62 | Accepted |
+| `Padding::NONE` | 16 | 0 | 16 | 78 | Exact length preserved |
+| `Padding::block(16)` | 0 | 16 | 16 | 78 | Empty input still padded |
+| `Padding::block(16)` | 15 | 1 | 16 | 78 | Marker fills block |
+| `Padding::block(16)` | 16 | 16 | 32 | 94 | Marker starts next block |
+| `Padding::length(16)` | 0 | 16 | 16 | 78 | Empty input uses entire target |
+| `Padding::length(16)` | 15 | 1 | 16 | 78 | Largest fitting input |
+| `Padding::length(16)` | 16 | — | — | — | `PaddingOverflow`: marker cannot fit |
 
 Suite 1 enforces RFC 8439's functional maximum `P <= 274,877,906,880`
 (`(2^32 - 1) * 64`) on encryption and rejects parsed/decrypted payloads implying
@@ -236,9 +236,9 @@ ceiling, not a recommended field size. Applications must choose smaller limits
 appropriate to their workloads; see
 [application responsibilities](security.md#application-responsibilities).
 
-For an application-selected padded cap `L`, `NoPadding` permits `E <= L`;
-`PadToBlock<N>` permits `E <= N * floor(L / N) - 1` if at least one block fits;
-`PadToLength<N>` requires `N <= L` and `E <= N - 1`. Bound encoding and compute
+For an application-selected padded cap `L`, `Padding::NONE` permits `E <= L`;
+`Padding::block(N)` permits `E <= N * floor(L / N) - 1` if at least one block fits;
+`Padding::length(N)` requires `N <= L` and `E <= N - 1`. Bound encoding and compute
 padded size with checked arithmetic before allocating/encrypting. Bound incoming
 binary envelopes to `W <= L + 62` before copying/decrypting, and bound decoding
 expansion separately. Current padding parameters do not cap historical reads:
@@ -269,7 +269,7 @@ The vector is generated and consumed in separate tests, but it has not yet
 been cross-checked against an independent implementation.
 
 The padded vector uses the same root key, `KeyId`, binding, and nonce as the
-first vector, with `"cryptbox vector"` padded under `PadToBlock<16>`:
+first vector, with `"cryptbox vector"` padded under `Padding::block(16)`:
 
 ```text
 padded plaintext: 6372797074626f7820766563746f7280

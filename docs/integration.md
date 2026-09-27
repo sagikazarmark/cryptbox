@@ -23,22 +23,24 @@ These choices form persistent schema just as database column types do:
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
-Rust type names and diagnostic labels are not cryptographic identities. Renaming
+Rust type names are not cryptographic identities. Renaming
 a type does not change its field ID; generating a new ID does. Changing these
 policies requires a compatibility and migration plan, not just a new deployment.
 The [legacy migration guide](legacy-migration.md) covers adopting CryptBox over
-plaintext or another encryption solution; it is not a general profile-schema
+plaintext or another encryption solution; it is not a general field-schema
 migration procedure.
 
-Keys omitted from `profile!` select permanent defaults: `Utf8` for `String`,
-`Raw` for `Vec<u8>`, and no padding. Omitting a key never changes how stored
-data is read, but converting an existing declaration must keep any codec or
-padding that differs from those defaults. Other value types, including Serde
-types, have no default codec and must name one.
+A value type's `Plaintext` implementation names its default codec: `Utf8` for
+`String` and `Secret<String>`, `Raw` for `Vec<u8>` and `Secret<Vec<u8>>`. These
+mappings are permanent and no feature changes them. Other value types, including
+Serde types, either name their codec on the field or implement `Plaintext`
+themselves; that mapping is persistent schema too. Two fields over one value type
+(`HomeAddress` and `BillingAddress` over `Address`) have separate field IDs, so
+their ciphertext cannot be swapped.
 
 Padding has one useful exception: removal depends on the padding marker, not the
 original block size or target length. Changing parameters of an already-padded
-profile preserves readability, while enabling or disabling padding requires
+field preserves readability, while enabling or disabling padding requires
 migration. Current padding parameters also do not impose a limit on historical
 reads. See the [size and padding contracts](wire-format.md#plaintext-padding).
 
@@ -50,10 +52,10 @@ keys are needed and where plaintext becomes available:
 | Approach | Behavior and consequence |
 | --- | --- |
 | Explicit encryption or preparation | Produce ciphertext before calling storage. Key failures happen at that explicit step; the stored representation can then cross a database or serialization boundary. |
-| Read as `Ciphertext<Profile>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to authenticate and decrypt. Useful when only some loaded values need plaintext. |
-| Automatic SQLx `Encrypted<Profile>` | The adapter encrypts on encode and authenticates/decrypts on decode. It resolves providers through the profile's key context, so ordinary database conversion needs that context available. |
+| Read as `Ciphertext<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to authenticate and decrypt. Useful when only some loaded values need plaintext. |
+| Automatic SQLx `Encrypted<F>` | The adapter encrypts on encode and authenticates/decrypts on decode. It resolves providers through the process-wide `GlobalKeyContext`, so ordinary database conversion needs it installed. |
 
-Automatic SQLx adapters are available for every profile. Explicit-provider operations are useful when dependencies and plaintext
+Automatic SQLx adapters are available for every field. Explicit-provider operations are useful when dependencies and plaintext
 access should be visible at the call site. Automatic adapters are useful when
 encryption belongs consistently at the database boundary.
 
@@ -86,10 +88,9 @@ provider that resolves the same generations.
 
 Explicit `encrypt_with`, `decrypt_with`, and `prepare_with` calls use the provider
 passed by the caller. This allows each test or application component to own its
-dependencies. Context-less calls and automatic adapters use `Profile::Keys`.
-`GlobalKeyContext` is installed once per process and cannot be reset. A custom
-key context can expose application-owned providers, with their own lifetime and
-synchronization policy.
+dependencies. Context-less calls and automatic adapters use the process-wide
+`GlobalKeyContext`, installed once per process; it cannot be reset. A field does
+not choose its key context: route fields to providers instead.
 
 Providers resolve keys synchronously. Applications load secrets from their chosen
 source and make them available locally; CryptBox does not distribute secrets or
@@ -106,7 +107,7 @@ generated roots; encryption-only applications need no index roots.
 The [SQLite example](../examples/sqlite/README.md#2-provision-the-demonstration-key-once) shows
 a single durable encryption generation. The [searchable example](../examples/searchable/README.md#provision-durable-key-generations-once)
 adds independent index generations. For a custom key source, see
-[provider contracts](../examples/custom_profile/README.md#implementor-obligations); for changing a
+[provider contracts](../examples/custom_field/README.md#implementor-obligations); for changing a
 serving keyset, see [key lifecycle](key-rotation.md).
 
 ## Search and atomic writes
@@ -146,9 +147,9 @@ preparation does not erase them, and decoded values have their own lifetimes.
 copies. The [ownership reference](ownership.md) defines exact behavior by type
 and buffer.
 
-Codecs, normalizers, profiles, and key providers are extensible. Bindings and
+Fields, value types, codecs, normalizers, and key providers are extensible. Bindings and
 padding policies are sealed to the built-in choices; a custom codec cannot add
-row or tenant authentication. The [custom-profile example](../examples/custom_profile/README.md)
+row or tenant authentication. The [custom-field example](../examples/custom_field/README.md)
 shows a zeroizing value, codec, normalizer, and provider working together.
 
 ## From design to a working application

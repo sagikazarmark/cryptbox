@@ -2,7 +2,8 @@ use std::fmt;
 
 use crate::{
     BlindIndexKeyProvider, BlindIndexMetadata, BlindIndexRef, BlindIndexSpec, Ciphertext,
-    Encrypted, EncryptionKeyProvider, EncryptionProfile, Error, KeyContext, derive_blind_index,
+    Encrypted, EncryptionKeyProvider, Error, Field, GlobalKeyContext, KeyContext,
+    derive_blind_index,
 };
 
 struct PreparedIndex {
@@ -21,18 +22,18 @@ struct PreparedIndex {
 #[doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub struct Prepared<'a, Profile>
+pub struct Prepared<'a, F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
-    source: &'a Profile::Value,
-    ciphertext: Ciphertext<Profile>,
+    source: &'a F::Value,
+    ciphertext: Ciphertext<F>,
     indexes: Vec<PreparedIndex>,
 }
 
-impl<Profile> fmt::Debug for Prepared<'_, Profile>
+impl<F> fmt::Debug for Prepared<'_, F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -44,9 +45,9 @@ where
     }
 }
 
-impl<Profile> Encrypted<Profile>
+impl<F> Encrypted<F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     /// Encrypts this value into a prepared storage representation.
     ///
@@ -58,7 +59,7 @@ where
     pub fn prepare_with<'a>(
         &'a self,
         keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Prepared<'a, Profile>, Error> {
+    ) -> Result<Prepared<'a, F>, Error> {
         Ok(Prepared {
             source: self.expose_secret(),
             ciphertext: self.encrypt_with(keys)?,
@@ -66,23 +67,23 @@ where
         })
     }
 
-    /// Prepares this value with the profile's global encryption provider.
+    /// Prepares this value with the process-wide [`GlobalKeyContext`] encryption provider.
     ///
     /// # Errors
     ///
     /// Returns an error when providers are uninitialized or encryption fails.
-    pub fn prepare(&self) -> Result<Prepared<'_, Profile>, Error> {
-        self.prepare_with(Profile::Keys::encryption_keys()?)
+    pub fn prepare(&self) -> Result<Prepared<'_, F>, Error> {
+        self.prepare_with(GlobalKeyContext::encryption_keys()?)
     }
 }
 
-impl<Profile> Prepared<'_, Profile>
+impl<F> Prepared<'_, F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     /// Returns the encrypted storage value.
     #[must_use]
-    pub const fn ciphertext(&self) -> &Ciphertext<Profile> {
+    pub const fn ciphertext(&self) -> &Ciphertext<F> {
         &self.ciphertext
     }
 
@@ -94,13 +95,13 @@ where
     /// invalid precision, or an unavailable provider.
     pub fn with_index_with<Spec>(mut self, keys: &dyn BlindIndexKeyProvider) -> Result<Self, Error>
     where
-        Spec: BlindIndexSpec<Profile::Value>,
+        Spec: BlindIndexSpec<F::Value>,
     {
         if self.indexes.iter().any(|index| index.id == Spec::ID) {
             return Err(Error::DuplicatePreparedIndex(Spec::ID));
         }
 
-        let index = derive_blind_index::<Spec, Profile::Value, Profile>(self.source, keys)?;
+        let index = derive_blind_index::<Spec, F::Value, F>(self.source, keys)?;
         self.indexes.push(PreparedIndex {
             id: Spec::ID,
             bytes: index.into_bytes(),
@@ -109,7 +110,7 @@ where
         Ok(self)
     }
 
-    /// Adds an index with the profile's global blind-index provider.
+    /// Adds an index with the process-wide [`GlobalKeyContext`] blind-index provider.
     ///
     /// # Errors
     ///
@@ -117,9 +118,9 @@ where
     /// failed index derivation.
     pub fn with_index<Spec>(self) -> Result<Self, Error>
     where
-        Spec: BlindIndexSpec<Profile::Value>,
+        Spec: BlindIndexSpec<F::Value>,
     {
-        self.with_index_with::<Spec>(Profile::Keys::blind_index_keys()?)
+        self.with_index_with::<Spec>(GlobalKeyContext::blind_index_keys()?)
     }
 
     /// Returns a prepared logical index by its typed specification.

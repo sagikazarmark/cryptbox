@@ -1,10 +1,15 @@
 //! First field-bound round trip with explicit, ephemeral keys.
 
 // ANCHOR: first-field
-use cryptbox::{Encrypted, EncryptionKey, LocalEncryptionKeyring};
+use cryptbox::{Encrypted, EncryptionKey, Field, FieldId, LocalEncryptionKeyring, Padding, Utf8};
 
-cryptbox::profile! {
-    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
+struct UserEmail;
+
+impl Field for UserEmail {
+    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
 }
 
 fn main() -> Result<(), cryptbox::Error> {
@@ -24,8 +29,13 @@ fn main() -> Result<(), cryptbox::Error> {
 mod tests {
     use super::*;
 
-    cryptbox::profile! {
-        BillingEmail: String { id: "124f036a-39c6-4197-a9bb-c92c471285ad" }
+    struct BillingEmail;
+
+    impl Field for BillingEmail {
+        const ID: FieldId = cryptbox::field_id!("124f036a-39c6-4197-a9bb-c92c471285ad");
+        const PADDING: Padding = Padding::NONE;
+        type Value = String;
+        type Codec = Utf8;
     }
 
     #[test]

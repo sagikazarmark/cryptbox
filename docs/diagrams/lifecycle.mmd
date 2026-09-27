@@ -1,7 +1,7 @@
 flowchart TB
-    E["Encrypted&lt;T, Profile&gt;: owns plaintext"]
-    C["Ciphertext&lt;T, Profile&gt;: owns encrypted envelope"]
-    D["New Encrypted&lt;T, Profile&gt;: owns decrypted plaintext"]
+    E["Encrypted&lt;F&gt;: owns plaintext"]
+    C["Ciphertext&lt;F&gt;: owns encrypted envelope"]
+    D["New Encrypted&lt;F&gt;: owns decrypted plaintext"]
     P["Prepared: owns ciphertext and optional indexes"]
     S["Storage: encrypted envelope and optional indexes"]
     E -->|"encrypt_with borrows; source retained"| C

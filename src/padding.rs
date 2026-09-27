@@ -4,93 +4,102 @@ use crate::Error;
 
 /// Expands encoded plaintext before encryption to hide its exact length.
 ///
-/// Whether a profile uses padding is persistent schema: enabling or disabling
+/// A field selects its policy with [`Field::PADDING`](crate::Field::PADDING):
+/// [`Padding::NONE`], [`Padding::block`], or [`Padding::length`]. The
+/// representation is private, so applications cannot define another policy.
+///
+/// Whether a field uses padding is persistent schema: enabling or disabling
 /// padding for stored ciphertext requires an explicit migration. Padding
 /// parameters may change without migration because removal does not depend on
 /// the parameter that produced the padding.
 ///
-/// This trait is sealed: select [`NoPadding`], [`PadToBlock`], or [`PadToLength`].
-/// Applications cannot implement another padding policy. Codecs, index normalizers,
-/// profiles, and key providers are extensible; see the [custom-profile example]
-/// and [ownership reference].
+/// Padded values use ISO/IEC 7816-4 padding: a `0x80` marker followed by zero
+/// bytes. See the [custom-field example] and [ownership reference].
+///
+/// Invalid parameters in a constant are rejected at compile time:
+///
+/// ```compile_fail,E0080
+/// const PADDING: cryptbox::Padding = cryptbox::Padding::block(1);
+/// ```
 ///
 #[doc = concat!(
-    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
+    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub trait Padding: private::Sealed + Sized + 'static {
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct Padding(Policy);
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+enum Policy {
+    #[default]
+    None,
+    Block(usize),
+    Length(usize),
+}
+
+impl Padding {
+    /// Stores encoded plaintext at its exact length.
+    pub const NONE: Self = Self(Policy::None);
+
+    /// Pads to the next multiple of `size` bytes, always adding at least one byte.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `size` is less than 2. In a constant such as
+    /// [`Field::PADDING`](crate::Field::PADDING), that is a compile-time error.
+    #[must_use]
+    pub const fn block(size: usize) -> Self {
+        assert!(size >= 2, "padding block size must be at least 2");
+
+        Self(Policy::Block(size))
+    }
+
+    /// Pads every encoded value to exactly `len` bytes.
+    ///
+    /// Encoding a value of `len` bytes or more fails with
+    /// [`Error::PaddingOverflow`].
+    ///
+    /// # Panics
+    ///
+    /// Panics when `len` is 0. In a constant such as
+    /// [`Field::PADDING`](crate::Field::PADDING), that is a compile-time error.
+    #[must_use]
+    pub const fn length(len: usize) -> Self {
+        assert!(len >= 1, "fixed padding length must be at least 1");
+
+        Self(Policy::Length(len))
+    }
+
     /// Applies this policy to encoded plaintext.
-    #[doc(hidden)]
-    fn pad(plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error>;
+    pub(crate) fn pad(self, plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
+        match self.0 {
+            Policy::None => Ok(plaintext),
+            Policy::Block(size) => {
+                let length_with_marker = plaintext
+                    .len()
+                    .checked_add(1)
+                    .ok_or(Error::MessageTooLong)?;
+                let blocks = length_with_marker.div_ceil(size);
+                let target = blocks.checked_mul(size).ok_or(Error::MessageTooLong)?;
+
+                Ok(pad_to_length(&plaintext, target))
+            }
+            Policy::Length(length) => {
+                if plaintext.len() >= length {
+                    return Err(Error::PaddingOverflow);
+                }
+
+                Ok(pad_to_length(&plaintext, length))
+            }
+        }
+    }
 
     /// Removes ISO/IEC 7816-4 padding from decrypted plaintext.
-    #[doc(hidden)]
-    fn unpad(plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error>;
-}
-
-/// Stores encoded plaintext at its exact length.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct NoPadding;
-
-impl private::Sealed for NoPadding {}
-
-impl Padding for NoPadding {
-    fn pad(plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
-        Ok(plaintext)
-    }
-
-    fn unpad(plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
-        Ok(plaintext)
-    }
-}
-
-/// Pads to the next multiple of `N` bytes, always adding at least one byte.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PadToBlock<const N: usize>;
-
-impl<const N: usize> private::Sealed for PadToBlock<N> {}
-
-impl<const N: usize> Padding for PadToBlock<N> {
-    fn pad(plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
-        const { assert!(N >= 2, "padding block size must be at least 2") };
-
-        let length_with_marker = plaintext
-            .len()
-            .checked_add(1)
-            .ok_or(Error::MessageTooLong)?;
-        let blocks = length_with_marker.div_ceil(N);
-        let target = blocks.checked_mul(N).ok_or(Error::MessageTooLong)?;
-        Ok(pad_to_length(&plaintext, target))
-    }
-
-    fn unpad(plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
-        const { assert!(N >= 2, "padding block size must be at least 2") };
-
-        unpad(plaintext)
-    }
-}
-
-/// Pads every encoded value to exactly `N` bytes.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct PadToLength<const N: usize>;
-
-impl<const N: usize> private::Sealed for PadToLength<N> {}
-
-impl<const N: usize> Padding for PadToLength<N> {
-    fn pad(plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
-        const { assert!(N >= 1, "fixed padding length must be at least 1") };
-
-        if plaintext.len() >= N {
-            return Err(Error::PaddingOverflow);
+    pub(crate) fn unpad(self, plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
+        match self.0 {
+            Policy::None => Ok(plaintext),
+            Policy::Block(_) | Policy::Length(_) => unpad(plaintext),
         }
-
-        Ok(pad_to_length(&plaintext, N))
-    }
-
-    fn unpad(plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
-        const { assert!(N >= 1, "fixed padding length must be at least 1") };
-
-        unpad(plaintext)
     }
 }
 
@@ -116,35 +125,59 @@ fn unpad(mut plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error>
     Ok(plaintext)
 }
 
-mod private {
-    pub trait Sealed {}
-}
-
 #[cfg(test)]
 mod tests {
     use zeroize::Zeroizing;
 
-    use super::{NoPadding, PadToBlock, PadToLength, Padding};
+    use super::Padding;
     use crate::Error;
 
     #[test]
     fn no_padding_preserves_plaintext() {
         let plaintext = Zeroizing::new(b"exact bytes".to_vec());
-        let padded = NoPadding::pad(plaintext).unwrap();
+        let padded = Padding::NONE.pad(plaintext).unwrap();
 
         assert_eq!(padded.as_slice(), b"exact bytes");
-        assert_eq!(NoPadding::unpad(padded).unwrap().as_slice(), b"exact bytes");
+        assert_eq!(
+            Padding::NONE.unpad(padded).unwrap().as_slice(),
+            b"exact bytes"
+        );
+    }
+
+    #[test]
+    fn no_padding_is_the_default() {
+        assert_eq!(Padding::default(), Padding::NONE);
+    }
+
+    #[test]
+    fn block_padding_matches_iso_7816_4_bytes() {
+        let padded = Padding::block(8)
+            .pad(Zeroizing::new(b"abc".to_vec()))
+            .unwrap();
+
+        assert_eq!(padded.as_slice(), b"abc\x80\0\0\0\0");
+    }
+
+    #[test]
+    fn fixed_length_padding_matches_iso_7816_4_bytes() {
+        let padded = Padding::length(6)
+            .pad(Zeroizing::new(b"abc".to_vec()))
+            .unwrap();
+
+        assert_eq!(padded.as_slice(), b"abc\x80\0\0");
     }
 
     #[test]
     fn block_padding_always_adds_a_marker_and_round_trips() {
         for length in 0..=33 {
             let plaintext = vec![b'x'; length];
-            let padded = PadToBlock::<16>::pad(Zeroizing::new(plaintext.clone())).unwrap();
+            let padded = Padding::block(16)
+                .pad(Zeroizing::new(plaintext.clone()))
+                .unwrap();
 
             assert_eq!(padded.len(), (length / 16 + 1) * 16);
             assert_eq!(
-                PadToBlock::<16>::unpad(padded).unwrap().as_slice(),
+                Padding::block(16).unpad(padded).unwrap().as_slice(),
                 plaintext
             );
         }
@@ -154,31 +187,35 @@ mod tests {
     fn fixed_length_padding_fills_the_target_and_rejects_overflow() {
         for length in 0..32 {
             let plaintext = vec![b'x'; length];
-            let padded = PadToLength::<32>::pad(Zeroizing::new(plaintext.clone())).unwrap();
+            let padded = Padding::length(32)
+                .pad(Zeroizing::new(plaintext.clone()))
+                .unwrap();
 
             assert_eq!(padded.len(), 32);
             assert_eq!(
-                PadToLength::<32>::unpad(padded).unwrap().as_slice(),
+                Padding::length(32).unpad(padded).unwrap().as_slice(),
                 plaintext
             );
         }
 
         assert_eq!(
-            PadToLength::<32>::pad(Zeroizing::new(vec![b'x'; 32])),
+            Padding::length(32).pad(Zeroizing::new(vec![b'x'; 32])),
             Err(Error::PaddingOverflow)
         );
     }
 
     #[test]
     fn padded_plaintext_can_be_unpadded_with_different_parameters() {
-        let padded = PadToBlock::<16>::pad(Zeroizing::new(b"portable".to_vec())).unwrap();
+        let padded = Padding::block(16)
+            .pad(Zeroizing::new(b"portable".to_vec()))
+            .unwrap();
 
         assert_eq!(
-            PadToBlock::<64>::unpad(padded.clone()).unwrap().as_slice(),
+            Padding::block(64).unpad(padded.clone()).unwrap().as_slice(),
             b"portable"
         );
         assert_eq!(
-            PadToLength::<256>::unpad(padded).unwrap().as_slice(),
+            Padding::length(256).unpad(padded).unwrap().as_slice(),
             b"portable"
         );
     }
@@ -187,9 +224,21 @@ mod tests {
     fn malformed_padding_is_rejected() {
         for plaintext in [Vec::new(), vec![0; 16], b"missing marker".to_vec()] {
             assert_eq!(
-                PadToBlock::<16>::unpad(Zeroizing::new(plaintext)),
+                Padding::block(16).unpad(Zeroizing::new(plaintext)),
                 Err(Error::InvalidPadding)
             );
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "padding block size must be at least 2")]
+    fn block_size_below_two_is_rejected() {
+        let _ = Padding::block(std::hint::black_box(1));
+    }
+
+    #[test]
+    #[should_panic(expected = "fixed padding length must be at least 1")]
+    fn zero_fixed_length_is_rejected() {
+        let _ = Padding::length(std::hint::black_box(0));
     }
 }

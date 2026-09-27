@@ -1,8 +1,8 @@
-//! Public-boundary tests for profile padding policies.
+//! Public-boundary tests for field padding policies.
 
 use cryptbox::{
-    Ciphertext, Encrypted, EncryptionKey, EncryptionProfile, Error, Field, GlobalKeyContext, KeyId,
-    LocalEncryptionKeyring, NoPadding, PadToBlock, PadToLength, Utf8, field_id, key_id,
+    Ciphertext, Encrypted, EncryptionKey, Error, Field, FieldId, KeyId, LocalEncryptionKeyring,
+    Padding, Utf8, field_id, key_id,
 };
 
 const KEY_ID: KeyId = key_id!("50000000-0000-4000-8000-000000000005");
@@ -11,100 +11,65 @@ fn keyring() -> LocalEncryptionKeyring {
     LocalEncryptionKeyring::new(EncryptionKey::new(KEY_ID, [47; 32]), []).unwrap()
 }
 
-struct SharedField;
-
-impl Field for SharedField {
-    const ID: cryptbox::FieldId = field_id!("60000000-0000-4000-8000-000000000006");
-    const NAME: &'static str = "shared-padding-field";
-}
+const SHARED_FIELD: FieldId = field_id!("60000000-0000-4000-8000-000000000006");
 
 struct Unpadded;
 
 impl Field for Unpadded {
-    const ID: cryptbox::FieldId = SharedField::ID;
-    const NAME: &'static str = SharedField::NAME;
-}
-
-impl EncryptionProfile for Unpadded {
+    const ID: FieldId = SHARED_FIELD;
+    const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = NoPadding;
 }
 
 struct SharedFieldPadded;
 
 impl Field for SharedFieldPadded {
-    const ID: cryptbox::FieldId = SharedField::ID;
-    const NAME: &'static str = SharedField::NAME;
-}
-
-impl EncryptionProfile for SharedFieldPadded {
+    const ID: FieldId = SHARED_FIELD;
+    const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = PadToBlock<16>;
 }
 
 struct FixedLength;
 
 impl Field for FixedLength {
-    const ID: cryptbox::FieldId = SharedField::ID;
-    const NAME: &'static str = SharedField::NAME;
-}
-
-impl EncryptionProfile for FixedLength {
+    const ID: FieldId = SHARED_FIELD;
+    const PADDING: Padding = Padding::length(16);
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = PadToLength<16>;
 }
 
 struct WiderBlockPadded;
 
 impl Field for WiderBlockPadded {
-    const ID: cryptbox::FieldId = SharedField::ID;
-    const NAME: &'static str = SharedField::NAME;
-}
-
-impl EncryptionProfile for WiderBlockPadded {
+    const ID: FieldId = SHARED_FIELD;
+    const PADDING: Padding = Padding::block(32);
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = PadToBlock<32>;
 }
 
 struct BlockPadded;
 
 impl Field for BlockPadded {
-    const ID: cryptbox::FieldId = SharedField::ID;
-    const NAME: &'static str = SharedField::NAME;
-}
-
-impl EncryptionProfile for BlockPadded {
+    const ID: FieldId = SHARED_FIELD;
+    const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = PadToBlock<16>;
 }
 
 struct PolicyFixedLength;
 
 impl Field for PolicyFixedLength {
-    const ID: cryptbox::FieldId = SharedField::ID;
-    const NAME: &'static str = SharedField::NAME;
-}
-
-impl EncryptionProfile for PolicyFixedLength {
+    const ID: FieldId = SHARED_FIELD;
+    const PADDING: Padding = Padding::length(1_048_576);
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = PadToLength<1_048_576>;
 }
 
 // Padding/envelope arithmetic from docs/wire-format.md#size-semantics-and-enforcement.
 // The 1 MiB cases test size boundaries, not an enforced operational cap.
-fn assert_stored_sizes<P: EncryptionProfile<Value = String>>(cases: &[(usize, usize)]) {
+fn assert_stored_sizes<P: Field<Value = String>>(cases: &[(usize, usize)]) {
     let keys = keyring();
     for &(encoded_bytes, envelope_bytes) in cases {
         let input = "x".repeat(encoded_bytes);

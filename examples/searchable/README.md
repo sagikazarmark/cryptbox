@@ -157,7 +157,7 @@ fresh dataset above; additional rows from earlier runs may also be returned.
 ## How the storage operations work
 
 These excerpts come from the [complete application](main.rs).
-Its `UserEmail` profile uses `String`, `Utf8`, field binding and `NoPadding`.
+Its `UserEmail` field uses `String`, `Utf8` and `Padding::NONE`, and binds ciphertext to its ID.
 `EmailLookup` retains 128 bits and trims/ASCII-lowercases for equality—an illustrative
 policy, not general email canonicalization. Application validation requires a
 trimmed ASCII graphic value containing `@`, at most 254 bytes. Stored text retains
@@ -283,7 +283,7 @@ sets without skipping verification. Candidate comparison cannot detect omitted
 rows or authenticate index metadata; see
 [what each check establishes](../../docs/security.md#what-each-check-establishes).
 
-Blind indexes reveal equality/frequency and cannot enforce uniqueness. `NoPadding`
+Blind indexes reveal equality/frequency and cannot enforce uniqueness. `Padding::NONE`
 reveals encoded length; field binding does not prevent same-field substitution or replay.
 
 ## Use it in your application

@@ -28,10 +28,28 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{EncryptionKey, Field, LocalEncryptionKeyring, Router, decrypt, encrypt};
+/// use cryptbox::{
+///     EncryptionKey, Field, FieldId, LocalEncryptionKeyring, Padding, Router, Utf8, decrypt,
+///     encrypt,
+/// };
 ///
-/// cryptbox::profile! { Email: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" } }
-/// cryptbox::profile! { Iban: String { id: "7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13" } }
+/// struct Email;
+///
+/// impl Field for Email {
+///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+///     const PADDING: Padding = Padding::NONE;
+///     type Value = String;
+///     type Codec = Utf8;
+/// }
+///
+/// struct Iban;
+///
+/// impl Field for Iban {
+///     const ID: FieldId = cryptbox::field_id!("7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13");
+///     const PADDING: Padding = Padding::NONE;
+///     type Value = String;
+///     type Codec = Utf8;
+/// }
 ///
 /// # fn main() -> Result<(), cryptbox::Error> {
 /// let general = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
@@ -40,8 +58,8 @@ use crate::{
 ///     .route::<Email>(general)?
 ///     .route::<Iban>(payments)?;
 ///
-/// let ciphertext = encrypt::<Iban>(b"DE89370400440532013000", &keys)?;
-/// assert_eq!(decrypt::<Iban>(&ciphertext, &keys)?.as_slice(), b"DE89370400440532013000");
+/// let ciphertext = encrypt(Iban::ID, b"DE89370400440532013000", &keys)?;
+/// assert_eq!(decrypt(Iban::ID, &ciphertext, &keys)?.as_slice(), b"DE89370400440532013000");
 /// assert!(!keys.falls_back(Iban::ID));
 /// # Ok(())
 /// # }

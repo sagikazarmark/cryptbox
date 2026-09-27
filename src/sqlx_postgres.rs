@@ -5,9 +5,7 @@ use sqlx::{
     postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef},
 };
 
-use crate::{
-    BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted, EncryptionProfile,
-};
+use crate::{BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted, Field};
 
 fn bytea_type_info() -> PgTypeInfo {
     <Vec<u8> as Type<Postgres>>::type_info()
@@ -17,7 +15,7 @@ fn bytea_compatible(ty: &PgTypeInfo) -> bool {
     <Vec<u8> as Type<Postgres>>::compatible(ty)
 }
 
-impl<Profile: EncryptionProfile> Type<Postgres> for Encrypted<Profile> {
+impl<F: Field> Type<Postgres> for Encrypted<F> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -27,9 +25,9 @@ impl<Profile: EncryptionProfile> Type<Postgres> for Encrypted<Profile> {
     }
 }
 
-impl<Profile> Encode<'_, Postgres> for Encrypted<Profile>
+impl<F> Encode<'_, Postgres> for Encrypted<F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         let ciphertext = self.encrypt()?;
@@ -43,19 +41,19 @@ where
     }
 }
 
-impl<'row, Profile> Decode<'row, Postgres> for Encrypted<Profile>
+impl<'row, F> Decode<'row, Postgres> for Encrypted<F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
-        let ciphertext = Ciphertext::<Profile>::from_bytes(bytes)?;
+        let ciphertext = Ciphertext::<F>::from_bytes(bytes)?;
 
         Ok(ciphertext.decrypt()?)
     }
 }
 
-impl<Profile> Type<Postgres> for Ciphertext<Profile> {
+impl<F: Field> Type<Postgres> for Ciphertext<F> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -65,7 +63,7 @@ impl<Profile> Type<Postgres> for Ciphertext<Profile> {
     }
 }
 
-impl<Profile> Encode<'_, Postgres> for Ciphertext<Profile> {
+impl<F: Field> Encode<'_, Postgres> for Ciphertext<F> {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         buffer.extend_from_slice(self.as_bytes());
 
@@ -77,7 +75,7 @@ impl<Profile> Encode<'_, Postgres> for Ciphertext<Profile> {
     }
 }
 
-impl<'row, Profile> Decode<'row, Postgres> for Ciphertext<Profile> {
+impl<'row, F: Field> Decode<'row, Postgres> for Ciphertext<F> {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
 
@@ -119,7 +117,7 @@ where
 }
 
 #[cfg(feature = "migrate")]
-impl<Profile: EncryptionProfile> Type<Postgres> for crate::migrate::MaybeEncrypted<Profile> {
+impl<F: Field> Type<Postgres> for crate::migrate::MaybeEncrypted<F> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -134,9 +132,9 @@ impl<Profile: EncryptionProfile> Type<Postgres> for crate::migrate::MaybeEncrypt
 // `Encode` counterpart: writes always encrypt through `Encrypted` or
 // `Prepared`.
 #[cfg(feature = "migrate")]
-impl<'row, Profile> Decode<'row, Postgres> for crate::migrate::MaybeEncrypted<Profile>
+impl<'row, F> Decode<'row, Postgres> for crate::migrate::MaybeEncrypted<F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;

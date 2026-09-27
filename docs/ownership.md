@@ -10,9 +10,9 @@ The application owns the lifetime of decoded values and any copies it makes.
 
 ```mermaid
 flowchart TB
-    E["Encrypted&lt;T, Profile&gt;: owns plaintext"]
-    C["Ciphertext&lt;T, Profile&gt;: owns encrypted envelope"]
-    D["New Encrypted&lt;T, Profile&gt;: owns decrypted plaintext"]
+    E["Encrypted&lt;F&gt;: owns plaintext"]
+    C["Ciphertext&lt;F&gt;: owns encrypted envelope"]
+    D["New Encrypted&lt;F&gt;: owns decrypted plaintext"]
     P["Prepared: owns ciphertext and optional indexes"]
     S["Storage: encrypted envelope and optional indexes"]
     E -->|"encrypt_with borrows; source retained"| C
@@ -30,7 +30,7 @@ flowchart TB
 
 | Object or buffer | Ownership and end of lifetime |
 | --- | --- |
-| `Encrypted<Profile>` | Owns plaintext `T`. Encryption/preparation borrows it and retains it. Drop drops `T`; it does not invoke zeroization for arbitrary application types. |
+| `Encrypted<F>` | Owns plaintext `T`, the field's value type. Encryption/preparation borrows it and retains it. Drop drops `T`; it does not invoke zeroization for arbitrary application types. |
 | Plaintext clones | `Encrypted::clone` clones `T`, and `Secret::clone` clones its inner value. A `String` clone owns another plaintext allocation. Each copy has an independent lifetime; erasing one does not erase the others. |
 | Encoded, padded, normalized and decrypted temporary bytes | CryptBox-owned plaintext buffers use zeroizing storage. Custom codecs and normalizers must protect their own intermediate allocations, including error paths and superseded buffers during growth. The trait's return type alone cannot enforce that. |
 | `Prepared` | Owns ciphertext and optional indexes while borrowing the plaintext source. Drop releases the borrow but does not erase the source. Preparation does not persist data. |
@@ -42,14 +42,15 @@ flowchart TB
 ## `into_secret` and wrapped values
 
 `Encrypted::into_secret()` consumes the wrapper and returns its `T`. It does not
-construct a `Secret` or clone the value. For a `String` profile, wrapping the result
+construct a `Secret` or clone the value. For a `String` field, wrapping the result
 as `Secret::new(decrypted.into_secret())` gives that returned string a zeroizing
 owner; the original encryption source and any prior clones still exist independently.
 
-`Encrypted<Profile>` requires a codec for `Secret<String>`.
-The built-in `Utf8` implements `Codec<String>`, not every wrapper type. Normalizers
-also require an implementation for the exact input type. The
-[custom-profile example](../examples/custom_profile/README.md) demonstrates a codec that decodes
+A field can also store `Secret<String>` or `Secret<Vec<u8>>` directly. `Utf8`
+and `Raw` encode them with exactly the same bytes as `String` and `Vec<u8>`, and
+they are the wrappers' `Plaintext` codecs. Other wrapper types need their own
+codec. Normalizers also require an implementation for the exact input type. The
+[custom-field example](../examples/custom_field/README.md) demonstrates a validating codec that decodes
 directly into `Secret<String>`.
 
 ## Temporary buffers and erasure limits
@@ -62,7 +63,7 @@ of the outstanding review boundary.
 `Zeroizing<Vec<u8>>` wipes its current allocation, not allocations previously
 released by growth. Custom implementations must protect intermediate allocations
 and failure paths as well as returned buffers. See the
-[implementor guidance](../examples/custom_profile/README.md#implementor-obligations) for allocation handling.
+[implementor guidance](../examples/custom_field/README.md#implementor-obligations) for allocation handling.
 
 Zeroization does not promise erasure of compiler-generated copies, registers,
 OS copies, or arbitrary application allocations. Behavioral tests can verify

@@ -4,8 +4,8 @@ use std::error::Error;
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, EncryptionKey,
-    EncryptionProfile, Field, GlobalKeyContext, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Utf8, blind_index_probes, field_id, index_id, index_key_id, key_id,
+    Field, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding,
+    Utf8, blind_index_probes, field_id, index_id, index_key_id, key_id,
     migrate::{MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
@@ -20,14 +20,9 @@ struct UserEmail;
 
 impl Field for UserEmail {
     const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
-    const NAME: &'static str = "user-email";
-}
-
-impl EncryptionProfile for UserEmail {
+    const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Keys = GlobalKeyContext;
-    type Padding = cryptbox::NoPadding;
 }
 
 struct EmailLookup;

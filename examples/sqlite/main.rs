@@ -3,7 +3,10 @@
 
 use std::{error::Error, fs::File, io::Read, path::Path};
 
-use cryptbox::{Ciphertext, Encrypted, EncryptionKey, KeyId, LocalEncryptionKeyring, key_id};
+use cryptbox::{
+    Ciphertext, Encrypted, EncryptionKey, Field, FieldId, KeyId, LocalEncryptionKeyring, Padding,
+    Utf8, key_id,
+};
 use sqlx::{Connection, Row, sqlite::SqliteConnectOptions, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
@@ -16,8 +19,13 @@ enum Command {
     Read,
 }
 
-cryptbox::profile! {
-    UserEmail: String { id: "ca274e85-63c4-4f7d-a255-2dfecbfe5e25" }
+struct UserEmail;
+
+impl Field for UserEmail {
+    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
 }
 
 fn main() -> Result<(), Box<dyn Error>> {

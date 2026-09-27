@@ -7,9 +7,7 @@ use sqlx::{
     sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef},
 };
 
-use crate::{
-    BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted, EncryptionProfile,
-};
+use crate::{BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted, Field};
 
 fn blob_type_info() -> SqliteTypeInfo {
     <Vec<u8> as Type<Sqlite>>::type_info()
@@ -19,7 +17,7 @@ fn blob_compatible(ty: &SqliteTypeInfo) -> bool {
     <Vec<u8> as Type<Sqlite>>::compatible(ty)
 }
 
-impl<Profile: EncryptionProfile> Type<Sqlite> for Encrypted<Profile> {
+impl<F: Field> Type<Sqlite> for Encrypted<F> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -29,7 +27,7 @@ impl<Profile: EncryptionProfile> Type<Sqlite> for Encrypted<Profile> {
     }
 }
 
-impl<Profile> Type<Sqlite> for Ciphertext<Profile> {
+impl<F: Field> Type<Sqlite> for Ciphertext<F> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -59,9 +57,9 @@ impl<Spec> Type<Sqlite> for BlindIndexRef<'_, Spec> {
     }
 }
 
-impl<'q, Profile> Encode<'q, Sqlite> for Encrypted<Profile>
+impl<'q, F> Encode<'q, Sqlite> for Encrypted<F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     fn encode_by_ref(
         &self,
@@ -80,7 +78,7 @@ where
     }
 }
 
-impl<'q, Profile> Encode<'q, Sqlite> for Ciphertext<Profile> {
+impl<'q, F: Field> Encode<'q, Sqlite> for Ciphertext<F> {
     fn encode_by_ref(
         &self,
         buffer: &mut Vec<SqliteArgumentValue<'q>>,
@@ -131,19 +129,19 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
     }
 }
 
-impl<'row, Profile> Decode<'row, Sqlite> for Encrypted<Profile>
+impl<'row, F> Decode<'row, Sqlite> for Encrypted<F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
-        let ciphertext = Ciphertext::<Profile>::from_bytes(bytes)?;
+        let ciphertext = Ciphertext::<F>::from_bytes(bytes)?;
 
         Ok(ciphertext.decrypt()?)
     }
 }
 
-impl<'row, Profile> Decode<'row, Sqlite> for Ciphertext<Profile> {
+impl<'row, F: Field> Decode<'row, Sqlite> for Ciphertext<F> {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
 
@@ -163,7 +161,7 @@ where
 }
 
 #[cfg(feature = "migrate")]
-impl<Profile: EncryptionProfile> Type<Sqlite> for crate::migrate::MaybeEncrypted<Profile> {
+impl<F: Field> Type<Sqlite> for crate::migrate::MaybeEncrypted<F> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -178,9 +176,9 @@ impl<Profile: EncryptionProfile> Type<Sqlite> for crate::migrate::MaybeEncrypted
 // `Encode` counterpart: writes always encrypt through `Encrypted` or
 // `Prepared`.
 #[cfg(feature = "migrate")]
-impl<'row, Profile> Decode<'row, Sqlite> for crate::migrate::MaybeEncrypted<Profile>
+impl<'row, F> Decode<'row, Sqlite> for crate::migrate::MaybeEncrypted<F>
 where
-    Profile: EncryptionProfile,
+    F: Field,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
