@@ -2,8 +2,18 @@
 
 **Binding**:
 The expected cryptographic domain of a value, independent of where its stored
-bytes are found. Every value is bound to its field ID. Field binding identifies a
-logical field, not a row or tenant.
+bytes are found. Every value is bound to its field ID, to the parts of a
+declared scope such as a tenant, and optionally to a record ID. A field-only
+binding (`FieldOnly`) identifies a logical field, not a row or tenant. The
+binding's *shape* (its parts and whether it binds a record) is persistent
+schema; its values are supplied at each call.
+<!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “key scope” is only the `keys` parts. Avoid “context” for any of them. -->
+
+**Binding part**:
+One declared value of a binding scope, with a part ID, a value kind (uuid, i64,
+or bytes), and a role. A `keys` part scopes key custody and blind indexes, an
+`index` part scopes blind indexes only, and any other part is bound only. A
+record ID is never a part: it is always bound only.
 
 **Blind index**:
 A separately keyed, truncated searchable projection of a normalized field value.
@@ -61,6 +71,11 @@ and blind-index generations are separate roles with independently generated keys
 A source of current and readable key generations for one key role. Every request
 names the field it serves; a provider that serves all fields alike may ignore it.
 
+**Key scope**:
+The `keys` parts of a binding, which key custody follows (`KeyScope`). Bindings
+with equal `keys` values share a key scope whatever their other parts; a binding
+without `keys` parts has the empty key scope.
+
 **Migration-state verification**:
 Inspection of stored structure and generation convergence. It is distinct from
 authenticated readability and from stored-index consistency.
@@ -106,6 +121,11 @@ persistent schema: field ID, value type, codec ID, padding, index ID,
 precision, and normalizer name. Given keys, it also lists each field's route.
 Applications compare it with a committed snapshot in CI.
 <!-- Agent guidance: the codec ID and normalizer name are reported, never stored in ciphertext or indexes. -->
+
+**Shred unit**:
+The finest `keys` part whose root keys are stored independently. Destroying
+those root keys makes every value sealed under them unreadable; bound-only and
+`index` parts are never shredded on their own.
 
 **Suite**:
 A complete encryption construction identified by a suite ID, specifying key

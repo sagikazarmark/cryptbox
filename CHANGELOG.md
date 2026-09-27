@@ -169,6 +169,18 @@
   fails with the new `Error::BindingMismatch` before any key lookup. The new
   `Error::InvalidBinding` rejects malformed binding declarations or values.
   Flag bit `02` is no longer reserved.
+- Add the `Binding` trait for declaring a scope (ADR-0005). It is unrelated to
+  the 0.5 `Binding` trait removed above. A binding lists its parts as
+  `const PARTS: &[PartSpec]`, each with a `PartId` (`part_id!`), a `PartKind`
+  (uuid, i64, or bytes), and a `PartRole` (`keys`, `index`, or bound only), and
+  supplies `PartValues` for them and for its blind-index `IndexArgs`. Parts
+  must be sorted by part ID with no duplicates or nil IDs. A violation fails the
+  build when the binding is used, and `Error::InvalidBinding` rejects missing
+  parts, wrong kinds, and empty `keys` values. There are two presets: `FieldOnly`,
+  byte-identical to field-only binding, and `Tenant(TenantId)`, one bytes `keys`
+  part. `RecordId` is a kind-tagged record ID, and `KeyScope::of` and
+  `KeyScope::of_index` return the owned, hashable `keys` parts of a binding.
+  Fields do not declare a binding yet.
 - `Json` decodes every float to exactly the value that was encoded
   (`serde_json/float_roundtrip`). Before this, some stored floats were read back one ulp off.
 

@@ -151,7 +151,10 @@ pub mod testing;
 mod value;
 
 pub(crate) use binding::BindingDomain;
-pub use binding::ShapeFingerprint;
+pub use binding::{
+    Binding, FieldOnly, KeyScope, PartKind, PartRole, PartSpec, PartValue, PartValues, RecordId,
+    ShapeFingerprint, Tenant, TenantId,
+};
 pub use blind::{BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, inspect_blind_index};
 #[cfg(feature = "json")]
 pub use codec::Json;
@@ -166,7 +169,7 @@ pub use crypto::{
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error, KeyProviderError};
 pub use field::Field;
-pub use id::{FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, SuiteId};
+pub use id::{FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, PartId, SuiteId};
 pub use key::{
     BlindIndexKey, BlindIndexKeyProvider, EncryptionKey, EncryptionKeyProvider, GlobalKeys,
     KeyContext, Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring,

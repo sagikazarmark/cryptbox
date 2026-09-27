@@ -70,6 +70,10 @@ identifier!(FieldId, "A stable logical encrypted-field identifier.");
 identifier!(KeyId, "An opaque encryption-key generation identifier.");
 identifier!(IndexId, "A stable logical blind-index identifier.");
 identifier!(
+    PartId,
+    "A stable binding-part identifier, independent of Rust names."
+);
+identifier!(
     IndexKeyId,
     "An opaque blind-index-key generation identifier."
 );
@@ -226,6 +230,15 @@ macro_rules! index_id {
 macro_rules! index_key_id {
     ($value:literal) => {{
         const ID: $crate::IndexKeyId = $crate::IndexKeyId::from_uuid_literal($value);
+        ID
+    }};
+}
+
+/// Creates a [`PartId`](crate::PartId) from a UUID literal.
+#[macro_export]
+macro_rules! part_id {
+    ($value:literal) => {{
+        const ID: $crate::PartId = $crate::PartId::from_uuid_literal($value);
         ID
     }};
 }

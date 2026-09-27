@@ -165,6 +165,23 @@ envelopes carry no fingerprint. A record's kind is a runtime value, not part of
 the shape: a record of another kind fails authentication rather than reporting
 `BindingMismatch`.
 
+#### Presets
+
+Two ready-made bindings fix their shapes permanently:
+
+- `FieldOnly` has no parts. Without a record it is the field-only binding (tag
+  `01`), byte-identical to earlier releases. With a record, it is a scoped
+  binding with the record and no parts.
+- `Tenant` has one part: part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
+  bytes, role `keys`. A tenant ID is non-empty opaque bytes; a UUID tenant is
+  its 16 bytes. Without a record, its shape fingerprint is `f8311e0a178867bc`.
+  For field `12345678-1234-4234-8234-1234567890ab` and tenant `acme`, the
+  binding is:
+
+  ```text
+  02123456781234423482341234567890ab0000011e8306bf31354570831c6732f92550e9030000000461636d65
+  ```
+
 #### Reader rules
 
 The fingerprint is diagnostic only. The reader always takes the expected shape
