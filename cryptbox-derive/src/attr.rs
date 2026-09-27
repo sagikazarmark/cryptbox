@@ -2,7 +2,10 @@
 
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote_spanned};
-use syn::{Attribute, Ident, LitInt, LitStr, Path, Token, Type, parenthesized, parse::ParseStream};
+use syn::{
+    Attribute, Ident, LitInt, LitStr, Path, Token, Type, meta::ParseNestedMeta, parenthesized,
+    parse::ParseStream, punctuated::Punctuated, spanned::Spanned,
+};
 
 /// Every key of the namespace. Each derive accepts a subset.
 #[derive(Clone, Copy, PartialEq)]
@@ -18,10 +21,17 @@ pub(crate) enum Key {
     Normalize,
     Normalizer,
     Project,
+    Binding,
+    Record,
+    Indexes,
+    IndexArgs,
+    Part,
+    Keys,
+    Index,
 }
 
 impl Key {
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 18] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -33,6 +43,13 @@ impl Key {
         Self::Normalize,
         Self::Normalizer,
         Self::Project,
+        Self::Binding,
+        Self::Record,
+        Self::Indexes,
+        Self::IndexArgs,
+        Self::Part,
+        Self::Keys,
+        Self::Index,
     ];
 
     fn name(self) -> &'static str {
@@ -48,7 +65,19 @@ impl Key {
             Self::Normalize => "normalize",
             Self::Normalizer => "normalizer",
             Self::Project => "project",
+            Self::Binding => "binding",
+            Self::Record => "record",
+            Self::Indexes => "indexes",
+            Self::IndexArgs => "index_args",
+            Self::Part => "part",
+            Self::Keys => "keys",
+            Self::Index => "index",
         }
+    }
+
+    /// Whether the key stands alone, without a value.
+    fn is_flag(self) -> bool {
+        matches!(self, Self::Record | Self::Keys | Self::Index)
     }
 }
 
@@ -56,6 +85,16 @@ impl Key {
 pub(crate) struct UuidLiteral {
     value: u128,
     span: Span,
+}
+
+impl UuidLiteral {
+    pub(crate) fn value(&self) -> u128 {
+        self.value
+    }
+
+    pub(crate) fn span(&self) -> Span {
+        self.span
+    }
 }
 
 impl ToTokens for UuidLiteral {
@@ -109,6 +148,13 @@ pub(crate) struct Attrs {
     pub(crate) normalize: Option<Path>,
     pub(crate) normalizer: Option<LitStr>,
     pub(crate) project: Option<Path>,
+    pub(crate) binding: Option<Type>,
+    pub(crate) record: Option<Span>,
+    pub(crate) indexes: Option<Vec<Type>>,
+    pub(crate) index_args: Option<Ident>,
+    pub(crate) part: Option<UuidLiteral>,
+    pub(crate) keys: Option<Span>,
+    pub(crate) index: Option<Span>,
     seen: Vec<Key>,
 }
 
@@ -117,10 +163,30 @@ impl Attrs {
     ///
     /// Collects every error it can recover from instead of stopping at the first.
     pub(crate) fn parse(attrs: &[Attribute], keys: &[Key], errors: &mut Errors) -> Self {
+        Self::parse_rejecting(attrs, keys, &[], errors)
+    }
+
+    /// Parses like [`Self::parse`], reporting each `rejected` key with its own
+    /// message instead of as unknown.
+    pub(crate) fn parse_rejecting(
+        attrs: &[Attribute],
+        keys: &[Key],
+        rejected: &[(Key, &str)],
+        errors: &mut Errors,
+    ) -> Self {
         let mut parsed = Self::default();
 
         for attr in attrs.iter().filter(|attr| attr.path().is_ident("cryptbox")) {
             let result = attr.parse_nested_meta(|meta| {
+                if let Some((key, message)) = rejected
+                    .iter()
+                    .find(|(key, _)| meta.path.is_ident(key.name()))
+                {
+                    parsed.seen.push(*key);
+                    errors.push(syn::Error::new_spanned(&meta.path, message));
+                    return skip_value(meta.input);
+                }
+
                 let Some(key) = Key::ALL
                     .into_iter()
                     .find(|key| meta.path.is_ident(key.name()))
@@ -146,10 +212,15 @@ impl Attrs {
                 }
                 parsed.seen.push(key);
 
-                if let Err(error) = meta
-                    .value()
-                    .and_then(|input| parsed.parse_value(key, input))
-                {
+                let result = if key.is_flag() {
+                    parsed.parse_flag(key, &meta)
+                } else if key == Key::Indexes {
+                    parse_indexes(meta.input).map(|list| parsed.indexes = Some(list))
+                } else {
+                    meta.value()
+                        .and_then(|input| parsed.parse_value(key, input))
+                };
+                if let Err(error) = result {
                     errors.push(error);
                     return skip_value(meta.input);
                 }
@@ -171,7 +242,8 @@ impl Attrs {
                 let path: LitStr = input.parse()?;
                 self.krate = Some(path.parse()?);
             }
-            Key::Id => self.id = Some(parse_uuid(input)?),
+            Key::Id => self.id = Some(parse_uuid(key, input)?),
+            Key::Part => self.part = Some(parse_uuid(key, input)?),
             Key::Value => self.value = Some(input.parse()?),
             Key::Codec => self.codec = Some(input.parse()?),
             Key::Padding => self.padding = Some(parse_padding(input)?),
@@ -181,6 +253,27 @@ impl Attrs {
             Key::Normalize => self.normalize = Some(input.parse()?),
             Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
+            Key::Binding => self.binding = Some(input.parse()?),
+            Key::IndexArgs => self.index_args = Some(input.parse()?),
+            Key::Record | Key::Keys | Key::Index | Key::Indexes => {
+                unreachable!("flags and lists have no `= value`")
+            }
+        }
+
+        Ok(())
+    }
+
+    fn parse_flag(&mut self, key: Key, meta: &ParseNestedMeta) -> syn::Result<()> {
+        if !meta.input.is_empty() && !meta.input.peek(Token![,]) {
+            return Err(meta.error(format!("`{}` takes no value", key.name())));
+        }
+
+        let span = meta.path.span();
+        match key {
+            Key::Record => self.record = Some(span),
+            Key::Keys => self.keys = Some(span),
+            Key::Index => self.index = Some(span),
+            _ => unreachable!("only flags are parsed here"),
         }
 
         Ok(())
@@ -236,6 +329,11 @@ impl Errors {
     pub(crate) fn finish(self) -> syn::Result<()> {
         self.0.map_or(Ok(()), Err)
     }
+
+    /// Stops at the errors so far, or keeps accumulating when there are none.
+    pub(crate) fn check(self) -> syn::Result<Self> {
+        self.finish().map(|()| Self::default())
+    }
 }
 
 fn key_list(keys: &[Key]) -> String {
@@ -254,7 +352,23 @@ fn skip_value(input: ParseStream) -> syn::Result<()> {
     Ok(())
 }
 
-fn parse_uuid(input: ParseStream) -> syn::Result<UuidLiteral> {
+/// Parses `indexes(A, B, …)`: at least one blind index.
+fn parse_indexes(input: ParseStream) -> syn::Result<Vec<Type>> {
+    let content;
+    let parens = parenthesized!(content in input);
+    let list = Punctuated::<Type, Token![,]>::parse_terminated(&content)?;
+    if list.is_empty() {
+        return Err(syn::Error::new(
+            parens.span.join(),
+            "list at least one blind index, or omit `indexes`",
+        ));
+    }
+
+    Ok(list.into_iter().collect())
+}
+
+fn parse_uuid(key: Key, input: ParseStream) -> syn::Result<UuidLiteral> {
+    let name = key.name();
     if !input.peek(LitStr) {
         let mut tokens = TokenStream::new();
         while !input.is_empty() && !input.peek(Token![,]) {
@@ -263,7 +377,9 @@ fn parse_uuid(input: ParseStream) -> syn::Result<UuidLiteral> {
 
         return Err(syn::Error::new_spanned(
             tokens,
-            "`id` must be a UUID string literal, such as \"0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64\"",
+            format!(
+                "`{name}` must be a UUID string literal, such as \"0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64\""
+            ),
         ));
     }
 
@@ -271,7 +387,9 @@ fn parse_uuid(input: ParseStream) -> syn::Result<UuidLiteral> {
     let value = uuid_value(&literal.value()).ok_or_else(|| {
         syn::Error::new(
             literal.span(),
-            "`id` must be a hyphenated UUID, such as \"0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64\"",
+            format!(
+                "`{name}` must be a hyphenated UUID, such as \"0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64\""
+            ),
         )
     })?;
 

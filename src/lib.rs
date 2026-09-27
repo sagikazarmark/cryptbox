@@ -161,8 +161,8 @@ mod value;
 
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    Args, Binding, FieldOnly, KeyScope, PartKind, PartRole, PartSpec, PartValue, PartValues,
-    RecordId, ShapeFingerprint, Tenant, TenantId,
+    Args, Binding, FieldOnly, KeyScope, PartKind, PartRole, PartSpec, PartType, PartValue,
+    PartValues, RecordId, ShapeFingerprint, Tenant, TenantId,
 };
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexList, inspect_blind_index,
@@ -173,7 +173,7 @@ pub use codec::Json;
 pub use codec::Postcard;
 pub use codec::{Codec, Plaintext, Raw, Utf8};
 #[cfg(feature = "derive")]
-pub use cryptbox_derive::{BlindIndexSpec, Field, Plaintext};
+pub use cryptbox_derive::{Binding, BlindIndexSpec, Field, Plaintext};
 pub use crypto::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, decrypt, encrypt, inspect_ciphertext,
     is_ciphertext, needs_reencryption, reencrypt,

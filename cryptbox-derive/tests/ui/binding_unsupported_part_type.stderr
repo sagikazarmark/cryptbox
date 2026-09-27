@@ -1,0 +1,14 @@
+error[E0277]: `String` is not a binding part type
+ --> tests/ui/binding_unsupported_part_type.rs:4:11
+  |
+4 |     slug: String,
+  |           ^^^^^^ a part holds a UUID, an `i64`, or bytes
+  |
+  = help: the trait `PartType` is not implemented for `String`
+  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `cryptbox::TenantId`, or `uuid::Uuid` with the `uuid` feature; encode text as bytes
+  = help: the following other types implement trait `PartType`:
+            Box<[u8]>
+            TenantId
+            Vec<u8>
+            [u8; 16]
+            i64

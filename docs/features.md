@@ -5,11 +5,13 @@ included in the crate landing documentation.
 
 No features are enabled by default, and all features are additive:
 
-- `derive` adds `#[derive(Field)]`, `#[derive(BlindIndexSpec)]`, and
-  `#[derive(Plaintext)]` from the `cryptbox-derive` proc-macro crate. Each
-  expands to exactly the trait impls you would write by hand, so a manual impl
-  remains a first-class alternative. IDs are UUID string literals checked at
-  compile time; a codec is never inferred from a type's shape.
+- `derive` adds `#[derive(Field)]`, `#[derive(Binding)]`,
+  `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the
+  `cryptbox-derive` proc-macro crate. Each expands to exactly the trait impls
+  you would write by hand, plus the index-arguments struct a binding names with
+  `index_args`, so a manual impl remains a first-class alternative.
+  IDs are UUID string literals checked at compile time; a codec is never
+  inferred from a type's shape.
 - `json` adds the `Json` codec. Its serialized representation is part of the
   persistent schema. It implies `serde`; values need Serde traits.
 - `migrate` adds the explicit `migrate` module for adopting `CryptBox` over
@@ -22,6 +24,8 @@ No features are enabled by default, and all features are additive:
   bytes. It never adds serialization for plaintext `Plain` values.
 - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
 - `sqlx-sqlite` adds `SQLx` 0.8 `BLOB` storage for `SQLite`.
+- `uuid` lets a binding part hold a `uuid::Uuid`, and converts one into a
+  `RecordId`. Either binds the UUID's 16 bytes, exactly as a `[u8; 16]` does.
 
 The `SQLx` adapters automatically seal and open `Plain<F>`, the column for a
 `FieldOnly` field without a record or blind indexes. `Plain<F>` uses the keys

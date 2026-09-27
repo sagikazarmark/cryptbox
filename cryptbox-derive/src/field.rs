@@ -6,7 +6,16 @@ use syn::{DeriveInput, spanned::Spanned};
 
 use crate::attr::{Attrs, Errors, Key, required};
 
-const KEYS: &[Key] = &[Key::Id, Key::Value, Key::Codec, Key::Padding, Key::Crate];
+const KEYS: &[Key] = &[
+    Key::Id,
+    Key::Value,
+    Key::Codec,
+    Key::Padding,
+    Key::Binding,
+    Key::Record,
+    Key::Indexes,
+    Key::Crate,
+];
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
@@ -45,6 +54,11 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         || quote!(#krate::Padding::NONE),
         |padding| padding.to_tokens(&krate),
     );
+    let record = attrs.record.is_some();
+    let binding = attrs
+        .binding
+        .map_or_else(|| quote!(#krate::FieldOnly), |binding| quote!(#binding));
+    let indexes = attrs.indexes.unwrap_or_default();
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
     Ok(quote! {
@@ -53,11 +67,11 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             impl #impl_generics #krate::Field for #name #type_generics #where_clause {
                 const ID: #krate::FieldId = #krate::FieldId::from_u128(#id);
                 const PADDING: #krate::Padding = #padding;
-                const RECORD: bool = false;
+                const RECORD: bool = #record;
                 type Value = #value;
                 type Codec = #codec;
-                type Binding = #krate::FieldOnly;
-                type Indexes = ();
+                type Binding = #binding;
+                type Indexes = (#(#indexes,)*);
             }
         };
     })

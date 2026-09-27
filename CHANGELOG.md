@@ -254,6 +254,17 @@
   | `S::derive_with(&value, &keys)` | `S::derive_with(&value, &(), &keys)`, or `&index_args` for a scoped field |
   | `S::probes_with(query, &keys)` | `S::probes_with(query, &(), &keys)` |
   | `S::is_consistent_with(&value, &stored, &keys)` | `S::is_consistent_with(&value, &stored, &(), &keys)` |
+- Add `#[derive(Binding)]` for an owned scope struct. Each field is one part,
+  declared as `#[cryptbox(part = "…")]` plus `keys` or `index`, in any order:
+  the derive sorts the parts and rejects nil and duplicate part IDs when it
+  expands. `#[cryptbox(index_args = Name)]` generates the index-arguments struct of
+  the `keys` and `index` parts; without it, the index arguments are the binding
+  itself when every part scopes blind indexes, and `()` when none does. A
+  record is never a part. `#[derive(Field)]` gains `binding = Type`, `record`,
+  and `indexes(Spec, …)`. Part values go through the new sealed `PartType`
+  trait: `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, and `TenantId`, plus
+  `uuid::Uuid` with the new `uuid` feature, which also converts a `Uuid` into a
+  `RecordId`.
 - `Json` decodes every float to exactly the value that was encoded
   (`serde_json/float_roundtrip`). Before this, some stored floats were read back one ulp off.
 

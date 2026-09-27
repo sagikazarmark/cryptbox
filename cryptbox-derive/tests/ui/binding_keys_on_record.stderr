@@ -1,0 +1,5 @@
+error: a record is never a binding part, so it can't scope keys or blind indexes: declare `record` on the field, and pass the record ID beside the binding
+ --> tests/ui/binding_keys_on_record.rs:6:16
+  |
+6 |     #[cryptbox(record, keys)]
+  |                ^^^^^^

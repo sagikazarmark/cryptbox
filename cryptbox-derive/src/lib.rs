@@ -4,12 +4,14 @@
 //! `cryptbox`; do not depend on this crate directly. Each derive expands to
 //! exactly the trait impls you would write by hand, inside `const _: () = { … };`
 //! with absolute `::cryptbox::` paths. It adds no `Debug`, `Deref`, `From`, or
-//! hidden items, so the manual impl stays a first-class alternative.
+//! hidden items, so the manual impl stays a first-class alternative. The one
+//! generated item is the struct you name with `Binding`'s `index_args`.
 //!
 //! All derives share one `#[cryptbox(...)]` attribute namespace. Every derive
 //! accepts `crate = "path"` for code that reaches `cryptbox` under another path.
 
 mod attr;
+mod binding;
 mod blind_index;
 mod field;
 mod plaintext;
@@ -25,6 +27,9 @@ use syn::{DeriveInput, parse_macro_input};
 /// | `value = Type` | yes | The value type stored in the field. |
 /// | `codec = Type` | no | The codec. Defaults to `<Value as Plaintext>::Codec`. |
 /// | `padding = …` | no | `none` (the default), `block(size)`, or `length(len)`. |
+/// | `binding = Type` | no | The binding scope. Defaults to `FieldOnly`. |
+/// | `record` | no | Also binds every value to a record ID (`RECORD = true`). |
+/// | `indexes(Type, …)` | no | The field's blind indexes (`Indexes`). Defaults to none. |
 ///
 /// The ID is validated when the macro expands and is never derived from the
 /// type's name: generate a fresh UUID for every logical field. A codec is never
@@ -32,8 +37,8 @@ use syn::{DeriveInput, parse_macro_input};
 /// implement `Plaintext` reports that it has no default codec. Padding
 /// parameters are validated when the macro expands.
 ///
-/// Derived fields bind values to their field ID alone: `Binding = FieldOnly`,
-/// no record, and no declared blind indexes.
+/// Without `binding`, `record`, and `indexes`, values are bound to their field
+/// ID alone: `Binding = FieldOnly`, no record, and no declared blind indexes.
 ///
 /// ```
 /// #[derive(cryptbox::Field)]
@@ -60,6 +65,69 @@ use syn::{DeriveInput, parse_macro_input};
 ///         type Codec = <String as ::cryptbox::Plaintext>::Codec;
 ///         type Binding = ::cryptbox::FieldOnly;
 ///         type Indexes = ();
+///     }
+/// };
+/// ```
+///
+/// A field bound to a tenant and a record, with a blind index:
+///
+/// ```
+/// # use cryptbox::BlindIndexError;
+/// # use zeroize::Zeroizing;
+/// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+/// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
+/// # }
+/// #[derive(cryptbox::Field)]
+/// #[cryptbox(
+///     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
+///     value = String,
+///     binding = cryptbox::Tenant,
+///     record,
+///     indexes(EmailLookup),
+/// )]
+/// pub struct CustomerEmail;
+///
+/// #[derive(cryptbox::BlindIndexSpec)]
+/// #[cryptbox(
+///     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
+///     field = CustomerEmail,
+///     bits = 32,
+///     query = str,
+///     normalize = normalize_email,
+///     normalizer = "email/1",
+/// )]
+/// pub struct EmailLookup;
+/// ```
+///
+/// expands to exactly the manual impl:
+///
+/// ```
+/// # pub struct CustomerEmail;
+/// # pub struct EmailLookup;
+/// # impl cryptbox::BlindIndexSpec for EmailLookup {
+/// #     type Field = CustomerEmail;
+/// #     const ID: cryptbox::IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
+/// #     const BITS: u16 = 32;
+/// #     const NORMALIZER: &'static str = "email/1";
+/// #     type Query = str;
+/// #     fn normalize_query(query: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, cryptbox::BlindIndexError> {
+/// #         Ok(zeroize::Zeroizing::new(query.as_bytes().to_vec()))
+/// #     }
+/// #     fn normalize_value(value: &String) -> Result<zeroize::Zeroizing<Vec<u8>>, cryptbox::BlindIndexError> {
+/// #         Self::normalize_query(value)
+/// #     }
+/// # }
+/// const _: () = {
+///     #[automatically_derived]
+///     impl ::cryptbox::Field for CustomerEmail {
+///         const ID: ::cryptbox::FieldId =
+///             ::cryptbox::FieldId::from_u128(0x6c3b1f0e_8a24_4d5b_9e71_2f4a6c8d0b13);
+///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
+///         const RECORD: bool = true;
+///         type Value = String;
+///         type Codec = <String as ::cryptbox::Plaintext>::Codec;
+///         type Binding = cryptbox::Tenant;
+///         type Indexes = (EmailLookup,);
 ///     }
 /// };
 /// ```
@@ -235,6 +303,101 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Plaintext, attributes(cryptbox))]
 pub fn derive_plaintext(input: TokenStream) -> TokenStream {
     derive(input, plaintext::expand)
+}
+
+/// Derives `cryptbox::Binding` for an owned scope struct.
+///
+/// Each named field is one part, declared on the field:
+///
+/// | Field key | Required | Meaning |
+/// | --- | --- | --- |
+/// | `part = "…"` | yes | The part ID, a hyphenated UUID string literal. |
+/// | `keys` | no | The part scopes key custody and blind indexes. |
+/// | `index` | no | The part scopes blind indexes only. |
+///
+/// A part without `keys` or `index` is bound only. A part holds a `[u8; 16]`
+/// UUID, a `uuid::Uuid` with `cryptbox`'s `uuid` feature, an `i64`, or bytes
+/// (`Vec<u8>`, `Box<[u8]>`, or `TenantId`); see `PartType`. A record is never a
+/// part: declare `record` on the field.
+///
+/// | Struct key | Required | Meaning |
+/// | --- | --- | --- |
+/// | `index_args = Name` | with bound-only and blind-index parts together | Generates `Name`, the index-arguments struct of the `keys` and `index` parts. |
+///
+/// Without `index_args`, the index arguments are the binding itself when every
+/// part scopes blind indexes, and `()` when none does. The generated struct keeps
+/// each field's name, type, visibility, and docs, and derives `Clone`, `Debug`,
+/// `Hash`, `PartialEq`, and `Eq`.
+///
+/// Part IDs are validated when the macro expands: none is nil, and none repeats.
+/// Declare the fields in any order; the derive sorts the parts by part ID. Every
+/// part ID, kind, and role is persistent schema.
+///
+/// ```
+/// #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+/// #[cryptbox(index_args = OrgSearch)]
+/// pub struct OrgWorkspace {
+///     /// Bound only.
+///     #[cryptbox(part = "c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48")]
+///     pub workspace: Vec<u8>,
+///     /// The key scope and shred unit.
+///     #[cryptbox(part = "3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90", keys)]
+///     pub org: [u8; 16],
+/// }
+/// ```
+///
+/// expands to exactly the manual impl and the named struct. The real expansion
+/// spells the derived traits as absolute paths:
+///
+/// ```
+/// # #[derive(Clone, Hash, PartialEq, Eq)]
+/// # pub struct OrgWorkspace {
+/// #     pub workspace: Vec<u8>,
+/// #     pub org: [u8; 16],
+/// # }
+/// /// The index arguments of [`OrgWorkspace`]: its `keys` and `index` parts.
+/// #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+/// pub struct OrgSearch {
+///     /// The key scope and shred unit.
+///     pub org: [u8; 16],
+/// }
+///
+/// const _: () = {
+///     #[automatically_derived]
+///     impl ::cryptbox::Binding for OrgWorkspace {
+///         // Sorted by part ID.
+///         const PARTS: &'static [::cryptbox::PartSpec] = &[
+///             ::cryptbox::PartSpec::keys(
+///                 ::cryptbox::PartId::from_u128(0x3a1f0c6e_58b2_4d0a_9e57_1c4b8f2d6a90),
+///                 <[u8; 16] as ::cryptbox::PartType>::KIND,
+///             ),
+///             ::cryptbox::PartSpec::bound(
+///                 ::cryptbox::PartId::from_u128(0xc7d24e19_0b8a_4f63_a1d5_6e9f3b720c48),
+///                 <Vec<u8> as ::cryptbox::PartType>::KIND,
+///             ),
+///         ];
+///         type IndexArgs = OrgSearch;
+///
+///         fn values(&self) -> ::cryptbox::PartValues<'_> {
+///             ::cryptbox::PartValues::from([
+///                 <[u8; 16] as ::cryptbox::PartType>::part_value(&self.org),
+///                 <Vec<u8> as ::cryptbox::PartType>::part_value(&self.workspace),
+///             ])
+///         }
+///
+///         fn index_values(args: &OrgSearch) -> ::cryptbox::PartValues<'_> {
+///             ::cryptbox::PartValues::from([
+///                 <[u8; 16] as ::cryptbox::PartType>::part_value(&args.org),
+///             ])
+///         }
+///     }
+/// };
+/// ```
+///
+/// A field names the binding with `#[cryptbox(binding = OrgWorkspace)]`.
+#[proc_macro_derive(Binding, attributes(cryptbox))]
+pub fn derive_binding(input: TokenStream) -> TokenStream {
+    derive(input, binding::expand)
 }
 
 fn derive(

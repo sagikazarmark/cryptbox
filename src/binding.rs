@@ -5,11 +5,13 @@ use sha2::{Digest, Sha256};
 use crate::{Error, FieldId, PartId};
 
 mod args;
+mod part;
 mod presets;
 mod scope;
 
 pub use args::Args;
 pub(crate) use args::{domain, domains};
+pub use part::PartType;
 pub use presets::{FieldOnly, Tenant, TenantId};
 pub use scope::KeyScope;
 
@@ -90,6 +92,13 @@ const SHAPE_LABEL: &[u8] = b"cryptbox/binding-shape/v1\0";
 /// assert_eq!(KeyScope::of(&scope)?, KeyScope::of_index::<OrgWorkspace>(&search)?);
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
+///
+/// With the `derive` feature, `#[derive(Binding)]` writes exactly this impl, and
+/// generates `OrgSearch`, from `#[cryptbox(index_args = OrgSearch)]` on the
+/// struct, `#[cryptbox(part = "3a1f0c6e-…", keys)]` on `org`, and
+/// `#[cryptbox(part = "c7d24e19-…")]` on `workspace`. It sorts the parts and
+/// checks their IDs when it expands; [`PartType`] maps each field's type to
+/// its kind.
 ///
 /// Unsorted parts fail the build:
 ///
@@ -406,6 +415,13 @@ impl<'a> RecordId<'a> {
 impl From<[u8; 16]> for RecordId<'_> {
     fn from(uuid: [u8; 16]) -> Self {
         Self::Uuid(uuid)
+    }
+}
+
+#[cfg(feature = "uuid")]
+impl From<uuid::Uuid> for RecordId<'_> {
+    fn from(uuid: uuid::Uuid) -> Self {
+        Self::Uuid(*uuid.as_bytes())
     }
 }
 

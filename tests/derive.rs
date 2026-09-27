@@ -2,9 +2,10 @@
 #![cfg(feature = "derive")]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
+    Binding, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
     CodecErrorKind, EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, IndexId,
-    IndexKeyId, Padding, Plaintext, Sealed, Utf8, field_id, index_id, index_key_id,
+    IndexKeyId, IndexList, KeyScope, Padding, PartKind, PartSpec, PartValue, PartValues, Plaintext,
+    RecordId, Sealed, Utf8, field_id, index_id, index_key_id, part_id,
 };
 use zeroize::Zeroizing;
 
@@ -335,4 +336,243 @@ fn a_derived_blind_index_names_its_normalizer() {
 #[test]
 fn a_transparent_value_type_shares_its_inner_codec_id() {
     assert_eq!(<<Email as Plaintext>::Codec as Codec<Email>>::ID, "utf8");
+}
+
+/// An org scopes keys, a project scopes blind indexes, and a workspace is only
+/// bound. Declared out of part-ID order.
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+#[cryptbox(index_args = OrgProjectSearch)]
+struct OrgProject {
+    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
+    workspace: [u8; 16],
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    org: Vec<u8>,
+    #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61", index)]
+    project: i64,
+}
+
+/// The manual equivalent of [`OrgProject`].
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct ManualOrgProject {
+    org: Vec<u8>,
+    project: i64,
+    workspace: [u8; 16],
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct ManualOrgProjectSearch {
+    org: Vec<u8>,
+    project: i64,
+}
+
+impl Binding for ManualOrgProject {
+    const PARTS: &'static [PartSpec] = &[
+        PartSpec::keys(
+            part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
+            PartKind::Bytes,
+        ),
+        PartSpec::index(
+            part_id!("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61"),
+            PartKind::I64,
+        ),
+        PartSpec::bound(
+            part_id!("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92"),
+            PartKind::Uuid,
+        ),
+    ];
+    type IndexArgs = ManualOrgProjectSearch;
+
+    fn values(&self) -> PartValues<'_> {
+        PartValues::from([
+            PartValue::Bytes(&self.org),
+            PartValue::I64(self.project),
+            PartValue::Uuid(self.workspace),
+        ])
+    }
+
+    fn index_values(args: &ManualOrgProjectSearch) -> PartValues<'_> {
+        PartValues::from([PartValue::Bytes(&args.org), PartValue::I64(args.project)])
+    }
+}
+
+#[test]
+fn a_derived_binding_declares_its_parts_sorted_by_part_id() {
+    assert_eq!(OrgProject::PARTS, ManualOrgProject::PARTS);
+}
+
+#[derive(Field)]
+#[cryptbox(
+    id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",
+    value = String,
+    binding = OrgProject,
+    record,
+)]
+struct ProjectNote;
+
+/// The manual equivalent of [`ProjectNote`].
+struct ManualProjectNote;
+
+impl Field for ManualProjectNote {
+    const ID: FieldId = field_id!("7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c");
+    const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = true;
+    type Value = String;
+    type Codec = <String as Plaintext>::Codec;
+    type Binding = ManualOrgProject;
+    type Indexes = ();
+}
+
+#[test]
+fn a_derived_bound_field_opens_values_of_its_manual_equivalent() {
+    let keys = keyring();
+    let manual_scope = ManualOrgProject {
+        org: b"acme".to_vec(),
+        project: 7,
+        workspace: [0x42; 16],
+    };
+    let scope = OrgProject {
+        workspace: [0x42; 16],
+        org: b"acme".to_vec(),
+        project: 7,
+    };
+    let record = RecordId::from(9_i64);
+
+    let manual =
+        Sealed::<ManualProjectNote>::seal(&"ship it".to_owned(), (&manual_scope, record), &keys)
+            .unwrap();
+    let derived = Sealed::<ProjectNote>::from_bytes(manual.into_bytes()).unwrap();
+
+    const { assert!(ProjectNote::RECORD) };
+    assert_eq!(derived.open((&scope, record), &keys).unwrap(), "ship it");
+}
+
+#[test]
+fn derived_index_args_share_the_bindings_key_scope() {
+    let scope = OrgProject {
+        workspace: [0x42; 16],
+        org: b"acme".to_vec(),
+        project: 7,
+    };
+    let search = OrgProjectSearch {
+        org: b"acme".to_vec(),
+        project: 7,
+    };
+
+    assert_eq!(
+        KeyScope::of_index::<OrgProject>(&search).unwrap(),
+        KeyScope::of(&scope).unwrap()
+    );
+}
+
+#[derive(Field)]
+#[cryptbox(
+    id = "4b8e2d6f-1a3c-4e57-b9d0-6f2a4c8e1b35",
+    value = String,
+    binding = OrgProject,
+    indexes(ProjectEmailLookup),
+)]
+struct ProjectEmail;
+
+#[derive(BlindIndexSpec)]
+#[cryptbox(
+    id = "9c1e5a3d-7f2b-4d48-a6e0-3b5d9f1c7e24",
+    field = ProjectEmail,
+    bits = 32,
+    query = str,
+    normalize = normalize_text,
+    normalizer = "text/1",
+)]
+struct ProjectEmailLookup;
+
+#[test]
+fn a_derived_field_declares_its_blind_indexes() {
+    assert_eq!(
+        <<ProjectEmail as Field>::Indexes as IndexList<ProjectEmail>>::IDS,
+        [index_id!("9c1e5a3d-7f2b-4d48-a6e0-3b5d9f1c7e24")]
+    );
+}
+
+#[test]
+fn a_derived_blind_index_is_scoped_by_the_generated_index_args() {
+    let keys = index_keys();
+    let email = "Mark@Example.com".to_owned();
+    let scope = |org: &[u8], workspace| OrgProject {
+        workspace: [workspace; 16],
+        org: org.to_vec(),
+        project: 7,
+    };
+    let search = OrgProjectSearch {
+        org: b"acme".to_vec(),
+        project: 7,
+    };
+
+    let probes = ProjectEmailLookup::probes_with("mark@example.com", &search, &keys).unwrap();
+    let prepared = Sealed::<ProjectEmail>::prepare(&email, &scope(b"acme", 1), &keyring())
+        .unwrap()
+        .with_index_with::<ProjectEmailLookup>(&keys)
+        .unwrap();
+    let other_org = Sealed::<ProjectEmail>::prepare(&email, &scope(b"globex", 1), &keyring())
+        .unwrap()
+        .with_index_with::<ProjectEmailLookup>(&keys)
+        .unwrap();
+
+    assert_eq!(
+        prepared.index::<ProjectEmailLookup>().unwrap().as_bytes(),
+        probes[0].as_bytes()
+    );
+    assert_ne!(
+        other_org.index::<ProjectEmailLookup>().unwrap().as_bytes(),
+        probes[0].as_bytes()
+    );
+}
+
+/// Every part scopes blind indexes, so a query passes the binding itself.
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+struct Org {
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    id: [u8; 16],
+}
+
+/// No part scopes blind indexes, so a query passes `()`.
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+struct Sequence {
+    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
+    number: i64,
+}
+
+#[test]
+fn derived_index_args_default_to_the_binding_or_unit() {
+    let org = Org { id: [0x42; 16] };
+
+    assert_eq!(
+        KeyScope::of_index::<Org>(&org).unwrap(),
+        KeyScope::of(&org).unwrap()
+    );
+    assert_eq!(
+        KeyScope::of_index::<Sequence>(&()).unwrap(),
+        KeyScope::of(&Sequence { number: 1 }).unwrap()
+    );
+}
+
+#[cfg(feature = "uuid")]
+mod uuid_parts {
+    use cryptbox::{KeyScope, RecordId};
+    use uuid::Uuid;
+
+    #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+    struct Org {
+        #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+        id: Uuid,
+    }
+
+    #[test]
+    fn a_uuid_part_binds_its_sixteen_bytes() {
+        let id = Uuid::from_u128(0x0192_3a4b_5c6d_7e8f_9a0b_1c2d_3e4f_5a6b);
+
+        assert_eq!(
+            KeyScope::of(&Org { id }).unwrap(),
+            KeyScope::of(&super::Org { id: *id.as_bytes() }).unwrap()
+        );
+        assert_eq!(RecordId::from(id), RecordId::Uuid(*id.as_bytes()));
+    }
 }
