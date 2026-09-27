@@ -5,9 +5,9 @@
 use std::sync::LazyLock;
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, EncryptionKeyProvider, Error, Field, IndexId, KeyContext, KeyId,
-    LocalEncryptionKeyring, Padding, Utf8, encrypt, index_id, key_id, keys,
+    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyProvider, Error, Field, FieldOnly, IndexId, KeyContext, KeyId,
+    LocalEncryptionKeyring, Padding, Plain, Sealed, Utf8, encrypt, index_id, key_id, keys,
 };
 use sqlx::{
     Connection, Decode, Encode, Row, Sqlite, Type,
@@ -36,8 +36,11 @@ struct TestField;
 impl Field for TestField {
     const ID: cryptbox::FieldId = cryptbox::field_id!("4e2d8b17-6c3a-4f95-8b0e-1a7c9d3f5e26");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct IndexSpec;
@@ -82,31 +85,31 @@ fn only_blob<'a>(buffer: &'a [SqliteArgumentValue<'_>]) -> &'a [u8] {
 
 #[test]
 fn encrypted_storage_types_map_to_sqlite_blob() {
-    assert_sqlx_traits::<Encrypted<TestField, TestKeys>>();
-    assert_sqlx_traits::<Ciphertext<TestField>>();
+    assert_sqlx_traits::<Plain<TestField, TestKeys>>();
+    assert_sqlx_traits::<Sealed<TestField>>();
     assert_sqlx_traits::<BlindIndex<IndexSpec>>();
 
     let blob: SqliteTypeInfo = <Vec<u8> as Type<Sqlite>>::type_info();
     assert_eq!(
-        <Encrypted<TestField, TestKeys> as Type<Sqlite>>::type_info(),
+        <Plain<TestField, TestKeys> as Type<Sqlite>>::type_info(),
         blob
     );
-    assert_eq!(<Ciphertext<TestField> as Type<Sqlite>>::type_info(), blob);
+    assert_eq!(<Sealed<TestField> as Type<Sqlite>>::type_info(), blob);
     assert_eq!(<BlindIndex<IndexSpec> as Type<Sqlite>>::type_info(), blob);
 }
 
 #[test]
 fn sqlite_encode_encrypts_plaintext_into_an_owned_blob() {
-    assert_sqlx_encode::<Encrypted<TestField, TestKeys>>();
-    assert_sqlx_encode::<Ciphertext<TestField>>();
+    assert_sqlx_encode::<Plain<TestField, TestKeys>>();
+    assert_sqlx_encode::<Sealed<TestField>>();
     assert_sqlx_encode::<BlindIndex<IndexSpec>>();
     assert_sqlx_encode::<BlindIndexRef<'static, IndexSpec>>();
 
-    let value = Encrypted::<TestField, TestKeys>::new("mark@example.com".to_owned());
+    let value = Plain::<TestField, TestKeys>::new("mark@example.com".to_owned());
     let mut buffer = Vec::new();
 
     let result =
-        <Encrypted<TestField, TestKeys> as Encode<'_, Sqlite>>::encode_by_ref(&value, &mut buffer)
+        <Plain<TestField, TestKeys> as Encode<'_, Sqlite>>::encode_by_ref(&value, &mut buffer)
             .unwrap();
 
     assert!(!result.is_null());
@@ -114,22 +117,21 @@ fn sqlite_encode_encrypts_plaintext_into_an_owned_blob() {
 }
 
 #[test]
-fn sqlite_ciphertext_encoding_preserves_the_binary_envelope() {
+fn sqlite_sealed_encoding_preserves_the_binary_envelope() {
     let keys = TestKeys::encryption_keys().unwrap();
     let bytes = encrypt(TestField::ID, TestField::PADDING, b"value", keys).unwrap();
-    let ciphertext = Ciphertext::<TestField>::from_bytes(bytes.clone()).unwrap();
+    let ciphertext = Sealed::<TestField>::from_bytes(bytes.clone()).unwrap();
     let mut buffer = Vec::new();
 
     let result =
-        <Ciphertext<TestField> as Encode<'_, Sqlite>>::encode_by_ref(&ciphertext, &mut buffer)
-            .unwrap();
+        <Sealed<TestField> as Encode<'_, Sqlite>>::encode_by_ref(&ciphertext, &mut buffer).unwrap();
 
     assert!(!result.is_null());
     assert_eq!(only_blob(&buffer), bytes);
 }
 
 #[test]
-fn sqlite_round_trips_ciphertext_and_decrypts_encrypted_values() {
+fn sqlite_round_trips_sealed_values_and_opens_plain_columns() {
     futures_executor::block_on(async {
         let mut connection = SqliteConnection::connect("sqlite::memory:").await.unwrap();
         sqlx::query("CREATE TABLE secrets (value BLOB NOT NULL)")
@@ -137,7 +139,7 @@ fn sqlite_round_trips_ciphertext_and_decrypts_encrypted_values() {
             .await
             .unwrap();
 
-        let value = Encrypted::<TestField, TestKeys>::new("mark@example.com".to_owned());
+        let value = Plain::<TestField, TestKeys>::new("mark@example.com".to_owned());
         sqlx::query("INSERT INTO secrets (value) VALUES (?)")
             .bind(&value)
             .execute(&mut connection)
@@ -148,17 +150,16 @@ fn sqlite_round_trips_ciphertext_and_decrypts_encrypted_values() {
             .fetch_one(&mut connection)
             .await
             .unwrap();
-        let ciphertext: Ciphertext<TestField> = row.try_get("value").unwrap();
-        let decrypted: Encrypted<TestField, TestKeys> = row.try_get("value").unwrap();
+        let sealed: Sealed<TestField> = row.try_get("value").unwrap();
+        let opened: Plain<TestField, TestKeys> = row.try_get("value").unwrap();
 
-        assert!(ciphertext.as_bytes().starts_with(b"CBX\0"));
-        assert_eq!(decrypted.expose_secret(), "mark@example.com");
+        assert!(sealed.as_bytes().starts_with(b"CBX\0"));
+        assert_eq!(opened.expose_secret(), "mark@example.com");
         // The column used `TestKeys`; the global was never installed.
         assert_eq!(
-            ciphertext
-                .decrypt_with(TestKeys::encryption_keys().unwrap())
-                .unwrap()
-                .expose_secret(),
+            sealed
+                .open((), TestKeys::encryption_keys().unwrap())
+                .unwrap(),
             "mark@example.com"
         );
         assert_eq!(keys::installed().unwrap_err(), Error::KeysNotInstalled);
@@ -166,7 +167,7 @@ fn sqlite_round_trips_ciphertext_and_decrypts_encrypted_values() {
 }
 
 #[test]
-fn sqlite_binds_an_explicitly_decrypted_value_through_its_own_key_context() {
+fn sqlite_binds_an_explicitly_opened_value_through_its_own_key_context() {
     futures_executor::block_on(async {
         let mut connection = SqliteConnection::connect("sqlite::memory:").await.unwrap();
         sqlx::query("CREATE TABLE secrets (value BLOB NOT NULL)")
@@ -175,13 +176,9 @@ fn sqlite_binds_an_explicitly_decrypted_value_through_its_own_key_context() {
             .unwrap();
 
         let explicit = TestKeys::encryption_keys().unwrap();
-        let stored = Encrypted::<TestField>::new("mark@example.com")
-            .encrypt_with(explicit)
-            .unwrap();
-        let value = stored
-            .decrypt_with(explicit)
-            .unwrap()
-            .with_key_context::<TestKeys>();
+        let stored =
+            Sealed::<TestField>::seal(&"mark@example.com".to_owned(), (), explicit).unwrap();
+        let value = Plain::<TestField, TestKeys>::new(stored.open((), explicit).unwrap());
 
         sqlx::query("INSERT INTO secrets (value) VALUES (?)")
             .bind(&value)
@@ -193,20 +190,19 @@ fn sqlite_binds_an_explicitly_decrypted_value_through_its_own_key_context() {
             .fetch_one(&mut connection)
             .await
             .unwrap();
-        let decrypted: Encrypted<TestField, TestKeys> = row.try_get("value").unwrap();
+        let opened: Plain<TestField, TestKeys> = row.try_get("value").unwrap();
 
-        assert_eq!(decrypted.expose_secret(), "mark@example.com");
+        assert_eq!(opened.expose_secret(), "mark@example.com");
         assert_eq!(keys::installed().unwrap_err(), Error::KeysNotInstalled);
     });
 }
 
 #[test]
 fn sqlite_default_column_fails_closed_without_installed_keys() {
-    let value = Encrypted::<TestField>::new("mark@example.com");
+    let value = Plain::<TestField>::new("mark@example.com");
     let mut buffer = Vec::new();
 
-    let Err(error) =
-        <Encrypted<TestField> as Encode<'_, Sqlite>>::encode_by_ref(&value, &mut buffer)
+    let Err(error) = <Plain<TestField> as Encode<'_, Sqlite>>::encode_by_ref(&value, &mut buffer)
     else {
         panic!("encoding without installed keys must fail");
     };

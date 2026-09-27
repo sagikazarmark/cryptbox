@@ -7,7 +7,9 @@ use sqlx::{
     sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted, Field, KeyContext};
+use crate::{
+    BlindIndex, BlindIndexRef, BlindIndexSpec, Field, FieldOnly, KeyContext, Plain, Sealed,
+};
 
 fn blob_type_info() -> SqliteTypeInfo {
     <Vec<u8> as Type<Sqlite>>::type_info()
@@ -17,7 +19,11 @@ fn blob_compatible(ty: &SqliteTypeInfo) -> bool {
     <Vec<u8> as Type<Sqlite>>::compatible(ty)
 }
 
-impl<F: Field, K: KeyContext> Type<Sqlite> for Encrypted<F, K> {
+impl<F, K> Type<Sqlite> for Plain<F, K>
+where
+    F: Field<Binding = FieldOnly, Indexes = ()>,
+    K: KeyContext,
+{
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -27,7 +33,7 @@ impl<F: Field, K: KeyContext> Type<Sqlite> for Encrypted<F, K> {
     }
 }
 
-impl<F: Field> Type<Sqlite> for Ciphertext<F> {
+impl<F: Field> Type<Sqlite> for Sealed<F> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -57,19 +63,17 @@ impl<Spec> Type<Sqlite> for BlindIndexRef<'_, Spec> {
     }
 }
 
-impl<'q, F, K> Encode<'q, Sqlite> for Encrypted<F, K>
+impl<'q, F, K> Encode<'q, Sqlite> for Plain<F, K>
 where
-    F: Field,
+    F: Field<Binding = FieldOnly, Indexes = ()>,
     K: KeyContext,
 {
     fn encode_by_ref(
         &self,
         buffer: &mut Vec<SqliteArgumentValue<'q>>,
     ) -> Result<IsNull, BoxDynError> {
-        let ciphertext = self.encrypt_for_column()?;
-        buffer.push(SqliteArgumentValue::Blob(Cow::Owned(
-            ciphertext.into_bytes(),
-        )));
+        let sealed = self.seal_for_column()?;
+        buffer.push(SqliteArgumentValue::Blob(Cow::Owned(sealed.into_bytes())));
 
         Ok(IsNull::No)
     }
@@ -79,7 +83,7 @@ where
     }
 }
 
-impl<'q, F: Field> Encode<'q, Sqlite> for Ciphertext<F> {
+impl<'q, F: Field> Encode<'q, Sqlite> for Sealed<F> {
     fn encode_by_ref(
         &self,
         buffer: &mut Vec<SqliteArgumentValue<'q>>,
@@ -130,18 +134,18 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
     }
 }
 
-impl<'row, F, K> Decode<'row, Sqlite> for Encrypted<F, K>
+impl<'row, F, K> Decode<'row, Sqlite> for Plain<F, K>
 where
-    F: Field,
+    F: Field<Binding = FieldOnly, Indexes = ()>,
     K: KeyContext,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
-        Ok(Self::decrypt_column(bytes)?)
+        Ok(Self::open_column(bytes)?)
     }
 }
 
-impl<'row, F: Field> Decode<'row, Sqlite> for Ciphertext<F> {
+impl<'row, F: Field> Decode<'row, Sqlite> for Sealed<F> {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
 
@@ -173,7 +177,7 @@ impl<F: Field> Type<Sqlite> for crate::migrate::MaybeEncrypted<F> {
 
 // Migration-window reads only. Decoding classifies bytes without CryptBox or
 // legacy keys; recovery and decryption stay explicit calls. There is no
-// `Encode` counterpart: writes always encrypt through `Encrypted` or
+// `Encode` counterpart: writes always encrypt through `Plain`, `Sealed`, or
 // `Prepared`.
 #[cfg(feature = "migrate")]
 impl<'row, F> Decode<'row, Sqlite> for crate::migrate::MaybeEncrypted<F>

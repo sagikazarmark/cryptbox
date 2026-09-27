@@ -4,9 +4,10 @@ use std::{marker::PhantomData, sync::Arc};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyProvider, Error, Field, FieldId, IndexId, IndexKeyId, KeyId, KeyProviderError,
-    Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, Router, Routing, decrypt,
-    encrypt, field_id, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    EncryptionKeyProvider, Error, Field, FieldId, FieldOnly, IndexId, IndexKeyId, KeyId,
+    KeyProviderError, Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, Router,
+    Routing, decrypt, encrypt, field_id, index_id, index_key_id, inspect_blind_index,
+    inspect_ciphertext, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -20,8 +21,11 @@ struct Email;
 impl Field for Email {
     const ID: FieldId = field_id!("30000000-0000-4000-8000-000000000003");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct Iban;
@@ -29,8 +33,11 @@ struct Iban;
 impl Field for Iban {
     const ID: FieldId = field_id!("40000000-0000-4000-8000-000000000004");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 fn keyring(id: KeyId, byte: u8) -> LocalEncryptionKeyring {
@@ -147,8 +154,11 @@ struct ContactEmail;
 impl Field for ContactEmail {
     const ID: FieldId = Email::ID;
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 #[test]

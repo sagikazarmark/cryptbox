@@ -3,183 +3,65 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Codec, EncryptionKeyProvider, Error, Field, GlobalKeys, crypto::decrypt_with_policy, encrypt,
-    keys, needs_reencryption, reencrypt,
+    Args, Codec, EncryptionKeyProvider, Error, Field, FieldOnly, GlobalKeys, KeyId, Prepared,
+    binding::domain,
+    crypto::{decrypt_bound, encrypt_bound, needs_reencryption_bound, validated_key_id},
+    keys,
 };
 
-/// A plaintext application value that must be encrypted at storage boundaries.
+/// A sealed value of field `F`: an encrypted envelope bound to the field, its
+/// binding values, and its record.
 ///
-/// This type contains plaintext while it is in application memory. It redacts
-/// `Debug`, does not implement `Display` or `Deref`, and requires explicit
-/// access through [`Self::expose_secret`]. It does not zeroize arbitrary values;
-/// use [`Secret`] when the application value supports [`Zeroize`].
-/// It deliberately has no Serde implementation: encrypt to [`Ciphertext`] before
-/// serialization, then deserialize and decrypt explicitly when reading.
-/// Encryption/preparation borrows and retains this source. Cloning clones the
-/// value, potentially creating another plaintext allocation; decryption creates
-/// another owned value. See the [ownership reference].
+/// This is what applications store. [`Self::seal`] encodes, pads, and encrypts a
+/// value; [`Self::open`] authenticates and decrypts it under the same
+/// [binding arguments](Args), and returns the bare [`Field::Value`]. Plaintext
+/// hygiene comes from the value type, such as [`Secret`].
 ///
-/// The field selects the value type: `Encrypted<UserEmail>` contains the
-/// `String` declared by `UserEmail`.
+/// Construction from bytes validates only the envelope structure. Authenticity
+/// is established by opening. `F` is not encoded in the envelope, so the type
+/// parameter expresses caller intent rather than proving that stored bytes were
+/// sealed for that field. With the `serde` feature, this type serializes only
+/// the binary envelope; deserialization performs the same structural checks as
+/// [`Self::from_bytes`], uses no keys, and leaves the bytes unauthenticated.
 ///
-/// `K` is the key source of the automatic `SQLx` column, which encrypts on encode
-/// and decrypts on decode without receiving keys. The default, [`GlobalKeys`],
-/// reads the keys installed with [`keys::install`]; name another
-/// [`KeyContext`](crate::KeyContext) to use application-owned keys instead.
-/// The explicit forms ignore `K`, and the implicit [`Self::encrypt`] and
-/// [`Self::prepare`] exist only for the default. Decryption returns a
-/// value in the default; [`Self::with_key_context`] moves it into another.
+/// # Examples
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, Padding, Utf8};
+/// use cryptbox::{
+///     EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+/// };
 ///
 /// struct UserEmail;
 ///
 /// impl Field for UserEmail {
 ///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 ///
-/// let email = cryptbox::Encrypted::<UserEmail>::new("user@example.com");
-/// let plaintext: &String = email.expose_secret();
-/// assert_eq!(plaintext, "user@example.com");
+/// let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+///
+/// let sealed = Sealed::<UserEmail>::seal(&"user@example.com".into(), (), &keys)?;
+/// assert_eq!(sealed.open((), &keys)?, "user@example.com");
+/// # Ok::<(), cryptbox::Error>(())
 /// ```
-///
-/// Plaintext comparison must also be explicit:
-///
-/// ```compile_fail
-/// use cryptbox::{Field, FieldId, Padding, Utf8};
-///
-/// struct UserEmail;
-///
-/// impl Field for UserEmail {
-///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-///     const PADDING: Padding = Padding::NONE;
-///     type Value = String;
-///     type Codec = Utf8;
-/// }
-///
-/// let left = cryptbox::Encrypted::<UserEmail>::new("secret");
-/// let right = cryptbox::Encrypted::<UserEmail>::new("secret");
-/// let _ = left == right;
-/// ```
-///
-#[doc = concat!(
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
-)]
-pub struct Encrypted<F: Field, K = GlobalKeys> {
-    value: F::Value,
-    marker: PhantomData<fn() -> (F, K)>,
-}
-
-impl<F: Field, K> Encrypted<F, K> {
-    /// Wraps a plaintext application value.
-    ///
-    /// Accepts anything convertible into the field's value type, so a `&str`
-    /// can initialize a `String` field.
-    pub fn new(value: impl Into<F::Value>) -> Self {
-        Self::from_value(value.into())
-    }
-
-    pub(crate) const fn from_value(value: F::Value) -> Self {
-        Self {
-            value,
-            marker: PhantomData,
-        }
-    }
-
-    /// Explicitly exposes the plaintext application value.
-    #[must_use]
-    pub const fn expose_secret(&self) -> &F::Value {
-        &self.value
-    }
-
-    /// Consumes the wrapper and returns the plaintext application value.
-    ///
-    /// The name does not mean it creates a [`Secret`]. For a decoded `String`,
-    /// use `Secret::new(decrypted.into_secret())` to move it into zeroizing ownership.
-    #[must_use]
-    pub fn into_secret(self) -> F::Value {
-        self.value
-    }
-
-    /// Moves this value into the column type of another key context.
-    ///
-    /// Decryption returns a value in the default key context. Convert it to
-    /// bind it through a column that reads application-owned keys. This
-    /// moves the plaintext; it neither copies nor re-encrypts it.
-    ///
-    /// ```
-    /// # use cryptbox::{EncryptionKeyProvider, Error, Field, FieldId, KeyContext, Padding, Utf8};
-    /// # struct UserEmail;
-    /// # impl Field for UserEmail {
-    /// #     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-    /// #     const PADDING: Padding = Padding::NONE;
-    /// #     type Value = String;
-    /// #     type Codec = Utf8;
-    /// # }
-    /// # struct ArchiveKeys;
-    /// # impl KeyContext for ArchiveKeys {
-    /// #     fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, Error> {
-    /// #         unimplemented!()
-    /// #     }
-    /// # }
-    /// use cryptbox::{Ciphertext, Encrypted};
-    ///
-    /// fn read(
-    ///     stored: &Ciphertext<UserEmail>,
-    ///     keys: &dyn EncryptionKeyProvider,
-    /// ) -> Result<Encrypted<UserEmail, ArchiveKeys>, Error> {
-    ///     Ok(stored.decrypt_with(keys)?.with_key_context())
-    /// }
-    /// ```
-    #[must_use]
-    pub fn with_key_context<K2>(self) -> Encrypted<F, K2> {
-        Encrypted::from_value(self.value)
-    }
-}
-
-impl<F, K> Clone for Encrypted<F, K>
-where
-    F: Field,
-    F::Value: Clone,
-{
-    fn clone(&self) -> Self {
-        Self::from_value(self.value.clone())
-    }
-}
-
-impl<F: Field, K> fmt::Debug for Encrypted<F, K> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Encrypted([REDACTED])")
-    }
-}
-
-/// An encrypted envelope with a phantom field type.
-///
-/// Construction validates only the envelope structure. Authenticity is
-/// established by decryption. `F` is not encoded in the envelope, so the
-/// type parameter expresses caller intent rather than proving that stored bytes
-/// were created for that field. With the `serde` feature, this type
-/// serializes only the binary envelope. [`Encrypted`] deliberately has no Serde
-/// implementation because it contains plaintext.
-/// Deserialization performs the same structural checks as [`Self::from_bytes`];
-/// it uses no keys and leaves the bytes and their metadata unauthenticated.
-pub struct Ciphertext<F: Field> {
+pub struct Sealed<F: Field> {
     bytes: Vec<u8>,
     marker: PhantomData<fn() -> F>,
 }
 
-impl<F: Field> Ciphertext<F> {
+impl<F: Field> Sealed<F> {
     /// Validates and wraps a binary `CryptBox` envelope.
     ///
     /// # Errors
     ///
     /// Returns an error when the bytes are not a supported, structurally valid
-    /// `CryptBox` envelope. Authentication, field binding, and codec
-    /// compatibility are deferred until decryption.
+    /// `CryptBox` envelope. Authentication, binding, and codec compatibility are
+    /// deferred until the value is opened.
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
         let bytes = bytes.into();
         crate::inspect_ciphertext(&bytes)?;
@@ -194,7 +76,7 @@ impl<F: Field> Ciphertext<F> {
         }
     }
 
-    /// Returns the binary ciphertext envelope.
+    /// Returns the binary envelope.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
@@ -205,117 +87,72 @@ impl<F: Field> Ciphertext<F> {
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
-}
 
-impl<F: Field> TryFrom<Vec<u8>> for Ciphertext<F> {
-    type Error = Error;
-
-    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
-        Self::from_bytes(bytes)
+    /// Returns the encryption-key generation named by the envelope.
+    ///
+    /// The ID is unauthenticated until the value is opened.
+    #[must_use]
+    pub fn key_id(&self) -> KeyId {
+        validated_key_id(&self.bytes)
     }
-}
 
-impl<F: Field> AsRef<[u8]> for Ciphertext<F> {
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
-    }
-}
-
-impl<F: Field> Clone for Ciphertext<F> {
-    fn clone(&self) -> Self {
-        Self::from_validated_bytes(self.bytes.clone())
-    }
-}
-
-impl<F: Field> PartialEq for Ciphertext<F> {
-    fn eq(&self, other: &Self) -> bool {
-        self.bytes == other.bytes
-    }
-}
-
-impl<F: Field> Eq for Ciphertext<F> {}
-
-impl<F: Field> fmt::Debug for Ciphertext<F> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Ciphertext([REDACTED])")
-    }
-}
-
-impl<F: Field, K> Encrypted<F, K> {
-    /// Encodes and encrypts this value with an explicitly injected provider.
+    /// Encodes and encrypts `value`, binding it to `args`.
     ///
     /// # Errors
     ///
-    /// Returns an error when encoding, padding, key lookup, randomness, or
-    /// encryption fails.
-    pub fn encrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Ciphertext<F>, Error> {
-        let plaintext = F::Codec::encode(&self.value)?;
-        let ciphertext = encrypt(F::ID, F::PADDING, &plaintext, keys)?;
+    /// Returns an error when the binding values are invalid, or when encoding,
+    /// padding, key lookup, randomness, or encryption fails.
+    pub fn seal(
+        value: &F::Value,
+        args: impl Args<F>,
+        keys: &dyn EncryptionKeyProvider,
+    ) -> Result<Self, Error> {
+        let plaintext = F::Codec::encode(value)?;
+        let sealed = encrypt_bound(&domain(args)?, F::PADDING, &plaintext, keys)?;
 
-        Ok(Ciphertext::from_validated_bytes(ciphertext))
+        Ok(Self::from_validated_bytes(sealed))
     }
-}
 
-impl<F: Field> Encrypted<F> {
-    /// Encodes and encrypts this value with the [installed keys](keys::installed).
+    /// Authenticates, decrypts, and decodes this value under `args`.
     ///
-    /// This is exactly `self.encrypt_with(keys::installed()?)`. It is available
-    /// only for the default key source: an `Encrypted<F, K>` with its own `K`
-    /// encrypts through its `SQLx` column or [`Self::encrypt_with`].
+    /// Success establishes authenticity under the supplied key, the field `F`,
+    /// and the binding values and record in `args`, valid padding, and
+    /// successful decoding with the field's codec. Apply application-level
+    /// validation separately. This does not establish freshness or consistency
+    /// with a separately stored blind index.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
-    /// encoding or encryption fails.
-    pub fn encrypt(&self) -> Result<Ciphertext<F>, Error> {
-        self.encrypt_with(keys::installed()?)
-    }
-}
+    /// Returns [`Error::AuthenticationFailed`] for another field, other binding
+    /// values, another record, or modified bytes, and
+    /// [`Error::BindingMismatch`] for a value sealed with another binding shape.
+    /// Also returns an error for invalid binding values, unknown keys,
+    /// unavailable providers, invalid padding, or codec failure.
+    pub fn open(
+        &self,
+        args: impl Args<F>,
+        keys: &dyn EncryptionKeyProvider,
+    ) -> Result<F::Value, Error> {
+        let plaintext = decrypt_bound(&domain(args)?, F::PADDING, &self.bytes, keys)?;
 
-// The automatic SQLx columns encrypt and decrypt with their key source `K`.
-#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
-impl<F: Field, K: crate::KeyContext> Encrypted<F, K> {
-    pub(crate) fn encrypt_for_column(&self) -> Result<Ciphertext<F>, Error> {
-        self.encrypt_with(K::encryption_keys()?)
+        Ok(F::Codec::decode(&plaintext)?)
     }
 
-    pub(crate) fn decrypt_column(bytes: Vec<u8>) -> Result<Self, Error> {
-        Ok(Ciphertext::<F>::from_bytes(bytes)?
-            .decrypt_with(K::encryption_keys()?)?
-            .with_key_context())
-    }
-}
-
-impl<F: Field> Ciphertext<F> {
-    /// Authenticates, decrypts, and decodes this value with an injected provider.
+    /// Seals `value` into a prepared storage representation that blind indexes
+    /// can be added to.
     ///
-    /// Success establishes ciphertext authenticity under the supplied key and
-    /// the field `F`, valid padding, and successful decoding with the
-    /// selected codec. Apply application-level validation separately. This does
-    /// not establish freshness, row identity, or consistency with a separately
-    /// stored blind index.
+    /// Indexes are then derived from the same borrowed value with
+    /// [`Prepared::with_index_with`].
     ///
     /// # Errors
     ///
-    /// Returns an error for invalid envelopes, unknown keys, authentication
-    /// failure, unavailable providers, invalid padding, or codec failure.
-    pub fn decrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Encrypted<F>, Error> {
-        let plaintext = decrypt_with_policy(F::ID, F::PADDING, &self.bytes, keys)?;
-        let value = F::Codec::decode(&plaintext)?;
-
-        Ok(Encrypted::from_value(value))
-    }
-
-    /// Decrypts this value with the [installed keys](keys::installed).
-    ///
-    /// This is exactly `self.decrypt_with(keys::installed()?)`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
-    /// decryption fails.
-    pub fn decrypt(&self) -> Result<Encrypted<F>, Error> {
-        self.decrypt_with(keys::installed()?)
+    /// Returns any error of [`Self::seal`].
+    pub fn prepare<'a>(
+        value: &'a F::Value,
+        args: impl Args<F>,
+        keys: &dyn EncryptionKeyProvider,
+    ) -> Result<Prepared<'a, F>, Error> {
+        Ok(Prepared::new(value, Self::seal(value, args, keys)?))
     }
 
     /// Reports whether this envelope differs from what `F` currently writes.
@@ -323,8 +160,8 @@ impl<F: Field> Ciphertext<F> {
     /// That is an older format, a non-current suite or key, or a padding flag
     /// that disagrees with [`Field::PADDING`].
     ///
-    /// Envelope metadata is unauthenticated until decryption succeeds.
-    /// A `false` result does not establish authenticated readability or codec validity.
+    /// Envelope metadata is unauthenticated until the value is opened. A `false`
+    /// result does not establish authenticated readability or codec validity.
     /// See the complete [key-rotation example] and [maintenance sweep example].
     ///
     #[doc = concat!(
@@ -334,26 +171,355 @@ impl<F: Field> Ciphertext<F> {
     ///
     /// # Errors
     ///
-    /// Returns an error for a malformed or unsupported envelope, or unavailable
-    /// provider.
-    pub fn needs_reencryption_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<bool, Error> {
-        needs_reencryption(F::ID, F::PADDING, &self.bytes, keys)
+    /// Returns [`Error::BindingMismatch`] for a value sealed with another binding
+    /// shape, or an error for invalid binding values or an unavailable provider.
+    pub fn needs_reseal(
+        &self,
+        args: impl Args<F>,
+        keys: &dyn EncryptionKeyProvider,
+    ) -> Result<bool, Error> {
+        needs_reencryption_bound(&domain(args)?, F::PADDING, &self.bytes, keys)
     }
 
-    /// Decrypts and rewrites this envelope as `F` currently writes it.
+    /// Opens and reseals this value as `F` currently writes it, under the same
+    /// binding and keys.
     ///
     /// The rewrite uses the current format, suite, key, and [`Field::PADDING`],
-    /// so a sweep can enable or disable padding.
-    ///
-    /// This authenticates the ciphertext and checks padding, but does not decode
-    /// the value with the field's codec or check any stored blind indexes.
-    /// Use [`Self::decrypt_with`] when decoded-value readability is required.
+    /// so a sweep can enable or disable padding. This authenticates the value
+    /// and checks padding, but does not decode it with the field's codec or
+    /// check any stored blind indexes. Use [`Self::open`] when decoded-value
+    /// readability is required.
     ///
     /// # Errors
     ///
-    /// Returns any decryption, padding, or encryption error.
-    pub fn reencrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Self, Error> {
-        reencrypt(F::ID, F::PADDING, &self.bytes, keys).map(Self::from_validated_bytes)
+    /// Returns any opening, padding, or encryption error.
+    pub fn reseal(
+        &self,
+        args: impl Args<F>,
+        keys: &dyn EncryptionKeyProvider,
+    ) -> Result<Self, Error> {
+        let domain = domain(args)?;
+        let plaintext = decrypt_bound(&domain, F::PADDING, &self.bytes, keys)?;
+
+        encrypt_bound(&domain, F::PADDING, &plaintext, keys).map(Self::from_validated_bytes)
+    }
+
+    /// Opens this value under `from` and reseals it under `to`.
+    ///
+    /// Use this to move a value to other binding values or other keys, such as
+    /// moving a record to another workspace or its data to another residency.
+    /// Like [`Self::reseal`], it authenticates and checks padding without
+    /// decoding the value.
+    ///
+    /// # Errors
+    ///
+    /// Returns any opening error under `from`, or padding or encryption error
+    /// under `to`.
+    pub fn reseal_across(
+        &self,
+        from: impl Args<F>,
+        from_keys: &dyn EncryptionKeyProvider,
+        to: impl Args<F>,
+        to_keys: &dyn EncryptionKeyProvider,
+    ) -> Result<Self, Error> {
+        let plaintext = decrypt_bound(&domain(from)?, F::PADDING, &self.bytes, from_keys)?;
+
+        encrypt_bound(&domain(to)?, F::PADDING, &plaintext, to_keys).map(Self::from_validated_bytes)
+    }
+}
+
+// Panics become build errors in `const` context. The process-wide keys and the
+// automatic column see no record, so a field that binds one never reaches them.
+const fn check_no_record(record: bool) {
+    assert!(
+        !record,
+        "this field binds a record: the installed keys and the automatic column serve only fields without one"
+    );
+}
+
+impl<F: Field<Binding = FieldOnly>> Sealed<F> {
+    /// Seals `value` with the [installed keys](keys::installed).
+    ///
+    /// This is exactly `Self::seal(value, (), keys::installed()?)`. The
+    /// process-wide keys serve only [`FieldOnly`] fields without a record.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::KeysNotInstalled`] before installation, or any error of
+    /// [`Self::seal`].
+    pub fn seal_global(value: &F::Value) -> Result<Self, Error> {
+        const { check_no_record(F::RECORD) };
+        Self::seal(value, (), keys::installed()?)
+    }
+
+    /// Opens this value with the [installed keys](keys::installed).
+    ///
+    /// This is exactly `self.open((), keys::installed()?)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::KeysNotInstalled`] before installation, or any error of
+    /// [`Self::open`].
+    pub fn open_global(&self) -> Result<F::Value, Error> {
+        const { check_no_record(F::RECORD) };
+        self.open((), keys::installed()?)
+    }
+}
+
+impl<F: Field> TryFrom<Vec<u8>> for Sealed<F> {
+    type Error = Error;
+
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        Self::from_bytes(bytes)
+    }
+}
+
+impl<F: Field> AsRef<[u8]> for Sealed<F> {
+    fn as_ref(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
+impl<F: Field> Clone for Sealed<F> {
+    fn clone(&self) -> Self {
+        Self::from_validated_bytes(self.bytes.clone())
+    }
+}
+
+impl<F: Field> PartialEq for Sealed<F> {
+    fn eq(&self, other: &Self) -> bool {
+        self.bytes == other.bytes
+    }
+}
+
+impl<F: Field> Eq for Sealed<F> {}
+
+impl<F: Field> fmt::Debug for Sealed<F> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Sealed([REDACTED])")
+    }
+}
+
+/// A plaintext value of field `F` that an automatic `SQLx` column seals on
+/// encode and opens on decode.
+///
+/// A column decoder sees neither a row nor a scope, so `Plain` serves only
+/// [`FieldOnly`] fields without a record or blind indexes: its constructors
+/// and column impls require `F::Binding = FieldOnly` and `F::Indexes = ()`, and a
+/// field that binds a record fails the build.
+/// Seal every other field explicitly with [`Sealed`].
+///
+/// `K` is the column's key source. The default, [`GlobalKeys`], reads the keys
+/// installed with [`keys::install`]; name another
+/// [`KeyContext`](crate::KeyContext) to use application-owned keys instead.
+///
+/// `Plain` contains plaintext while it is in application memory. It redacts
+/// `Debug`, does not implement `Display`, `Deref`, `PartialEq`, or Serde, and
+/// requires explicit access through [`Self::expose_secret`]. It does not
+/// zeroize arbitrary values; use [`Secret`] when the value supports [`Zeroize`].
+///
+/// ```
+/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Plain, Utf8};
+///
+/// struct UserEmail;
+///
+/// impl Field for UserEmail {
+///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
+///     type Value = String;
+///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
+/// }
+///
+/// let email = Plain::<UserEmail>::new("user@example.com");
+/// assert_eq!(email.expose_secret(), "user@example.com");
+/// ```
+///
+/// A bound field is rejected:
+///
+/// ```compile_fail,E0271
+/// use cryptbox::{Field, FieldId, Padding, Plain, Tenant, Utf8};
+///
+/// struct CustomerEmail;
+///
+/// impl Field for CustomerEmail {
+///     const ID: FieldId = cryptbox::field_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
+///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
+///     type Value = String;
+///     type Codec = Utf8;
+///     type Binding = Tenant;
+///     type Indexes = ();
+/// }
+///
+/// let email = Plain::<CustomerEmail>::new("user@example.com");
+/// ```
+///
+/// So is a field with blind indexes, which the column would not write:
+///
+/// ```compile_fail,E0271
+/// use cryptbox::{
+///     BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Plain, Utf8,
+/// };
+/// use zeroize::Zeroizing;
+///
+/// struct UserEmail;
+///
+/// impl Field for UserEmail {
+///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
+///     type Value = String;
+///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = (EmailLookup,);
+/// }
+///
+/// struct EmailLookup;
+///
+/// impl BlindIndexSpec for EmailLookup {
+///     type Field = UserEmail;
+///     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
+///     const BITS: u16 = 32;
+///     const NORMALIZER: &'static str = "exact/1";
+///     type Query = str;
+///
+///     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+///         Ok(Zeroizing::new(query.as_bytes().to_vec()))
+///     }
+///
+///     fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+///         Self::normalize_query(value)
+///     }
+/// }
+///
+/// let email = Plain::<UserEmail>::new("user@example.com");
+/// ```
+///
+/// And a field that binds a record fails the build:
+///
+/// ```compile_fail,E0080
+/// # use cryptbox::{Field, FieldId, FieldOnly, Padding, Plain, Utf8};
+/// struct RowNote;
+///
+/// impl Field for RowNote {
+///     const ID: FieldId = cryptbox::field_id!("9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24");
+///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = true;
+///     type Value = String;
+///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
+/// }
+///
+/// let note = Plain::<RowNote>::new("note");
+/// ```
+///
+/// Plaintext comparison must also be explicit:
+///
+/// ```compile_fail,E0369
+/// # use cryptbox::{Field, FieldId, FieldOnly, Padding, Plain, Utf8};
+/// # struct UserEmail;
+/// # impl Field for UserEmail {
+/// #     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// #     const PADDING: Padding = Padding::NONE;
+/// #     const RECORD: bool = false;
+/// #     type Value = String;
+/// #     type Codec = Utf8;
+/// #     type Binding = FieldOnly;
+/// #     type Indexes = ();
+/// # }
+/// let left = Plain::<UserEmail>::new("secret");
+/// let right = Plain::<UserEmail>::new("secret");
+/// let _ = left == right;
+/// ```
+///
+#[doc = concat!(
+    "See the [ownership reference].\n\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
+pub struct Plain<F: Field, K = GlobalKeys> {
+    value: F::Value,
+    marker: PhantomData<fn() -> (F, K)>,
+}
+
+impl<F, K> Plain<F, K>
+where
+    F: Field<Binding = FieldOnly, Indexes = ()>,
+{
+    /// Wraps a plaintext value.
+    ///
+    /// Accepts anything convertible into the field's value type, so a `&str`
+    /// can initialize a `String` field.
+    pub fn new(value: impl Into<F::Value>) -> Self {
+        Self::from_value(value.into())
+    }
+
+    const fn from_value(value: F::Value) -> Self {
+        const { check_no_record(F::RECORD) };
+        Self {
+            value,
+            marker: PhantomData,
+        }
+    }
+
+    /// Explicitly exposes the plaintext value.
+    #[must_use]
+    pub const fn expose_secret(&self) -> &F::Value {
+        &self.value
+    }
+
+    /// Consumes the wrapper and returns the plaintext value.
+    #[must_use]
+    pub fn into_inner(self) -> F::Value {
+        self.value
+    }
+
+    /// Moves this value into the column type of another key context.
+    ///
+    /// This moves the plaintext; it neither copies nor reseals it.
+    #[must_use]
+    pub fn with_key_context<K2>(self) -> Plain<F, K2> {
+        Plain::from_value(self.value)
+    }
+}
+
+// The automatic SQLx columns seal and open with their key source `K`.
+#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
+impl<F, K> Plain<F, K>
+where
+    F: Field<Binding = FieldOnly, Indexes = ()>,
+    K: crate::KeyContext,
+{
+    pub(crate) fn seal_for_column(&self) -> Result<Sealed<F>, Error> {
+        Sealed::seal(&self.value, (), K::encryption_keys()?)
+    }
+
+    pub(crate) fn open_column(bytes: Vec<u8>) -> Result<Self, Error> {
+        let value = Sealed::<F>::from_bytes(bytes)?.open((), K::encryption_keys()?)?;
+
+        Ok(Self::from_value(value))
+    }
+}
+
+impl<F, K> Clone for Plain<F, K>
+where
+    F: Field,
+    F::Value: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            value: self.value.clone(),
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<F: Field, K> fmt::Debug for Plain<F, K> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Plain([REDACTED])")
     }
 }
 
@@ -361,8 +527,8 @@ impl<F: Field> Ciphertext<F> {
 ///
 /// Drop invokes `T`'s [`Zeroize`] implementation. Cloning creates a separate `T`
 /// with its own lifetime; it does not share a single erasure boundary. This cannot
-/// erase previous copies, superseded allocations, or OS copies. For a decrypted
-/// `Encrypted<F>` over `String`, use `Secret::new(decrypted.into_secret())`.
+/// erase previous copies, superseded allocations, or OS copies. For an opened
+/// `String`, use `Secret::new(sealed.open(args, keys)?)`.
 /// A field can also store `Secret<String>` or `Secret<Vec<u8>>` directly: their
 /// [`crate::Plaintext`] codecs ([`crate::Utf8`], [`crate::Raw`]) write the same bytes.
 /// See the [custom-field example] and [ownership reference].

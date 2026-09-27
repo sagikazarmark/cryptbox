@@ -32,6 +32,9 @@ use syn::{DeriveInput, parse_macro_input};
 /// implement `Plaintext` reports that it has no default codec. Padding
 /// parameters are validated when the macro expands.
 ///
+/// Derived fields bind values to their field ID alone: `Binding = FieldOnly`,
+/// no record, and no declared blind indexes.
+///
 /// ```
 /// #[derive(cryptbox::Field)]
 /// #[cryptbox(
@@ -52,8 +55,11 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const ID: ::cryptbox::FieldId =
 ///             ::cryptbox::FieldId::from_u128(0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64);
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
+///         const RECORD: bool = false;
 ///         type Value = String;
 ///         type Codec = <String as ::cryptbox::Plaintext>::Codec;
+///         type Binding = ::cryptbox::FieldOnly;
+///         type Indexes = ();
 ///     }
 /// };
 /// ```

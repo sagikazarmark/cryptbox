@@ -1,8 +1,7 @@
 //! Application-owned diagnostics with an allowlist of observable fields.
 
 use cryptbox::{
-    Ciphertext, Encrypted, EncryptionKey, Error, Field, FieldId, LocalEncryptionKeyring, Padding,
-    Utf8,
+    EncryptionKey, Error, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Utf8,
 };
 
 struct UserEmail;
@@ -10,8 +9,11 @@ struct UserEmail;
 impl Field for UserEmail {
     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 // An application-owned schema label: no record data or secrets.
@@ -39,19 +41,19 @@ fn main() -> Result<(), Error> {
         ),
         [],
     )?;
-    let email = Encrypted::<UserEmail>::new("private-fixture@example.test".to_owned());
-    let ciphertext = email.encrypt_with(&keys)?;
-    let mut damaged = ciphertext.as_bytes().to_vec();
+    let email = "private-fixture@example.test".to_owned();
+    let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
+    let mut damaged = sealed.as_bytes().to_vec();
     // Corrupt the authentication tag while leaving a structurally valid envelope.
     *damaged.last_mut().ok_or(Error::Internal)? ^= 1;
-    let damaged = Ciphertext::<UserEmail>::try_from(damaged)?;
-    let error = match damaged.decrypt_with(&keys) {
+    let damaged = Sealed::<UserEmail>::try_from(damaged)?;
+    let error = match damaged.open((), &keys) {
         Err(error) => error,
         Ok(_) => return Err(Error::Internal),
     };
     assert!(matches!(error, Error::AuthenticationFailed));
     println!(
-        "field_id={} field_name={} operation=decrypt error={}",
+        "field_id={} field_name={} operation=open error={}",
         UserEmail::ID,
         USER_EMAIL_LABEL,
         error_category(&error),

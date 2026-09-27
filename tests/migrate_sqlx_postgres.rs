@@ -6,8 +6,8 @@
 use std::{future::Future, panic::AssertUnwindSafe};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey, Error,
-    Field, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, field_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field, FieldOnly,
+    IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed, Utf8, field_id,
     index_id, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyFormat, MaybeEncrypted, PostgresSweepStore, RowPlanner, Sweep,
@@ -22,8 +22,11 @@ struct UserEmail;
 impl Field for UserEmail {
     const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct EmailLookup;
@@ -142,15 +145,14 @@ async fn insert(
     keys: &LocalEncryptionKeyring,
     index_keys: &LocalBlindIndexKeyring,
 ) {
-    let value = Encrypted::<UserEmail>::new(email.to_owned());
-    let prepared = value
-        .prepare_with(keys)
+    let value = email.to_owned();
+    let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)
         .unwrap()
         .with_index_with::<EmailLookup>(index_keys)
         .unwrap();
     sqlx::query("INSERT INTO users VALUES ($1, $2, $3)")
         .bind(id)
-        .bind(prepared.ciphertext())
+        .bind(prepared.sealed())
         .bind(prepared.index::<EmailLookup>().unwrap())
         .execute(connection)
         .await
@@ -175,9 +177,9 @@ async fn search(
         for row in rows {
             let id: i64 = row.get("id");
             candidates.push(id);
-            let ciphertext: Ciphertext<UserEmail> = row.get("email_ciphertext");
-            let value = ciphertext.decrypt_with(keys).unwrap();
-            if EmailLookup::verify_candidate(query, value.expose_secret()).unwrap() {
+            let sealed: Sealed<UserEmail> = row.get("email_ciphertext");
+            let value = sealed.open((), keys).unwrap();
+            if EmailLookup::verify_candidate(query, &value).unwrap() {
                 matches.push(id);
             }
         }
@@ -200,7 +202,7 @@ async fn assert_readable_rows(
     for row in rows {
         let id: i64 = row.get("id");
         let is_legacy = !migrated && id <= 20;
-        let strict = row.try_get::<Ciphertext<UserEmail>, _>("email_ciphertext");
+        let strict = row.try_get::<Sealed<UserEmail>, _>("email_ciphertext");
         let expected = match id {
             10 => "Alice@example.com",
             60 => "bob@example.com",
@@ -214,21 +216,15 @@ async fn assert_readable_rows(
         } else {
             let ciphertext = strict.unwrap();
             if migrated {
-                assert!(!ciphertext.needs_reencryption_with(keys).unwrap());
+                assert!(!ciphertext.needs_reseal((), keys).unwrap());
             }
             // Authentication is asserted separately from generation convergence.
-            assert_eq!(
-                ciphertext.decrypt_with(keys).unwrap().expose_secret(),
-                expected
-            );
+            assert_eq!(ciphertext.open((), keys).unwrap(), expected);
         }
         let permissive: MaybeEncrypted<UserEmail> = row.get("email_ciphertext");
         assert_eq!(permissive.is_legacy(), is_legacy);
         assert_eq!(
-            permissive
-                .decrypt_with_legacy(keys, &ToyLegacy)
-                .unwrap()
-                .expose_secret(),
+            permissive.open_legacy((), keys, &ToyLegacy).unwrap(),
             expected,
         );
     }
@@ -368,14 +364,13 @@ fn postgres_guarded_updates_preserve_competing_ciphertext_and_index_writes() {
                 .unwrap();
             let replacement = plan.write().unwrap();
 
-            let other_value = Encrypted::<UserEmail>::new("other@example.com".to_owned());
-            let prepared = other_value
-                .prepare_with(&old_keys)
+            let other_value = "other@example.com".to_owned();
+            let prepared = Sealed::<UserEmail>::prepare(&other_value, (), &old_keys)
                 .unwrap()
                 .with_index_with::<EmailLookup>(&old_index_keys)
                 .unwrap();
             let changed_bytes = if column == "email_ciphertext" {
-                prepared.ciphertext().as_bytes().to_vec()
+                prepared.sealed().as_bytes().to_vec()
             } else {
                 prepared.index::<EmailLookup>().unwrap().as_bytes().to_vec()
             };

@@ -103,7 +103,7 @@ impl std::io::Write for ZeroizingByteBuffer {
 ///
 /// Discard parser/serializer errors that retain input; return only a sanitized
 /// [`CodecError`] category without logging plaintext. The decoded `T` belongs to
-/// the application: [`crate::Encrypted`] does not zeroize arbitrary `T`; use
+/// the application: [`crate::Plain`] does not zeroize arbitrary `T`; use
 /// [`Secret`] for values that must be erased on drop.
 ///
 /// See the [custom-field example] and [ownership reference].

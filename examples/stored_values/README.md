@@ -23,14 +23,14 @@ and write ciphertext and indexes atomically.
 
 ## Follow the value through storage
 
-- `Encrypted` holds plaintext and deliberately has **no Serde implementation**.
-  Prepare/encrypt explicitly; preparation borrows rather than erases the source.
-- `StoredUser` owns `Ciphertext<UserEmail>` and `BlindIndex<EmailLookup>`.
+- The plaintext is an ordinary `String`, never serialized. Seal it explicitly
+  with `Sealed::prepare`, which borrows rather than erases the source.
+- `StoredUser` owns `Sealed<UserEmail>` and `BlindIndex<EmailLookup>`.
   Serde stores their complete bytes (integer arrays in JSON).
 - Deserialization, like `from_bytes`, checks **structure only**: no key lookup,
   authentication, decryption or index recomputation. Typed wrappers express the
   caller's intended field/index, not proof of origin.
-- `decrypt_with` authenticates, unpads and decodes. Application validation,
+- `open` authenticates, unpads and decodes, returning the bare `String`. Application validation,
   normalized candidate comparison and stored-index consistency are separate checks.
 
 The example's damaged, current-generation ciphertext still deserializes but fails
@@ -42,6 +42,6 @@ and [integration design](../../docs/integration.md#storage-boundaries) for stora
 Enable CryptBox's `serde` feature and add `serde` with `derive` plus your chosen
 serialization format. This example uses `serde_json` as the storage format;
 CryptBox's `json` codec feature is unnecessary because the plaintext codec is
-`Utf8`. Adapt `StoredUser` to hold the ciphertext and optional indexes you need,
-encrypt before serializing, and decrypt explicitly after deserializing. Replace
+`Utf8`. Adapt `StoredUser` to hold the sealed values and optional indexes you
+need, seal before serializing, and open explicitly after deserializing. Replace
 the fixed fixture keys with your application's providers.

@@ -1,8 +1,9 @@
 //! Public-boundary tests for the schema manifest and unique-ID checks.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, FieldId, IndexId, Keys,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, Router, Utf8, field_id, index_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, FieldId, FieldOnly,
+    IndexId, Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, Router, Utf8,
+    field_id, index_id,
     schema::{Duplicate, Manifest},
 };
 use zeroize::Zeroizing;
@@ -12,8 +13,11 @@ struct Nickname;
 impl Field for Nickname {
     const ID: FieldId = field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct Avatar;
@@ -21,8 +25,11 @@ struct Avatar;
 impl Field for Avatar {
     const ID: FieldId = field_id!("9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e");
     const PADDING: Padding = Padding::block(64);
+    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 #[test]
@@ -119,8 +126,11 @@ struct DisplayName;
 impl Field for DisplayName {
     const ID: FieldId = field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 #[test]
@@ -187,7 +197,7 @@ cryptbox::assert_unique_ids!(indexes: NicknameLookup);
 
 #[cfg(any(feature = "json", feature = "postcard"))]
 mod serde_codecs {
-    use cryptbox::{Field, FieldId, Padding, field_id, schema::Manifest};
+    use cryptbox::{Field, FieldId, FieldOnly, Padding, field_id, schema::Manifest};
     use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize)]
@@ -202,8 +212,11 @@ mod serde_codecs {
     impl Field for HomeAddress {
         const ID: FieldId = field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
         const PADDING: Padding = Padding::length(256);
+        const RECORD: bool = false;
         type Value = Address;
         type Codec = cryptbox::Json;
+        type Binding = FieldOnly;
+        type Indexes = ();
     }
 
     #[cfg(feature = "json")]
@@ -227,8 +240,11 @@ field 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64 schema::serde_codecs::HomeAddress
     impl Field for BillingAddress {
         const ID: FieldId = field_id!("7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13");
         const PADDING: Padding = Padding::NONE;
+        const RECORD: bool = false;
         type Value = Address;
         type Codec = cryptbox::Postcard;
+        type Binding = FieldOnly;
+        type Indexes = ();
     }
 
     #[cfg(feature = "postcard")]

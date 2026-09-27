@@ -2,12 +2,20 @@
 
 **Binding**:
 The expected cryptographic domain of a value, independent of where its stored
-bytes are found. Every value is bound to its field ID, to the parts of a
-declared scope such as a tenant, and optionally to a record ID. A field-only
-binding (`FieldOnly`) identifies a logical field, not a row or tenant. The
-binding's *shape* (its parts and whether it binds a record) is persistent
-schema; its values are supplied at each call.
+bytes are found. Every sealed value is bound at runtime to its field ID, to the
+values of its field's declared scope, and, when the field declares `RECORD`, to a
+record ID. A field-only binding (`FieldOnly`) identifies a logical field, not a
+row or tenant. The binding's *shape* (its parts and whether it binds a record) is
+persistent schema, declared by the field; its values are supplied at each call as
+the field's binding arguments (`Args`). Opening under other values fails
+authentication; opening under another shape reports a binding mismatch.
 <!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “key scope” is only the `keys` parts. Avoid “context” for any of them. -->
+
+**Binding arguments**:
+The binding values of one seal or open, typed by the field (`Args<F>`): `()` for
+a `FieldOnly` field, `RecordId` for a `FieldOnly` field that binds a record,
+`&F::Binding`, or `(&F::Binding, RecordId)`. A missing or extra record fails the
+build.
 
 **Binding part**:
 One declared value of a binding scope, with a part ID, a value kind (uuid, i64,
@@ -26,17 +34,17 @@ normalized plaintext comparison before acceptance as a match.
 <!-- Agent guidance: avoid “match” before authenticated decryption and normalized plaintext comparison. -->
 
 **Ciphertext**:
-The encrypted stored representation of a value. Structurally valid ciphertext
-has not necessarily been authenticated. Ciphertext is distinct from the
-plaintext-bearing application wrapper.
-<!-- Agent guidance: avoid “encrypted value” when referring to the plaintext-bearing application wrapper. -->
+The encrypted bytes of a value: the envelope that a sealed value wraps.
+Structurally valid ciphertext has not necessarily been authenticated.
+<!-- Agent guidance: in the typed API, say “sealed value” (`Sealed<F>`); “ciphertext” is the byte-level envelope. Avoid “encrypted value” for plaintext-bearing types. -->
 
 **Current generation**:
 The generation selected for new encryption or new stored blind indexes.
 
 **Field**:
 A marker type that declares one logical encrypted field: its field ID, value
-type, codec, and padding. One value type can back several fields, such as a
+type, codec, padding, binding scope, whether it binds a record, and its blind
+indexes. One value type can back several fields, such as a
 home and a billing address, each with its own field ID.
 <!-- Agent guidance: “profile” is the retired name for a field; do not reintroduce it. Avoid “column”, “key”, or “cipher suite” as synonyms: a field is a logical location, independent of database names. -->
 
@@ -50,15 +58,16 @@ The number of retained blind-index bits. Fewer bits increase false candidates
 and obscure equality more, without eliminating index leakage.
 
 **Installed keys**:
-The process-wide keys set once with `keys::install` and never replaced. The
-implicit forms (`encrypt()`, `decrypt()`, `prepare()`, `with_index()`,
-`probes()`) read them and fail with `KeysNotInstalled` before installation; the
-explicit `_with` forms never read them.
+The process-wide keys set once with `keys::install` and never replaced. They
+serve only `FieldOnly` fields without a record. The global conveniences
+(`seal_global()`, `open_global()`, `with_index()`, `probes()`) and the automatic
+column read them and fail with `KeysNotInstalled` before installation; every
+other operation takes keys explicitly.
 <!-- Agent guidance: avoid “global key context” or “global providers”; the global is the installed keys. -->
 
 **Key context**:
 The key source of an automatic SQLx column, named in its type as
-`Encrypted<F, K>`: the installed keys (`GlobalKeys`, the default) or an
+`Plain<F, K>`: the installed keys (`GlobalKeys`, the default) or an
 application-owned static. It belongs to the column type, not to a field; fields
 reach providers through a router.
 <!-- Agent guidance: avoid “binding context” as a synonym. -->
@@ -86,6 +95,13 @@ The application-defined conversion that gives equivalent values the same bytes
 for blind-index derivation and candidate comparison. It is persistent schema;
 the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 
+**Plain value**:
+A plaintext value of a field held by the automatic SQLx column (`Plain<F, K>`),
+which seals it on encode and opens it on decode. A column decoder sees neither a
+row nor a scope, so it serves only `FieldOnly` fields without a record or blind
+indexes.
+<!-- Agent guidance: `Plain` is the only plaintext-typed column; bound or indexed fields are sealed explicitly. `Encrypted<F>` is the retired name of the plaintext carrier; do not reintroduce it. -->
+
 **Plaintext type**:
 A value type that names a default codec. `String` and `Secret<String>` default
 to UTF-8, and `Vec<u8>` and `Secret<Vec<u8>>` to raw bytes; these defaults
@@ -93,7 +109,7 @@ are permanent. Any other value type names its codec explicitly or declares its
 own default.
 
 **Prepared storage**:
-Ciphertext and optional blind indexes derived from the same source value, ready
+A sealed value and optional blind indexes derived from the same source value, ready
 for an application-owned atomic write. Preparation is not persistence.
 
 **Probe**:
@@ -121,6 +137,19 @@ persistent schema: field ID, value type, codec ID, padding, index ID,
 precision, and normalizer name. Given keys, it also lists each field's route.
 Applications compare it with a committed snapshot in CI.
 <!-- Agent guidance: the codec ID and normalizer name are reported, never stored in ciphertext or indexes. -->
+
+**Scope**:
+The declared parts of a binding, such as a tenant, or an org plus a workspace
+(`Binding`). Parts have roles: `keys` parts form the key scope, `index` parts
+also scope blind indexes, and other parts are bound only. A scope struct owns
+its values; a record is never part of it.
+
+**Sealed value**:
+A value of a field encrypted for storage and bound to its binding (`Sealed<F>`).
+Sealing encodes, pads, and encrypts; opening authenticates under the same binding
+arguments and returns the bare value. Parsing a sealed value checks structure
+only.
+<!-- Agent guidance: `Ciphertext<F>` is the retired name; say “seal” and “open”, not “encrypt” and “decrypt”, for the typed operations. -->
 
 **Shred unit**:
 The finest `keys` part whose root keys are stored independently. Destroying

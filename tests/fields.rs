@@ -1,8 +1,8 @@
 //! Public-boundary tests for field markers over application value types.
 
 use cryptbox::{
-    Ciphertext, Codec, CodecError, CodecErrorKind, Encrypted, EncryptionKey, Error, Field, FieldId,
-    IndexId, LocalEncryptionKeyring, Padding, Plaintext, Raw, Secret, Utf8, field_id, index_id,
+    Codec, CodecError, CodecErrorKind, EncryptionKey, Error, Field, FieldId, FieldOnly, IndexId,
+    LocalEncryptionKeyring, Padding, Plaintext, Raw, Sealed, Secret, Utf8, field_id, index_id,
 };
 use zeroize::Zeroizing;
 
@@ -61,8 +61,11 @@ struct HomeAddress;
 impl Field for HomeAddress {
     const ID: FieldId = field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Address;
     type Codec = <Address as Plaintext>::Codec;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 /// Where a user's invoices go.
@@ -71,8 +74,11 @@ struct BillingAddress;
 impl Field for BillingAddress {
     const ID: FieldId = field_id!("5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25");
     const PADDING: Padding = Padding::block(16);
+    const RECORD: bool = false;
     type Value = Address;
     type Codec = AddressCodec;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 fn address() -> Address {
@@ -86,21 +92,11 @@ fn address() -> Address {
 fn fields_over_one_value_type_round_trip() {
     let keys = keyring();
 
-    let home = Encrypted::<HomeAddress>::new(address())
-        .encrypt_with(&keys)
-        .unwrap();
-    assert_eq!(
-        home.decrypt_with(&keys).unwrap().expose_secret(),
-        &address()
-    );
+    let home = Sealed::<HomeAddress>::seal(&address(), (), &keys).unwrap();
+    assert_eq!(home.open((), &keys).unwrap(), address());
 
-    let billing = Encrypted::<BillingAddress>::new(address())
-        .encrypt_with(&keys)
-        .unwrap();
-    assert_eq!(
-        billing.decrypt_with(&keys).unwrap().expose_secret(),
-        &address()
-    );
+    let billing = Sealed::<BillingAddress>::seal(&address(), (), &keys).unwrap();
+    assert_eq!(billing.open((), &keys).unwrap(), address());
 }
 
 #[test]
@@ -109,24 +105,20 @@ fn fields_over_one_value_type_have_distinct_ids() {
 }
 
 #[test]
-fn swapping_ciphertext_between_fields_over_one_value_type_fails_authentication() {
+fn swapping_sealed_values_between_fields_over_one_value_type_fails_authentication() {
     let keys = keyring();
-    let home = Encrypted::<HomeAddress>::new(address())
-        .encrypt_with(&keys)
-        .unwrap();
-    let billing = Encrypted::<BillingAddress>::new(address())
-        .encrypt_with(&keys)
-        .unwrap();
+    let home = Sealed::<HomeAddress>::seal(&address(), (), &keys).unwrap();
+    let billing = Sealed::<BillingAddress>::seal(&address(), (), &keys).unwrap();
 
-    let home_as_billing = Ciphertext::<BillingAddress>::from_bytes(home.into_bytes()).unwrap();
-    let billing_as_home = Ciphertext::<HomeAddress>::from_bytes(billing.into_bytes()).unwrap();
+    let home_as_billing = Sealed::<BillingAddress>::from_bytes(home.into_bytes()).unwrap();
+    let billing_as_home = Sealed::<HomeAddress>::from_bytes(billing.into_bytes()).unwrap();
 
     assert!(matches!(
-        home_as_billing.decrypt_with(&keys),
+        home_as_billing.open((), &keys),
         Err(Error::AuthenticationFailed)
     ));
     assert!(matches!(
-        billing_as_home.decrypt_with(&keys),
+        billing_as_home.open((), &keys),
         Err(Error::AuthenticationFailed)
     ));
 }
@@ -147,8 +139,11 @@ struct UserEmail;
 impl Field for UserEmail {
     const ID: FieldId = field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = <String as Plaintext>::Codec;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct SecretUserEmail;
@@ -156,8 +151,11 @@ struct SecretUserEmail;
 impl Field for SecretUserEmail {
     const ID: FieldId = UserEmail::ID;
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Secret<String>;
     type Codec = <Secret<String> as Plaintext>::Codec;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct ApiToken;
@@ -165,8 +163,11 @@ struct ApiToken;
 impl Field for ApiToken {
     const ID: FieldId = field_id!("de8c983c-7d2b-4c4f-8162-f7193010de55");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct SecretApiToken;
@@ -174,47 +175,34 @@ struct SecretApiToken;
 impl Field for SecretApiToken {
     const ID: FieldId = ApiToken::ID;
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Secret<Vec<u8>>;
     type Codec = Raw;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 #[test]
 fn secret_values_share_stored_bytes_with_their_plain_counterparts() {
     let keys = keyring();
 
-    let plain = Encrypted::<UserEmail>::new("mark@example.com")
-        .encrypt_with(&keys)
-        .unwrap();
-    let read = Ciphertext::<SecretUserEmail>::from_bytes(plain.into_bytes()).unwrap();
+    let plain = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), (), &keys).unwrap();
+    let read = Sealed::<SecretUserEmail>::from_bytes(plain.into_bytes()).unwrap();
     assert_eq!(
-        read.decrypt_with(&keys)
-            .unwrap()
-            .expose_secret()
-            .expose_secret(),
+        read.open((), &keys).unwrap().expose_secret(),
         "mark@example.com"
     );
 
-    let secret = Encrypted::<SecretUserEmail>::new(Secret::new("mark@example.com".to_owned()))
-        .encrypt_with(&keys)
-        .unwrap();
-    let read = Ciphertext::<UserEmail>::from_bytes(secret.into_bytes()).unwrap();
-    assert_eq!(
-        read.decrypt_with(&keys).unwrap().expose_secret(),
-        "mark@example.com"
-    );
+    let secret =
+        Sealed::<SecretUserEmail>::seal(&Secret::new("mark@example.com".to_owned()), (), &keys)
+            .unwrap();
+    let read = Sealed::<UserEmail>::from_bytes(secret.into_bytes()).unwrap();
+    assert_eq!(read.open((), &keys).unwrap(), "mark@example.com");
 
     let token = vec![0, 1, 2, 255];
-    let plain = Encrypted::<ApiToken>::new(token.clone())
-        .encrypt_with(&keys)
-        .unwrap();
-    let read = Ciphertext::<SecretApiToken>::from_bytes(plain.into_bytes()).unwrap();
-    assert_eq!(
-        read.decrypt_with(&keys)
-            .unwrap()
-            .expose_secret()
-            .expose_secret(),
-        &token
-    );
+    let plain = Sealed::<ApiToken>::seal(&token, (), &keys).unwrap();
+    let read = Sealed::<SecretApiToken>::from_bytes(plain.into_bytes()).unwrap();
+    assert_eq!(read.open((), &keys).unwrap().expose_secret(), &token);
 }
 
 #[test]

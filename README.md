@@ -25,7 +25,7 @@
 | --- | --- |
 | ✅ It CAN | Protect encrypted fields in a stolen database dump when keys stay separate. |
 | ❌ It CAN'T | Protect a compromised application. |
-| ❌ It CAN'T | Prevent replay or same-field cross-row substitution. |
+| ❌ It CAN'T | Prevent replay, or cross-row substitution for fields that bind no record. |
 
 [Try it](docs/first-field.md) · [How it works](docs/concepts.md) ·
 [Security](docs/security.md) · [Documentation](docs/README.md) ·
@@ -33,36 +33,42 @@
 
 ## Quick start
 
-Encrypt and decrypt a string with an in-memory key. For setup instructions, follow
+Seal and open a string with an in-memory key. For setup instructions, follow
 [encrypt your first field](docs/first-field.md).
 
 ```rust
-use cryptbox::{Encrypted, EncryptionKey, Field, FieldId, LocalEncryptionKeyring, Padding, Utf8};
+use cryptbox::{
+    EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+};
 
 struct UserEmail;
 
 impl Field for UserEmail {
     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 fn main() -> Result<(), cryptbox::Error> {
     // Demo only: this key is lost when the process exits.
     let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-    let email = Encrypted::<UserEmail>::new("mark@example.com".to_owned());
+    let email = "mark@example.com".to_owned();
 
-    let ciphertext = email.encrypt_with(&keys)?;
-    let decrypted = ciphertext.decrypt_with(&keys)?;
-    assert_eq!(decrypted.expose_secret(), "mark@example.com");
+    let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
+    let opened = sealed.open((), &keys)?;
+    assert_eq!(opened, "mark@example.com");
     Ok(())
 }
 ```
 
-`UserEmail` is a field: its ID binds every ciphertext to this field, and it
-stores a `String` as UTF-8 without padding. `Encrypted` holds plaintext; `Ciphertext`
-holds the encrypted value. `&keys` supplies the keys. See
+`UserEmail` is a field: its ID binds every sealed value to this field, and it
+stores a `String` as UTF-8 without padding. `Sealed` holds the encrypted value;
+`open` returns the plaintext. `()` is the binding argument of a field bound to its
+ID alone, and `&keys` supplies the keys. See
 [how CryptBox works](docs/concepts.md).
 
 Next, [run the durable SQLite example](examples/sqlite/README.md), or read

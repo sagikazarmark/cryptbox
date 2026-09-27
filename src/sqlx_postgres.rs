@@ -5,7 +5,9 @@ use sqlx::{
     postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted, Field, KeyContext};
+use crate::{
+    BlindIndex, BlindIndexRef, BlindIndexSpec, Field, FieldOnly, KeyContext, Plain, Sealed,
+};
 
 fn bytea_type_info() -> PgTypeInfo {
     <Vec<u8> as Type<Postgres>>::type_info()
@@ -15,7 +17,11 @@ fn bytea_compatible(ty: &PgTypeInfo) -> bool {
     <Vec<u8> as Type<Postgres>>::compatible(ty)
 }
 
-impl<F: Field, K: KeyContext> Type<Postgres> for Encrypted<F, K> {
+impl<F, K> Type<Postgres> for Plain<F, K>
+where
+    F: Field<Binding = FieldOnly, Indexes = ()>,
+    K: KeyContext,
+{
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -25,14 +31,14 @@ impl<F: Field, K: KeyContext> Type<Postgres> for Encrypted<F, K> {
     }
 }
 
-impl<F, K> Encode<'_, Postgres> for Encrypted<F, K>
+impl<F, K> Encode<'_, Postgres> for Plain<F, K>
 where
-    F: Field,
+    F: Field<Binding = FieldOnly, Indexes = ()>,
     K: KeyContext,
 {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
-        let ciphertext = self.encrypt_for_column()?;
-        buffer.extend_from_slice(ciphertext.as_bytes());
+        let sealed = self.seal_for_column()?;
+        buffer.extend_from_slice(sealed.as_bytes());
 
         Ok(IsNull::No)
     }
@@ -42,18 +48,18 @@ where
     }
 }
 
-impl<'row, F, K> Decode<'row, Postgres> for Encrypted<F, K>
+impl<'row, F, K> Decode<'row, Postgres> for Plain<F, K>
 where
-    F: Field,
+    F: Field<Binding = FieldOnly, Indexes = ()>,
     K: KeyContext,
 {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
-        Ok(Self::decrypt_column(bytes)?)
+        Ok(Self::open_column(bytes)?)
     }
 }
 
-impl<F: Field> Type<Postgres> for Ciphertext<F> {
+impl<F: Field> Type<Postgres> for Sealed<F> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -63,7 +69,7 @@ impl<F: Field> Type<Postgres> for Ciphertext<F> {
     }
 }
 
-impl<F: Field> Encode<'_, Postgres> for Ciphertext<F> {
+impl<F: Field> Encode<'_, Postgres> for Sealed<F> {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         buffer.extend_from_slice(self.as_bytes());
 
@@ -75,7 +81,7 @@ impl<F: Field> Encode<'_, Postgres> for Ciphertext<F> {
     }
 }
 
-impl<'row, F: Field> Decode<'row, Postgres> for Ciphertext<F> {
+impl<'row, F: Field> Decode<'row, Postgres> for Sealed<F> {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
 
@@ -129,7 +135,7 @@ impl<F: Field> Type<Postgres> for crate::migrate::MaybeEncrypted<F> {
 
 // Migration-window reads only. Decoding classifies bytes without CryptBox or
 // legacy keys; recovery and decryption stay explicit calls. There is no
-// `Encode` counterpart: writes always encrypt through `Encrypted` or
+// `Encode` counterpart: writes always encrypt through `Plain`, `Sealed`, or
 // `Prepared`.
 #[cfg(feature = "migrate")]
 impl<'row, F> Decode<'row, Postgres> for crate::migrate::MaybeEncrypted<F>

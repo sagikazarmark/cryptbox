@@ -3,10 +3,9 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexSpec, Ciphertext,
-    Encrypted, EncryptionKey, EncryptionKeyProvider, Field, IndexKeyId, KeyId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Router, index_key_id, inspect_blind_index,
-    key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexSpec,
+    EncryptionKey, EncryptionKeyProvider, Field, IndexKeyId, KeyId, LocalBlindIndexKeyring,
+    LocalEncryptionKeyring, Router, Sealed, index_key_id, inspect_blind_index, key_id,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -135,12 +134,11 @@ async fn run() -> Result<(), Box<dyn Error>> {
     );
 
     // Fresh verification must see a late stale write even at a negative cursor.
-    let late = Encrypted::<UserEmail>::new("late@example.com".to_owned());
-    let prepared = late
-        .prepare_with(&old_keys)?
+    let late = "late@example.com".to_owned();
+    let prepared = Sealed::<UserEmail>::prepare(&late, (), &old_keys)?
         .with_index_with::<EmailLookup>(&old_index_keys)?;
     sqlx::query("UPDATE users SET email_ciphertext = ?, email_bidx = ? WHERE id = -1")
-        .bind(prepared.ciphertext())
+        .bind(prepared.sealed())
         .bind(prepared.index::<EmailLookup>()?)
         .execute(&mut connection)
         .await?;
@@ -156,14 +154,13 @@ async fn insert_email(
     keys: &dyn EncryptionKeyProvider,
     index_keys: &dyn BlindIndexKeyProvider,
 ) -> Result<(), Box<dyn Error>> {
-    let value = Encrypted::<UserEmail>::new(email.to_owned());
-    let prepared = value
-        .prepare_with(keys)?
+    let value = email.to_owned();
+    let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)?
         .with_index_with::<EmailLookup>(index_keys)?;
 
     sqlx::query("INSERT INTO users (id, email_ciphertext, email_bidx) VALUES (?, ?, ?)")
         .bind(id)
-        .bind(prepared.ciphertext())
+        .bind(prepared.sealed())
         .bind(prepared.index::<EmailLookup>()?)
         .execute(connection)
         .await?;
@@ -198,9 +195,9 @@ async fn sweep_batch(
         let id: i64 = row.try_get("id")?;
         let old_ciphertext_bytes: Vec<u8> = row.try_get("email_ciphertext")?;
         let old_index_bytes: Vec<u8> = row.try_get("email_bidx")?;
-        let ciphertext = Ciphertext::<UserEmail>::from_bytes(old_ciphertext_bytes.clone())?;
+        let ciphertext = Sealed::<UserEmail>::from_bytes(old_ciphertext_bytes.clone())?;
         let index = BlindIndex::<EmailLookup>::from_bytes(old_index_bytes.clone())?;
-        let ciphertext_is_stale = ciphertext.needs_reencryption_with(keys)?;
+        let ciphertext_is_stale = ciphertext.needs_reseal((), keys)?;
         let index_is_stale =
             inspect_blind_index(index.as_bytes())?.index_key_id() != current_index_key_id;
 
@@ -209,13 +206,13 @@ async fn sweep_batch(
         }
 
         let rewritten_ciphertext = if ciphertext_is_stale {
-            ciphertext.reencrypt_with(keys)?
+            ciphertext.reseal((), keys)?
         } else {
             ciphertext
         };
         let rewritten_index = if index_is_stale {
-            let plaintext = rewritten_ciphertext.decrypt_with(keys)?;
-            EmailLookup::derive_with(plaintext.expose_secret(), index_keys)?
+            let plaintext = rewritten_ciphertext.open((), keys)?;
+            EmailLookup::derive_with(&plaintext, index_keys)?
         } else {
             index
         };
@@ -273,9 +270,9 @@ async fn verify_sweep(
         }
         for row in rows {
             after_id = Some(row.try_get::<i64, _>("id")?);
-            let ciphertext: Ciphertext<UserEmail> = row.try_get("email_ciphertext")?;
+            let ciphertext: Sealed<UserEmail> = row.try_get("email_ciphertext")?;
             let index: BlindIndex<EmailLookup> = row.try_get("email_bidx")?;
-            if ciphertext.needs_reencryption_with(keys)?
+            if ciphertext.needs_reseal((), keys)?
                 || inspect_blind_index(index.as_bytes())?.index_key_id() != current_index_key_id
             {
                 current = false;

@@ -6,8 +6,8 @@ keys. [Documentation](README.md).
 ## Local providers
 
 Give each test its own encryption and blind-index keyrings. Explicit
-`encrypt_with`, `decrypt_with` and `prepare_with` calls never read the installed
-keys; field binding still applies.
+`Sealed::seal`, `open` and `Sealed::prepare` calls take their keys and never read
+the installed keys; field binding still applies.
 
 For runnable tests, create a library with `cargo new --lib testing-local-consumer`,
 use [testing-local.toml](snippets/testing-local.toml) as `Cargo.toml`, and copy
@@ -27,15 +27,16 @@ For the design choice between automatic adapters and explicit ciphertext storage
 see [storage boundaries](integration.md#storage-boundaries). This example shows
 how to exercise the automatic path with the installed keys.
 
-An automatic SQLx column `Encrypted<F>` reads the installed keys; a field does not
+An automatic SQLx column `Plain<F>` reads the installed keys; a field does not
 select its own keys. The [automatic example](snippets/testing-automatic.rs)
 installs both providers with `keys::install` once per process, so each fixture
 runs in its own process.
-Automatic encryption does not maintain index columns; the example also uses
-`prepare().with_index()` and writes the pair atomically.
+`Plain` serves only fields without blind indexes, since a column cannot write
+its index. The example seals its indexed field explicitly with `Sealed::prepare`
+and `with_index()`, and writes the pair atomically.
 
 To test automatic columns without the installed keys, implement `KeyContext`
-over a fixed test keyring in a `static` and use `Encrypted<F, TestKeys>`, as the
+over a fixed test keyring in a `static` and use `Plain<F, TestKeys>`, as the
 crate's [SQLite adapter tests](../tests/sqlx_sqlite.rs) do. Such tests run
 concurrently in one process because nothing is installed or replaced.
 
@@ -54,7 +55,7 @@ Each prints `Automatic adapter round trip succeeded.`
 ### Why the isolation boundary differs
 
 `keys::install` is once per process: it cannot be reset or replaced. Install at
-the binary entry point; reusable libraries let their host own it. Implicit calls
+the binary entry point; reusable libraries let their host own it. Process-wide calls
 before installation return `Error::KeysNotInstalled`, so a test binary that
 installs must sequence every assertion that depends on installation, such as in
 one test function.

@@ -1,9 +1,9 @@
 //! Provisional compatibility vectors for the experimental formats.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, EncryptionKey, Error, Field,
-    IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, Utf8,
-    decrypt, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field, FieldOnly,
+    IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw,
+    Sealed, Utf8, decrypt, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -20,11 +20,10 @@ fn keys() -> LocalEncryptionKeyring {
     LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap()
 }
 
-fn read<F: Field>(vector: &str) -> Result<F::Value, Error> {
-    Ciphertext::<F>::from_bytes(hex::decode(vector).unwrap())
+fn read<F: Field<Binding = FieldOnly>>(vector: &str) -> Result<F::Value, Error> {
+    Sealed::<F>::from_bytes(hex::decode(vector).unwrap())
         .unwrap()
-        .decrypt_with(&keys())
-        .map(cryptbox::Encrypted::into_secret)
+        .open((), &keys())
 }
 
 struct VectorField;
@@ -32,8 +31,11 @@ struct VectorField;
 impl Field for VectorField {
     const ID: cryptbox::FieldId = field_id!("12345678-1234-4234-8234-1234567890ab");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct PaddedVectorField;
@@ -41,8 +43,11 @@ struct PaddedVectorField;
 impl Field for PaddedVectorField {
     const ID: cryptbox::FieldId = VectorField::ID;
     const PADDING: Padding = Padding::block(16);
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 #[test]
@@ -96,22 +101,19 @@ fn format_1_vectors_are_read_with_the_field_padding_policy() {
 }
 
 #[test]
-fn format_1_vectors_are_stale_and_reencrypt_to_format_2() {
+fn format_1_vectors_are_stale_and_reseal_to_format_2() {
     let keys = keys();
     let legacy =
-        Ciphertext::<PaddedVectorField>::from_bytes(hex::decode(FORMAT_1_PADDED).unwrap()).unwrap();
+        Sealed::<PaddedVectorField>::from_bytes(hex::decode(FORMAT_1_PADDED).unwrap()).unwrap();
 
-    assert!(legacy.needs_reencryption_with(&keys).unwrap());
+    assert!(legacy.needs_reseal((), &keys).unwrap());
 
-    let current = legacy.reencrypt_with(&keys).unwrap();
+    let current = legacy.reseal((), &keys).unwrap();
     let info = inspect_ciphertext(current.as_bytes()).unwrap();
     assert_eq!(info.format_version(), 2);
     assert_eq!(info.padded(), Some(true));
-    assert!(!current.needs_reencryption_with(&keys).unwrap());
-    assert_eq!(
-        current.decrypt_with(&keys).unwrap().expose_secret(),
-        "cryptbox vector"
-    );
+    assert!(!current.needs_reseal((), &keys).unwrap());
+    assert_eq!(current.open((), &keys).unwrap(), "cryptbox vector");
 }
 
 struct VectorIndex;

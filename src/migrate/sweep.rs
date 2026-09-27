@@ -2,7 +2,7 @@ use std::{fmt, future::Future};
 
 use zeroize::Zeroize;
 
-use crate::{Error, Field};
+use crate::{Error, Field, FieldOnly};
 
 use super::{RowPlanner, RowState, RowWrite, SweepReport};
 
@@ -138,7 +138,7 @@ where
 
 impl<'a, F> Sweep<'a, F>
 where
-    F: Field,
+    F: Field<Binding = FieldOnly>,
 {
     /// Creates a driver over a configured row planner.
     #[must_use]

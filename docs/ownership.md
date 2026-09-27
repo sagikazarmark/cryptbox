@@ -10,14 +10,14 @@ The application owns the lifetime of decoded values and any copies it makes.
 
 ```mermaid
 flowchart TB
-    E["Encrypted&lt;F&gt;: owns plaintext"]
-    C["Ciphertext&lt;F&gt;: owns encrypted envelope"]
-    D["New Encrypted&lt;F&gt;: owns decrypted plaintext"]
-    P["Prepared: owns ciphertext and optional indexes"]
+    E["Application value T: owned plaintext"]
+    C["Sealed&lt;F&gt;: owns encrypted envelope"]
+    D["New T: opened plaintext"]
+    P["Prepared: owns sealed value and optional indexes"]
     S["Storage: encrypted envelope and optional indexes"]
-    E -->|"encrypt_with borrows; source retained"| C
-    C -->|"decrypt_with borrows; authenticates and decodes"| D
-    E -->|"prepare_with borrows; source retained"| P
+    E -->|"Sealed::seal borrows; source retained"| C
+    C -->|"open borrows; authenticates and decodes"| D
+    E -->|"Sealed::prepare borrows; source retained"| P
     P -.->|"borrows plaintext source for its lifetime"| E
     P -->|"application writes representations atomically"| S
     C -->|"application writes bytes"| S
@@ -30,21 +30,24 @@ flowchart TB
 
 | Object or buffer | Ownership and end of lifetime |
 | --- | --- |
-| `Encrypted<F>` | Owns plaintext `T`, the field's value type. Encryption/preparation borrows it and retains it. Drop drops `T`; it does not invoke zeroization for arbitrary application types. |
-| Plaintext clones | `Encrypted::clone` clones `T`, and `Secret::clone` clones its inner value. A `String` clone owns another plaintext allocation. Each copy has an independent lifetime; erasing one does not erase the others. |
+| Application value `T` | The field's value type, owned by the application. `Sealed::seal` and `Sealed::prepare` borrow it and retain it. Drop drops `T`; it does not invoke zeroization for arbitrary application types. |
+| `Plain<F>` | The automatic column's plaintext carrier: owns a `T`. Encoding the column borrows it. Drop drops `T` without zeroization. |
+| Plaintext clones | Cloning `T` or `Plain<F>` clones the value, and `Secret::clone` clones its inner value. A `String` clone owns another plaintext allocation. Each copy has an independent lifetime; erasing one does not erase the others. |
 | Encoded, padded, normalized and decrypted temporary bytes | CryptBox-owned plaintext buffers use zeroizing storage. Custom codecs and normalizers must protect their own intermediate allocations, including error paths and superseded buffers during growth. The trait's return type alone cannot enforce that. |
-| `Prepared` | Owns ciphertext and optional indexes while borrowing the plaintext source. Drop releases the borrow but does not erase the source. Preparation does not persist data. |
-| Decrypted application `T` | Decoding creates a new owned value without consuming ciphertext. A plain `String` result has ordinary application-owned storage; dropping the temporary decryption bytes does not wipe this result. |
+| `Sealed<F>` | Owns the encrypted envelope bytes. Opening borrows it and returns a new `T`. |
+| `Prepared` | Owns the sealed value and optional indexes while borrowing the plaintext source. Drop releases the borrow but does not erase the source. Preparation does not persist data. |
+| Opened application `T` | `open` decodes a new owned value without consuming the sealed value. A plain `String` result has ordinary application-owned storage; dropping the temporary decryption bytes does not wipe this result. |
 | `Secret<T>` | Owns `T` through `Zeroizing<T>` and invokes `T::zeroize` on drop. It redacts its own debug output but cannot prevent logging through explicit access or erase earlier copies. The quality of custom `T::zeroize` implementations remains the implementor's responsibility. |
 | `EncryptionKey` / `BlindIndexKey` | Clones share reference-counted root material rather than copying the root into a new allocation. That allocation is zeroized when the **last** handle drops; provider snapshots and outstanding returned handles can keep it alive. |
 | Key inputs and external copies | Encoded secret strings, caller-owned arrays, environment/configuration copies, serializer allocations, logs, swap and crash dumps have their own lifetimes. Dropping a library key cannot erase them. |
 
-## `into_secret` and wrapped values
+## Opened and wrapped values
 
-`Encrypted::into_secret()` consumes the wrapper and returns its `T`. It does not
-construct a `Secret` or clone the value. For a `String` field, wrapping the result
-as `Secret::new(decrypted.into_secret())` gives that returned string a zeroizing
-owner; the original encryption source and any prior clones still exist independently.
+`open` returns the field's bare value type; `Plain::into_inner()` likewise
+consumes the column wrapper and returns its `T`. Neither constructs a `Secret`.
+For a `String` field, `Secret::new(sealed.open(args, &keys)?)` gives the opened
+string a zeroizing owner; the original sealing source and any prior clones still
+exist independently.
 
 A field can also store `Secret<String>` or `Secret<Vec<u8>>` directly. `Utf8`
 and `Raw` encode them with exactly the same bytes as `String` and `Vec<u8>`, and

@@ -4,8 +4,8 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
-    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, Error, Field, IndexId,
-    IndexKeyId,
+    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, Error, Field, FieldOnly,
+    IndexId, IndexKeyId,
     crypto::{hkdf_sha256_32, hmac_sha256},
     keys,
 };
@@ -35,7 +35,7 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{BlindIndexError, BlindIndexSpec, Field, FieldId, IndexId, Padding, Utf8};
+/// use cryptbox::{BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Utf8};
 /// use zeroize::Zeroizing;
 ///
 /// struct UserEmail;
@@ -43,8 +43,11 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 /// impl Field for UserEmail {
 ///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 ///
 /// struct EmailLookup;
@@ -74,14 +77,17 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 /// Invalid precision is rejected when the specification is used:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Field, FieldId, IndexId, Padding, Raw};
+/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Raw};
 /// # use zeroize::Zeroizing;
 /// # struct Bytes;
 /// # impl Field for Bytes {
 /// #     const ID: FieldId = FieldId::from_bytes([1; 16]);
 /// #     const PADDING: Padding = Padding::NONE;
+/// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
+/// #     type Binding = FieldOnly;
+/// #     type Indexes = ();
 /// # }
 /// struct ZeroBits;
 ///
@@ -99,14 +105,17 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 /// ```
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Field, FieldId, IndexId, Padding, Raw};
+/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Raw};
 /// # use zeroize::Zeroizing;
 /// # struct Bytes;
 /// # impl Field for Bytes {
 /// #     const ID: FieldId = FieldId::from_bytes([1; 16]);
 /// #     const PADDING: Padding = Padding::NONE;
+/// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
+/// #     type Binding = FieldOnly;
+/// #     type Indexes = ();
 /// # }
 /// struct TooManyBits;
 ///
@@ -230,12 +239,16 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// Derives probes with the [installed keys](keys::installed).
     ///
     /// This is exactly `Self::probes_with(query, keys::installed()?)`.
+    /// The installed keys serve only [`FieldOnly`] fields.
     ///
     /// # Errors
     ///
     /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
     /// probe derivation fails.
-    fn probes(query: &Self::Query) -> Result<Vec<BlindIndex<Self>>, Error> {
+    fn probes(query: &Self::Query) -> Result<Vec<BlindIndex<Self>>, Error>
+    where
+        Self::Field: Field<Binding = FieldOnly>,
+    {
         Self::probes_with(query, keys::installed()?)
     }
 
@@ -284,6 +297,87 @@ pub trait BlindIndexSpec: Sized + 'static {
         check_consistency::<Self>(value, stored, keys)
     }
 }
+
+/// The blind indexes declared over field `F`: `()`, or a tuple of up to eight
+/// [`BlindIndexSpec`]s over `F`.
+///
+/// This is [`Field::Indexes`]. Listing an index declared over another field is
+/// a type error.
+///
+/// ```compile_fail,E0271
+/// use cryptbox::{
+///     BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Utf8,
+/// };
+/// use zeroize::Zeroizing;
+///
+/// struct UserEmail;
+///
+/// impl Field for UserEmail {
+///     const ID: FieldId = FieldId::from_bytes([1; 16]);
+///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
+///     type Value = String;
+///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = (InviteEmailLookup,);
+/// }
+///
+/// struct InviteEmail;
+///
+/// impl Field for InviteEmail {
+///     const ID: FieldId = FieldId::from_bytes([2; 16]);
+///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
+///     type Value = String;
+///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = (InviteEmailLookup,);
+/// }
+///
+/// struct InviteEmailLookup;
+///
+/// impl BlindIndexSpec for InviteEmailLookup {
+///     type Field = InviteEmail;
+///     const ID: IndexId = IndexId::from_bytes([3; 16]);
+///     const BITS: u16 = 32;
+///     const NORMALIZER: &'static str = "exact/1";
+///     type Query = str;
+///
+///     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+///         Ok(Zeroizing::new(query.as_bytes().to_vec()))
+///     }
+///
+///     fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+///         Self::normalize_query(value)
+///     }
+/// }
+/// ```
+pub trait IndexList<F: ?Sized>: 'static {
+    /// The declared index IDs, in declaration order.
+    const IDS: &'static [IndexId];
+}
+
+impl<F: ?Sized> IndexList<F> for () {
+    const IDS: &'static [IndexId] = &[];
+}
+
+// `F` names the field, so the spec parameters skip it.
+macro_rules! index_list {
+    ($($spec:ident),+) => {
+        impl<F: Field, $($spec: BlindIndexSpec<Field = F>),+> IndexList<F> for ($($spec,)+) {
+            const IDS: &'static [IndexId] = &[$($spec::ID),+];
+        }
+    };
+}
+
+index_list!(A);
+index_list!(A, B);
+index_list!(A, B, C);
+index_list!(A, B, C, D);
+index_list!(A, B, C, D, E);
+index_list!(A, B, C, D, E, G);
+index_list!(A, B, C, D, E, G, H);
+index_list!(A, B, C, D, E, G, H, I);
 
 trait ValidBlindIndexBits {
     const ASSERT_VALID_BITS: ();

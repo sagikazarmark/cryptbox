@@ -18,14 +18,15 @@ No features are enabled by default, and all features are additive:
   window only; the default decoding path stays strict.
 - `postcard` adds the `Postcard` codec. Its serialized representation is part of
   the persistent schema. It implies `serde`; values need Serde traits.
-- `serde` adds explicit serialization of `Ciphertext` and `BlindIndex` stored
-  bytes. It never adds serialization for plaintext `Encrypted` values.
+- `serde` adds explicit serialization of `Sealed` and `BlindIndex` stored
+  bytes. It never adds serialization for plaintext `Plain` values.
 - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
 - `sqlx-sqlite` adds `SQLx` 0.8 `BLOB` storage for `SQLite`.
 
-The `SQLx` adapters automatically encrypt and decrypt `Encrypted` for every
-field. `Encrypted<F>` uses the keys installed with `keys::install`; name another
-key source as `Encrypted<F, K>` to use application-owned keys. `Ciphertext` and
+The `SQLx` adapters automatically seal and open `Plain<F>`, the column for a
+`FieldOnly` field without a record or blind indexes. `Plain<F>` uses the keys
+installed with `keys::install`; name another key source as `Plain<F, K>` to use
+application-owned keys. Seal every other field explicitly: `Sealed` and
 blind-index storage need no keys. These features do not
 choose an async runtime or TLS implementation for the application. Add `SQLx`
 0.8 directly with your backend and chosen runtime/TLS features; `CryptBox`'s
@@ -44,11 +45,11 @@ requires either backend. Stored-value Serde implementations require `serde`;
 build enables all features, so an item appearing there does not mean it
 is enabled in a default build.
 
-`CryptBox` deliberately provides no Serde implementation for `Encrypted`, because
-it contains plaintext. With `serde`, serialize an explicitly encrypted
-`Ciphertext` or derived `BlindIndex` instead. Their deserializers validate stored
-structure but do not establish authenticity; ciphertext is authenticated only
-when decrypted, and blind-index candidates must still be compared against
+`CryptBox` deliberately provides no Serde implementation for `Plain`, because
+it contains plaintext. With `serde`, serialize an explicitly sealed `Sealed`
+value or derived `BlindIndex` instead. Their deserializers validate stored
+structure but do not establish authenticity; a sealed value is authenticated
+only when opened, and blind-index candidates must still be compared against
 decrypted plaintext. That comparison does not authenticate index metadata;
 checking stored-index consistency requires separate recomputation. See the
 [stored-value walkthrough].

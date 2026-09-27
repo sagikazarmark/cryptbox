@@ -2,9 +2,9 @@
 #![cfg(feature = "derive")]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Codec, CodecError, CodecErrorKind,
-    Encrypted, EncryptionKey, Field, FieldId, IndexId, IndexKeyId, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Padding, Plaintext, Utf8, field_id, index_id, index_key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Codec, CodecError, CodecErrorKind,
+    EncryptionKey, Field, FieldId, FieldOnly, IndexId, IndexKeyId, LocalBlindIndexKeyring,
+    LocalEncryptionKeyring, Padding, Plaintext, Sealed, Utf8, field_id, index_id, index_key_id,
 };
 use zeroize::Zeroizing;
 
@@ -27,8 +27,11 @@ struct ManualUserEmail;
 impl Field for ManualUserEmail {
     const ID: FieldId = field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = <String as Plaintext>::Codec;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 #[test]
@@ -43,17 +46,13 @@ fn a_derived_field_declares_its_id_value_and_default_codec_without_padding() {
 }
 
 #[test]
-fn a_derived_field_reads_ciphertext_of_its_manual_equivalent() {
+fn a_derived_field_opens_values_of_its_manual_equivalent() {
     let keys = keyring();
-    let manual = Encrypted::<ManualUserEmail>::new("mark@example.com".to_owned())
-        .encrypt_with(&keys)
-        .unwrap();
+    let manual =
+        Sealed::<ManualUserEmail>::seal(&"mark@example.com".to_owned(), (), &keys).unwrap();
 
-    let derived = Ciphertext::<UserEmail>::from_bytes(manual.into_bytes()).unwrap();
-    assert_eq!(
-        derived.decrypt_with(&keys).unwrap().expose_secret(),
-        "mark@example.com"
-    );
+    let derived = Sealed::<UserEmail>::from_bytes(manual.into_bytes()).unwrap();
+    assert_eq!(derived.open((), &keys).unwrap(), "mark@example.com");
 }
 
 /// An application value type with a hand-written codec, stored as `street\0city`.
@@ -120,13 +119,8 @@ fn a_derived_field_uses_its_named_codec_and_padding() {
     assert_codec::<BillingAddress, AddressCodec>();
 
     let keys = keyring();
-    let ciphertext = Encrypted::<BillingAddress>::new(address())
-        .encrypt_with(&keys)
-        .unwrap();
-    assert_eq!(
-        ciphertext.decrypt_with(&keys).unwrap().expose_secret(),
-        &address()
-    );
+    let sealed = Sealed::<BillingAddress>::seal(&address(), (), &keys).unwrap();
+    assert_eq!(sealed.open((), &keys).unwrap(), address());
 }
 
 #[test]
@@ -261,22 +255,16 @@ struct TypedUserEmail;
 fn a_transparent_value_type_stores_its_inner_values_bytes() {
     let keys = keyring();
 
-    let typed = Encrypted::<TypedUserEmail>::new(Email("mark@example.com".to_owned()))
-        .encrypt_with(&keys)
-        .unwrap();
-    let as_string = Ciphertext::<ManualUserEmail>::from_bytes(typed.into_bytes()).unwrap();
-    assert_eq!(
-        as_string.decrypt_with(&keys).unwrap().expose_secret(),
-        "mark@example.com"
-    );
+    let typed =
+        Sealed::<TypedUserEmail>::seal(&Email("mark@example.com".to_owned()), (), &keys).unwrap();
+    let as_string = Sealed::<ManualUserEmail>::from_bytes(typed.into_bytes()).unwrap();
+    assert_eq!(as_string.open((), &keys).unwrap(), "mark@example.com");
 
-    let plain = Encrypted::<ManualUserEmail>::new("ada@example.com".to_owned())
-        .encrypt_with(&keys)
-        .unwrap();
-    let as_email = Ciphertext::<TypedUserEmail>::from_bytes(plain.into_bytes()).unwrap();
+    let plain = Sealed::<ManualUserEmail>::seal(&"ada@example.com".to_owned(), (), &keys).unwrap();
+    let as_email = Sealed::<TypedUserEmail>::from_bytes(plain.into_bytes()).unwrap();
     assert_eq!(
-        as_email.decrypt_with(&keys).unwrap().expose_secret(),
-        &Email("ada@example.com".to_owned())
+        as_email.open((), &keys).unwrap(),
+        Email("ada@example.com".to_owned())
     );
 }
 

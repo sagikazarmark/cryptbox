@@ -2,9 +2,9 @@
 //! See README.md beside this source for usage and trust boundaries.
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, Error, Field, LocalBlindIndexKeyring, LocalEncryptionKeyring, index_key_id,
-    inspect_blind_index, inspect_ciphertext, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Sealed, index_key_id, inspect_blind_index,
+    inspect_ciphertext, key_id,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -35,7 +35,7 @@ struct EmailLookup;
 
 #[derive(Serialize, Deserialize)]
 struct StoredUser {
-    email: Ciphertext<UserEmail>,
+    email: Sealed<UserEmail>,
     email_lookup: BlindIndex<EmailLookup>,
 }
 
@@ -54,14 +54,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         [],
     )?;
 
-    let email = Encrypted::<UserEmail>::new("Mark@Example.com".to_owned());
-    // The UserEmail field binds the ciphertext and index to its field ID.
-    // prepare_with borrows email: it does not remove plaintext from memory.
-    let prepared = email
-        .prepare_with(&keys)?
+    let email = "Mark@Example.com".to_owned();
+    // The UserEmail field binds the sealed value and index to its field ID.
+    // prepare borrows email: it does not remove plaintext from memory.
+    let prepared = Sealed::<UserEmail>::prepare(&email, (), &keys)?
         .with_index_with::<EmailLookup>(&index_keys)?;
     let stored = StoredUser {
-        email: prepared.ciphertext().clone(),
+        email: prepared.sealed().clone(),
         email_lookup: BlindIndex::from_bytes(prepared.index::<EmailLookup>()?.as_bytes())?,
     };
     // Persist both fields atomically as one document in the chosen storage system.
@@ -73,39 +72,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parsing/inspection uses no keys. These IDs remain unauthenticated metadata.
     let _envelope_info = inspect_ciphertext(restored.email.as_bytes())?;
     let _index_info = inspect_blind_index(restored.email_lookup.as_bytes())?;
-    assert!(!restored.email.needs_reencryption_with(&keys)?);
+    assert!(!restored.email.needs_reseal((), &keys)?);
 
-    // Explicit decryption authenticates, unpads, and decodes with the chosen field's codec.
-    let plaintext = restored.email.decrypt_with(&keys)?;
-    assert_eq!(plaintext.expose_secret(), "Mark@Example.com");
+    // Opening authenticates, decrypts, unpads, and decodes with the chosen field's codec.
+    let plaintext = restored.email.open((), &keys)?;
+    assert_eq!(plaintext, "Mark@Example.com");
 
     // Separately check index consistency, here after convergence to the current key.
-    let recomputed = EmailLookup::derive_with(plaintext.expose_secret(), &index_keys)?;
+    let recomputed = EmailLookup::derive_with(&plaintext, &index_keys)?;
     assert_eq!(restored.email_lookup, recomputed);
 
     // Lookup searches every readable generation and compares authenticated plaintext.
     let query = "mark@example.com";
     let probes = EmailLookup::probes_with(query, &index_keys)?;
     let matches = probes.iter().any(|probe| probe == &restored.email_lookup)
-        && EmailLookup::verify_candidate(query, plaintext.expose_secret())?;
+        && EmailLookup::verify_candidate(query, &plaintext)?;
     assert!(matches);
 
     // Plaintext comparison alone cannot detect a stored index for another value.
     let unrelated_index = EmailLookup::derive_with(&"other@example.com".to_owned(), &index_keys)?;
     assert_ne!(unrelated_index, recomputed);
-    assert!(EmailLookup::verify_candidate(
-        query,
-        plaintext.expose_secret()
-    )?);
+    assert!(EmailLookup::verify_candidate(query, &plaintext)?);
 
     // Structurally valid, current-generation bytes can still fail authentication.
     let mut damaged = restored.email.into_bytes();
-    *damaged.last_mut().ok_or("empty ciphertext")? ^= 1;
+    *damaged.last_mut().ok_or("empty envelope")? ^= 1;
     let damaged_json = serde_json::to_vec(&damaged)?;
-    let damaged: Ciphertext<UserEmail> = serde_json::from_slice(&damaged_json)?;
-    assert!(!damaged.needs_reencryption_with(&keys)?);
+    let damaged: Sealed<UserEmail> = serde_json::from_slice(&damaged_json)?;
+    assert!(!damaged.needs_reseal((), &keys)?);
     assert_eq!(
-        damaged.decrypt_with(&keys).unwrap_err(),
+        damaged.open((), &keys).unwrap_err(),
         Error::AuthenticationFailed
     );
 

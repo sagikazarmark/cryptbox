@@ -180,7 +180,40 @@
   byte-identical to field-only binding, and `Tenant(TenantId)`, one bytes `keys`
   part. `RecordId` is a kind-tagged record ID, and `KeyScope::of` and
   `KeyScope::of_index` return the owned, hashable `keys` parts of a binding.
-  Fields do not declare a binding yet.
+- **Breaking:** values are sealed under a runtime binding (ADR-0005). `Field`
+  gains `const RECORD: bool`, `type Binding: Binding`, and
+  `type Indexes: IndexList<Self>` (a tuple of the field's `BlindIndexSpec`s, or
+  `()`); `#[derive(Field)]` emits `RECORD = false`, `Binding = FieldOnly`, and
+  `Indexes = ()`. `Ciphertext<F>` is renamed `Sealed<F>`, and every operation
+  takes the field's binding arguments (`Args<F>`: `()`, `RecordId`,
+  `&F::Binding`, or `(&F::Binding, RecordId)`) and keys:
+  `Sealed::seal(&value, args, keys)`, `sealed.open(args, keys)`,
+  `Sealed::prepare(&value, args, keys)`, `needs_reseal`, `reseal`, and
+  `reseal_across(from, from_keys, to, to_keys)`, plus `key_id()`. `open` returns
+  the bare `F::Value`. A binding of another type is a type error, and a missing
+  or extra record fails the build. Opening under other binding values, another
+  record, or as another field fails authentication; another binding shape
+  reports `Error::BindingMismatch`. FieldOnly values are byte-identical to
+  earlier releases.
+- **Breaking:** the `Encrypted<F, K>` plaintext carrier is removed. The
+  automatic SQLx column is now `Plain<F, K = GlobalKeys>`, whose constructors
+  and column impls accept only `FieldOnly` fields with `Indexes = ()`;
+  `into_secret` is renamed `into_inner`. The implicit `encrypt()`, `decrypt()`,
+  and `prepare()` forms are replaced by `Sealed::seal_global` and
+  `Sealed::open_global`, for `FieldOnly` fields only. `Prepared::ciphertext()`
+  is renamed `Prepared::sealed()`. `MaybeEncrypted` opens with
+  `open(args, keys)`, `open_legacy`, `open_global`, and `open_global_legacy`,
+  returns the bare value, and exposes `as_sealed()`. `RowPlanner` and `Sweep`
+  serve `FieldOnly` fields only.
+
+  | Before | Now |
+  | --- | --- |
+  | `Encrypted::<F>::new(v).encrypt_with(&keys)?` | `Sealed::<F>::seal(&v, (), &keys)?` |
+  | `ciphertext.decrypt_with(&keys)?.into_secret()` | `sealed.open((), &keys)?` |
+  | `Encrypted::<F>::new(v).prepare_with(&keys)?` | `Sealed::<F>::prepare(&v, (), &keys)?` |
+  | `needs_reencryption_with(&keys)` / `reencrypt_with(&keys)` | `needs_reseal((), &keys)` / `reseal((), &keys)` |
+  | `Encrypted::<F>::new(v).encrypt()?` / `ciphertext.decrypt()?` | `Sealed::<F>::seal_global(&v)?` / `sealed.open_global()?` |
+  | SQLx column `Encrypted<F, K>` | `Plain<F, K>` |
 - `Json` decodes every float to exactly the value that was encoded
   (`serde_json/float_roundtrip`). Before this, some stored floats were read back one ulp off.
 

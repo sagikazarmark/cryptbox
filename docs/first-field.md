@@ -47,25 +47,30 @@ Replace `src/main.rs` with this [example](../examples/first_field.rs).
 <!-- BEGIN SHARED: first-field -->
 
 ```rust
-use cryptbox::{Encrypted, EncryptionKey, Field, FieldId, LocalEncryptionKeyring, Padding, Utf8};
+use cryptbox::{
+    EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+};
 
 struct UserEmail;
 
 impl Field for UserEmail {
     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 fn main() -> Result<(), cryptbox::Error> {
     // Ephemeral demo keys: a new key and generation ID on every run.
     let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-    let email = Encrypted::<UserEmail>::new("mark@example.com".to_owned());
-    let ciphertext = email.encrypt_with(&keys)?;
-    let decrypted = ciphertext.decrypt_with(&keys)?;
-    assert_eq!(decrypted.expose_secret(), "mark@example.com");
-    assert_eq!(email.expose_secret(), "mark@example.com"); // Source retained.
+    let email = "mark@example.com".to_owned();
+    let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
+    let opened = sealed.open((), &keys)?;
+    assert_eq!(opened, "mark@example.com");
+    assert_eq!(email, "mark@example.com"); // Source retained.
     println!("Field-bound round trip succeeded.");
     Ok(())
 }
@@ -81,13 +86,17 @@ Expect `Field-bound round trip succeeded.` and exit status 0.
 
 ### What just happened?
 
-- `Encrypted` holds **plaintext**; encryption borrows it. `Ciphertext` holds the
-  encrypted envelope. Decryption authenticates and returns a new plaintext value.
-- `UserEmail` is a field. Its `ID` binds the ciphertext to this field; it stores
+- `Sealed::seal` borrows the **plaintext** `String` and returns a `Sealed` value:
+  the encrypted envelope you store. `open` authenticates it and returns a new
+  plaintext `String`.
+- `UserEmail` is a field. Its `ID` binds the sealed value to this field; it stores
   a `String` value with the `Utf8` codec and no padding.
+- `()` is the binding argument: `Binding = FieldOnly` with no record binds the
+  value to its field ID alone. A field can declare a binding such as a tenant, and
+  a record, and then every call must pass their values.
 - `&keys` supplies keys explicitly, so these calls need no global installation.
-- Field binding identifies a logical field, not a row or tenant; it does not stop
-  same-field substitution or replay. `Padding::NONE` reveals encoded length.
+- A field-only value is bound to a logical field, not a row or tenant, so it does
+  not stop same-field substitution between rows, or replay. `Padding::NONE` reveals encoded length.
 
 See [how CryptBox works](concepts.md) for the complete picture.
 

@@ -1,8 +1,8 @@
 //! Prepares and safely queries a blind index across index-key rotation.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field, IndexKeyId,
-    KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, IndexKeyId, KeyId,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Sealed, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -39,11 +39,10 @@ fn main() -> Result<(), cryptbox::Error> {
     let old_index_key = BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x42; 32]);
     let old_index_keys = LocalBlindIndexKeyring::new(old_index_key.clone(), [])?;
 
-    let value = Encrypted::<UserEmail>::new("Mark@Example.com".to_owned());
-    let prepared = value
-        .prepare_with(&encryption_keys)?
+    let value = "Mark@Example.com".to_owned();
+    let prepared = Sealed::<UserEmail>::prepare(&value, (), &encryption_keys)?
         .with_index_with::<EmailLookup>(&old_index_keys)?;
-    let stored_ciphertext = prepared.ciphertext().clone();
+    let stored = prepared.sealed().clone();
     let stored_index = prepared.index::<EmailLookup>()?.as_bytes().to_vec();
 
     let index_keys = LocalBlindIndexKeyring::new(
@@ -58,12 +57,9 @@ fn main() -> Result<(), cryptbox::Error> {
     let is_candidate = probes.iter().any(|probe| probe.as_bytes() == stored_index);
     assert!(is_candidate);
 
-    // A blind-index hit is only a candidate: decrypt and compare normalized plaintext.
-    let candidate = stored_ciphertext.decrypt_with(&encryption_keys)?;
-    assert!(EmailLookup::verify_candidate(
-        query,
-        candidate.expose_secret(),
-    )?);
+    // A blind-index hit is only a candidate: open it and compare normalized plaintext.
+    let candidate = stored.open((), &encryption_keys)?;
+    assert!(EmailLookup::verify_candidate(query, &candidate)?);
 
     Ok(())
 }

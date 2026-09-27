@@ -1,9 +1,9 @@
 use std::fmt;
 
 use crate::{
-    BlindIndex, BlindIndexKeyProvider, BlindIndexSpec, Ciphertext, Codec, Encrypted,
-    EncryptionKeyProvider, Error, Field, blind::derive_value, inspect_blind_index,
-    needs_reencryption,
+    BlindIndex, BlindIndexKeyProvider, BlindIndexSpec, Codec, EncryptionKeyProvider, Error, Field,
+    FieldOnly, Sealed, binding::domain, blind::derive_value, crypto::needs_reencryption_bound,
+    inspect_blind_index,
 };
 
 use super::{LegacyFormat, legacy};
@@ -98,6 +98,14 @@ where
     derive_value::<Spec>(value, keys).map(BlindIndex::into_bytes)
 }
 
+// Reads the unauthenticated header only, without copying the envelope.
+fn is_stale_envelope<F: Field<Binding = FieldOnly>>(
+    ciphertext: &[u8],
+    keys: &dyn EncryptionKeyProvider,
+) -> Result<bool, Error> {
+    needs_reencryption_bound(&domain::<F, ()>(())?, F::PADDING, ciphertext, keys)
+}
+
 struct IndexColumn<'a, F>
 where
     F: Field,
@@ -118,6 +126,8 @@ where
 /// Current rows are skipped without authentication or decoding, and current
 /// index bytes are retained without checking consistency. Use a separate
 /// authenticated-read and index-recomputation pass when those checks are required.
+///
+/// The planner serves [`FieldOnly`] fields without a record.
 pub struct RowPlanner<'a, F>
 where
     F: Field,
@@ -129,7 +139,7 @@ where
 
 impl<'a, F> RowPlanner<'a, F>
 where
-    F: Field,
+    F: Field<Binding = FieldOnly>,
 {
     /// Creates a planner for field `F` and an encryption key provider.
     pub fn new(keys: &'a dyn EncryptionKeyProvider) -> Self {
@@ -161,8 +171,8 @@ where
     ///
     /// ```compile_fail,E0271
     /// use cryptbox::{
-    ///     BlindIndexError, BlindIndexSpec, Field, FieldId, IndexId, LocalBlindIndexKeyring,
-    ///     LocalEncryptionKeyring, Padding, Utf8, migrate::RowPlanner,
+    ///     BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId,
+    ///     LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, migrate::RowPlanner,
     /// };
     /// use zeroize::Zeroizing;
     ///
@@ -171,8 +181,11 @@ where
     /// impl Field for UserEmail {
     ///     const ID: FieldId = FieldId::from_bytes([1; 16]);
     ///     const PADDING: Padding = Padding::NONE;
+    ///     const RECORD: bool = false;
     ///     type Value = String;
     ///     type Codec = Utf8;
+    ///     type Binding = FieldOnly;
+    ///     type Indexes = ();
     /// }
     ///
     /// struct InviteEmail;
@@ -180,8 +193,11 @@ where
     /// impl Field for InviteEmail {
     ///     const ID: FieldId = FieldId::from_bytes([2; 16]);
     ///     const PADDING: Padding = Padding::NONE;
+    ///     const RECORD: bool = false;
     ///     type Value = String;
     ///     type Codec = Utf8;
+    ///     type Binding = FieldOnly;
+    ///     type Indexes = ();
     /// }
     ///
     /// struct InviteEmailLookup;
@@ -245,7 +261,7 @@ where
             Err(error) => return Err(error),
         }
 
-        if needs_reencryption(F::ID, F::PADDING, ciphertext, self.keys)? {
+        if is_stale_envelope::<F>(ciphertext, self.keys)? {
             return Ok(RowState::Stale);
         }
 
@@ -279,7 +295,7 @@ where
             Err(error) => return Err(error),
         }
 
-        let envelope_is_stale = needs_reencryption(F::ID, F::PADDING, ciphertext, self.keys)?;
+        let envelope_is_stale = is_stale_envelope::<F>(ciphertext, self.keys)?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
         for (column, bytes) in self.indexes.iter().zip(indexes) {
             stale_columns.push(column.is_stale(bytes)?);
@@ -292,9 +308,9 @@ where
             });
         }
 
-        let parsed = Ciphertext::<F>::from_validated_bytes(ciphertext.to_vec());
+        let parsed = Sealed::<F>::from_validated_bytes(ciphertext.to_vec());
         let rewritten = if envelope_is_stale {
-            parsed.reencrypt_with(self.keys)?
+            parsed.reseal((), self.keys)?
         } else {
             parsed
         };
@@ -302,11 +318,11 @@ where
         let indexes = if stale_columns.contains(&true) {
             // The ciphertext is authoritative: stale indexes are re-derived
             // from decrypted plaintext, never trusted index metadata.
-            let value = rewritten.decrypt_with(self.keys)?;
+            let value = rewritten.open((), self.keys)?;
             let mut replacements = Vec::with_capacity(self.indexes.len());
             for ((column, bytes), stale) in self.indexes.iter().zip(indexes).zip(&stale_columns) {
                 replacements.push(if *stale {
-                    (column.derive)(value.expose_secret(), column.keys)?
+                    (column.derive)(&value, column.keys)?
                 } else {
                     bytes.to_vec()
                 });
@@ -328,17 +344,17 @@ where
 
     fn plan_legacy_row(&self, bytes: &[u8]) -> Result<RowOutcome, Error> {
         let plaintext = legacy::recover(bytes, self.legacy)?;
-        let value = Encrypted::<F>::from_value(F::Codec::decode(&plaintext)?);
-        let ciphertext = value.encrypt_with(self.keys)?;
+        let value = F::Codec::decode(&plaintext)?;
+        let sealed = Sealed::<F>::seal(&value, (), self.keys)?;
         let mut indexes = Vec::with_capacity(self.indexes.len());
         for column in &self.indexes {
-            indexes.push((column.derive)(value.expose_secret(), column.keys)?);
+            indexes.push((column.derive)(&value, column.keys)?);
         }
 
         Ok(RowOutcome {
             state: RowState::Legacy,
             write: Some(RowWrite {
-                ciphertext: ciphertext.into_bytes(),
+                ciphertext: sealed.into_bytes(),
                 indexes,
             }),
         })

@@ -7,8 +7,9 @@ Rotation selects keys for future writes; a later sweep converges existing
 ciphertext and indexes. The same sweep rewrites ciphertext in an older format or
 whose padding flag disagrees with the field's current policy, so it also upgrades
 format 1 values and applies a padding change. The `migrate` feature supplies
-`RowPlanner`, `Sweep` and `SweepStore`; the [manual SQLite example](../examples/reencryption_sweep.rs)
-demonstrates the same concurrency rules without the driver.
+`RowPlanner`, `Sweep` and `SweepStore` for `FieldOnly` fields without a record;
+the [manual SQLite example](../examples/reencryption_sweep.rs) demonstrates the
+same concurrency rules without the driver.
 
 ## Preconditions
 
@@ -144,7 +145,7 @@ These behaviors make the following separate audit necessary.
 
 This is the canonical whole-store audit procedure. The
 [assurance reference](security.md#what-each-check-establishes) explains what each
-check establishes. Fix the intended field ID, value type,
+check establishes. Fix the intended field ID, binding shape, value type,
 codec, index specifications, normalization, precision and allowed generations
 from trusted application schema, not stored metadata.
 
@@ -162,7 +163,7 @@ from trusted application schema, not stored metadata.
    storage/configuration failures abort the pass. Classification can stop at a
    stale component before inspecting later columns; repair and verify again.
 3. **Authenticate and validate every value.** Read ciphertext and indexes together,
-   parse typed `Ciphertext`, and call `decrypt_with` with the intended context and
+   parse typed `Sealed`, and call `open` with the intended binding arguments and
    provider. Authentication, padding, codec and key-availability failures all fail
    the audit. Validate decoded application constraints; account for every row.
 4. **Recompute every index.** Parse as `BlindIndex<ExpectedSpec>` and call

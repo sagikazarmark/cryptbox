@@ -2,9 +2,9 @@
 
 // ANCHOR: custom-field
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Codec, CodecError, CodecErrorKind, Encrypted,
-    EncryptionKey, EncryptionKeyProvider, Field, FieldId, KeyId, KeyProviderError,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Secret,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Codec, CodecError, CodecErrorKind,
+    EncryptionKey, EncryptionKeyProvider, Field, FieldId, FieldOnly, KeyId, KeyProviderError,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed, Secret,
 };
 use zeroize::Zeroizing;
 
@@ -47,8 +47,11 @@ struct Handle;
 impl Field for Handle {
     const ID: FieldId = cryptbox::field_id!("dcaa3c69-1767-49a1-8476-36555eaf54bf");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Secret<String>;
     type Codec = HandleCodec;
+    type Binding = FieldOnly;
+    type Indexes = (HandleEquality,);
 }
 
 struct HandleEquality;
@@ -103,11 +106,10 @@ fn main() -> Result<(), cryptbox::Error> {
     };
     let old_index_key = BlindIndexKey::generate()?; // Independent of encryption keys.
     let index_writer = LocalBlindIndexKeyring::new(old_index_key.clone(), [])?;
-    let value = Encrypted::<Handle>::new(Secret::new("Alice-7".to_owned()));
-    let prepared = value
-        .prepare_with(&keys)?
+    let value = Secret::new("Alice-7".to_owned());
+    let prepared = Sealed::<Handle>::prepare(&value, (), &keys)?
         .with_index_with::<HandleEquality>(&index_writer)?;
-    let ciphertext = prepared.ciphertext().clone();
+    let sealed = prepared.sealed().clone();
     let stored_index = prepared.index::<HandleEquality>()?.as_bytes().to_vec();
     // These two representations belong in one atomic storage write.
     drop(prepared); // Releases the borrow, not the source plaintext.
@@ -119,10 +121,10 @@ fn main() -> Result<(), cryptbox::Error> {
     assert_eq!(probes.len(), 2);
     assert!(probes.iter().any(|probe| probe.as_bytes() == stored_index));
     // An index hit is only a candidate: authenticate and compare normalized plaintext.
-    let decrypted = ciphertext.decrypt_with(&keys)?.into_secret();
-    assert!(HandleEquality::verify_candidate(&query, &decrypted)?);
-    assert_eq!(decrypted.expose_secret(), "Alice-7");
-    assert_eq!(value.expose_secret().expose_secret(), "Alice-7");
+    let opened = sealed.open((), &keys)?;
+    assert!(HandleEquality::verify_candidate(&query, &opened)?);
+    assert_eq!(opened.expose_secret(), "Alice-7");
+    assert_eq!(value.expose_secret(), "Alice-7");
     println!("Custom field round trip and normalized lookup succeeded.");
     Ok(())
 }
@@ -157,8 +159,8 @@ mod tests {
         let current = EncryptionKey::generate()?;
         let unknown = EncryptionKey::generate()?.id();
         let writer = LocalEncryptionKeyring::new(old.clone(), [])?;
-        let value = Encrypted::<Handle>::new(Secret::new("Alice-7".to_owned()));
-        let ciphertext = value.encrypt_with(&writer)?;
+        let value = Secret::new("Alice-7".to_owned());
+        let sealed = Sealed::<Handle>::seal(&value, (), &writer)?;
         let reader = CachedEncryptionKeys {
             snapshot: Some(LocalEncryptionKeyring::new(current.clone(), [old.clone()])?),
         };
@@ -169,18 +171,12 @@ mod tests {
             current.id()
         );
         assert!(reader.key(Handle::ID, unknown)?.is_none());
-        assert_eq!(
-            ciphertext
-                .decrypt_with(&reader)?
-                .into_secret()
-                .expose_secret(),
-            "Alice-7"
-        );
+        assert_eq!(sealed.open((), &reader)?.expose_secret(), "Alice-7");
         let retired = CachedEncryptionKeys {
             snapshot: Some(LocalEncryptionKeyring::new(current, [])?),
         };
         assert_eq!(
-            ciphertext.decrypt_with(&retired).unwrap_err(),
+            sealed.open((), &retired).unwrap_err(),
             cryptbox::Error::UnknownEncryptionKey(old.id())
         );
         let unavailable = CachedEncryptionKeys { snapshot: None };
@@ -193,7 +189,7 @@ mod tests {
             KeyProviderError::Unavailable
         );
         assert_eq!(
-            ciphertext.decrypt_with(&unavailable).unwrap_err(),
+            sealed.open((), &unavailable).unwrap_err(),
             cryptbox::Error::KeyProviderUnavailable
         );
         Ok(())
@@ -216,9 +212,8 @@ mod tests {
 
         // Encoding failure is sanitized at the storage boundary too.
         let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-        let value = Encrypted::<Handle>::new(invalid);
         assert_eq!(
-            value.encrypt_with(&keys).unwrap_err(),
+            Sealed::<Handle>::seal(&invalid, (), &keys).unwrap_err(),
             cryptbox::Error::CodecFailed(encode)
         );
         Ok(())
@@ -248,21 +243,22 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c custom_field::HandleEquality
     }
 
     #[test]
-    fn a_decrypted_string_can_be_moved_into_secret() -> Result<(), cryptbox::Error> {
+    fn an_opened_string_can_be_moved_into_secret() -> Result<(), cryptbox::Error> {
         struct PlainHandle;
 
         impl Field for PlainHandle {
             const ID: FieldId = Handle::ID;
             const PADDING: Padding = Padding::NONE;
+            const RECORD: bool = false;
             type Value = String;
             type Codec = cryptbox::Utf8;
+            type Binding = FieldOnly;
+            type Indexes = ();
         }
 
         let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-        let value = Encrypted::<PlainHandle>::new("Alice-7".to_owned());
-        let ciphertext = value.encrypt_with(&keys)?;
-        let decrypted = ciphertext.decrypt_with(&keys)?;
-        let secret = Secret::new(decrypted.into_secret());
+        let sealed = Sealed::<PlainHandle>::seal(&"Alice-7".to_owned(), (), &keys)?;
+        let secret = Secret::new(sealed.open((), &keys)?);
         assert_eq!(secret.expose_secret(), "Alice-7");
         Ok(())
     }

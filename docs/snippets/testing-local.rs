@@ -2,8 +2,8 @@
 #![cfg(test)]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field, FieldId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, FieldId, FieldOnly,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed, Utf8,
 };
 use zeroize::Zeroizing;
 
@@ -12,8 +12,11 @@ struct UserEmail;
 impl Field for UserEmail {
     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = (EmailLookup,);
 }
 
 struct EmailLookup;
@@ -68,12 +71,11 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
         ),
         [],
     )?;
-    let value = Encrypted::<UserEmail>::new(plaintext.to_owned());
-    let ciphertext = value.encrypt_with(&keys)?;
-    assert_eq!(ciphertext.decrypt_with(&keys)?.expose_secret(), plaintext);
+    let value = plaintext.to_owned();
+    let sealed = Sealed::<UserEmail>::seal(&value, (), &keys)?;
+    assert_eq!(sealed.open((), &keys)?, plaintext);
 
-    let prepared = value
-        .prepare_with(&keys)?
+    let prepared = Sealed::<UserEmail>::prepare(&value, (), &keys)?
         .with_index_with::<EmailLookup>(&indexes)?;
     let probes = EmailLookup::probes_with(plaintext, &indexes)?;
     let stored_index = prepared.index::<EmailLookup>()?;
@@ -82,14 +84,11 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
             .iter()
             .any(|probe| probe.as_bytes() == stored_index.as_bytes())
     );
-    let candidate = prepared.ciphertext().decrypt_with(&keys)?;
-    assert!(EmailLookup::verify_candidate(
-        plaintext,
-        candidate.expose_secret(),
-    )?);
+    let candidate = prepared.sealed().open((), &keys)?;
+    assert!(EmailLookup::verify_candidate(plaintext, &candidate,)?);
     assert!(!EmailLookup::verify_candidate(
         "not-the-query@example.test",
-        candidate.expose_secret(),
+        &candidate,
     )?);
     Ok(())
 }

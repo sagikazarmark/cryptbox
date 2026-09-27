@@ -1,19 +1,23 @@
-//! The process-wide keys behind the implicit forms.
+//! The process-wide keys behind the global conveniences.
 //!
-//! Every operation has an explicit form that takes keys and never reads the
-//! global: [`Encrypted::encrypt_with`](crate::Encrypted::encrypt_with),
-//! [`Ciphertext::decrypt_with`](crate::Ciphertext::decrypt_with),
-//! [`Encrypted::prepare_with`](crate::Encrypted::prepare_with),
+//! Every operation takes its keys explicitly and never reads the global:
+//! [`Sealed::seal`](crate::Sealed::seal), [`Sealed::open`](crate::Sealed::open),
+//! [`Sealed::prepare`](crate::Sealed::prepare),
 //! [`Prepared::with_index_with`](crate::Prepared::with_index_with), and
 //! [`BlindIndexSpec::probes_with`](crate::BlindIndexSpec::probes_with).
-//! Each implicit form (`encrypt()`, `decrypt()`, `prepare()`, `with_index()`,
-//! `probes()`) is exactly its explicit form called with [`installed()`], and the
-//! automatic `SQLx` column `Encrypted<F>` reads the same keys through
+//! The global conveniences [`Sealed::seal_global`](crate::Sealed::seal_global),
+//! [`Sealed::open_global`](crate::Sealed::open_global), `with_index()`, and
+//! `probes()` are exactly their explicit forms called with [`installed()`], and
+//! the automatic `SQLx` column `Plain<F>` reads the same keys through
 //! [`GlobalKeys`](crate::GlobalKeys).
+//!
+//! The process-wide keys serve only [`FieldOnly`](crate::FieldOnly) fields
+//! without a record: a value bound to a scope or a record is sealed and opened
+//! explicitly, with keys the application chooses for that scope.
 //!
 //! [`install`] sets the keys once, from the binary's entry point. It never
 //! replaces installed keys, and nothing resets them. Before installation, the
-//! implicit forms return [`Error::KeysNotInstalled`]; there is no default.
+//! global conveniences return [`Error::KeysNotInstalled`]; there is no default.
 //!
 //! ```
 //! use cryptbox::{EncryptionKey, Keys, LocalEncryptionKeyring, keys};
@@ -34,22 +38,22 @@
 //!
 //! Teams that want every call to name its keys can forbid the global with
 //! Clippy's `disallowed_methods` in `clippy.toml`. Disallowing [`install`] is
-//! enough to keep the global empty, so any remaining implicit call fails with
-//! [`Error::KeysNotInstalled`]; disallowing the implicit forms reports those
-//! calls at lint time instead:
+//! enough to keep the global empty, so any remaining global call fails with
+//! [`Error::KeysNotInstalled`]; disallowing the global conveniences reports
+//! those calls at lint time instead:
 //!
 //! ```toml
 #![doc = include_str!("../docs/snippets/clippy-no-global-keys.toml")]
 //! ```
 //!
 //! With the `migrate` feature, also disallow
-//! `cryptbox::migrate::MaybeEncrypted::decrypt` and
-//! `cryptbox::migrate::MaybeEncrypted::decrypt_legacy`. Clippy warns about paths
-//! that do not exist, so add them only when the feature is enabled.
+//! `cryptbox::migrate::MaybeEncrypted::open_global` and
+//! `cryptbox::migrate::MaybeEncrypted::open_global_legacy`. Clippy warns about
+//! paths that do not exist, so add them only when the feature is enabled.
 //!
 //! The automatic `SQLx` column defaults to [`GlobalKeys`](crate::GlobalKeys);
 //! name another [`KeyContext`](crate::KeyContext) as its second type parameter,
-//! `Encrypted<F, K>`, to use application-owned keys instead.
+//! `Plain<F, K>`, to use application-owned keys instead.
 //!
 #![doc = concat!(
     "[testing guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/testing.md",

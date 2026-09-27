@@ -512,8 +512,8 @@ impl BlindIndexKeyProvider for LocalBlindIndexKeyring {
 /// The encryption and blind-index providers that operations draw keys from.
 ///
 /// `Keys` is itself a provider for both roles, so it can be passed to any
-/// explicit form (`encrypt_with`, `prepare_with`, `probes_with`, …). It is also
-/// what [`keys::install`](crate::keys::install) installs for the implicit forms.
+/// operation (`Sealed::seal`, `Sealed::open`, `probes_with`, …). It is also what
+/// [`keys::install`](crate::keys::install) installs for the global conveniences.
 /// Each role is usually a [`Router`](crate::Router) that assigns fields to
 /// providers.
 ///
@@ -610,13 +610,15 @@ impl BlindIndexKeyProvider for Keys {
     }
 }
 
-/// The key source of an automatic `SQLx` column, `Encrypted<F, K>`.
+/// The key source of an automatic `SQLx` column, `Plain<F, K>`.
 ///
 /// `SQLx` encoding and decoding receive no context, so the column names its
 /// keys in its type. The default, [`GlobalKeys`], reads the keys installed with
 /// [`keys::install`](crate::keys::install). Implement this trait over your own
-/// static to use another keyring (a tenant, a second deployment, a test
-/// fixture) without installing the global.
+/// static to use another keyring (a second deployment, a test fixture) without
+/// installing the global. Like the column, it serves only
+/// [`FieldOnly`](crate::FieldOnly) fields: a value bound to a tenant is sealed
+/// explicitly with that tenant's keys.
 ///
 /// # Examples
 ///
@@ -624,8 +626,8 @@ impl BlindIndexKeyProvider for Keys {
 /// use std::sync::LazyLock;
 ///
 /// use cryptbox::{
-///     Encrypted, EncryptionKey, EncryptionKeyProvider, Error, Field, FieldId, KeyContext,
-///     LocalEncryptionKeyring, Padding, Utf8,
+///     EncryptionKey, EncryptionKeyProvider, Error, Field, FieldId, FieldOnly, KeyContext,
+///     LocalEncryptionKeyring, Padding, Plain, Utf8,
 /// };
 ///
 /// struct UserEmail;
@@ -633,8 +635,11 @@ impl BlindIndexKeyProvider for Keys {
 /// impl Field for UserEmail {
 ///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 ///
 /// struct ArchiveKeys;
@@ -652,8 +657,8 @@ impl BlindIndexKeyProvider for Keys {
 ///     }
 /// }
 ///
-/// // A column that encrypts and decrypts with `ArchiveKeys`, never the installed keys.
-/// let email = Encrypted::<UserEmail, ArchiveKeys>::new("user@example.com");
+/// // A column that seals and opens with `ArchiveKeys`, never the installed keys.
+/// let email = Plain::<UserEmail, ArchiveKeys>::new("user@example.com");
 /// # let _ = email;
 /// ```
 pub trait KeyContext: 'static {
@@ -669,7 +674,7 @@ pub trait KeyContext: 'static {
 /// The key source that reads the keys installed with
 /// [`keys::install`](crate::keys::install).
 ///
-/// This is the default key source of [`Encrypted`](crate::Encrypted).
+/// This is the default key source of [`Plain`](crate::Plain).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GlobalKeys;
 

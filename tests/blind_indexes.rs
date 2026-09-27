@@ -1,9 +1,9 @@
 //! Public-boundary tests for blind indexes and prepared storage values.
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Error,
-    Field, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding,
-    Utf8, field_id, index_id, index_key_id, inspect_blind_index, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field,
+    FieldOnly, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding,
+    Sealed, Utf8, field_id, index_id, index_key_id, inspect_blind_index, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -16,8 +16,11 @@ struct EmailField;
 impl Field for EmailField {
     const ID: cryptbox::FieldId = field_id!("80000000-0000-4000-8000-000000000008");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct PhoneField;
@@ -25,8 +28,11 @@ struct PhoneField;
 impl Field for PhoneField {
     const ID: cryptbox::FieldId = field_id!("90000000-0000-4000-8000-000000000009");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 fn normalize_email(input: &str) -> Zeroizing<Vec<u8>> {
@@ -154,21 +160,20 @@ fn candidate_hits_require_normalized_plaintext_verification() {
 }
 
 #[test]
-fn prepared_values_derive_ciphertext_and_indexes_from_one_source() {
+fn prepared_values_derive_the_sealed_value_and_indexes_from_one_source() {
     let encryption_keys =
         LocalEncryptionKeyring::new(EncryptionKey::new(ENCRYPTION_KEY_ID, [53; 32]), []).unwrap();
     let index_keys = index_keys();
-    let value = Encrypted::<EmailField>::new("Mark@Example.com");
+    let value = email("Mark@Example.com");
 
-    let prepared = value
-        .prepare_with(&encryption_keys)
+    let prepared = Sealed::<EmailField>::prepare(&value, (), &encryption_keys)
         .unwrap()
         .with_index_with::<EmailExact>(&index_keys)
         .unwrap();
 
-    assert!(!prepared.ciphertext().as_bytes().is_empty());
+    assert!(!prepared.sealed().as_bytes().is_empty());
     let prepared_index = prepared.index::<EmailExact>().unwrap();
-    let direct = EmailExact::derive_with(value.expose_secret(), &index_keys).unwrap();
+    let direct = EmailExact::derive_with(&value, &index_keys).unwrap();
     assert_eq!(prepared_index.as_bytes(), direct.as_bytes());
     assert_eq!(AsRef::<[u8]>::as_ref(&prepared_index), direct.as_bytes());
 }
@@ -217,8 +222,11 @@ struct PersonField;
 impl Field for PersonField {
     const ID: cryptbox::FieldId = field_id!("d0000000-0000-4000-8000-00000000000d");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Person;
     type Codec = PersonCodec;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct PersonCodec;

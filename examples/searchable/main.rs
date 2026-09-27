@@ -3,9 +3,8 @@
 use std::{env, error::Error, path::Path};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey, Field,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, index_key_id, inspect_blind_index,
-    inspect_ciphertext, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, LocalBlindIndexKeyring,
+    LocalEncryptionKeyring, Sealed, index_key_id, inspect_blind_index, key_id,
 };
 use sqlx::{Connection, QueryBuilder, Row};
 use zeroize::Zeroizing;
@@ -25,7 +24,7 @@ type Db = sqlx::Postgres;
 type Db = sqlx::Sqlite;
 type DbConnection = <Db as sqlx::Database>::Connection;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
-type EmailCiphertext = Ciphertext<UserEmail>;
+type SealedEmail = Sealed<UserEmail>;
 
 #[derive(Field)]
 #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
@@ -212,10 +211,10 @@ async fn audit_current(
         }
         for row in rows {
             // This maintenance fixture requires non-NULL values, as does its packaged sweep.
-            let ciphertext: EmailCiphertext = row.try_get("email")?;
-            let value = ciphertext.decrypt_with(encryption)?;
-            validate_email(value.expose_secret())?;
-            let expected = EmailLookup::derive_with(value.expose_secret(), indexes)?;
+            let sealed: SealedEmail = row.try_get("email")?;
+            let value = sealed.open((), encryption)?;
+            validate_email(&value)?;
+            let expected = EmailLookup::derive_with(&value, indexes)?;
             if expected.as_bytes() != row.try_get::<Vec<u8>, _>("email_lookup")? {
                 return Err("index consistency check failed".into());
             }
@@ -325,16 +324,15 @@ fn rotation_canary(
     encryption: &LocalEncryptionKeyring,
     indexes: &LocalBlindIndexKeyring,
 ) -> Result<()> {
-    let value = Encrypted::<UserEmail>::new(CANARY.to_owned());
-    let prepared = value
-        .prepare_with(encryption)?
+    let value = CANARY.to_owned();
+    let prepared = Sealed::<UserEmail>::prepare(&value, (), encryption)?
         .with_index_with::<EmailLookup>(indexes)?;
     // Out-of-band synthetic data: never put a future generation in the live users table.
     std::fs::write(
         path,
         format!(
             "{}\n{}\n",
-            hex::encode(prepared.ciphertext().as_bytes()),
+            hex::encode(prepared.sealed().as_bytes()),
             hex::encode(prepared.index::<EmailLookup>()?.as_bytes())
         ),
     )?;
@@ -352,8 +350,8 @@ fn rotation_ready(
     if lines.len() != 2 {
         return Err("invalid canary".into());
     }
-    let ciphertext = EmailCiphertext::from_bytes(hex::decode(lines[0])?)?;
-    if ciphertext.decrypt_with(encryption)?.expose_secret() != CANARY {
+    let sealed = SealedEmail::from_bytes(hex::decode(lines[0])?)?;
+    if sealed.open((), encryption)? != CANARY {
         return Err("canary plaintext mismatch".into());
     }
     let token = hex::decode(lines[1])?;
@@ -376,16 +374,14 @@ async fn put(
     if let Some(email) = &email {
         validate_email(email)?;
     }
-    let value = email.map(Encrypted::<UserEmail>::new);
-    let prepared = value
+    let prepared = email
         .as_ref()
-        .map(|value| {
-            value
-                .prepare_with(encryption)?
+        .map(|email| {
+            Sealed::<UserEmail>::prepare(email, (), encryption)?
                 .with_index_with::<EmailLookup>(indexes)
         })
         .transpose()?;
-    let ciphertext = prepared.as_ref().map(|p| p.ciphertext());
+    let sealed = prepared.as_ref().map(|p| p.sealed());
     let index = prepared
         .as_ref()
         .map(|p| p.index::<EmailLookup>())
@@ -393,7 +389,7 @@ async fn put(
     // One statement: insert OR update both representations from the same source.
     sqlx::query("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)
         ON CONFLICT (id) DO UPDATE SET email = excluded.email, email_lookup = excluded.email_lookup")
-        .bind(id).bind(ciphertext).bind(index.map(|i| i.as_bytes()))
+        .bind(id).bind(sealed).bind(index.map(|i| i.as_bytes()))
         .execute(connection).await?;
     println!("Stored {id}.");
     Ok(())
@@ -406,10 +402,10 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyri
         .bind(id)
         .fetch_one(connection)
         .await?;
-    // Decode the stored envelope now; choose when to authenticate/decrypt later.
-    let stored: Option<EmailCiphertext> = row.try_get("email")?;
+    // Decode the stored envelope now; choose when to open it later.
+    let stored: Option<SealedEmail> = row.try_get("email")?;
     match stored {
-        Some(ciphertext) => println!("{id}: {}", ciphertext.decrypt_with(keys)?.expose_secret()),
+        Some(sealed) => println!("{id}: {}", sealed.open((), keys)?),
         None => println!("{id}: NULL"),
     }
     Ok(())
@@ -434,9 +430,9 @@ async fn search(
     let mut matches = Vec::<i64>::new();
     let mut rejected = 0;
     for row in rows {
-        let ciphertext: EmailCiphertext = row.try_get("email")?;
-        let candidate = ciphertext.decrypt_with(encryption)?;
-        if EmailLookup::verify_candidate(query, candidate.expose_secret())? {
+        let sealed: SealedEmail = row.try_get("email")?;
+        let candidate = sealed.open((), encryption)?;
+        if EmailLookup::verify_candidate(query, &candidate)? {
             matches.push(row.try_get("id")?);
         } else {
             rejected += 1; // A collision is an ordinary non-match, not an assertion failure.
@@ -456,17 +452,15 @@ async fn macro_put(
     indexes: &LocalBlindIndexKeyring,
 ) -> Result<()> {
     validate_email(&email)?;
-    let value = Encrypted::<UserEmail>::new(email);
-    let prepared = value
-        .prepare_with(encryption)?
+    let prepared = Sealed::<UserEmail>::prepare(&email, (), encryption)?
         .with_index_with::<EmailLookup>(indexes)?;
-    let ciphertext = prepared.ciphertext();
+    let sealed = prepared.sealed();
     let index = prepared.index::<EmailLookup>()?.as_bytes();
     // PostgreSQL's macro sees BYTEA, not the custom wrapper: override input inference.
     // ANCHOR: searchable-macro-put
     sqlx::query!("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)
         ON CONFLICT (id) DO UPDATE SET email = excluded.email, email_lookup = excluded.email_lookup",
-        id, ciphertext as _, index)
+        id, sealed as _, index)
         .execute(connection).await?;
     // ANCHOR_END: searchable-macro-put
     println!("Stored {id}.");
@@ -482,14 +476,14 @@ async fn macro_get(
     // `?` preserves SQL NULL; the alias selects CryptBox's SQLx Decode implementation.
     // ANCHOR: searchable-macro-get
     let row = sqlx::query!(
-        r#"SELECT email AS "email?: EmailCiphertext" FROM users WHERE id = $1"#,
+        r#"SELECT email AS "email?: SealedEmail" FROM users WHERE id = $1"#,
         id
     )
     .fetch_one(connection)
     .await?;
     // ANCHOR_END: searchable-macro-get
     match row.email {
-        Some(ciphertext) => println!("{id}: {}", ciphertext.decrypt_with(keys)?.expose_secret()),
+        Some(sealed) => println!("{id}: {}", sealed.open((), keys)?),
         None => println!("{id}: NULL"),
     }
     Ok(())
@@ -595,12 +589,12 @@ async fn run() -> Result<()> {
                 .bind(id.parse::<i64>()?)
                 .fetch_one(&mut connection)
                 .await?;
-            let ciphertext: EmailCiphertext = row.try_get("email")?;
+            let sealed: SealedEmail = row.try_get("email")?;
             let index: Vec<u8> = row.try_get("email_lookup")?;
             // Structural metadata only; use get/search for authenticated reads.
             println!(
                 "Encryption: {}; index: {}.",
-                inspect_ciphertext(ciphertext.as_bytes())?.key_id(),
+                sealed.key_id(),
                 inspect_blind_index(&index)?.index_key_id()
             );
         }

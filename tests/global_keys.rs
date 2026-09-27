@@ -5,9 +5,9 @@
 //! other on the shared global.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Error, Field,
-    FieldId, IndexId, IndexKeyId, KeyId, Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring,
-    Padding, Utf8, field_id, index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field, FieldId,
+    FieldOnly, IndexId, IndexKeyId, KeyId, Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring,
+    Padding, Sealed, Utf8, field_id, index_id, index_key_id, key_id,
     keys::{self, AlreadyInstalled},
 };
 use zeroize::Zeroizing;
@@ -23,8 +23,11 @@ struct Email;
 impl Field for Email {
     const ID: FieldId = field_id!("40000000-0000-4000-8000-000000000004");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct EmailLookup;
@@ -54,29 +57,30 @@ fn index_keyring(id: IndexKeyId, byte: u8) -> LocalBlindIndexKeyring {
 }
 
 #[test]
-fn global_keys_install_once_back_only_the_implicit_forms() {
+fn global_keys_install_once_back_only_the_global_conveniences() {
     let installed = keyring(INSTALLED_KEY_ID, 1);
     let installed_indexes = index_keyring(INSTALLED_INDEX_KEY_ID, 11);
     let explicit = keyring(EXPLICIT_KEY_ID, 2);
     let explicit_indexes = index_keyring(EXPLICIT_INDEX_KEY_ID, 12);
-    let email = Encrypted::<Email>::new("mark@example.com");
+    let email = "mark@example.com".to_owned();
 
-    // Before installation, every implicit form fails closed.
+    // Before installation, every global convenience fails closed.
     assert_eq!(keys::installed().unwrap_err(), Error::KeysNotInstalled);
-    assert_eq!(email.encrypt().unwrap_err(), Error::KeysNotInstalled);
-    assert_eq!(email.prepare().unwrap_err(), Error::KeysNotInstalled);
+    assert_eq!(
+        Sealed::<Email>::seal_global(&email).unwrap_err(),
+        Error::KeysNotInstalled
+    );
     assert_eq!(
         EmailLookup::probes("mark@example.com").unwrap_err(),
         Error::KeysNotInstalled
     );
-    let explicit_ciphertext = email.encrypt_with(&explicit).unwrap();
+    let explicit_sealed = Sealed::<Email>::seal(&email, (), &explicit).unwrap();
     assert_eq!(
-        explicit_ciphertext.decrypt().unwrap_err(),
+        explicit_sealed.open_global().unwrap_err(),
         Error::KeysNotInstalled
     );
     assert_eq!(
-        email
-            .prepare_with(&explicit)
+        Sealed::<Email>::prepare(&email, (), &explicit)
             .unwrap()
             .with_index::<EmailLookup>()
             .unwrap_err(),
@@ -93,42 +97,32 @@ fn global_keys_install_once_back_only_the_implicit_forms() {
     );
 
     // Implicit forms use the installed keys.
-    let implicit_ciphertext = email.encrypt().unwrap();
+    let global_sealed = Sealed::<Email>::seal_global(&email).unwrap();
     assert_eq!(
-        implicit_ciphertext
-            .decrypt_with(&installed)
-            .unwrap()
-            .expose_secret(),
+        global_sealed.open((), &installed).unwrap(),
         "mark@example.com"
     );
-    assert_eq!(
-        implicit_ciphertext.decrypt().unwrap().expose_secret(),
-        "mark@example.com"
-    );
+    assert_eq!(global_sealed.open_global().unwrap(), "mark@example.com");
     assert_eq!(
         EmailLookup::probes("mark@example.com").unwrap(),
         EmailLookup::probes_with("mark@example.com", &installed_indexes).unwrap()
     );
 
     // Explicit forms ignore the installed keys.
-    let explicit_ciphertext = email.encrypt_with(&explicit).unwrap();
+    let explicit_sealed = Sealed::<Email>::seal(&email, (), &explicit).unwrap();
     assert_eq!(
-        explicit_ciphertext
-            .decrypt_with(&explicit)
-            .unwrap()
-            .expose_secret(),
+        explicit_sealed.open((), &explicit).unwrap(),
         "mark@example.com"
     );
     assert_eq!(
-        explicit_ciphertext.decrypt().unwrap_err(),
+        explicit_sealed.open_global().unwrap_err(),
         Error::UnknownEncryptionKey(EXPLICIT_KEY_ID)
     );
     assert_eq!(
-        implicit_ciphertext.decrypt_with(&explicit).unwrap_err(),
+        global_sealed.open((), &explicit).unwrap_err(),
         Error::UnknownEncryptionKey(INSTALLED_KEY_ID)
     );
-    let prepared = email
-        .prepare_with(&explicit)
+    let prepared = Sealed::<Email>::prepare(&email, (), &explicit)
         .unwrap()
         .with_index_with::<EmailLookup>(&explicit_indexes)
         .unwrap();
@@ -145,15 +139,14 @@ fn global_keys_install_once_back_only_the_implicit_forms() {
 #[test]
 fn keys_without_a_blind_index_provider_reject_index_operations() {
     let keys = Keys::new(keyring(EXPLICIT_KEY_ID, 2));
-    let email = Encrypted::<Email>::new("mark@example.com");
+    let email = "mark@example.com".to_owned();
 
     assert_eq!(
         EmailLookup::probes_with("mark@example.com", &keys).unwrap_err(),
         Error::BlindIndexKeysNotConfigured
     );
     assert_eq!(
-        email
-            .prepare_with(&keys)
+        Sealed::<Email>::prepare(&email, (), &keys)
             .unwrap()
             .with_index_with::<EmailLookup>(&keys)
             .unwrap_err(),

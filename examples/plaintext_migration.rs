@@ -3,8 +3,8 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, EncryptionKey, Field, IndexKeyId,
-    KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, IndexKeyId, KeyId,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Sealed, index_key_id, key_id,
     migrate::{MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
@@ -87,12 +87,12 @@ async fn run() -> Result<(), Box<dyn Error>> {
         .fetch_one(&mut connection)
         .await?;
     assert!(matches!(
-        Ciphertext::<UserEmail>::from_bytes(legacy),
+        Sealed::<UserEmail>::from_bytes(legacy),
         Err(cryptbox::Error::NotCiphertext),
     ));
 
     // During the bounded migration window, reads are permissive. Writes are
-    // not: MaybeEncrypted has no Encode, so storing always encrypts.
+    // not: MaybeEncrypted has no Encode, so storing always seals.
     let rows = sqlx::query("SELECT id, email_ciphertext FROM users ORDER BY id")
         .fetch_all(&mut connection)
         .await?;
@@ -100,8 +100,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
         let id: i64 = row.try_get("id")?;
         let value: MaybeEncrypted<UserEmail> = row.try_get("email_ciphertext")?;
         assert_eq!(value.is_legacy(), id <= 2);
-        let email = value.decrypt_with(&keys)?;
-        assert!(email.expose_secret().ends_with("@example.com"));
+        let email = value.open((), &keys)?;
+        assert!(email.ends_with("@example.com"));
     }
 
     // One sweep encrypts the legacy rows and re-encrypts the stale one.
@@ -134,9 +134,9 @@ async fn run() -> Result<(), Box<dyn Error>> {
             .fetch_all(&mut connection)
             .await?;
         for row in rows {
-            let ciphertext: Ciphertext<UserEmail> = row.try_get("email_ciphertext")?;
-            let candidate = ciphertext.decrypt_with(&keys)?;
-            assert_eq!(candidate.expose_secret(), "first@example.com");
+            let ciphertext: Sealed<UserEmail> = row.try_get("email_ciphertext")?;
+            let candidate = ciphertext.open((), &keys)?;
+            assert_eq!(candidate, "first@example.com");
             matched += 1;
         }
     }
@@ -153,13 +153,12 @@ async fn insert_encrypted(
     keys: &LocalEncryptionKeyring,
     index_keys: &LocalBlindIndexKeyring,
 ) -> Result<(), Box<dyn Error>> {
-    let value = cryptbox::Encrypted::<UserEmail>::new(email.to_owned());
-    let prepared = value
-        .prepare_with(keys)?
+    let value = email.to_owned();
+    let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)?
         .with_index_with::<EmailLookup>(index_keys)?;
 
     sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
-        .bind(prepared.ciphertext())
+        .bind(prepared.sealed())
         .bind(prepared.index::<EmailLookup>()?)
         .execute(connection)
         .await?;

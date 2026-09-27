@@ -28,16 +28,14 @@ On the return path, CryptBox uses the envelope's key-generation ID to obtain the
 right key and authenticates the ciphertext before returning plaintext. It then
 removes any padding and decodes the bytes back into a string.
 
-Two types make the application/storage distinction explicit:
+The application keeps working with its own value type. **`Sealed<F>` holds the
+stored envelope** of field `F`: `Sealed::seal` produces it, and it can be loaded
+and passed around before deciding when to open it.
 
-- **`Encrypted<F>` holds plaintext**, despite its name. It associates a
-  value with its field. `expose_secret()` deliberately exposes that value.
-- **`Ciphertext<F>` holds the stored encrypted envelope.** It can be
-  loaded and passed around before deciding when to decrypt it.
-
-Encryption borrows the source value, so the original plaintext remains available.
-Decryption returns a new plaintext-bearing value. Parsing stored bytes checks
-their structure; only successful decryption authenticates them.
+Sealing borrows the source value, so the original plaintext remains available.
+Opening returns a new plaintext value of the field's value type; plaintext hygiene
+comes from that type, such as `Secret<String>`. Parsing stored bytes checks their
+structure; only successful opening authenticates them.
 
 ## A field gives a value its policy
 
@@ -45,23 +43,30 @@ A `UserEmail` **field** says how an email should be handled every time it is
 written or read. It is a marker type, separate from the value it stores, so the
 same choices are not repeated at each call site. A field declares:
 
-- A **field ID**, the stable identity of the logical field. Every ciphertext and
+- A **field ID**, the stable identity of the logical field. Every sealed value and
   blind index is bound to it.
-- The **value type**, such as `String`, held by `Encrypted<UserEmail>`.
+- The **value type**, such as `String`, that `Sealed<UserEmail>` opens to.
 - A **codec**, such as `Utf8`, to convert between the Rust value and bytes.
 - A **padding policy**, which can group different plaintext lengths into the same
   stored size. `Padding::NONE` preserves the encoded length.
+- A **binding**: the declared scope each value is bound to, such as a tenant, and
+  whether it is also bound to its record. `FieldOnly` binds a value to its field
+  ID alone.
 
 The value type is your application's own type: it says how it encodes, never
 where it is stored. One `Address` type can back both a `HomeAddress` and a
 `BillingAddress` field, each with its own field ID. A value type can name a
 default codec by implementing `Plaintext`; `String` and `Vec<u8>` already do.
 
-Field binding ties an email to its field ID. Its ciphertext will not authenticate
-under a different field, even if the fields share a root key. Fields that should
-read each other's ciphertext declare the same field ID. Binding identifies a
-logical field, not a row or tenant: copying ciphertext between rows of the same
-field can still succeed.
+Every seal and open binds the value at runtime to its field ID, to the values of
+the field's binding, and to its record when the field binds one. The binding's
+**shape** is persistent schema; its **values**, such as the tenant of the current
+request, are passed to each call and must come from an authorized source, never
+from the stored row. A sealed email will not authenticate under a different
+field, tenant, or record, even if they share a root key. Fields that should read
+each other's values declare the same field ID and binding. A `FieldOnly` field
+without a record identifies a logical field, not a row or tenant: copying its
+values between rows of the same field can still succeed.
 
 A field is different from an encryption **suite**. The field describes
 application policy; the suite defines the complete cryptographic construction.
@@ -121,15 +126,18 @@ constraints or a guarantee that storage returns every matching row.
 
 ## Storage adapters carry the representations
 
-SQLx adapters store ciphertext in `BYTEA` or `BLOB` columns. You can encrypt
-explicitly and load `Ciphertext` for later decryption, or use automatic encryption
-and decryption at the SQLx boundary. Serde support serializes stored ciphertext
-and blind-index bytes; it does not serialize plaintext-bearing `Encrypted` values.
+SQLx adapters store sealed values in `BYTEA` or `BLOB` columns. You can seal
+explicitly and load `Sealed` for later opening. A `FieldOnly` field without a
+record or blind indexes can instead use `Plain<F>`, which seals and opens
+automatically at the SQLx boundary; a column decoder sees neither a row nor a
+scope, so bound fields are always sealed explicitly. Serde support serializes
+sealed values and blind-index bytes; it does not serialize plaintext `Plain`
+values.
 
-For an indexed value, **`Prepared`** derives ciphertext and indexes from the same
-source. Preparation is not persistence: the application writes those
-representations atomically and owns transactions and queries. Automatic encryption
-of a SQLx column does not maintain its separate index column.
+For an indexed value, **`Prepared`** derives the sealed value and indexes from the
+same source. Preparation is not persistence: the application writes those
+representations atomically and owns transactions and queries. `Plain<F>` rejects a
+field that declares blind indexes, because it would not maintain their columns.
 
 ## What to read next
 

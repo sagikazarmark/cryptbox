@@ -3,9 +3,7 @@
 
 use std::{error::Error, fs::File, io::Read, path::Path};
 
-use cryptbox::{
-    Ciphertext, Encrypted, EncryptionKey, Field, KeyId, LocalEncryptionKeyring, key_id,
-};
+use cryptbox::{EncryptionKey, Field, KeyId, LocalEncryptionKeyring, Sealed, key_id};
 use sqlx::{Connection, Row, sqlite::SqliteConnectOptions, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
@@ -97,8 +95,7 @@ async fn write(
     connection: &mut SqliteConnection,
     keys: &LocalEncryptionKeyring,
 ) -> Result<(), Box<dyn Error>> {
-    let email = Encrypted::<UserEmail>::new(DEMO_EMAIL.to_owned());
-    let prepared = email.prepare_with(keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&DEMO_EMAIL.to_owned(), (), keys)?;
     let mut transaction = connection.begin().await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email BLOB NOT NULL)")
         .execute(&mut *transaction)
@@ -106,7 +103,7 @@ async fn write(
 
     // A second write fails on the primary key instead of replacing the demonstration row.
     sqlx::query("INSERT INTO users (id, email) VALUES (1, ?)")
-        .bind(prepared.ciphertext())
+        .bind(&sealed)
         .execute(&mut *transaction)
         .await?;
     transaction.commit().await?;
@@ -120,14 +117,11 @@ async fn read(
     let row = sqlx::query("SELECT email FROM users WHERE id = 1")
         .fetch_one(connection)
         .await?;
-    let ciphertext: Ciphertext<UserEmail> = row.try_get("email")?;
-    let decrypted = ciphertext.decrypt_with(keys)?;
+    let sealed: Sealed<UserEmail> = row.try_get("email")?;
+    let opened = sealed.open((), keys)?;
 
-    assert!(ciphertext.as_bytes().starts_with(b"CBX\0"));
+    assert!(sealed.as_bytes().starts_with(b"CBX\0"));
     // Unlike assert_eq!, this cannot print plaintext on a failed assertion.
-    assert!(
-        decrypted.expose_secret() == DEMO_EMAIL,
-        "Unexpected demo value"
-    );
+    assert!(opened == DEMO_EMAIL, "Unexpected demo value");
     Ok(())
 }

@@ -16,8 +16,11 @@ const _: () = {
             0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
+        const RECORD: bool = false;
         type Value = Address;
         type Codec = AddressCodec;
+        type Binding = ::cryptbox::FieldOnly;
+        type Indexes = ();
     }
 };
 #[cryptbox(id = "00000000-0000-4000-8000-000000000001", value = Address)]
@@ -30,8 +33,11 @@ const _: () = {
             0x00000000_0000_4000_8000_000000000001,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::length(256usize);
+        const RECORD: bool = false;
         type Value = Address;
         type Codec = AddressCodec;
+        type Binding = ::cryptbox::FieldOnly;
+        type Indexes = ();
     }
 };
 fn main() {}

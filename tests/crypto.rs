@@ -1,11 +1,10 @@
 //! Public-boundary tests for encryption, field binding, and key rotation.
 
-use cryptbox::{
-    Ciphertext, Encrypted, Error, Field, KeyId, LocalEncryptionKeyring, Padding, Raw, Utf8,
-    decrypt, encrypt, field_id, inspect_ciphertext, is_ciphertext, key_id, needs_reencryption,
-    reencrypt,
-};
 use cryptbox::{EncryptionKey, EncryptionKeyProvider};
+use cryptbox::{
+    Error, Field, FieldOnly, KeyId, LocalEncryptionKeyring, Padding, Raw, Sealed, Utf8, decrypt,
+    encrypt, field_id, inspect_ciphertext, is_ciphertext, key_id, needs_reencryption, reencrypt,
+};
 
 const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
 const CURRENT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
@@ -23,8 +22,11 @@ struct EmailField;
 impl Field for EmailField {
     const ID: cryptbox::FieldId = field_id!("30000000-0000-4000-8000-000000000003");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct PhoneField;
@@ -32,8 +34,11 @@ struct PhoneField;
 impl Field for PhoneField {
     const ID: cryptbox::FieldId = field_id!("40000000-0000-4000-8000-000000000004");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 #[test]
@@ -254,23 +259,25 @@ struct TypedEmail;
 impl Field for TypedEmail {
     const ID: cryptbox::FieldId = EmailField::ID;
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 #[test]
-fn typed_ciphertext_round_trips_through_the_field_codec() {
+fn sealed_values_round_trip_through_the_field_codec() {
     let keys = keyring(CURRENT_KEY_ID, 29);
-    let value = Encrypted::<TypedEmail>::new("mark@example.com".to_owned());
 
-    let ciphertext: Ciphertext<TypedEmail> = value.encrypt_with(&keys).unwrap();
-    assert_eq!(format!("{ciphertext:?}"), "Ciphertext([REDACTED])");
-    assert_eq!(AsRef::<[u8]>::as_ref(&ciphertext), ciphertext.as_bytes());
+    let sealed: Sealed<TypedEmail> =
+        Sealed::seal(&"mark@example.com".to_owned(), (), &keys).unwrap();
+    assert_eq!(format!("{sealed:?}"), "Sealed([REDACTED])");
+    assert_eq!(AsRef::<[u8]>::as_ref(&sealed), sealed.as_bytes());
 
-    let ciphertext = Ciphertext::<TypedEmail>::try_from(ciphertext.into_bytes()).unwrap();
+    let sealed = Sealed::<TypedEmail>::try_from(sealed.into_bytes()).unwrap();
 
-    let decrypted = ciphertext.decrypt_with(&keys).unwrap();
-    assert_eq!(decrypted.expose_secret(), "mark@example.com");
+    assert_eq!(sealed.open((), &keys).unwrap(), "mark@example.com");
 }
 
 #[test]
@@ -282,7 +289,7 @@ fn malformed_and_unknown_envelopes_fail_strictly() {
         Err(Error::NotCiphertext)
     );
     assert_eq!(
-        Ciphertext::<TypedEmail>::try_from(b"plaintext".to_vec()),
+        Sealed::<TypedEmail>::try_from(b"plaintext".to_vec()),
         Err(Error::NotCiphertext)
     );
 

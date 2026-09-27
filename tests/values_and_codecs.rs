@@ -5,7 +5,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use cryptbox::{Codec, Encrypted, Field, Padding, Raw, Secret, Utf8};
+use cryptbox::{Codec, Field, FieldOnly, Padding, Plain, Raw, Secret, Utf8};
 use zeroize::Zeroize;
 
 struct ExampleField;
@@ -13,28 +13,31 @@ struct ExampleField;
 impl Field for ExampleField {
     const ID: cryptbox::FieldId = cryptbox::field_id!("7c1e6a52-0d3b-4f8e-9a61-2b5c4d7e8f90");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 #[test]
-fn encrypted_values_require_explicit_plaintext_access() {
-    let value = Encrypted::<ExampleField>::new("mark@example.com".to_owned());
+fn plain_values_require_explicit_plaintext_access() {
+    let value = Plain::<ExampleField>::new("mark@example.com".to_owned());
 
     assert_eq!(value.expose_secret(), "mark@example.com");
-    assert_eq!(format!("{value:?}"), "Encrypted([REDACTED])");
+    assert_eq!(format!("{value:?}"), "Plain([REDACTED])");
 }
 
 /// Generic over the key context without bounding it: only the `SQLx` column
 /// needs `K: KeyContext`.
 struct Record<K> {
-    email: Encrypted<ExampleField, K>,
+    email: Plain<ExampleField, K>,
 }
 
 impl<K> Record<K> {
     fn new(email: &str) -> Self {
         Self {
-            email: Encrypted::new(email),
+            email: Plain::new(email),
         }
     }
 
@@ -52,7 +55,7 @@ fn key_context_bounds_do_not_spread_into_user_generics() {
     let record = Record::<()>::new("mark@example.com").with_key_context::<Unrelated>();
 
     assert_eq!(record.email.clone().expose_secret(), "mark@example.com");
-    assert_eq!(format!("{:?}", record.email), "Encrypted([REDACTED])");
+    assert_eq!(format!("{:?}", record.email), "Plain([REDACTED])");
 }
 
 #[test]

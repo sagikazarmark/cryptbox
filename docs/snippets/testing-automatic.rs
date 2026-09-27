@@ -3,19 +3,35 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field, FieldId, Keys,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, keys,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, FieldId, FieldOnly, Keys,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Plain, Sealed, Utf8, keys,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
+struct Nickname;
+
+impl Field for Nickname {
+    const ID: FieldId = cryptbox::field_id!("60000000-0000-4000-8000-000000000006");
+    const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
+    type Value = String;
+    type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
+}
+
+// A field with a blind index is never a `Plain` column: the column would not write the index.
 struct UserEmail;
 
 impl Field for UserEmail {
     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = (EmailLookup,);
 }
 
 struct EmailLookup;
@@ -67,36 +83,38 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     let mut connection = SqliteConnection::connect("sqlite::memory:").await?;
-    sqlx::query("CREATE TABLE users (email BLOB NOT NULL, email_idx BLOB)")
+    sqlx::query("CREATE TABLE users (nickname BLOB NOT NULL, email BLOB, email_idx BLOB)")
         .execute(&mut connection)
         .await?;
-    let email = Encrypted::<UserEmail>::new(plaintext.to_owned());
+    let nickname = Plain::<Nickname>::new(plaintext);
 
-    // Binding Encrypted exercises automatic encryption; this does not write an index.
-    sqlx::query("INSERT INTO users (email) VALUES (?)")
-        .bind(&email)
+    // Binding Plain exercises automatic sealing with the installed keys.
+    sqlx::query("INSERT INTO users (nickname) VALUES (?)")
+        .bind(&nickname)
         .execute(&mut connection)
         .await?;
-    let row = sqlx::query("SELECT email, email_idx FROM users")
+    let row = sqlx::query("SELECT nickname FROM users")
         .fetch_one(&mut connection)
         .await?;
-    let read: Encrypted<UserEmail> = row.try_get("email")?;
-    assert_eq!(read.expose_secret(), plaintext); // Automatic authenticated decryption.
-    assert!(row.try_get::<Option<Vec<u8>>, _>("email_idx")?.is_none());
+    let read: Plain<Nickname> = row.try_get("nickname")?;
+    assert_eq!(read.expose_secret(), plaintext); // Automatic authenticated opening.
 
-    // Implicit preparation resolves BOTH providers through the installed keys.
-    // One statement maintains the ciphertext/index pair atomically.
-    let prepared = email.prepare()?.with_index::<EmailLookup>()?;
+    // An indexed field is sealed explicitly. Preparation seals with the installed
+    // keys, and the implicit `with_index` resolves the installed blind-index keys
+    // too. One statement maintains the sealed value and index pair atomically.
+    let email = plaintext.to_owned();
+    let prepared = Sealed::<UserEmail>::prepare(&email, (), keys::installed()?)?
+        .with_index::<EmailLookup>()?;
     sqlx::query("UPDATE users SET email = ?, email_idx = ?")
-        .bind(prepared.ciphertext())
+        .bind(prepared.sealed())
         .bind(prepared.index::<EmailLookup>()?)
         .execute(&mut connection)
         .await?;
     let row = sqlx::query("SELECT email, email_idx FROM users")
         .fetch_one(&mut connection)
         .await?;
-    let read: Encrypted<UserEmail> = row.try_get("email")?;
-    assert_eq!(read.expose_secret(), plaintext);
+    let read: Sealed<UserEmail> = row.try_get("email")?;
+    assert_eq!(read.open_global()?, plaintext);
     assert_eq!(
         row.try_get::<Vec<u8>, _>("email_idx")?,
         prepared.index::<EmailLookup>()?.as_bytes(),

@@ -22,15 +22,18 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, Padding, Utf8, schema::Manifest};
+/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Utf8, schema::Manifest};
 ///
 /// struct Nickname;
 ///
 /// impl Field for Nickname {
 ///     const ID: FieldId = cryptbox::field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 ///     const PADDING: Padding = Padding::block(16);
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 ///
 /// let manifest = Manifest::new().field::<Nickname>();
@@ -227,15 +230,18 @@ impl fmt::Display for Manifest<'_> {
 /// leave one of them out.
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, Padding, Utf8};
+/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Utf8};
 ///
 /// struct HomeAddress;
 ///
 /// impl Field for HomeAddress {
 ///     const ID: FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 ///
 /// struct BillingAddress;
@@ -243,8 +249,11 @@ impl fmt::Display for Manifest<'_> {
 /// impl Field for BillingAddress {
 ///     const ID: FieldId = cryptbox::field_id!("7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 ///
 /// cryptbox::assert_unique_ids!(HomeAddress, BillingAddress);
@@ -253,21 +262,27 @@ impl fmt::Display for Manifest<'_> {
 /// A copied ID fails to compile:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{Field, FieldId, Padding, Utf8};
+/// # use cryptbox::{Field, FieldId, FieldOnly, Padding, Utf8};
 /// # struct HomeAddress;
 /// # impl Field for HomeAddress {
 /// #     const ID: FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 /// #     const PADDING: Padding = Padding::NONE;
+/// #     const RECORD: bool = false;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
+/// #     type Binding = FieldOnly;
+/// #     type Indexes = ();
 /// # }
 /// struct BillingAddress;
 ///
 /// impl Field for BillingAddress {
 ///     const ID: FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 ///
 /// cryptbox::assert_unique_ids!(HomeAddress, BillingAddress);
@@ -276,14 +291,17 @@ impl fmt::Display for Manifest<'_> {
 /// So does a copied index ID:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndexError, BlindIndexSpec, Field, FieldId, IndexId, Padding, Raw};
+/// # use cryptbox::{BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Raw};
 /// # use zeroize::Zeroizing;
 /// # struct Bytes;
 /// # impl Field for Bytes {
 /// #     const ID: FieldId = FieldId::from_bytes([1; 16]);
 /// #     const PADDING: Padding = Padding::NONE;
+/// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
+/// #     type Binding = FieldOnly;
+/// #     type Indexes = ();
 /// # }
 /// struct Exact;
 ///

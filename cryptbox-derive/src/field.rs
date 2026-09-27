@@ -53,8 +53,11 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             impl #impl_generics #krate::Field for #name #type_generics #where_clause {
                 const ID: #krate::FieldId = #krate::FieldId::from_u128(#id);
                 const PADDING: #krate::Padding = #padding;
+                const RECORD: bool = false;
                 type Value = #value;
                 type Codec = #codec;
+                type Binding = #krate::FieldOnly;
+                type Indexes = ();
             }
         };
     })

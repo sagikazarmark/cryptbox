@@ -20,15 +20,18 @@ use crate::{Codec, Field};
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, Padding, Utf8, testing::assert_encoding};
+/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Utf8, testing::assert_encoding};
 ///
 /// struct Nickname;
 ///
 /// impl Field for Nickname {
 ///     const ID: FieldId = cryptbox::field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 ///
 /// assert_encoding::<Nickname>(&"ada".to_owned(), "616461");

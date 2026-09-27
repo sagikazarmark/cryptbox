@@ -1,8 +1,7 @@
-//! Rotates encryption keys without interrupting reads, then rewrites old ciphertext.
+//! Rotates encryption keys without interrupting reads, then reseals old values.
 
 use cryptbox::{
-    Encrypted, EncryptionKey, Field, KeyId, LocalEncryptionKeyring, Plaintext, Router,
-    inspect_ciphertext, key_id,
+    EncryptionKey, Field, KeyId, LocalEncryptionKeyring, Plaintext, Router, Sealed, key_id,
 };
 
 const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
@@ -21,25 +20,22 @@ fn main() -> Result<(), cryptbox::Error> {
     let old_key = EncryptionKey::new(OLD_KEY_ID, [0x11; 32]);
     let old_keys =
         Router::strict().route::<UserEmail>(LocalEncryptionKeyring::new(old_key.clone(), [])?)?;
-    let value = Encrypted::<UserEmail>::new(Email("mark@example.com".to_owned()));
-    let stored = value.encrypt_with(&old_keys)?;
+    let value = Email("mark@example.com".to_owned());
+    let stored = Sealed::<UserEmail>::seal(&value, (), &old_keys)?;
 
     let current_key = EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]);
     let rotated_keys = Router::strict()
         .route::<UserEmail>(LocalEncryptionKeyring::new(current_key, [old_key])?)?;
 
-    assert!(stored.needs_reencryption_with(&rotated_keys)?);
+    assert!(stored.needs_reseal((), &rotated_keys)?);
     assert_eq!(
-        stored.decrypt_with(&rotated_keys)?.expose_secret(),
-        &Email("mark@example.com".to_owned())
+        stored.open((), &rotated_keys)?,
+        Email("mark@example.com".to_owned())
     );
 
-    let rewritten = stored.reencrypt_with(&rotated_keys)?;
-    assert_eq!(
-        inspect_ciphertext(rewritten.as_bytes())?.key_id(),
-        CURRENT_KEY_ID
-    );
-    assert!(!rewritten.needs_reencryption_with(&rotated_keys)?);
+    let rewritten = stored.reseal((), &rotated_keys)?;
+    assert_eq!(rewritten.key_id(), CURRENT_KEY_ID);
+    assert!(!rewritten.needs_reseal((), &rotated_keys)?);
 
     Ok(())
 }

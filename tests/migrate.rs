@@ -8,10 +8,10 @@ use std::{
 };
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey,
-    EncryptionKeyProvider, Error, Field, FieldId, IndexId, IndexKeyId, KeyId, KeyProviderError,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Router, Utf8, field_id, index_id,
-    index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, EncryptionKeyProvider, Error,
+    Field, FieldId, FieldOnly, IndexId, IndexKeyId, KeyId, KeyProviderError,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Router, Sealed, Utf8, field_id,
+    index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
@@ -30,8 +30,11 @@ struct UserEmail;
 impl Field for UserEmail {
     const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct PaddedUserEmail;
@@ -39,8 +42,11 @@ struct PaddedUserEmail;
 impl Field for PaddedUserEmail {
     const ID: cryptbox::FieldId = UserEmail::ID;
     const PADDING: Padding = Padding::block(16);
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct EmailLookup;
@@ -112,8 +118,7 @@ fn rotated_index_keys() -> LocalBlindIndexKeyring {
 }
 
 fn encrypt_email(email: &str, keys: &LocalEncryptionKeyring) -> Vec<u8> {
-    Encrypted::<UserEmail>::new(email.to_owned())
-        .encrypt_with(keys)
+    Sealed::<UserEmail>::seal(&email.to_owned(), (), keys)
         .unwrap()
         .into_bytes()
 }
@@ -167,47 +172,41 @@ fn classification_accepts_valid_envelopes() {
 
     let read = MaybeEncrypted::<UserEmail>::from_bytes(bytes).unwrap();
     assert!(!read.is_legacy());
-    assert!(read.as_ciphertext().is_some());
-    assert_eq!(
-        read.decrypt_with(&keys).unwrap().expose_secret(),
-        "mark@example.com"
-    );
+    assert!(read.as_sealed().is_some());
+    assert_eq!(read.open((), &keys).unwrap(), "mark@example.com");
 }
 
 #[test]
 fn classification_treats_bytes_without_magic_as_legacy() {
     let read = MaybeEncrypted::<UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
     assert!(read.is_legacy());
-    assert!(read.as_ciphertext().is_none());
+    assert!(read.as_sealed().is_none());
 
     // A legacy plaintext read never touches key providers, including the
     // uninstalled process-global context.
-    assert_eq!(read.decrypt().unwrap().expose_secret(), "mark@example.com");
+    assert_eq!(read.open_global().unwrap(), "mark@example.com");
 }
 
 #[test]
-fn decrypt_with_recovers_legacy_plaintext_through_the_codec() {
+fn open_recovers_legacy_plaintext_through_the_codec() {
     let read = MaybeEncrypted::<UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
 
-    assert_eq!(
-        read.decrypt_with(&rotated_keys()).unwrap().expose_secret(),
-        "mark@example.com"
-    );
+    assert_eq!(read.open((), &rotated_keys()).unwrap(), "mark@example.com");
 }
 
 #[test]
 fn classification_treats_empty_bytes_as_legacy() {
     let read = MaybeEncrypted::<UserEmail>::from_bytes(Vec::new()).unwrap();
     assert!(read.is_legacy());
-    assert_eq!(read.decrypt().unwrap().expose_secret(), "");
+    assert_eq!(read.open_global().unwrap(), "");
 }
 
 #[test]
-fn from_bytes_defers_codec_errors_to_decrypt() {
+fn from_bytes_defers_codec_errors_to_open() {
     let read = MaybeEncrypted::<UserEmail>::from_bytes(vec![0xFF, 0xFE]).unwrap();
 
     assert_eq!(
-        read.decrypt_with(&rotated_keys()).unwrap_err(),
+        read.open((), &rotated_keys()).unwrap_err(),
         Error::CodecFailed(cryptbox::CodecError::new(
             cryptbox::CodecErrorKind::InvalidUtf8
         )),
@@ -215,25 +214,23 @@ fn from_bytes_defers_codec_errors_to_decrypt() {
 }
 
 #[test]
-fn decrypt_with_legacy_recovers_foreign_ciphertext() {
+fn open_legacy_recovers_foreign_ciphertext() {
     let read =
         MaybeEncrypted::<UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec()).unwrap();
 
     assert_eq!(
-        read.decrypt_with_legacy(&rotated_keys(), &ToyLegacy)
-            .unwrap()
-            .expose_secret(),
+        read.open_legacy((), &rotated_keys(), &ToyLegacy).unwrap(),
         "mark@example.com"
     );
 }
 
 #[test]
-fn decrypt_legacy_recovers_without_touching_global_keys() {
+fn open_global_legacy_recovers_without_touching_global_keys() {
     let read =
         MaybeEncrypted::<UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec()).unwrap();
 
     assert_eq!(
-        read.decrypt_legacy(&TOY_LEGACY).unwrap().expose_secret(),
+        read.open_global_legacy(&TOY_LEGACY).unwrap(),
         "mark@example.com"
     );
 }
@@ -247,15 +244,13 @@ fn debug_redacts_deferred_legacy_bytes() {
 }
 
 #[test]
-fn decrypt_with_legacy_ignores_the_handler_for_envelopes() {
+fn open_legacy_ignores_the_handler_for_envelopes() {
     let keys = rotated_keys();
     let read =
         MaybeEncrypted::<UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys)).unwrap();
 
     assert_eq!(
-        read.decrypt_with_legacy(&keys, &PanickingLegacy)
-            .unwrap()
-            .expose_secret(),
+        read.open_legacy((), &keys, &PanickingLegacy).unwrap(),
         "mark@example.com"
     );
 }
@@ -265,7 +260,7 @@ fn legacy_recovery_failure_is_a_hard_error() {
     let read = MaybeEncrypted::<UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
 
     assert_eq!(
-        read.decrypt_with_legacy(&rotated_keys(), &FailingLegacy)
+        read.open_legacy((), &rotated_keys(), &FailingLegacy)
             .unwrap_err(),
         Error::LegacyRecoveryFailed(LegacyError::new(LegacyErrorKind::AuthenticationFailed))
     );
@@ -283,7 +278,7 @@ fn recovered_garbage_fails_codec_decode() {
 
     let read = MaybeEncrypted::<UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
     assert_eq!(
-        read.decrypt_with_legacy(&rotated_keys(), &InvalidUtf8)
+        read.open_legacy((), &rotated_keys(), &InvalidUtf8)
             .unwrap_err(),
         Error::CodecFailed(cryptbox::CodecError::new(
             cryptbox::CodecErrorKind::InvalidUtf8
@@ -308,9 +303,8 @@ fn from_legacy_bytes_bypasses_classification_even_with_magic_prefix() {
         MaybeEncrypted::<UserEmail>::from_legacy_bytes(b"CBX\0legacy:mark@example.com".to_vec());
     assert!(read.is_legacy());
     assert_eq!(
-        read.decrypt_with_legacy(&rotated_keys(), &MagicPrefixed)
-            .unwrap()
-            .expose_secret(),
+        read.open_legacy((), &rotated_keys(), &MagicPrefixed)
+            .unwrap(),
         "mark@example.com"
     );
 }
@@ -337,13 +331,12 @@ fn unsupported_format_version_is_a_hard_error_not_plaintext() {
 #[test]
 fn out_of_band_constructors_bypass_byte_classification() {
     let keys = rotated_keys();
-    let read = MaybeEncrypted::from_plaintext(Encrypted::<UserEmail>::new(
-        "CBX\0-prefixed legacy value".to_owned(),
-    ));
+    let read =
+        MaybeEncrypted::<UserEmail>::from_plaintext("CBX\0-prefixed legacy value".to_owned());
     assert!(read.is_legacy());
 
     let ciphertext =
-        Ciphertext::<UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys)).unwrap();
+        Sealed::<UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys)).unwrap();
     let read = MaybeEncrypted::from(ciphertext);
     assert!(!read.is_legacy());
 }
@@ -385,11 +378,10 @@ fn planner_reencrypts_stale_envelopes_and_keeps_current_index_bytes() {
         CURRENT_KEY_ID
     );
     assert_eq!(
-        Ciphertext::<UserEmail>::from_bytes(write.ciphertext().to_vec())
+        Sealed::<UserEmail>::from_bytes(write.ciphertext().to_vec())
             .unwrap()
-            .decrypt_with(&keys)
-            .unwrap()
-            .expose_secret(),
+            .open((), &keys)
+            .unwrap(),
         "mark@example.com"
     );
     assert_eq!(write.indexes(), &[index]);
@@ -433,11 +425,10 @@ fn planner_encrypts_legacy_plaintext_and_derives_every_index() {
     assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
     assert_eq!(
-        Ciphertext::<UserEmail>::from_bytes(write.ciphertext().to_vec())
+        Sealed::<UserEmail>::from_bytes(write.ciphertext().to_vec())
             .unwrap()
-            .decrypt_with(&keys)
-            .unwrap()
-            .expose_secret(),
+            .open((), &keys)
+            .unwrap(),
         "mark@example.com"
     );
     assert_eq!(
@@ -456,11 +447,10 @@ fn planner_encrypts_legacy_plaintext_with_the_field_padding_policy() {
     let write = outcome.into_write().unwrap();
     assert_eq!(write.ciphertext().len(), 63 + 32);
     assert_eq!(
-        Ciphertext::<PaddedUserEmail>::from_bytes(write.ciphertext().to_vec())
+        Sealed::<PaddedUserEmail>::from_bytes(write.ciphertext().to_vec())
             .unwrap()
-            .decrypt_with(&keys)
-            .unwrap()
-            .expose_secret(),
+            .open((), &keys)
+            .unwrap(),
         "mark@example.com"
     );
 }
@@ -505,11 +495,10 @@ fn planner_recovers_foreign_ciphertext_and_derives_indexes() {
     assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
     assert_eq!(
-        Ciphertext::<UserEmail>::from_bytes(write.ciphertext().to_vec())
+        Sealed::<UserEmail>::from_bytes(write.ciphertext().to_vec())
             .unwrap()
-            .decrypt_with(&keys)
-            .unwrap()
-            .expose_secret(),
+            .open((), &keys)
+            .unwrap(),
         "mark@example.com"
     );
     assert_eq!(
@@ -724,8 +713,8 @@ fn terminal_verification_does_not_establish_authenticated_readability() {
     let mut bytes = encrypt_email("mark@example.com", &keys);
     // Corrupt the stored payload without depending on private envelope offsets.
     *bytes.last_mut().unwrap() ^= 1;
-    let ciphertext = Ciphertext::<UserEmail>::from_bytes(bytes.clone()).unwrap();
-    assert!(!ciphertext.needs_reencryption_with(&keys).unwrap());
+    let ciphertext = Sealed::<UserEmail>::from_bytes(bytes.clone()).unwrap();
+    assert!(!ciphertext.needs_reseal((), &keys).unwrap());
 
     let planner = RowPlanner::<UserEmail>::new(&keys);
     assert_eq!(
@@ -738,7 +727,7 @@ fn terminal_verification_does_not_establish_authenticated_readability() {
     assert!(report.is_terminal());
     assert_eq!(report.current, 1);
     assert_eq!(
-        ciphertext.decrypt_with(&keys).unwrap_err(),
+        ciphertext.open((), &keys).unwrap_err(),
         Error::AuthenticationFailed
     );
 }

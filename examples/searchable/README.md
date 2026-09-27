@@ -181,16 +181,14 @@ async fn put(
     if let Some(email) = &email {
         validate_email(email)?;
     }
-    let value = email.map(Encrypted::<UserEmail>::new);
-    let prepared = value
+    let prepared = email
         .as_ref()
-        .map(|value| {
-            value
-                .prepare_with(encryption)?
+        .map(|email| {
+            Sealed::<UserEmail>::prepare(email, (), encryption)?
                 .with_index_with::<EmailLookup>(indexes)
         })
         .transpose()?;
-    let ciphertext = prepared.as_ref().map(|p| p.ciphertext());
+    let sealed = prepared.as_ref().map(|p| p.sealed());
     let index = prepared
         .as_ref()
         .map(|p| p.index::<EmailLookup>())
@@ -198,7 +196,7 @@ async fn put(
     // One statement: insert OR update both representations from the same source.
     sqlx::query("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)
         ON CONFLICT (id) DO UPDATE SET email = excluded.email, email_lookup = excluded.email_lookup")
-        .bind(id).bind(ciphertext).bind(index.map(|i| i.as_bytes()))
+        .bind(id).bind(sealed).bind(index.map(|i| i.as_bytes()))
         .execute(connection).await?;
     println!("Stored {id}.");
     Ok(())
@@ -208,8 +206,9 @@ async fn put(
 <!-- END SHARED: searchable-put -->
 
 Use an application-owned transaction for related multi-statement writes. This
-upsert is last-writer-wins; add a version guard if lost updates matter. Automatic
-encryption of an `Encrypted` column does **not** maintain a separate index column.
+upsert is last-writer-wins; add a version guard if lost updates matter. The
+automatic `Plain` column does **not** maintain a separate index column, so it
+rejects indexed fields; seal them with `Sealed::prepare`.
 Preparation borrows and retains the plaintext source.
 
 ### Nullable and deferred reads
@@ -222,10 +221,10 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyri
         .bind(id)
         .fetch_one(connection)
         .await?;
-    // Decode the stored envelope now; choose when to authenticate/decrypt later.
-    let stored: Option<EmailCiphertext> = row.try_get("email")?;
+    // Decode the stored envelope now; choose when to open it later.
+    let stored: Option<SealedEmail> = row.try_get("email")?;
     match stored {
-        Some(ciphertext) => println!("{id}: {}", ciphertext.decrypt_with(keys)?.expose_secret()),
+        Some(sealed) => println!("{id}: {}", sealed.open((), keys)?),
         None => println!("{id}: NULL"),
     }
     Ok(())
@@ -234,8 +233,8 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyri
 
 <!-- END SHARED: searchable-get -->
 
-`EmailCiphertext` aliases `Ciphertext<UserEmail>`. SQLx decoding checks
-structure; only `decrypt_with` authenticates. Explicit local providers need no
+`SealedEmail` aliases `Sealed<UserEmail>`. SQLx decoding checks
+structure; only `open` authenticates, and it returns the bare `String`. Explicit local providers need no
 global installation. Plaintext output and shell
 arguments are demonstration conveniences; keep real user values out of logs/history.
 
@@ -261,9 +260,9 @@ async fn search(
     let mut matches = Vec::<i64>::new();
     let mut rejected = 0;
     for row in rows {
-        let ciphertext: EmailCiphertext = row.try_get("email")?;
-        let candidate = ciphertext.decrypt_with(encryption)?;
-        if EmailLookup::verify_candidate(query, candidate.expose_secret())? {
+        let sealed: SealedEmail = row.try_get("email")?;
+        let candidate = sealed.open((), encryption)?;
+        if EmailLookup::verify_candidate(query, &candidate)? {
             matches.push(row.try_get("id")?);
         } else {
             rejected += 1; // A collision is an ordinary non-match, not an assertion failure.
@@ -276,7 +275,7 @@ async fn search(
 
 <!-- END SHARED: searchable-search -->
 
-Probe **every readable index generation**, authenticate/decrypt candidates, then
+Probe **every readable index generation**, open (authenticate) candidates, then
 compare normalized plaintext. False candidates are ordinary non-matches;
 authentication/decoding failures fail lookup. Bound or paginate large candidate
 sets without skipping verification. Candidate comparison cannot detect omitted
@@ -312,7 +311,7 @@ offline cache). The example's macro read forces nullable output and the custom d
 
 ```rust
     let row = sqlx::query!(
-        r#"SELECT email AS "email?: EmailCiphertext" FROM users WHERE id = $1"#,
+        r#"SELECT email AS "email?: SealedEmail" FROM users WHERE id = $1"#,
         id
     )
     .fetch_one(connection)
@@ -329,7 +328,7 @@ then overrides PostgreSQL's `BYTEA` input inference with `ciphertext as _`:
 ```rust
     sqlx::query!("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)
         ON CONFLICT (id) DO UPDATE SET email = excluded.email, email_lookup = excluded.email_lookup",
-        id, ciphertext as _, index)
+        id, sealed as _, index)
         .execute(connection).await?;
 ```
 

@@ -5,7 +5,7 @@ use serde::{
     de::{Error as _, SeqAccess, Visitor},
 };
 
-use crate::{BlindIndex, BlindIndexSpec, Ciphertext, Error, Field};
+use crate::{BlindIndex, BlindIndexSpec, Error, Field, Sealed};
 
 trait DeserializeFromBytes: Sized {
     const EXPECTING: &'static str;
@@ -13,8 +13,8 @@ trait DeserializeFromBytes: Sized {
     fn deserialize_from_bytes(bytes: Vec<u8>) -> Result<Self, Error>;
 }
 
-impl<F: Field> DeserializeFromBytes for Ciphertext<F> {
-    const EXPECTING: &'static str = "a structurally valid CryptBox ciphertext envelope";
+impl<F: Field> DeserializeFromBytes for Sealed<F> {
+    const EXPECTING: &'static str = "a structurally valid CryptBox envelope";
 
     fn deserialize_from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
         Self::from_bytes(bytes)
@@ -66,7 +66,7 @@ impl<'de, Value: DeserializeFromBytes> Visitor<'de> for BytesVisitor<Value> {
     }
 }
 
-impl<F: Field> Serialize for Ciphertext<F> {
+impl<F: Field> Serialize for Sealed<F> {
     fn serialize<SerializerType>(
         &self,
         serializer: SerializerType,
@@ -78,7 +78,7 @@ impl<F: Field> Serialize for Ciphertext<F> {
     }
 }
 
-impl<'de, F: Field> Deserialize<'de> for Ciphertext<F> {
+impl<'de, F: Field> Deserialize<'de> for Sealed<F> {
     fn deserialize<DeserializerType>(
         deserializer: DeserializerType,
     ) -> Result<Self, DeserializerType::Error>

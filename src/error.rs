@@ -122,7 +122,7 @@ pub enum Error {
     /// A local key provider was unavailable.
     #[error("key provider is unavailable")]
     KeyProviderUnavailable,
-    /// An implicit form was used before [`keys::install`](crate::keys::install).
+    /// A global convenience was used before [`keys::install`](crate::keys::install).
     #[error("keys are not installed")]
     KeysNotInstalled,
     /// The key provider does not serve the field, such as a strict router

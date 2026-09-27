@@ -111,12 +111,12 @@ buffers and does not include their contents in errors.
 
 ## What crossed the storage boundary?
 
-The example prepares with a local encryption key provider, binds
-`prepared.ciphertext()` into a `BLOB`, and reads
-`Ciphertext<UserEmail>` with `row.try_get("email")`. SQLx decoding checks
-structure; `decrypt_with(keys)` authenticates and decodes. Preparation borrows
-the original plaintext, and no global provider is installed: `keys` supplies
-the key explicitly.
+The example seals with a local encryption key provider, binds the
+`Sealed<UserEmail>` into a `BLOB`, and reads it back with
+`row.try_get("email")`. SQLx decoding checks structure; `open((), keys)`
+authenticates and decodes, returning the bare `String`. Sealing borrows the
+original plaintext, and no global provider is installed: `keys` supplies the
+key explicitly.
 
 Field binding identifies a logical field, not a row or tenant. Preserve the field
 ID, codec compatibility, and binding choices with your stored data; see

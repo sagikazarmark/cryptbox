@@ -1,31 +1,36 @@
 //! Strongly typed application-layer encryption for Rust values.
 //!
-//! [`Encrypted`] marks a plaintext application value that must be encrypted at
-//! supported storage boundaries. It is not a ciphertext container: use
-//! [`Encrypted::expose_secret`] deliberately whenever plaintext access is
-//! required. Use `CryptBox` when an application owns encryption policy and key
-//! management but wants storage adapters to enforce ciphertext-at-rest.
+//! [`Sealed<F>`] is a value of field `F` sealed for storage: encrypted and bound
+//! to the field, the values of its declared [`Binding`] (such as a tenant), and
+//! optionally a record. [`Sealed::open`] authenticates it under the same
+//! binding and returns the plaintext value. Use `CryptBox` when an application
+//! owns encryption policy and key management but wants storage adapters to
+//! enforce ciphertext-at-rest.
 //!
 //! **Experimental; not production-ready.** See the [threat model] for assumptions,
 //! limitations, and outstanding review work.
 //!
 //! # Type model
 //!
-//! - [`Encrypted<F>`] and [`Secret<T>`] contain plaintext.
-//! - [`Ciphertext<F>`] contains stored encrypted bytes. Parsing checks
-//!   structure; decryption authenticates. Encryption borrows and retains the source.
+//! - [`Sealed<F>`] contains stored encrypted bytes. Parsing checks structure;
+//!   opening authenticates. Sealing borrows the source value.
 //! - [`Field`] is a marker type for one logical encrypted field. It declares the
-//!   field ID, value type, codec, and [`Padding`], and every value is bound to
-//!   its field ID. Several fields can share one value type.
+//!   field ID, value type, codec, [`Padding`], [`Binding`], whether values bind a
+//!   record, and its blind indexes. Several fields can share one value type.
+//! - [`Args<F>`](Args) are the binding values of one call: `()` for a
+//!   [`FieldOnly`] field, or the field's binding, with a [`RecordId`] when the
+//!   field binds a record.
+//! - [`Plain<F>`] and [`Secret<T>`] contain plaintext. `Plain` is the automatic
+//!   `SQLx` column, for [`FieldOnly`] fields without a record or blind indexes.
 //! - [`Plaintext`] names a value type's default codec: [`Utf8`] for `String`
 //!   and [`Raw`] for `Vec<u8>`, and the same for their [`Secret`] wrappers.
 //! - [`Router`] assigns each field to the key provider that protects it;
 //!   providers receive the [`FieldId`] of every request.
-//! - [`Prepared`] borrows a source value and derives ciphertext/indexes for an
-//!   application-owned atomic write; it does not persist them.
+//! - [`Prepared`] borrows a source value and derives sealed value and indexes for
+//!   an application-owned atomic write; it does not persist them.
 //! - A [`BlindIndexSpec`] binds a blind index to one field. A [`BlindIndex`] is a
 //!   candidate selector: use every [`BlindIndexSpec::probes_with`]
-//!   result, decrypt candidates, and compare normalized plaintext.
+//!   result, open candidates, and compare normalized plaintext.
 //!
 #![doc = "<div>"]
 #![doc = include_str!("../docs/diagrams/lifecycle.svg")]
@@ -40,13 +45,13 @@
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md",
 )]
 //!
-//! Row/tenant binding is future work. Explicit-provider methods
-//! (`encrypt_with`, `decrypt_with`, `prepare_with`) take keys separately and
-//! never read the global; the implicit forms (`encrypt()`, `decrypt()`,
-//! `prepare()`) read the keys installed with [`keys::install`] and fail with
-//! [`Error::KeysNotInstalled`] before installation. The automatic `SQLx` column
-//! `Encrypted<F, K>` reads its keys from `K`, the installed keys
-//! ([`GlobalKeys`]) by default. [`Padding`] is a closed set of const policies.
+//! Every operation takes its binding arguments and keys explicitly, and never
+//! reads the global. For [`FieldOnly`] fields without a record,
+//! [`Sealed::seal_global`] and [`Sealed::open_global`] read the keys installed
+//! with [`keys::install`] and fail with [`Error::KeysNotInstalled`] before
+//! installation. The automatic `SQLx` column `Plain<F, K>` reads its keys from
+//! `K`, the installed keys ([`GlobalKeys`]) by default. [`Padding`] is a closed
+//! set of const policies.
 //!
 //! The [documentation index] links integration and operational guides.
 //!
@@ -57,10 +62,10 @@
 //!
 #![doc = include_str!("../docs/snippets/first-field.md")]
 //!
-//! The field names UTF-8 encoding and no padding, and binds ciphertext to its
-//! field ID. `Encrypted` contains plaintext; `Ciphertext` contains the encrypted
-//! envelope. `&keys` supplies the provider explicitly: no global installation is
-//! needed. Before durable storage, settle the persistent schema below and load
+//! The field names UTF-8 encoding and no padding, and binds values to its field
+//! ID alone ([`FieldOnly`]), so its binding arguments are `()`. `Sealed` contains
+//! the encrypted envelope; `open` returns the plaintext value. `&keys` supplies
+//! the provider explicitly: no global installation is needed. Before durable storage, settle the persistent schema below and load
 //! stable key material and generation IDs across restarts; see the
 //! [first-field tutorial]'s durable-key next step.
 //!
@@ -101,11 +106,13 @@
 //!
 //! # Security boundaries
 //!
-//! Encryption protects selected stored values while keys remain separate. Field
-//! binding rejects cross-field substitution, but does not bind rows or prevent
-//! replay. Sizes and access patterns remain visible; blind indexes additionally
-//! leak equality/frequency. Verify every candidate against decrypted plaintext.
-//! A compromised application can expose keys and plaintext. See the [threat model].
+//! Encryption protects selected stored values while keys remain separate. The
+//! binding rejects substitution across fields and binding values, and across
+//! records for a field that binds one. It does not prevent replay of an older
+//! value of the same record. Sizes and access patterns remain visible; blind
+//! indexes additionally leak equality/frequency. Verify every candidate against
+//! decrypted plaintext. A compromised application can expose keys and
+//! plaintext. See the [threat model].
 //!
 //! Load root keys from a cryptographically secure secret source. Encryption and
 //! blind-index root keys must be generated independently, and a generation ID
@@ -152,10 +159,12 @@ mod value;
 
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    Binding, FieldOnly, KeyScope, PartKind, PartRole, PartSpec, PartValue, PartValues, RecordId,
-    ShapeFingerprint, Tenant, TenantId,
+    Args, Binding, FieldOnly, KeyScope, PartKind, PartRole, PartSpec, PartValue, PartValues,
+    RecordId, ShapeFingerprint, Tenant, TenantId,
 };
-pub use blind::{BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, inspect_blind_index};
+pub use blind::{
+    BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexList, inspect_blind_index,
+};
 #[cfg(feature = "json")]
 pub use codec::Json;
 #[cfg(feature = "postcard")]
@@ -177,7 +186,7 @@ pub use key::{
 pub use padding::Padding;
 pub use prepare::Prepared;
 pub use router::{Router, Routing};
-pub use value::{Ciphertext, Encrypted, Secret};
+pub use value::{Plain, Sealed, Secret};
 
 // Paths that derive-generated code names; not public API.
 #[doc(hidden)]

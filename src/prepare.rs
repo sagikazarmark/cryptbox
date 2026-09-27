@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::{
-    BlindIndexKeyProvider, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKeyProvider, Error, Field, blind::derive_value, keys,
+    BlindIndexKeyProvider, BlindIndexRef, BlindIndexSpec, Error, Field, FieldOnly, Sealed,
+    blind::derive_value, keys,
 };
 
 struct PreparedIndex {
@@ -26,7 +26,7 @@ where
     F: Field,
 {
     source: &'a F::Value,
-    ciphertext: Ciphertext<F>,
+    sealed: Sealed<F>,
     indexes: Vec<PreparedIndex>,
 }
 
@@ -38,72 +38,39 @@ where
         formatter
             .debug_struct("Prepared")
             .field("source", &"[REDACTED]")
-            .field("ciphertext", &self.ciphertext)
+            .field("sealed", &self.sealed)
             .field("index_count", &self.indexes.len())
             .finish()
     }
 }
 
-impl<F, K> Encrypted<F, K>
+impl<'a, F> Prepared<'a, F>
 where
     F: Field,
 {
-    /// Encrypts this value into a prepared storage representation.
-    ///
-    /// Blind indexes can then be added with [`Prepared::with_index_with`].
-    ///
-    /// # Errors
-    ///
-    /// Returns any codec, provider, randomness, or encryption error.
-    pub fn prepare_with<'a>(
-        &'a self,
-        keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Prepared<'a, F>, Error> {
-        Ok(Prepared {
-            source: self.expose_secret(),
-            ciphertext: self.encrypt_with(keys)?,
+    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F>) -> Self {
+        Self {
+            source,
+            sealed,
             indexes: Vec::new(),
-        })
+        }
     }
-}
 
-impl<F> Encrypted<F>
-where
-    F: Field,
-{
-    /// Prepares this value with the [installed keys](keys::installed).
-    ///
-    /// This is exactly `self.prepare_with(keys::installed()?)`, and exists only
-    /// for the default key source.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
-    /// encryption fails.
-    pub fn prepare(&self) -> Result<Prepared<'_, F>, Error> {
-        self.prepare_with(keys::installed()?)
-    }
-}
-
-impl<F> Prepared<'_, F>
-where
-    F: Field,
-{
-    /// Returns the encrypted storage value.
+    /// Returns the sealed storage value.
     #[must_use]
-    pub const fn ciphertext(&self) -> &Ciphertext<F> {
-        &self.ciphertext
+    pub const fn sealed(&self) -> &Sealed<F> {
+        &self.sealed
     }
 
-    /// Adds an index derived from the same source value as the ciphertext.
+    /// Adds an index derived from the same source value as the sealed value.
     ///
     /// The index must be declared over this field. Attaching another field's
     /// index is a type error:
     ///
     /// ```compile_fail,E0271
     /// use cryptbox::{
-    ///     BlindIndexError, BlindIndexSpec, Encrypted, Field, FieldId, IndexId,
-    ///     LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
+    ///     BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId,
+    ///     LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed, Utf8,
     /// };
     /// use zeroize::Zeroizing;
     ///
@@ -112,8 +79,11 @@ where
     /// impl Field for UserEmail {
     ///     const ID: FieldId = FieldId::from_bytes([1; 16]);
     ///     const PADDING: Padding = Padding::NONE;
+    ///     const RECORD: bool = false;
     ///     type Value = String;
     ///     type Codec = Utf8;
+    ///     type Binding = FieldOnly;
+    ///     type Indexes = ();
     /// }
     ///
     /// struct InviteEmail;
@@ -121,8 +91,11 @@ where
     /// impl Field for InviteEmail {
     ///     const ID: FieldId = FieldId::from_bytes([2; 16]);
     ///     const PADDING: Padding = Padding::NONE;
+    ///     const RECORD: bool = false;
     ///     type Value = String;
     ///     type Codec = Utf8;
+    ///     type Binding = FieldOnly;
+    ///     type Indexes = ();
     /// }
     ///
     /// struct InviteEmailLookup;
@@ -147,9 +120,8 @@ where
     ///     keys: &LocalEncryptionKeyring,
     ///     index_keys: &LocalBlindIndexKeyring,
     /// ) -> Result<(), cryptbox::Error> {
-    ///     let email = Encrypted::<UserEmail>::new("mark@example.com");
-    ///     email
-    ///         .prepare_with(keys)?
+    ///     let email = "mark@example.com".to_owned();
+    ///     Sealed::<UserEmail>::prepare(&email, (), keys)?
     ///         .with_index_with::<InviteEmailLookup>(index_keys)?;
     ///     Ok(())
     /// }
@@ -178,7 +150,8 @@ where
 
     /// Adds an index with the [installed keys](keys::installed).
     ///
-    /// This is exactly `self.with_index_with::<Spec>(keys::installed()?)`.
+    /// This is exactly `self.with_index_with::<Spec>(keys::installed()?)`. The
+    /// installed keys serve only [`FieldOnly`] fields.
     ///
     /// # Errors
     ///
@@ -186,6 +159,7 @@ where
     /// duplicate index IDs, unavailable providers, or failed index derivation.
     pub fn with_index<Spec>(self) -> Result<Self, Error>
     where
+        F: Field<Binding = FieldOnly>,
         Spec: BlindIndexSpec<Field = F>,
     {
         self.with_index_with::<Spec>(keys::installed()?)

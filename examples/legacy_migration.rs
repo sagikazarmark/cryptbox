@@ -7,8 +7,8 @@ use chacha20poly1305::{
     aead::{Aead, Payload},
 };
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey, Field,
-    IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, IndexKeyId, KeyId,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Sealed, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore,
         Sweep, SweepTable,
@@ -192,9 +192,9 @@ async fn run() -> Result<(), Box<dyn Error>> {
             .fetch_all(&mut connection)
             .await?;
         for row in rows {
-            let ciphertext: Ciphertext<UserEmail> = row.try_get("email_ciphertext")?;
-            let candidate = ciphertext.decrypt_with(&keys)?;
-            assert_eq!(candidate.expose_secret(), "foreign@example.com");
+            let ciphertext: Sealed<UserEmail> = row.try_get("email_ciphertext")?;
+            let candidate = ciphertext.open((), &keys)?;
+            assert_eq!(candidate, "foreign@example.com");
             matches += 1;
         }
     }
@@ -221,7 +221,7 @@ async fn verify_permissive_reads(
         .fetch_one(&mut *connection)
         .await?;
     assert!(matches!(
-        Ciphertext::<UserEmail>::from_bytes(foreign),
+        Sealed::<UserEmail>::from_bytes(foreign),
         Err(cryptbox::Error::NotCiphertext),
     ));
 
@@ -238,10 +238,7 @@ async fn verify_permissive_reads(
         let id: i64 = row.try_get("id")?;
         let value: MaybeEncrypted<UserEmail> = row.try_get("email_ciphertext")?;
         assert_eq!(value.is_legacy(), id <= 2);
-        assert_eq!(
-            value.decrypt_with_legacy(keys, legacy)?.expose_secret(),
-            expected,
-        );
+        assert_eq!(value.open_legacy((), keys, legacy)?, expected,);
     }
     Ok(())
 }
@@ -261,12 +258,11 @@ async fn insert_encrypted(
     keys: &LocalEncryptionKeyring,
     index_keys: &LocalBlindIndexKeyring,
 ) -> Result<(), Box<dyn Error>> {
-    let value = Encrypted::<UserEmail>::new(email.to_owned());
-    let prepared = value
-        .prepare_with(keys)?
+    let value = email.to_owned();
+    let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)?
         .with_index_with::<EmailLookup>(index_keys)?;
     sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
-        .bind(prepared.ciphertext())
+        .bind(prepared.sealed())
         .bind(prepared.index::<EmailLookup>()?)
         .execute(connection)
         .await?;

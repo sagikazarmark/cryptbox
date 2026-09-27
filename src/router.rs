@@ -60,8 +60,8 @@ impl fmt::Display for Routing {
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, Field, FieldId, LocalEncryptionKeyring, Padding, Router, Utf8, decrypt,
-///     encrypt,
+///     EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Router, Utf8,
+///     decrypt, encrypt,
 /// };
 ///
 /// struct Email;
@@ -69,8 +69,11 @@ impl fmt::Display for Routing {
 /// impl Field for Email {
 ///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 ///
 /// struct Iban;
@@ -78,8 +81,11 @@ impl fmt::Display for Routing {
 /// impl Field for Iban {
 ///     const ID: FieldId = cryptbox::field_id!("7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 ///
 /// # fn main() -> Result<(), cryptbox::Error> {

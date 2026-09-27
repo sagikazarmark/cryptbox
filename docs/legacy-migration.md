@@ -5,7 +5,7 @@ Adopt encryption over plaintext, previous-solution ciphertext or mixed storage.
 
 The `migrate` feature supplies explicit permissive reads, an application-owned
 legacy handler and a resumable driver for a bounded migration window. Normal
-`Encrypted`/`Ciphertext` decoding remains strict throughout. Plaintext migration
+`Sealed`/`Plain` decoding remains strict throughout. Plaintext migration
 is the identity-recovery case; it follows the same rollout and closure gates.
 
 ## Preconditions
@@ -69,21 +69,21 @@ Re-encryption protects recovered bytes going forward, not their historical origi
 Read as `cryptbox::migrate::MaybeEncrypted<F>` only where legacy values
 may still occur. `from_bytes` and SQLx `Decode` classify without accessing keys:
 
-- Valid envelopes are retained structurally; explicit decryption authenticates
-  them and ignores the legacy handler.
-- Bytes without envelope magic are retained in a zeroizing buffer. `decrypt_with`
-  uses plaintext identity recovery; `decrypt_with_legacy` invokes the handler
-  before codec decoding. Codec errors are deferred until the decrypt call.
+- Valid envelopes are retained structurally; opening them authenticates under the
+  binding arguments passed and ignores the legacy handler.
+- Bytes without envelope magic are retained in a zeroizing buffer. `open`
+  uses plaintext identity recovery; `open_legacy` invokes the handler before codec
+  decoding. Codec errors are deferred until the open call.
 - Magic-bearing malformed/unsupported envelopes are hard errors, **never legacy
   fallback**. A structurally valid envelope's authentication failure is also final.
 
-`MaybeEncrypted` has no storage `Encode` or Serde. Use `Encrypted`/`Prepared` for
-new writes; other database clients still need fencing.
+`MaybeEncrypted` has no storage `Encode` or Serde. Opening returns the plain
+value; use `Sealed::seal`, `Sealed::prepare` or `Plain` for new writes; other database clients still need fencing.
 
 For legacy bytes colliding with `CBX\0`, a **trusted out-of-band discriminator**
 may authorize `MaybeEncrypted::from_legacy_bytes`, which bypasses classification.
-`from_plaintext` takes an already decoded `Encrypted<F>`;
-`From<Ciphertext>` wraps known ciphertext. The packaged stores load no discriminator
+`from_plaintext` takes an already decoded value;
+`From<Sealed<F>>` wraps a known sealed value. The packaged stores load no discriminator
 and `RowPlanner` uses ordinary classification: use a custom/manual guarded repair
 for collisions, never a general malformed-envelope fallback.
 
@@ -119,11 +119,12 @@ Switch to blind-index-only lookup only after the [closure gates](#verification-a
 
 ## Running the sweep
 
-Configure `RowPlanner::<F>::new(context, encryption_provider)`, add the
+Configure `RowPlanner::<F>::new(encryption_provider)`, add the
 explicit handler with `with_legacy`, and register indexes in stored order with
 `with_index_with::<Spec>(index_provider)`. Omit `with_legacy` only for authorized
-plaintext-only data. Recovery decodes through the field codec, encrypts and
-derives every registered index. Stale CryptBox components are rewritten; current
+plaintext-only data. Recovery decodes through the field codec, seals and
+derives every registered index. The planner and `Sweep` serve `FieldOnly` fields
+without a record in this release. Stale CryptBox components are rewritten; current
 ones are retained under the [sweep rules](reencryption-sweep.md#sweep-loop).
 
 The packaged planner repairs missing indexes on **legacy** bytes by deriving them,

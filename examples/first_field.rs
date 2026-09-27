@@ -1,25 +1,30 @@
 //! First field-bound round trip with explicit, ephemeral keys.
 
 // ANCHOR: first-field
-use cryptbox::{Encrypted, EncryptionKey, Field, FieldId, LocalEncryptionKeyring, Padding, Utf8};
+use cryptbox::{
+    EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+};
 
 struct UserEmail;
 
 impl Field for UserEmail {
     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 fn main() -> Result<(), cryptbox::Error> {
     // Ephemeral demo keys: a new key and generation ID on every run.
     let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-    let email = Encrypted::<UserEmail>::new("mark@example.com".to_owned());
-    let ciphertext = email.encrypt_with(&keys)?;
-    let decrypted = ciphertext.decrypt_with(&keys)?;
-    assert_eq!(decrypted.expose_secret(), "mark@example.com");
-    assert_eq!(email.expose_secret(), "mark@example.com"); // Source retained.
+    let email = "mark@example.com".to_owned();
+    let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
+    let opened = sealed.open((), &keys)?;
+    assert_eq!(opened, "mark@example.com");
+    assert_eq!(email, "mark@example.com"); // Source retained.
     println!("Field-bound round trip succeeded.");
     Ok(())
 }
@@ -34,8 +39,11 @@ mod tests {
     impl Field for BillingEmail {
         const ID: FieldId = cryptbox::field_id!("124f036a-39c6-4197-a9bb-c92c471285ad");
         const PADDING: Padding = Padding::NONE;
+        const RECORD: bool = false;
         type Value = String;
         type Codec = Utf8;
+        type Binding = FieldOnly;
+        type Indexes = ();
     }
 
     #[test]
@@ -46,12 +54,10 @@ mod tests {
     #[test]
     fn stored_email_cannot_be_read_as_another_field() -> Result<(), cryptbox::Error> {
         let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-        let email = Encrypted::<UserEmail>::new("mark@example.com".to_owned());
-        let ciphertext = email.encrypt_with(&keys)?;
-        let substituted =
-            cryptbox::Ciphertext::<BillingEmail>::from_bytes(ciphertext.as_bytes().to_vec())?;
+        let sealed = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), (), &keys)?;
+        let substituted = Sealed::<BillingEmail>::from_bytes(sealed.as_bytes().to_vec())?;
         assert!(matches!(
-            substituted.decrypt_with(&keys),
+            substituted.open((), &keys),
             Err(cryptbox::Error::AuthenticationFailed)
         ));
         Ok(())

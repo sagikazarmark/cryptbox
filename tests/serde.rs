@@ -1,11 +1,11 @@
-//! Public-boundary tests for explicit ciphertext Serde representations.
+//! Public-boundary tests for explicit sealed-value Serde representations.
 
 #![cfg(any(feature = "json", feature = "postcard"))]
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field,
-    IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, index_id, index_key_id,
-    key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, FieldOnly,
+    IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed, Utf8, index_id,
+    index_key_id, key_id,
 };
 #[cfg(feature = "json")]
 use serde_json::Value;
@@ -16,8 +16,11 @@ struct EmailField;
 impl Field for EmailField {
     const ID: cryptbox::FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
     const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = ();
 }
 
 struct EmailExact;
@@ -59,10 +62,8 @@ fn encryption_keys() -> LocalEncryptionKeyring {
     .unwrap()
 }
 
-fn ciphertext(keys: &LocalEncryptionKeyring) -> cryptbox::Ciphertext<EmailField> {
-    Encrypted::<EmailField>::new("mark@example.com".to_owned())
-        .encrypt_with(keys)
-        .unwrap()
+fn sealed(keys: &LocalEncryptionKeyring) -> Sealed<EmailField> {
+    Sealed::seal(&"mark@example.com".to_owned(), (), keys).unwrap()
 }
 
 #[cfg(feature = "json")]
@@ -77,29 +78,26 @@ fn json_bytes(value: &Value) -> Vec<u8> {
 
 #[test]
 #[cfg(feature = "json")]
-fn ciphertext_serde_round_trips_only_the_envelope_bytes() {
+fn sealed_serde_round_trips_only_the_envelope_bytes() {
     let keys = encryption_keys();
-    let ciphertext = ciphertext(&keys);
+    let sealed = sealed(&keys);
 
-    let json = serde_json::to_string(&ciphertext).unwrap();
+    let json = serde_json::to_string(&sealed).unwrap();
     assert!(!json.contains("mark@example.com"));
     assert_eq!(
         json_bytes(&serde_json::from_str(&json).unwrap()),
-        ciphertext.as_bytes()
+        sealed.as_bytes()
     );
 
-    let restored = serde_json::from_str(&json).unwrap();
-    assert_eq!(ciphertext, restored);
-    assert_eq!(
-        restored.decrypt_with(&keys).unwrap().expose_secret(),
-        "mark@example.com"
-    );
+    let restored: Sealed<EmailField> = serde_json::from_str(&json).unwrap();
+    assert_eq!(sealed, restored);
+    assert_eq!(restored.open((), &keys).unwrap(), "mark@example.com");
 }
 
 #[test]
 #[cfg(feature = "json")]
-fn ciphertext_serde_rejects_malformed_envelopes() {
-    let error = serde_json::from_str::<cryptbox::Ciphertext<EmailField>>("[1,2,3]").unwrap_err();
+fn sealed_serde_rejects_malformed_envelopes() {
+    let error = serde_json::from_str::<Sealed<EmailField>>("[1,2,3]").unwrap_err();
 
     assert!(
         error
@@ -137,13 +135,13 @@ fn blind_index_serde_rejects_noncanonical_values() {
 
 #[test]
 #[cfg(feature = "postcard")]
-fn binary_serde_round_trips_ciphertext_and_blind_index_bytes() {
-    let ciphertext = ciphertext(&encryption_keys());
+fn binary_serde_round_trips_sealed_and_blind_index_bytes() {
+    let sealed = sealed(&encryption_keys());
     let index = blind_index();
 
-    let bytes = postcard::to_allocvec(&(ciphertext.clone(), index.clone())).unwrap();
-    let restored: (cryptbox::Ciphertext<EmailField>, BlindIndex<EmailExact>) =
+    let bytes = postcard::to_allocvec(&(sealed.clone(), index.clone())).unwrap();
+    let restored: (Sealed<EmailField>, BlindIndex<EmailExact>) =
         postcard::from_bytes(&bytes).unwrap();
 
-    assert_eq!(restored, (ciphertext, index));
+    assert_eq!(restored, (sealed, index));
 }

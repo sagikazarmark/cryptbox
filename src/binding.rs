@@ -1,18 +1,15 @@
-// Only tests reach the scoped-binding encoder until fields declare a binding (#99).
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "fields do not yet declare a binding")
-)]
-
 use std::{fmt, hash::Hash};
 
 use sha2::{Digest, Sha256};
 
 use crate::{Error, FieldId, PartId};
 
+mod args;
 mod presets;
 mod scope;
 
+pub use args::Args;
+pub(crate) use args::domain;
 pub use presets::{FieldOnly, Tenant, TenantId};
 pub use scope::KeyScope;
 

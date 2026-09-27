@@ -78,15 +78,15 @@ fn recover(
     collision: bool,
     keys: &LocalEncryptionKeyring,
     legacy: &PreviousEncryption,
-) -> Result<Encrypted<UserEmail>> {
+) -> Result<String> {
     let stored: MaybeEncrypted<UserEmail> = if collision {
         // Only a trusted application discriminator can authorize this bypass.
         MaybeEncrypted::from_legacy_bytes(bytes)
     } else {
         MaybeEncrypted::from_bytes(bytes)?
     };
-    let value = stored.decrypt_with_legacy(keys, legacy)?;
-    validate_email(value.expose_secret())?;
+    let value = stored.open_legacy((), keys, legacy)?;
+    validate_email(&value)?;
     Ok(value)
 }
 
@@ -140,9 +140,8 @@ async fn seed(
         (40, keys, indexes),
         (50, keys, indexes),
     ] {
-        let value = Encrypted::<UserEmail>::new("mixed@example.com".to_owned());
-        let prepared = value
-            .prepare_with(encryption)?
+        let value = "mixed@example.com".to_owned();
+        let prepared = Sealed::<UserEmail>::prepare(&value, (), encryption)?
             .with_index_with::<EmailLookup>(index)?;
         let token = if id == 50 {
             &[]
@@ -151,7 +150,7 @@ async fn seed(
         };
         sqlx::query("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)")
             .bind(id)
-            .bind(prepared.ciphertext())
+            .bind(prepared.sealed())
             .bind(token)
             .execute(&mut *db)
             .await?;
@@ -193,7 +192,7 @@ async fn lookup(
         let collision =
             row.try_get::<Option<String>, _>("format")?.as_deref() == Some("legacy-collision");
         let candidate = recover(row.try_get("email")?, collision, keys, &legacy)?;
-        if EmailLookup::verify_candidate(query, candidate.expose_secret())? {
+        if EmailLookup::verify_candidate(query, &candidate)? {
             matches.push(row.try_get("id")?);
         } else {
             rejected += 1;
@@ -241,11 +240,10 @@ async fn repair(
         keys,
         &PreviousEncryption::load()?,
     )?;
-    let prepared = value
-        .prepare_with(keys)?
-        .with_index_with::<EmailLookup>(indexes)?;
+    let prepared =
+        Sealed::<UserEmail>::prepare(&value, (), keys)?.with_index_with::<EmailLookup>(indexes)?;
     let changed = sqlx::query("UPDATE users SET email = $1, email_lookup = $2 WHERE id = $3 AND email = $4 AND email_lookup = $5")
-        .bind(prepared.ciphertext()).bind(prepared.index::<EmailLookup>()?.as_bytes())
+        .bind(prepared.sealed()).bind(prepared.index::<EmailLookup>()?.as_bytes())
         .bind(id).bind(bytes.as_slice()).bind(&old_index).execute(&mut *tx).await?.rows_affected();
     if changed != 1 {
         return Err("guarded repair conflict: reload and investigate".into());
@@ -349,14 +347,13 @@ pub(super) async fn command(
         }
         ["migration-restore"] => {
             // Fixture-only trusted source. In production require investigated, approved data.
-            let value = Encrypted::<UserEmail>::new("mixed@example.com".to_owned());
-            let prepared = value
-                .prepare_with(keys)?
+            let value = "mixed@example.com".to_owned();
+            let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)?
                 .with_index_with::<EmailLookup>(indexes)?;
             let mut tx = db.begin().await?;
             // INSERT, not upsert: a concurrently recreated row must not be overwritten.
             sqlx::query("INSERT INTO users (id, email, email_lookup) VALUES (20, $1, $2)")
-                .bind(prepared.ciphertext())
+                .bind(prepared.sealed())
                 .bind(prepared.index::<EmailLookup>()?.as_bytes())
                 .execute(&mut *tx)
                 .await?;
@@ -400,7 +397,7 @@ pub(super) async fn command(
                 keys,
                 &PreviousEncryption::load()?,
             )?;
-            println!("{id}: {}", value.expose_secret());
+            println!("{id}: {value}");
         }
         _ => return Err("unknown migration command".into()),
     }

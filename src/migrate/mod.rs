@@ -16,19 +16,20 @@
 //! Obtain those assurances with separate decryption and index recomputation.
 //!
 //! Reads are permissive; writes never are. [`MaybeEncrypted`] implements no
-//! storage `Encode`, and its only forward path is an [`Encrypted`] value,
-//! which always encrypts. Once verification passes, remove `MaybeEncrypted`
-//! usages, delete the legacy handler, and disable the `migrate` feature. Only
-//! then consider online historical-key removal following the [maintenance sweep
-//! guide]. A clean live-data pass says nothing about keys needed by backups or
-//! other stores. Retain historical and legacy recovery keys separately; destroy
-//! them only when all dependent artifacts and retention requirements permit it.
+//! storage `Encode`, and its only forward path is the opened value, which
+//! must be sealed again with [`Sealed::seal`]. Once verification passes, remove
+//! `MaybeEncrypted` usages, delete the legacy handler, and disable the `migrate`
+//! feature. Only then consider online historical-key removal following the
+//! [maintenance sweep guide]. A clean live-data pass says nothing about keys
+//! needed by backups or other stores. Retain historical and legacy recovery keys
+//! separately; destroy them only when all dependent artifacts and retention
+//! requirements permit it.
 //!
 #![doc = concat!(
     "[maintenance sweep guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/reencryption-sweep.md\n",
     "[legacy migration guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/legacy-migration.md",
 )]
-//! [`Encrypted`]: crate::Encrypted
+//! [`Sealed::seal`]: crate::Sealed::seal
 
 mod legacy;
 mod read;

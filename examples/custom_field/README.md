@@ -28,14 +28,16 @@ before persisting data.
   [`Plaintext`](https://docs.rs/cryptbox/latest/cryptbox/trait.Plaintext.html)
   codec, with the same bytes), but it would not enforce the handle policy, so the
   field names `HandleCodec` explicitly.
+  It also declares `type Indexes = (HandleEquality,)`, so storage helpers that
+  would not write the index, such as the automatic `Plain` column, reject it.
 - **`HandleEquality`** validates the same alphabet and lowercases inside a
   zeroizing buffer. Writes, probes and candidate comparison share that rule.
   The 128-bit index leaks equality/frequency and is not a uniqueness constraint.
 - **`CachedEncryptionKeys`** serves a local snapshot without I/O on the encryption
   path. The application owns loading, refresh, synchronization and failure policy.
 - **`Secret<String>`** zeroizes its owned string on drop. Preparation still borrows
-  the plaintext; dropping `Prepared` does not erase it. `into_secret()` returns
-  the decoded type—it does not add zeroization to a field over an ordinary `String`.
+  the plaintext; dropping `Prepared` does not erase it. `open` returns the
+  decoded type—it does not add zeroization to a field over an ordinary `String`.
 
 ### Implementor obligations
 

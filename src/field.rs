@@ -1,36 +1,42 @@
-use crate::{Codec, FieldId, Padding};
+use crate::{Binding, Codec, FieldId, IndexList, Padding};
 
-/// Declares a logical encrypted field: its identity, value type, codec, and padding.
+/// Declares a logical encrypted field: its identity, value type, codec,
+/// padding, binding, and blind indexes.
 ///
 /// A field is a marker type, separate from the application's value type. The
 /// value type (`String`, `Address`, `Secret<String>`) says how it encodes; the
 /// field says where it is stored. One value type can back several fields, such as
 /// `HomeAddress` and `BillingAddress` over one `Address`, and each field has its
-/// own ID so their ciphertext cannot be swapped.
+/// own ID so their sealed values cannot be swapped.
 ///
-/// Every ciphertext and blind index is bound to exactly one field ID: decryption
-/// under a different field fails authentication. Generate a unique ID for each
-/// logical field, keep it stable across Rust and database renames, and never reuse
-/// it for a different field. Changing the ID makes existing ciphertext fail
-/// authentication. Declaring the same ID on several types deliberately makes them
-/// the same logical field.
+/// Every sealed value is bound at runtime to its field ID, to the values of the
+/// field's [`Binding`] (such as a tenant), and, when [`Self::RECORD`] is set, to
+/// a record ID. Opening it as another field, or under other binding values or
+/// another record, fails authentication. The binding arguments of each call are
+/// typed by the field; see [`Args`](crate::Args).
 ///
-/// The value type, codec representation, and field ID define persistent schema.
-/// The ciphertext envelope does not store a codec identifier, so incompatible
-/// changes require an explicit data migration. Padding is write policy instead:
-/// the envelope records whether a value is padded. See [`crate::schema`] and
-/// [`crate::testing`] for CI checks of this schema.
+/// Generate a unique ID for each logical field, keep it stable across Rust and
+/// database renames, and never reuse it for a different field. Changing the ID
+/// makes existing values fail authentication. Declaring the same ID on several
+/// types deliberately makes them the same logical field.
+///
+/// The value type, codec representation, field ID, and binding shape define
+/// persistent schema. The envelope does not store a codec identifier, so
+/// incompatible changes require an explicit data migration. Padding is write
+/// policy instead: the envelope records whether a value is padded. See
+/// [`crate::schema`] and [`crate::testing`] for CI checks of the codec and IDs;
+/// an envelope written with another binding shape reports
+/// [`Error::BindingMismatch`](crate::Error::BindingMismatch) when opened.
 ///
 /// For blind indexes, the field domain-separates derivation; it does not
-/// authenticate the stored index representation. Field binding does not prevent
-/// substitution between rows of the same field. Compare decrypted candidate
+/// authenticate the stored index representation. Compare decrypted candidate
 /// plaintext for lookup, and recompute indexes separately when stored-index
 /// consistency is required.
 ///
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, Padding, Plaintext};
+/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Plaintext};
 ///
 /// /// Primary contact address.
 /// pub struct UserEmail;
@@ -38,8 +44,11 @@ use crate::{Codec, FieldId, Padding};
 /// impl Field for UserEmail {
 ///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = <String as Plaintext>::Codec;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 /// ```
 ///
@@ -50,7 +59,7 @@ use crate::{Codec, FieldId, Padding};
 /// default codec; implement `Plaintext` for it or name an explicit codec:
 ///
 /// ```compile_fail,E0277
-/// use cryptbox::{Field, FieldId, Padding, Plaintext};
+/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Plaintext};
 ///
 /// struct Address {
 ///     city: String,
@@ -61,8 +70,11 @@ use crate::{Codec, FieldId, Padding};
 /// impl Field for HomeAddress {
 ///     const ID: FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 ///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
 ///     type Value = Address;
 ///     type Codec = <Address as Plaintext>::Codec;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
 /// }
 /// ```
 ///
@@ -80,17 +92,40 @@ pub trait Field: 'static {
     ///
     /// This describes how values are written, not how they are read: the
     /// envelope records whether its payload is padded. Changing the policy keeps
-    /// format 2 values readable, and re-encryption rewrites them with it. Format 1
-    /// values are read with the current policy, so re-encrypt them first; see
+    /// format 2 values readable, and resealing rewrites them with it. Format 1
+    /// values are read with the current policy, so reseal them first; see
     /// [`Padding`].
     const PADDING: Padding;
+
+    /// Whether every value is also bound to the ID of its record.
+    ///
+    /// A record-bound value cannot be copied to another record of the same
+    /// field. The record is always bound only: it never scopes keys or blind
+    /// indexes. Record IDs are generated by the client, before the value is
+    /// sealed. Changing this flag is a migration.
+    const RECORD: bool;
 
     /// The plaintext application type stored in this field.
     type Value;
 
     /// The codec used before encryption and after decryption.
     ///
-    /// Its byte representation must remain compatible with stored ciphertext.
+    /// Its byte representation must remain compatible with stored values.
     /// Use `<Self::Value as Plaintext>::Codec` for the value type's default codec.
     type Codec: Codec<Self::Value>;
+
+    /// The declared scope every value is bound to, such as a tenant.
+    ///
+    /// [`FieldOnly`](crate::FieldOnly) binds values to the field ID alone. The
+    /// binding's shape is persistent schema; its values are supplied at each
+    /// call. See [`Binding`].
+    type Binding: Binding;
+
+    /// The blind indexes declared over this field, as a tuple of
+    /// [`BlindIndexSpec`](crate::BlindIndexSpec)s, or `()` for none.
+    ///
+    /// Declaring them lets storage helpers reject a field whose blind indexes
+    /// they would not write, such as the automatic column
+    /// [`Plain`](crate::Plain). See [`IndexList`].
+    type Indexes: IndexList<Self>;
 }

@@ -29,7 +29,9 @@ compromised storage. Trust the application, providers, dependencies, and operati
 system: root keys must be cryptographically random, encryption and index roots
 independently generated, and each generation ID permanently paired with the same
 material. IDs are public metadata; generate them independently of key bytes.
-Fields supply trusted expected bindings and persistent schema. Secure OS
+Fields supply persistent schema, including their binding shape. Binding values and
+record IDs are only as trustworthy as their source: take them from verified claims
+or an authorized request, never from the stored row. Secure OS
 randomness and a compatible target are required; see [platform constraints](features.md#platforms-and-tested-configurations).
 
 ## Threats and unsuitable uses
@@ -38,10 +40,11 @@ randomness and a compatible target are required; see [platform constraints](feat
 | --- | --- |
 | Read dumps, snapshots, backups, or detached volumes | Selected values remain confidential under the assumptions above. Other columns, IDs, and metadata remain visible. |
 | Modify stored ciphertext | Authenticated decryption rejects tampering. Parsing alone does not authenticate; malformed formats or unknown keys may fail earlier. |
-| Copy ciphertext to another logical field | Authentication rejects a field with a different field ID. |
-| Copy ciphertext between rows of the same field | Substitution can succeed. Row/tenant binding is unavailable. |
+| Copy ciphertext to another logical field | Authentication rejects a field with a different field ID. A different binding shape reports `BindingMismatch`. |
+| Copy ciphertext to another scope, such as another tenant | Authentication rejects other binding values of a field that declares them. A `FieldOnly` field has no scope. |
+| Copy ciphertext between rows of the same field | Authentication rejects another record of a field that binds one. For a field without a record, substitution within the same scope can succeed. |
 | Restore an older authentic value | No replay, rollback, or freshness protection. |
-| Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency; access patterns remain visible. |
+| Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency, currently across every scope of a field; access patterns remain visible. |
 | Alter indexes or omit query results | Candidate comparison rejects false matches, but cannot detect omitted matches. Search completeness is not guaranteed. |
 | Compromise the live application | Plaintext and keys can be exposed. CryptBox supplies no process-isolation boundary. |
 
@@ -79,7 +82,7 @@ distinct from the independent security review status of the implementation.
 | --- | --- | --- |
 | Parse ciphertext or deserialize stored bytes | Supported structure and lengths | Authenticity or readability |
 | Inspect generations / complete sweep verification | Stored values name the intended generations | Authentication, decodability, or index consistency |
-| Decrypt with the expected field | Authentication, padding removal, and decoding for that value | Row identity, freshness, or index consistency |
+| Open with the expected field and binding values | Authentication under that field, scope, and record, padding removal, and decoding for that value | Row identity for a field without a record, freshness, or index consistency |
 | Verify a lookup candidate | Its normalized plaintext matches the query | Stored-index authenticity or completeness of query results |
 | Recompute a stored index under its recorded generation | Consistency with authenticated plaintext and the expected index policy at the configured precision | Absence of omitted rows or rollback |
 

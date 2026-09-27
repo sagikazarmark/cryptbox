@@ -190,7 +190,7 @@ pub(crate) fn encrypt_bound(
 /// it does not establish freshness, row identity, or codec validity.
 /// Padding recorded by the envelope is removed. A format 1 envelope does not
 /// record padding, so its payload is returned as stored.
-/// Use [`crate::Ciphertext::decrypt_with`] to also decode a typed value.
+/// Use [`crate::Sealed::open`] to also decode a typed value.
 ///
 /// # Errors
 ///
@@ -277,9 +277,19 @@ pub fn needs_reencryption(
     ciphertext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<bool, Error> {
+    needs_reencryption_bound(&BindingDomain::field(field), padding, ciphertext, keys)
+}
+
+/// Reports whether an envelope differs from what `domain` currently writes.
+pub(crate) fn needs_reencryption_bound(
+    domain: &BindingDomain,
+    padding: Padding,
+    ciphertext: &[u8],
+    keys: &dyn EncryptionKeyProvider,
+) -> Result<bool, Error> {
     let info = inspect_ciphertext(ciphertext)?;
-    check_shape(info, &BindingDomain::field(field))?;
-    let current = keys.current_key(field)?;
+    check_shape(info, domain)?;
+    let current = keys.current_key(domain.field_id())?;
 
     Ok(info.format_version != FORMAT_VERSION
         || info.suite_id != active_suite().id()
@@ -323,6 +333,16 @@ fn seal_with_nonce(
     );
 
     XCHACHA20_POLY1305_SUITE.seal_with_nonce(&header, plaintext, domain, key, nonce)
+}
+
+/// Returns the key ID of an envelope that already passed structural validation.
+// Offsets follow the layout table: ../docs/wire-format.md#envelope.
+pub(crate) fn validated_key_id(bytes: &[u8]) -> KeyId {
+    let offset = if bytes[4] == FORMAT_1_VERSION { 6 } else { 7 };
+    let mut key_id = [0_u8; 16];
+    key_id.copy_from_slice(&bytes[offset..offset + 16]);
+
+    KeyId::from_bytes(key_id)
 }
 
 fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> {
