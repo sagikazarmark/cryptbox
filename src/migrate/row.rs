@@ -155,6 +155,59 @@ where
     /// Columns are positional: registration order must match the order in
     /// which stored index bytes are later passed to [`Self::classify_row`] and
     /// [`Self::plan_row`].
+    ///
+    /// The index must be declared over this field. Registering another field's
+    /// index is a type error:
+    ///
+    /// ```compile_fail,E0271
+    /// use cryptbox::{
+    ///     BlindIndexError, BlindIndexSpec, Field, FieldId, IndexId, LocalBlindIndexKeyring,
+    ///     LocalEncryptionKeyring, Padding, Utf8, migrate::RowPlanner,
+    /// };
+    /// use zeroize::Zeroizing;
+    ///
+    /// struct UserEmail;
+    ///
+    /// impl Field for UserEmail {
+    ///     const ID: FieldId = FieldId::from_bytes([1; 16]);
+    ///     const PADDING: Padding = Padding::NONE;
+    ///     type Value = String;
+    ///     type Codec = Utf8;
+    /// }
+    ///
+    /// struct InviteEmail;
+    ///
+    /// impl Field for InviteEmail {
+    ///     const ID: FieldId = FieldId::from_bytes([2; 16]);
+    ///     const PADDING: Padding = Padding::NONE;
+    ///     type Value = String;
+    ///     type Codec = Utf8;
+    /// }
+    ///
+    /// struct InviteEmailLookup;
+    ///
+    /// impl BlindIndexSpec for InviteEmailLookup {
+    ///     type Field = InviteEmail;
+    ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
+    ///     const BITS: u16 = 32;
+    ///     type Query = str;
+    ///
+    ///     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    ///         Ok(Zeroizing::new(query.as_bytes().to_vec()))
+    ///     }
+    ///
+    ///     fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    ///         Self::normalize_query(value)
+    ///     }
+    /// }
+    ///
+    /// fn planner<'a>(
+    ///     keys: &'a LocalEncryptionKeyring,
+    ///     index_keys: &'a LocalBlindIndexKeyring,
+    /// ) -> RowPlanner<'a, UserEmail> {
+    ///     RowPlanner::<UserEmail>::new(keys).with_index_with::<InviteEmailLookup>(index_keys)
+    /// }
+    /// ```
     #[must_use]
     pub fn with_index_with<Spec>(mut self, keys: &'a dyn BlindIndexKeyProvider) -> Self
     where
