@@ -144,9 +144,18 @@ fn global_keys_install_once_back_only_the_implicit_forms() {
 #[test]
 fn keys_without_a_blind_index_provider_reject_index_operations() {
     let keys = Keys::new(keyring(EXPLICIT_KEY_ID, 2));
+    let email = Encrypted::<Email>::new("mark@example.com");
 
     assert_eq!(
         EmailLookup::probes_with("mark@example.com", &keys).unwrap_err(),
-        Error::KeyProviderUnavailable
+        Error::BlindIndexKeysNotConfigured
+    );
+    assert_eq!(
+        email
+            .prepare_with(&keys)
+            .unwrap()
+            .with_index_with::<EmailLookup>(&keys)
+            .unwrap_err(),
+        Error::BlindIndexKeysNotConfigured
     );
 }

@@ -321,7 +321,8 @@ where
                 Err(
                     error @ (Error::IndexColumnMismatch { .. }
                     | Error::KeyProviderUnavailable
-                    | Error::KeysNotInstalled),
+                    | Error::KeysNotInstalled
+                    | Error::BlindIndexKeysNotConfigured),
                 ) => return Err(SweepError::Row(error)),
                 Err(_) => report.malformed += 1,
             }

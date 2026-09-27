@@ -87,7 +87,10 @@
   `keys::AlreadyInstalled` (convertible to `Error::KeysAlreadyInstalled`) instead
   of replacing installed keys. `Keys::new(encryption).with_blind_indexes(indexes)`
   replaces `GlobalProviders` and is itself a provider for both roles, so it can be
-  passed to every explicit form. The implicit forms (`encrypt()`, `decrypt()`,
+  passed to every explicit form. Index operations on `Keys` without a
+  blind-index provider fail with `Error::BlindIndexKeysNotConfigured`
+  (`KeyProviderError::BlindIndexKeysNotConfigured`) instead of
+  `KeyProviderUnavailable`. The implicit forms (`encrypt()`, `decrypt()`,
   `prepare()`, `with_index()`, `probes()`) are exactly their `_with` forms called
   with `keys::installed()`, and fail with `Error::KeysNotInstalled` (was
   `KeyProviderNotInitialized`) before installation. `KeyProviderError::NotInitialized`

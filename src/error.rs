@@ -74,6 +74,9 @@ pub enum KeyProviderError {
     /// without a route for it.
     #[error("no key provider is routed for field {0}")]
     UnroutedField(FieldId),
+    /// A [`Keys`](crate::Keys) value was built without a blind-index provider.
+    #[error("no blind-index key provider is configured")]
+    BlindIndexKeysNotConfigured,
 }
 
 /// An error returned by `CryptBox` operations.
@@ -120,6 +123,11 @@ pub enum Error {
     /// A router was given more than one route for the same field ID.
     #[error("duplicate route for field {0}")]
     DuplicateRoute(FieldId),
+    /// A blind-index operation used [`Keys`](crate::Keys) built without a
+    /// blind-index provider; add one with
+    /// [`Keys::with_blind_indexes`](crate::Keys::with_blind_indexes).
+    #[error("no blind-index key provider is configured")]
+    BlindIndexKeysNotConfigured,
     /// Keys were already installed; see [`keys::AlreadyInstalled`](crate::keys::AlreadyInstalled).
     #[error("keys are already installed")]
     KeysAlreadyInstalled,
@@ -181,6 +189,7 @@ impl From<KeyProviderError> for Error {
         match error {
             KeyProviderError::Unavailable => Self::KeyProviderUnavailable,
             KeyProviderError::UnroutedField(field) => Self::UnroutedField(field),
+            KeyProviderError::BlindIndexKeysNotConfigured => Self::BlindIndexKeysNotConfigured,
         }
     }
 }

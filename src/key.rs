@@ -487,7 +487,7 @@ impl BlindIndexKeyProvider for LocalBlindIndexKeyring {
 /// Each role is usually a [`Router`](crate::Router) that assigns fields to
 /// providers.
 ///
-/// Blind-index operations fail with [`Error::KeyProviderUnavailable`] when no
+/// Blind-index operations fail with [`Error::BlindIndexKeysNotConfigured`] when no
 /// blind-index provider was added.
 ///
 /// # Examples
@@ -528,7 +528,7 @@ impl Keys {
     fn blind_indexes(&self) -> Result<&dyn BlindIndexKeyProvider, KeyProviderError> {
         self.blind_indexes
             .as_deref()
-            .ok_or(KeyProviderError::Unavailable)
+            .ok_or(KeyProviderError::BlindIndexKeysNotConfigured)
     }
 }
 
