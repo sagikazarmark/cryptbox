@@ -16,6 +16,8 @@
 //!   structure; decryption authenticates. Encryption borrows and retains the source.
 //! - [`EncryptionProfile`] declares a [`Field`] and chooses its value type, codec,
 //!   padding, and key context. Every value is bound to its field.
+//! - [`Router`] assigns each field to the key provider that protects it;
+//!   providers receive the [`FieldId`] of every request.
 //! - [`Prepared`] borrows a source value and derives ciphertext/indexes for an
 //!   application-owned atomic write; it does not persist them.
 //! - A [`BlindIndex`] is a candidate selector. Use every [`blind_index_probes`]
@@ -125,6 +127,7 @@ pub mod migrate;
 mod padding;
 mod prepare;
 mod profile;
+mod router;
 #[cfg(feature = "serde")]
 mod serde_impl;
 #[cfg(feature = "sqlx-postgres")]
@@ -157,4 +160,5 @@ pub use key::{
 pub use padding::{NoPadding, PadToBlock, PadToLength, Padding};
 pub use prepare::Prepared;
 pub use profile::EncryptionProfile;
+pub use router::Router;
 pub use value::{Ciphertext, Encrypted, Secret};

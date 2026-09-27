@@ -17,6 +17,7 @@ fn error_category(error: &Error) -> &'static str {
         Error::UnknownEncryptionKey(_) => "unknown_encryption_key",
         Error::KeyProviderUnavailable => "key_provider_unavailable",
         Error::KeyProviderNotInitialized => "key_provider_not_initialized",
+        Error::UnroutedField(_) => "unrouted_field",
         Error::NotCiphertext | Error::InvalidEnvelope => "invalid_ciphertext",
         _ => "cryptbox_error", // Error is non-exhaustive; new variants stay sanitized.
     }

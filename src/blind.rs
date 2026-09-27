@@ -313,7 +313,8 @@ pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
 ///
 /// # Errors
 ///
-/// Returns an error for normalization failure or an unavailable key provider.
+/// Returns an error for normalization failure, an unavailable key provider, or
+/// an unrouted field.
 pub fn derive_blind_index<Spec, Input, F>(
     input: &Input,
     keys: &dyn BlindIndexKeyProvider,
@@ -324,7 +325,7 @@ where
     F: Field,
 {
     let normalized = Spec::normalize(input)?;
-    let key = keys.current_key()?;
+    let key = keys.current_key(F::ID)?;
 
     derive_normalized::<Spec>(&normalized, &BindingDomain::field::<F>(), &key)
 }
@@ -341,7 +342,8 @@ where
 ///
 /// # Errors
 ///
-/// Returns an error for normalization failure or an unavailable key provider.
+/// Returns an error for normalization failure, an unavailable key provider, or
+/// an unrouted field.
 pub fn blind_index_probes<Spec, Input, F>(
     input: &Input,
     keys: &dyn BlindIndexKeyProvider,
@@ -354,7 +356,7 @@ where
     let normalized = Spec::normalize(input)?;
     let domain = BindingDomain::field::<F>();
 
-    keys.readable_keys()?
+    keys.readable_keys(F::ID)?
         .iter()
         .map(|key| derive_normalized::<Spec>(&normalized, &domain, key))
         .collect()

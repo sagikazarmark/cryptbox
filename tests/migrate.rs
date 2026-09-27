@@ -9,10 +9,10 @@ use std::{
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, EncryptionKeyProvider, EncryptionProfile, Error, Field, GlobalKeyContext,
-    IndexId, IndexKeyId, KeyId, KeyProviderError, LocalBlindIndexKeyring, LocalEncryptionKeyring,
-    Utf8, derive_blind_index, field_id, index_id, index_key_id, inspect_blind_index,
-    inspect_ciphertext, key_id,
+    EncryptionKey, EncryptionKeyProvider, EncryptionProfile, Error, Field, FieldId,
+    GlobalKeyContext, IndexId, IndexKeyId, KeyId, KeyProviderError, LocalBlindIndexKeyring,
+    LocalEncryptionKeyring, Utf8, derive_blind_index, field_id, index_id, index_key_id,
+    inspect_blind_index, inspect_ciphertext, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
@@ -830,11 +830,11 @@ fn verification_counts_foreign_ciphertext_without_recovery() {
     struct ClassificationOnlyKeys(EncryptionKey);
 
     impl EncryptionKeyProvider for ClassificationOnlyKeys {
-        fn current_key(&self) -> Result<EncryptionKey, KeyProviderError> {
+        fn current_key(&self, _: FieldId) -> Result<EncryptionKey, KeyProviderError> {
             Ok(self.0.clone())
         }
 
-        fn key(&self, _: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
+        fn key(&self, _: FieldId, _: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
             panic!("verification must not resolve decryption keys")
         }
     }

@@ -270,7 +270,7 @@ impl<Profile: EncryptionProfile> Ciphertext<Profile> {
     /// Returns an error for a malformed or unsupported envelope, or unavailable
     /// provider.
     pub fn needs_reencryption_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<bool, Error> {
-        needs_reencryption(&self.bytes, keys)
+        needs_reencryption::<Profile>(&self.bytes, keys)
     }
 
     /// Decrypts and rewrites this envelope with the active suite and current key.

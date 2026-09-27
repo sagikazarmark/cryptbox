@@ -51,7 +51,7 @@ fn blind_index_keys_can_be_generated_for_immediate_use() {
     let expected_id = first.id();
     let keys = LocalBlindIndexKeyring::new(first, []).unwrap();
 
-    assert_eq!(keys.current_key().unwrap().id(), expected_id);
+    assert_eq!(keys.current_key(TestField::ID).unwrap().id(), expected_id);
 }
 
 #[test]

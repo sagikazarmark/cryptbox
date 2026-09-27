@@ -3,8 +3,8 @@
 // ANCHOR: custom-profile
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, Encrypted, EncryptionKey, EncryptionKeyProvider, KeyId, KeyProviderError,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Secret,
+    CodecErrorKind, Encrypted, EncryptionKey, EncryptionKeyProvider, FieldId, KeyId,
+    KeyProviderError, LocalBlindIndexKeyring, LocalEncryptionKeyring, Secret,
 };
 use zeroize::Zeroizing;
 
@@ -71,18 +71,18 @@ struct CachedEncryptionKeys {
 }
 
 impl EncryptionKeyProvider for CachedEncryptionKeys {
-    fn current_key(&self) -> Result<EncryptionKey, KeyProviderError> {
+    fn current_key(&self, field: FieldId) -> Result<EncryptionKey, KeyProviderError> {
         self.snapshot
             .as_ref()
             .ok_or(KeyProviderError::Unavailable)?
-            .current_key()
+            .current_key(field)
     }
 
-    fn key(&self, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
+    fn key(&self, field: FieldId, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
         self.snapshot
             .as_ref()
             .ok_or(KeyProviderError::Unavailable)?
-            .key(id)
+            .key(field, id)
     }
 }
 
@@ -123,6 +123,7 @@ fn main() -> Result<(), cryptbox::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cryptbox::Field;
 
     #[test]
     fn custom_secret_codec_round_trips_without_consuming_the_source() -> Result<(), cryptbox::Error>
@@ -156,10 +157,13 @@ mod tests {
         let reader = CachedEncryptionKeys {
             snapshot: Some(LocalEncryptionKeyring::new(current.clone(), [old.clone()])?),
         };
-        assert_eq!(reader.current_key()?.id(), current.id());
-        assert_eq!(reader.key(old.id())?.unwrap().id(), old.id());
-        assert_eq!(reader.key(current.id())?.unwrap().id(), current.id());
-        assert!(reader.key(unknown)?.is_none());
+        assert_eq!(reader.current_key(Handle::ID)?.id(), current.id());
+        assert_eq!(reader.key(Handle::ID, old.id())?.unwrap().id(), old.id());
+        assert_eq!(
+            reader.key(Handle::ID, current.id())?.unwrap().id(),
+            current.id()
+        );
+        assert!(reader.key(Handle::ID, unknown)?.is_none());
         assert_eq!(
             ciphertext
                 .decrypt_with(&reader)?
@@ -176,11 +180,11 @@ mod tests {
         );
         let unavailable = CachedEncryptionKeys { snapshot: None };
         assert_eq!(
-            unavailable.current_key().unwrap_err(),
+            unavailable.current_key(Handle::ID).unwrap_err(),
             KeyProviderError::Unavailable
         );
         assert_eq!(
-            unavailable.key(old.id()).unwrap_err(),
+            unavailable.key(Handle::ID, old.id()).unwrap_err(),
             KeyProviderError::Unavailable
         );
         assert_eq!(

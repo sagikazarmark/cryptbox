@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt, sync::Arc, sync::OnceLock};
 use base64::Engine as _;
 use zeroize::Zeroizing;
 
-use crate::{Error, IndexKeyId, KeyId, KeyProviderError};
+use crate::{Error, FieldId, IndexKeyId, KeyId, KeyProviderError};
 
 #[derive(Clone)]
 struct KeyMaterial<Id> {
@@ -243,6 +243,12 @@ fn initialize_key_material<Id>(
 /// ciphertext or recovery artifacts need it; promotion alone does not rewrite data.
 /// Returned key clones share ownership and can outlive the provider snapshot.
 ///
+/// Every call names the [`FieldId`] it acts for. A provider that serves every
+/// field, such as [`LocalEncryptionKeyring`], may ignore it. A provider that
+/// serves only some fields must return [`KeyProviderError::UnroutedField`] for
+/// the others rather than substitute keys. Use [`Router`](crate::Router) to
+/// assign fields to providers.
+///
 /// See the [custom-profile example] and [ownership reference].
 ///
 #[doc = concat!(
@@ -250,14 +256,15 @@ fn initialize_key_material<Id>(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait EncryptionKeyProvider: Send + Sync {
-    /// Returns the sole key used for new encryption.
+    /// Returns the sole key used for new encryption of `field`.
     ///
     /// # Errors
     ///
-    /// Returns an error when local key material is unavailable.
-    fn current_key(&self) -> Result<EncryptionKey, KeyProviderError>;
+    /// Returns an error when local key material is unavailable, or when this
+    /// provider does not serve `field`.
+    fn current_key(&self, field: FieldId) -> Result<EncryptionKey, KeyProviderError>;
 
-    /// Resolves exactly one key generation for decryption.
+    /// Resolves exactly one key generation for decrypting `field`.
     ///
     /// Return `Ok(Some(key))` only if `key.id() == id`; return `Ok(None)` when a
     /// healthy provider does not know that ID. An unavailable provider must return
@@ -265,8 +272,9 @@ pub trait EncryptionKeyProvider: Send + Sync {
     ///
     /// # Errors
     ///
-    /// Returns an error when local key material is unavailable.
-    fn key(&self, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError>;
+    /// Returns an error when local key material is unavailable, or when this
+    /// provider does not serve `field`.
+    fn key(&self, field: FieldId, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError>;
 }
 
 /// Resolves current and historical root blind-index keys synchronously.
@@ -287,6 +295,10 @@ pub trait EncryptionKeyProvider: Send + Sync {
 /// Retention must account for recovery artifacts as well as live data. Returned
 /// key clones share ownership and may outlive the provider snapshot.
 ///
+/// Every call names the [`FieldId`] it acts for. The field argument follows the
+/// same rules as for [`EncryptionKeyProvider`]: ignore it when serving every
+/// field, and return [`KeyProviderError::UnroutedField`] for fields not served.
+///
 /// See the [custom-profile example] and [ownership reference].
 ///
 #[doc = concat!(
@@ -294,34 +306,71 @@ pub trait EncryptionKeyProvider: Send + Sync {
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 pub trait BlindIndexKeyProvider: Send + Sync {
-    /// Returns the sole key used for new stored indexes.
+    /// Returns the sole key used for new stored indexes of `field`.
     ///
     /// # Errors
     ///
-    /// Returns an error when local key material is unavailable.
-    fn current_key(&self) -> Result<BlindIndexKey, KeyProviderError>;
+    /// Returns an error when local key material is unavailable, or when this
+    /// provider does not serve `field`.
+    fn current_key(&self, field: FieldId) -> Result<BlindIndexKey, KeyProviderError>;
 
-    /// Resolves exactly one index-key generation.
+    /// Resolves exactly one index-key generation for `field`.
     ///
     /// Return `Ok(Some(key))` only if `key.id() == id`, `Ok(None)` for an unknown
     /// ID in a healthy provider, and an error when local resolution is unavailable.
     ///
     /// # Errors
     ///
-    /// Returns an error when local key material is unavailable.
-    fn key(&self, id: IndexKeyId) -> Result<Option<BlindIndexKey>, KeyProviderError>;
+    /// Returns an error when local key material is unavailable, or when this
+    /// provider does not serve `field`.
+    fn key(
+        &self,
+        field: FieldId,
+        id: IndexKeyId,
+    ) -> Result<Option<BlindIndexKey>, KeyProviderError>;
 
-    /// Returns the current key first, followed by every other readable key once.
+    /// Returns the current key for `field` first, followed by every other
+    /// readable key once.
     ///
     /// # Errors
     ///
-    /// Returns an error when local key material is unavailable.
-    fn readable_keys(&self) -> Result<Vec<BlindIndexKey>, KeyProviderError>;
+    /// Returns an error when local key material is unavailable, or when this
+    /// provider does not serve `field`.
+    fn readable_keys(&self, field: FieldId) -> Result<Vec<BlindIndexKey>, KeyProviderError>;
+}
+
+impl<P: EncryptionKeyProvider + ?Sized> EncryptionKeyProvider for Arc<P> {
+    fn current_key(&self, field: FieldId) -> Result<EncryptionKey, KeyProviderError> {
+        (**self).current_key(field)
+    }
+
+    fn key(&self, field: FieldId, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
+        (**self).key(field, id)
+    }
+}
+
+impl<P: BlindIndexKeyProvider + ?Sized> BlindIndexKeyProvider for Arc<P> {
+    fn current_key(&self, field: FieldId) -> Result<BlindIndexKey, KeyProviderError> {
+        (**self).current_key(field)
+    }
+
+    fn key(
+        &self,
+        field: FieldId,
+        id: IndexKeyId,
+    ) -> Result<Option<BlindIndexKey>, KeyProviderError> {
+        (**self).key(field, id)
+    }
+
+    fn readable_keys(&self, field: FieldId) -> Result<Vec<BlindIndexKey>, KeyProviderError> {
+        (**self).readable_keys(field)
+    }
 }
 
 /// An in-memory current-plus-historical encryption keyring.
 ///
 /// New encryption uses `current`; decryption can resolve every retained key.
+/// The keyring serves every field alike.
 /// Keep historical keys readable until all ciphertext using them has been
 /// rewritten. See the complete [key-rotation example] and [maintenance sweep
 /// example].
@@ -359,11 +408,11 @@ impl LocalEncryptionKeyring {
 }
 
 impl EncryptionKeyProvider for LocalEncryptionKeyring {
-    fn current_key(&self) -> Result<EncryptionKey, KeyProviderError> {
+    fn current_key(&self, _: FieldId) -> Result<EncryptionKey, KeyProviderError> {
         Ok(self.current.clone())
     }
 
-    fn key(&self, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
+    fn key(&self, _: FieldId, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
         Ok(self.keys.get(&id).cloned())
     }
 }
@@ -371,7 +420,8 @@ impl EncryptionKeyProvider for LocalEncryptionKeyring {
 /// An in-memory current-plus-historical blind-index keyring.
 ///
 /// New stored indexes use `current`. During rotation, query with probes derived
-/// from every retained key until old indexes have been rewritten. See the
+/// from every retained key until old indexes have been rewritten. The keyring
+/// serves every field alike. See the
 /// complete [blind-index example] and [maintenance sweep example].
 ///
 #[doc = concat!(
@@ -407,15 +457,15 @@ impl LocalBlindIndexKeyring {
 }
 
 impl BlindIndexKeyProvider for LocalBlindIndexKeyring {
-    fn current_key(&self) -> Result<BlindIndexKey, KeyProviderError> {
+    fn current_key(&self, _: FieldId) -> Result<BlindIndexKey, KeyProviderError> {
         Ok(self.current.clone())
     }
 
-    fn key(&self, id: IndexKeyId) -> Result<Option<BlindIndexKey>, KeyProviderError> {
+    fn key(&self, _: FieldId, id: IndexKeyId) -> Result<Option<BlindIndexKey>, KeyProviderError> {
         Ok(self.keys.get(&id).cloned())
     }
 
-    fn readable_keys(&self) -> Result<Vec<BlindIndexKey>, KeyProviderError> {
+    fn readable_keys(&self, _: FieldId) -> Result<Vec<BlindIndexKey>, KeyProviderError> {
         let mut keys = Vec::with_capacity(self.keys.len());
         keys.push(self.current.clone());
         keys.extend(

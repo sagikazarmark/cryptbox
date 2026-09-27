@@ -41,7 +41,8 @@ An immutable pairing of a generation identifier and root key material. Encryptio
 and blind-index generations are separate roles with independently generated keys.
 
 **Key provider**:
-A source of current and readable key generations for one key role.
+A source of current and readable key generations for one key role. Every request
+names the field it serves; a provider that serves all fields alike may ignore it.
 
 **Migration-state verification**:
 Inspection of stored structure and generation convergence. It is distinct from
@@ -69,6 +70,14 @@ A generation available for decryption or blind-index probing, including the
 current generation and any staged or retained generations. A readable generation
 may be staged before first use.
 <!-- Agent guidance: avoid “old key”; a readable generation may be staged before first use. -->
+
+**Route**:
+The assignment of a field ID to the key provider that protects it. Routes are
+deployment configuration, not persistent schema: the envelope records the key
+ID, so a field can move to another provider that resolves the same generations.
+A strict router rejects unrouted fields; a fallback router serves them from a
+default provider and reports that it does.
+<!-- Agent guidance: avoid “falls back” for strict routers; they reject unrouted fields. -->
 
 **Suite**:
 A complete encryption construction identified by a suite ID, specifying key

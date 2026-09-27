@@ -39,7 +39,7 @@ before persisting data.
 | --- | --- |
 | [Codec](https://docs.rs/cryptbox/latest/cryptbox/trait.Codec.html) | Preserve encoding compatibility; return zeroizing encoded bytes and owned decoded values. Sanitize input-bearing errors and protect intermediate allocations. |
 | [BlindIndexSpec](https://docs.rs/cryptbox/latest/cryptbox/trait.BlindIndexSpec.html) | Use stable, deterministic equality rules for writes, all readable-generation probes and candidate comparison. Process only the indexed value; protect sensitive buffers. |
-| [EncryptionKeyProvider](https://docs.rs/cryptbox/latest/cryptbox/trait.EncryptionKeyProvider.html) | Resolve the exact ID. Return `Ok(None)` for an unknown ID in a healthy snapshot, `Unavailable` when resolution fails; never substitute the current key. Preserve immutable ID/material pairs. |
+| [EncryptionKeyProvider](https://docs.rs/cryptbox/latest/cryptbox/trait.EncryptionKeyProvider.html) | Resolve the exact ID. Return `Ok(None)` for an unknown ID in a healthy snapshot, `Unavailable` when resolution fails; never substitute the current key. Preserve immutable ID/material pairs. Every call names its field: ignore it when serving every field, or return `UnroutedField` for fields you do not serve. |
 | [BlindIndexKeyProvider](https://docs.rs/cryptbox/latest/cryptbox/trait.BlindIndexKeyProvider.html) | Also enumerate the current generation first, then every other readable generation once. Provision index roots independently from encryption roots. |
 
 Preallocate before copying sensitive bytes: `Zeroizing<Vec<u8>>` wipes its current

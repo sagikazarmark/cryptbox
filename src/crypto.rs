@@ -111,13 +111,14 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
 ///
 /// # Errors
 ///
-/// Returns an error for unavailable keys, failed OS randomness, or messages
-/// longer than the active suite's 274,877,906,880-byte limit.
+/// Returns an error for unavailable keys, an unrouted field, failed OS
+/// randomness, or messages longer than the active suite's 274,877,906,880-byte
+/// limit.
 pub fn encrypt<F: Field>(
     plaintext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Vec<u8>, Error> {
-    let key = keys.current_key()?;
+    let key = keys.current_key(F::ID)?;
     let suite = active_suite();
     let header = envelope_header(suite.id(), key.id());
 
@@ -133,7 +134,8 @@ pub fn encrypt<F: Field>(
 ///
 /// # Errors
 ///
-/// Returns a structured envelope, key-provider, unknown-key, or authentication
+/// Returns a structured envelope, key-provider (including an unrouted field),
+/// unknown-key, or authentication
 /// error. A different field and modified ciphertext both report authentication
 /// failure.
 pub fn decrypt<F: Field>(
@@ -142,14 +144,14 @@ pub fn decrypt<F: Field>(
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
     let parsed = parse_envelope(ciphertext)?;
     let key = keys
-        .key(parsed.info.key_id)?
+        .key(F::ID, parsed.info.key_id)?
         .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id))?;
     let domain = BindingDomain::field::<F>();
 
     registered_suite(parsed.info.suite_id)?.open(parsed.header, parsed.suite_payload, &domain, &key)
 }
 
-/// Reports whether an envelope does not use the active suite or current key.
+/// Reports whether an envelope does not use the active suite or field `F`'s current key.
 ///
 /// This reads unauthenticated metadata and does not decrypt the payload.
 /// A `false` result means only that the parsed suite and key IDs are current,
@@ -157,14 +159,14 @@ pub fn decrypt<F: Field>(
 ///
 /// # Errors
 ///
-/// Returns an error for malformed or unsupported envelopes, or unavailable
-/// providers.
-pub fn needs_reencryption(
+/// Returns an error for malformed or unsupported envelopes, unavailable
+/// providers, or an unrouted field.
+pub fn needs_reencryption<F: Field>(
     ciphertext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<bool, Error> {
     let info = inspect_ciphertext(ciphertext)?;
-    let current = keys.current_key()?;
+    let current = keys.current_key(F::ID)?;
 
     Ok(info.suite_id != active_suite().id() || info.key_id != current.id())
 }

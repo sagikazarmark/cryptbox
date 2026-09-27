@@ -130,14 +130,14 @@ fn rotation_preserves_reads_and_reencryption_uses_the_current_key() {
             .as_slice(),
         b"rotate me"
     );
-    assert!(needs_reencryption(&ciphertext, &rotated).unwrap());
+    assert!(needs_reencryption::<EmailField>(&ciphertext, &rotated).unwrap());
 
     let rewritten = reencrypt::<EmailField>(&ciphertext, &rotated).unwrap();
     assert_eq!(
         inspect_ciphertext(&rewritten).unwrap().key_id(),
         CURRENT_KEY_ID
     );
-    assert!(!needs_reencryption(&rewritten, &rotated).unwrap());
+    assert!(!needs_reencryption::<EmailField>(&rewritten, &rotated).unwrap());
 }
 
 struct EmailProfile;
@@ -212,5 +212,8 @@ fn keyrings_reject_duplicate_generation_ids() {
 fn providers_return_the_configured_current_generation() {
     let keys = keyring(CURRENT_KEY_ID, 37);
 
-    assert_eq!(keys.current_key().unwrap().id(), CURRENT_KEY_ID);
+    assert_eq!(
+        keys.current_key(EmailField::ID).unwrap().id(),
+        CURRENT_KEY_ID
+    );
 }

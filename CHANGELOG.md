@@ -37,6 +37,18 @@
   | `value.into()` into `Encrypted` | `Encrypted::new(value)` |
   | `encrypt::<FieldBound<F>>(bytes, &(), &keys)` | `encrypt::<F>(bytes, &keys)` |
 
+- **Breaking:** key providers receive the field they serve.
+  `EncryptionKeyProvider::current_key(field)` and `key(field, id)`, and the
+  same for `BlindIndexKeyProvider`, including `readable_keys(field)`. The local
+  keyrings ignore the field. `needs_reencryption` takes the field as a type
+  parameter: `needs_reencryption::<F>(bytes, keys)`.
+- Add `Router`, a key provider that routes fields to providers by field ID for
+  both encryption and blind-index roles. `Router::strict()` rejects unrouted
+  fields with `Error::UnroutedField`; `Router::new(default)` falls back and
+  reports fallback fields through `Router::falls_back`. A second route for one
+  field ID fails with `Error::DuplicateRoute`. `Arc<P>` now implements both
+  provider traits, so one router can hold providers of different types.
+
 - Add the opt-in `serde` feature for explicit stored-byte serialization of
   ciphertext and blind indexes (not included in the published 0.5.0 crate).
 

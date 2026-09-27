@@ -1,4 +1,4 @@
-use crate::{IndexId, IndexKeyId, KeyId, SuiteId};
+use crate::{FieldId, IndexId, IndexKeyId, KeyId, SuiteId};
 
 /// The non-sensitive category of a codec failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,6 +73,10 @@ pub enum KeyProviderError {
     /// The process-global provider has not been installed.
     #[error("key provider is not initialized")]
     NotInitialized,
+    /// The provider does not serve this field, such as a strict router
+    /// without a route for it.
+    #[error("no key provider is routed for field {0}")]
+    UnroutedField(FieldId),
 }
 
 /// An error returned by `CryptBox` operations.
@@ -112,6 +116,13 @@ pub enum Error {
     /// A required process-global provider was not installed.
     #[error("key provider is not initialized")]
     KeyProviderNotInitialized,
+    /// The key provider does not serve the field, such as a strict router
+    /// without a route for it.
+    #[error("no key provider is routed for field {0}")]
+    UnroutedField(FieldId),
+    /// A router was given more than one route for the same field ID.
+    #[error("duplicate route for field {0}")]
+    DuplicateRoute(FieldId),
     /// Process-global providers were already installed.
     #[error("key providers are already initialized")]
     KeyProviderAlreadyInitialized,
@@ -173,6 +184,7 @@ impl From<KeyProviderError> for Error {
         match error {
             KeyProviderError::Unavailable => Self::KeyProviderUnavailable,
             KeyProviderError::NotInitialized => Self::KeyProviderNotInitialized,
+            KeyProviderError::UnroutedField(field) => Self::UnroutedField(field),
         }
     }
 }

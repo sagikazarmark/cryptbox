@@ -6,8 +6,8 @@ use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexMetadata,
     BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey, EncryptionKeyProvider, EncryptionProfile,
     Field, GlobalKeyContext, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Utf8, blind_index_probes, derive_blind_index, field_id, index_id,
-    index_key_id, inspect_blind_index, key_id,
+    LocalEncryptionKeyring, Router, Utf8, blind_index_probes, derive_blind_index, field_id,
+    index_id, index_key_id, inspect_blind_index, key_id,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -91,9 +91,12 @@ async fn run() -> Result<(), Box<dyn Error>> {
     }
 
     // Deploy these current-plus-historical keyrings to every writer before sweeping.
-    let rotated_keys = LocalEncryptionKeyring::new(current_key.clone(), [old_key])?;
-    let rotated_index_keys =
-        LocalBlindIndexKeyring::new(current_index_key.clone(), [old_index_key])?;
+    let rotated_keys = Router::strict()
+        .route::<UserEmail>(LocalEncryptionKeyring::new(current_key.clone(), [old_key])?)?;
+    let rotated_index_keys = Router::strict().route::<UserEmail>(LocalBlindIndexKeyring::new(
+        current_index_key.clone(),
+        [old_index_key],
+    )?)?;
     insert_email(
         &mut connection,
         4,
@@ -129,8 +132,10 @@ async fn run() -> Result<(), Box<dyn Error>> {
     // This verifies live structure/generations, not authentication or index consistency.
     // Online removal is separate from retaining recovery keys: backups and other
     // stores may still require historical keys. A clean pass does not justify destruction.
-    let current_keys = LocalEncryptionKeyring::new(current_key, [])?;
-    let current_index_keys = LocalBlindIndexKeyring::new(current_index_key, [])?;
+    let current_keys =
+        Router::strict().route::<UserEmail>(LocalEncryptionKeyring::new(current_key, [])?)?;
+    let current_index_keys =
+        Router::strict().route::<UserEmail>(LocalBlindIndexKeyring::new(current_index_key, [])?)?;
     assert!(verify_sweep(&mut connection, &current_keys, &current_index_keys).await?);
     assert_eq!(
         blind_index_probes::<EmailLookup, String, UserEmail>(
@@ -183,7 +188,7 @@ async fn sweep_batch(
     keys: &dyn EncryptionKeyProvider,
     index_keys: &dyn BlindIndexKeyProvider,
 ) -> Result<Option<i64>, Box<dyn Error>> {
-    let current_index_key_id = index_keys.current_key()?.id();
+    let current_index_key_id = index_keys.current_key(UserEmail::ID)?.id();
     let after_id: Option<i64> =
         sqlx::query_scalar("SELECT last_id FROM migration_progress WHERE name = ?")
             .bind(MIGRATION_NAME)
@@ -265,7 +270,7 @@ async fn verify_sweep(
     keys: &dyn EncryptionKeyProvider,
     index_keys: &dyn BlindIndexKeyProvider,
 ) -> Result<bool, Box<dyn Error>> {
-    let current_index_key_id = index_keys.current_key()?.id();
+    let current_index_key_id = index_keys.current_key(UserEmail::ID)?.id();
     let mut after_id = None;
     let mut current = true;
     loop {

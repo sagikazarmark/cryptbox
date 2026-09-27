@@ -192,7 +192,7 @@ where
             Err(error) => return Err(error),
         }
 
-        if needs_reencryption(ciphertext, self.keys)? {
+        if needs_reencryption::<Profile>(ciphertext, self.keys)? {
             return Ok(RowState::Stale);
         }
 
@@ -226,7 +226,7 @@ where
             Err(error) => return Err(error),
         }
 
-        let envelope_is_stale = needs_reencryption(ciphertext, self.keys)?;
+        let envelope_is_stale = needs_reencryption::<Profile>(ciphertext, self.keys)?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
         for (column, bytes) in self.indexes.iter().zip(indexes) {
             stale_columns.push(column.is_stale(bytes)?);
@@ -308,7 +308,7 @@ where
     Profile: EncryptionProfile,
 {
     fn is_stale(&self, bytes: &[u8]) -> Result<bool, Error> {
-        Ok(inspect_blind_index(bytes)?.index_key_id() != self.keys.current_key()?.id())
+        Ok(inspect_blind_index(bytes)?.index_key_id() != self.keys.current_key(Profile::ID)?.id())
     }
 }
 

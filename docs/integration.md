@@ -71,8 +71,18 @@ Try [explicit SQLite storage](../examples/sqlite/README.md), the
 
 A provider is the source of current and readable key generations. A **key
 context** selects the providers used by context-less operations and automatic
-adapters. The field ID, in contrast, determines where a value belongs and never
-supplies keys.
+adapters. The field ID determines where a value belongs; it never supplies key
+material, but every provider request names the field it serves.
+
+A provider that serves every field alike, such as the local keyrings, ignores
+the field. To protect fields with different key hierarchies, route them with
+`Router`: `Router::strict().route::<Iban>(payments)?.route::<UserEmail>(general)?`.
+A strict router rejects unrouted fields with `Error::UnroutedField` instead of
+substituting another provider's keys. `Router::new(default)` serves unrouted
+fields from `default`, and `Router::falls_back` reports which fields rely on it.
+A second route for the same field ID is rejected. Routes are deployment
+configuration: the envelope records the key ID, so a field can move to another
+provider that resolves the same generations.
 
 Explicit `encrypt_with`, `decrypt_with`, and `prepare_with` calls use the provider
 passed by the caller. This allows each test or application component to own its

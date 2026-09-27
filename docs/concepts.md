@@ -76,6 +76,10 @@ The provider selects a **current generation** for new encryption and resolves
 current generation changes future writes; existing ciphertext still needs its
 original generation. This is the foundation of key rotation.
 
+Every provider request names the field it serves, so a **router** can assign
+fields to different providers, such as a payments key hierarchy for an IBAN and a
+general one for an email.
+
 The quickstart passes a local provider explicitly as `&keys`, so no global
 installation is needed. For provider and key-context choices, see
 [integration design](integration.md#key-providers-and-key-contexts).
