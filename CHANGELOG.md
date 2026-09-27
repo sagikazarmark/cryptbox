@@ -225,8 +225,9 @@
   blind indexes, `readable()`, and reject duplicate key IDs. `Keys` pairs them
   in the public fields `encryption` and `blind_indexes`. Operations take any
   `EncryptionKeySource` or `BlindIndexKeySource`, which receives the field (or
-  index) and the binding's `KeyScope`; keyrings and `Keys` return themselves,
-  and `&T` and `Arc<T>` are sources too, so an application can choose keyrings by
+  index) and the binding's `KeyScope` and returns a keyring by value; keyrings
+  and `Keys` return a clone of themselves, which shares their keys, and `&T` and
+  `Arc<T>` are sources too, so an application can choose keyrings by
   field or scope in its own source. Key IDs must be generated UUIDs, never
   shared across keyrings. `KeyContext::encryption_keys` is replaced by
   `KeyContext::keys`, which returns `&'static Keys`. The schema manifest no
@@ -236,7 +237,7 @@
   | --- | --- |
   | `LocalEncryptionKeyring::new(current, previous)?` | `EncryptionKeyring::new(current, previous)?` |
   | `Router::strict().route::<Iban>(payments)?.route::<Email>(general)?` | pass `&payments` or `&general` to each call, or implement `EncryptionKeySource` |
-  | `impl EncryptionKeyProvider for MyKms { fn current_key(…); fn key(…) }` | `impl EncryptionKeySource for MyKms { fn encryption_keyring(&self, field, scope) -> Result<&EncryptionKeyring, Error> }` |
+  | `impl EncryptionKeyProvider for MyKms { fn current_key(…); fn key(…) }` | `impl EncryptionKeySource for MyKms { fn encryption_keyring(&self, field, scope) -> Result<EncryptionKeyring, Error> }` |
   | `fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, Error>` | `fn keys() -> Result<&'static Keys, Error>` |
   | `keys::install(keys)?` into `cryptbox::Error` | `keys::install(keys)?` into an error that wraps `keys::AlreadyInstalled` |
 - `Json` decodes every float to exactly the value that was encoded

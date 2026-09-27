@@ -1,6 +1,8 @@
 //! Custom field for an application-defined ASCII handle, with explicit ownership.
 
 // ANCHOR: custom-field
+use std::sync::{PoisonError, RwLock};
+
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
     CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId,
@@ -78,22 +80,43 @@ impl BlindIndexSpec for HandleEquality {
     }
 }
 
-// An application-owned snapshot. None means loading/refresh failed, not "unknown ID".
+// An application-owned snapshot that a background task refreshes from the KMS.
+// None means loading/refresh failed, not "unknown ID".
 struct CachedEncryptionKeys {
-    snapshot: Option<EncryptionKeyring>,
+    snapshot: RwLock<Option<EncryptionKeyring>>,
+}
+
+impl CachedEncryptionKeys {
+    fn new(snapshot: Option<EncryptionKeyring>) -> Self {
+        Self {
+            snapshot: RwLock::new(snapshot),
+        }
+    }
+
+    // Operations already in flight keep the keyring they were handed.
+    fn refresh(&self, keyring: EncryptionKeyring) {
+        *self
+            .snapshot
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = Some(keyring);
+    }
 }
 
 impl EncryptionKeySource for CachedEncryptionKeys {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<&EncryptionKeyring, Error> {
-        self.snapshot.as_ref().ok_or(Error::KeysUnavailable)
+    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+        // Cloning shares the keys; it does not copy key material.
+        self.snapshot
+            .read()
+            .map_err(|_| Error::KeysUnavailable)?
+            .clone()
+            .ok_or(Error::KeysUnavailable)
     }
 }
 
 fn main() -> Result<(), cryptbox::Error> {
     // Ephemeral demonstration only. Load stable key/ID pairs for durable data.
-    let keys = CachedEncryptionKeys {
-        snapshot: Some(EncryptionKeyring::new(EncryptionKey::generate()?, [])?),
-    };
+    let old_key = EncryptionKey::generate()?;
+    let keys = CachedEncryptionKeys::new(Some(EncryptionKeyring::new(old_key.clone(), [])?));
     let old_index_key = BlindIndexKey::generate()?; // Independent of encryption keys.
     let index_writer = BlindIndexKeyring::new(old_index_key.clone(), [])?;
     let value = Secret::new("Alice-7".to_owned());
@@ -103,6 +126,12 @@ fn main() -> Result<(), cryptbox::Error> {
     let stored_index = prepared.index::<HandleEquality>()?.as_bytes().to_vec();
     // These two representations belong in one atomic storage write.
     drop(prepared); // Releases the borrow, not the source plaintext.
+
+    // A KMS refresh promotes a new encryption key and keeps the old one readable.
+    keys.refresh(EncryptionKeyring::new(
+        EncryptionKey::generate()?,
+        [old_key],
+    )?);
 
     // After index-key promotion, query every readable generation, including old data.
     let index_reader = BlindIndexKeyring::new(BlindIndexKey::generate()?, [old_index_key])?;
@@ -151,23 +180,22 @@ mod tests {
         let writer = EncryptionKeyring::new(old.clone(), [])?;
         let value = Secret::new("Alice-7".to_owned());
         let sealed = Sealed::<Handle>::seal(&value, (), &writer)?;
-        let reader = CachedEncryptionKeys {
-            snapshot: Some(EncryptionKeyring::new(current.clone(), [old.clone()])?),
-        };
+        let reader = CachedEncryptionKeys::new(Some(EncryptionKeyring::new(
+            current.clone(),
+            [old.clone()],
+        )?));
         let snapshot = reader.encryption_keyring(Handle::ID, &KeyScope::of(&FieldOnly)?)?;
         assert_eq!(snapshot.current().id(), current.id());
         assert_eq!(snapshot.get(old.id()).unwrap().id(), old.id());
         assert_eq!(snapshot.get(current.id()).unwrap().id(), current.id());
         assert!(snapshot.get(unknown).is_none());
         assert_eq!(sealed.open((), &reader)?.expose_secret(), "Alice-7");
-        let retired = CachedEncryptionKeys {
-            snapshot: Some(EncryptionKeyring::new(current, [])?),
-        };
+        let retired = CachedEncryptionKeys::new(Some(EncryptionKeyring::new(current, [])?));
         assert_eq!(
             sealed.open((), &retired).unwrap_err(),
             cryptbox::Error::UnknownEncryptionKey(old.id())
         );
-        let unavailable = CachedEncryptionKeys { snapshot: None };
+        let unavailable = CachedEncryptionKeys::new(None);
         assert_eq!(
             Sealed::<Handle>::seal(&value, (), &unavailable).unwrap_err(),
             Error::KeysUnavailable
@@ -176,6 +204,9 @@ mod tests {
             sealed.open((), &unavailable).unwrap_err(),
             Error::KeysUnavailable
         );
+        // A later refresh recovers without restarting.
+        unavailable.refresh(EncryptionKeyring::new(old, [])?);
+        assert_eq!(sealed.open((), &unavailable)?.expose_secret(), "Alice-7");
         Ok(())
     }
 

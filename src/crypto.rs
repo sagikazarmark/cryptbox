@@ -168,7 +168,7 @@ pub(crate) fn encrypt_bound(
     plaintext: &[u8],
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Vec<u8>, Error> {
-    let key = keyring(keys, domain)?.current();
+    let key = keyring(keys, domain)?.current().clone();
     let suite = active_suite();
     let header = envelope_header(
         suite.id(),
@@ -178,8 +178,8 @@ pub(crate) fn encrypt_bound(
     );
 
     match padding.pad(plaintext)? {
-        Some(padded) => suite.seal(&header, &padded, domain, key),
-        None => suite.seal(&header, plaintext, domain, key),
+        Some(padded) => suite.seal(&header, &padded, domain, &key),
+        None => suite.seal(&header, plaintext, domain, &key),
     }
 }
 
@@ -227,12 +227,13 @@ pub(crate) fn decrypt_bound(
     check_shape(parsed.info, domain)?;
     let key = keyring(keys, domain)?
         .get(parsed.info.key_id)
+        .cloned()
         .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id))?;
     let plaintext = registered_suite(parsed.info.suite_id)?.open(
         parsed.header,
         parsed.suite_payload,
         domain,
-        key,
+        &key,
     )?;
 
     // Only the authenticated flag decides unpadding; the current policy must not,
@@ -246,10 +247,10 @@ pub(crate) fn decrypt_bound(
 }
 
 // Asks the source for the keyring of the domain's field and key scope.
-fn keyring<'k>(
-    keys: &'k (impl EncryptionKeySource + ?Sized),
+fn keyring(
+    keys: &(impl EncryptionKeySource + ?Sized),
     domain: &BindingDomain,
-) -> Result<&'k EncryptionKeyring, Error> {
+) -> Result<EncryptionKeyring, Error> {
     keys.encryption_keyring(domain.field_id(), domain.key_scope())
 }
 
@@ -297,7 +298,7 @@ pub(crate) fn needs_reencryption_bound(
 ) -> Result<bool, Error> {
     let info = inspect_ciphertext(ciphertext)?;
     check_shape(info, domain)?;
-    let current = keyring(keys, domain)?.current();
+    let current = keyring(keys, domain)?.current().clone();
 
     Ok(info.format_version != FORMAT_VERSION
         || info.suite_id != active_suite().id()
@@ -829,7 +830,7 @@ mod tests {
                 &self,
                 _: FieldId,
                 _: &KeyScope,
-            ) -> Result<&EncryptionKeyring, Error> {
+            ) -> Result<EncryptionKeyring, Error> {
                 Err(Error::KeysUnavailable)
             }
         }

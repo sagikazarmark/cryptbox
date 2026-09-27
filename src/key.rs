@@ -231,6 +231,8 @@ fn initialize_key_material<Id>(
 /// The current encryption key plus the previous keys that still open stored
 /// values.
 ///
+/// Cloning a keyring is cheap: clones share the same keys.
+///
 /// New values are sealed with the current key. Opening looks up exactly the key
 /// ID that the envelope names and fails with [`Error::UnknownEncryptionKey`]
 /// when this keyring does not hold it; it never substitutes the current key.
@@ -251,11 +253,8 @@ fn initialize_key_material<Id>(
     "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs\n",
     "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0006-keys-are-passed-in.md#consequences",
 )]
-#[derive(Clone, Debug)]
-pub struct EncryptionKeyring {
-    current: EncryptionKey,
-    keys: BTreeMap<KeyId, EncryptionKey>,
-}
+#[derive(Clone)]
+pub struct EncryptionKeyring(Arc<Ring<KeyId, EncryptionKey>>);
 
 impl EncryptionKeyring {
     /// Builds a keyring from the current key and the previous keys.
@@ -267,32 +266,38 @@ impl EncryptionKeyring {
         current: EncryptionKey,
         previous: impl IntoIterator<Item = EncryptionKey>,
     ) -> Result<Self, Error> {
-        let mut keys = BTreeMap::new();
-        keys.insert(current.id(), current.clone());
-        for key in previous {
-            if keys.insert(key.id(), key.clone()).is_some() {
-                return Err(Error::DuplicateEncryptionKey(key.id()));
-            }
-        }
-
-        Ok(Self { current, keys })
+        Ring::new(
+            current,
+            previous,
+            EncryptionKey::id,
+            Error::DuplicateEncryptionKey,
+        )
+        .map(|ring| Self(Arc::new(ring)))
     }
 
     /// Returns the key that seals new values.
     #[must_use]
-    pub const fn current(&self) -> &EncryptionKey {
-        &self.current
+    pub fn current(&self) -> &EncryptionKey {
+        &self.0.current
     }
 
     /// Returns the key with ID `id`, current or previous.
     #[must_use]
     pub fn get(&self, id: KeyId) -> Option<&EncryptionKey> {
-        self.keys.get(&id)
+        self.0.keys.get(&id)
+    }
+}
+
+impl fmt::Debug for EncryptionKeyring {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt("EncryptionKeyring", formatter)
     }
 }
 
 /// The current blind-index key plus the previous keys whose stored indexes are
 /// still queried.
+///
+/// Cloning a keyring is cheap: clones share the same keys.
 ///
 /// New stored indexes use the current key. During rotation, query with probes
 /// derived from every key in the keyring until old indexes have been rewritten.
@@ -307,11 +312,8 @@ impl EncryptionKeyring {
     "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs\n",
     "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0006-keys-are-passed-in.md#consequences",
 )]
-#[derive(Clone, Debug)]
-pub struct BlindIndexKeyring {
-    current: BlindIndexKey,
-    keys: BTreeMap<IndexKeyId, BlindIndexKey>,
-}
+#[derive(Clone)]
+pub struct BlindIndexKeyring(Arc<Ring<IndexKeyId, BlindIndexKey>>);
 
 impl BlindIndexKeyring {
     /// Builds a keyring from the current key and the previous keys.
@@ -323,36 +325,78 @@ impl BlindIndexKeyring {
         current: BlindIndexKey,
         previous: impl IntoIterator<Item = BlindIndexKey>,
     ) -> Result<Self, Error> {
-        let mut keys = BTreeMap::new();
-        keys.insert(current.id(), current.clone());
-        for key in previous {
-            if keys.insert(key.id(), key.clone()).is_some() {
-                return Err(Error::DuplicateBlindIndexKey(key.id()));
-            }
-        }
-
-        Ok(Self { current, keys })
+        Ring::new(
+            current,
+            previous,
+            BlindIndexKey::id,
+            Error::DuplicateBlindIndexKey,
+        )
+        .map(|ring| Self(Arc::new(ring)))
     }
 
     /// Returns the key that derives new stored indexes.
     #[must_use]
-    pub const fn current(&self) -> &BlindIndexKey {
-        &self.current
+    pub fn current(&self) -> &BlindIndexKey {
+        &self.0.current
     }
 
     /// Returns the key with ID `id`, current or previous.
     #[must_use]
     pub fn get(&self, id: IndexKeyId) -> Option<&BlindIndexKey> {
-        self.keys.get(&id)
+        self.0.keys.get(&id)
     }
 
     /// Returns the current key first, followed by every previous key once.
     pub fn readable(&self) -> impl Iterator<Item = &BlindIndexKey> {
-        std::iter::once(&self.current).chain(
-            self.keys
+        let current = self.current();
+        std::iter::once(current).chain(
+            self.0
+                .keys
                 .values()
-                .filter(|key| key.id() != self.current.id()),
+                .filter(move |key| key.id() != current.id()),
         )
+    }
+}
+
+impl fmt::Debug for BlindIndexKeyring {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt("BlindIndexKeyring", formatter)
+    }
+}
+
+// The shared contents of a keyring, so that cloning one is cheap.
+struct Ring<Id, Key> {
+    current: Key,
+    keys: BTreeMap<Id, Key>,
+}
+
+impl<Id: Ord + Copy, Key: Clone> Ring<Id, Key> {
+    fn new(
+        current: Key,
+        previous: impl IntoIterator<Item = Key>,
+        id_of: impl Fn(&Key) -> Id,
+        duplicate: impl FnOnce(Id) -> Error,
+    ) -> Result<Self, Error> {
+        let mut keys = BTreeMap::new();
+        keys.insert(id_of(&current), current.clone());
+        for key in previous {
+            let id = id_of(&key);
+            if keys.insert(id, key).is_some() {
+                return Err(duplicate(id));
+            }
+        }
+
+        Ok(Self { current, keys })
+    }
+}
+
+impl<Id: fmt::Debug, Key: fmt::Debug> Ring<Id, Key> {
+    fn fmt(&self, name: &str, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct(name)
+            .field("current", &self.current)
+            .field("keys", &self.keys)
+            .finish()
     }
 }
 
@@ -422,7 +466,9 @@ impl Keys {
 ///
 /// A source is synchronous. Load keys from a KMS and refresh them outside
 /// these calls, and fail closed with [`Error::KeysUnavailable`] when they are
-/// not loaded.
+/// not loaded. It returns the keyring by value: cloning a keyring shares its
+/// keys, so a source can hand out a keyring from behind a lock, a swapped
+/// snapshot, or a cache of per-scope keyrings.
 ///
 #[doc = concat!(
     "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0006-keys-are-passed-in.md#consequences",
@@ -437,7 +483,7 @@ pub trait EncryptionKeySource: Send + Sync {
         &self,
         field: FieldId,
         scope: &KeyScope,
-    ) -> Result<&EncryptionKeyring, Error>;
+    ) -> Result<EncryptionKeyring, Error>;
 }
 
 /// Supplies the blind-index keyring for each operation.
@@ -461,31 +507,31 @@ pub trait BlindIndexKeySource: Send + Sync {
         &self,
         index: IndexId,
         scope: &KeyScope,
-    ) -> Result<&BlindIndexKeyring, Error>;
+    ) -> Result<BlindIndexKeyring, Error>;
 }
 
 impl EncryptionKeySource for EncryptionKeyring {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<&EncryptionKeyring, Error> {
-        Ok(self)
+    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+        Ok(self.clone())
     }
 }
 
 impl BlindIndexKeySource for BlindIndexKeyring {
-    fn blind_index_keyring(&self, _: IndexId, _: &KeyScope) -> Result<&BlindIndexKeyring, Error> {
-        Ok(self)
+    fn blind_index_keyring(&self, _: IndexId, _: &KeyScope) -> Result<BlindIndexKeyring, Error> {
+        Ok(self.clone())
     }
 }
 
 impl EncryptionKeySource for Keys {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<&EncryptionKeyring, Error> {
-        Ok(&self.encryption)
+    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+        Ok(self.encryption.clone())
     }
 }
 
 impl BlindIndexKeySource for Keys {
-    fn blind_index_keyring(&self, _: IndexId, _: &KeyScope) -> Result<&BlindIndexKeyring, Error> {
+    fn blind_index_keyring(&self, _: IndexId, _: &KeyScope) -> Result<BlindIndexKeyring, Error> {
         self.blind_indexes
-            .as_ref()
+            .clone()
             .ok_or(Error::BlindIndexKeysNotConfigured)
     }
 }
@@ -495,7 +541,7 @@ impl<S: EncryptionKeySource + ?Sized> EncryptionKeySource for &S {
         &self,
         field: FieldId,
         scope: &KeyScope,
-    ) -> Result<&EncryptionKeyring, Error> {
+    ) -> Result<EncryptionKeyring, Error> {
         (**self).encryption_keyring(field, scope)
     }
 }
@@ -505,7 +551,7 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for &S {
         &self,
         index: IndexId,
         scope: &KeyScope,
-    ) -> Result<&BlindIndexKeyring, Error> {
+    ) -> Result<BlindIndexKeyring, Error> {
         (**self).blind_index_keyring(index, scope)
     }
 }
@@ -515,7 +561,7 @@ impl<S: EncryptionKeySource + ?Sized> EncryptionKeySource for Arc<S> {
         &self,
         field: FieldId,
         scope: &KeyScope,
-    ) -> Result<&EncryptionKeyring, Error> {
+    ) -> Result<EncryptionKeyring, Error> {
         (**self).encryption_keyring(field, scope)
     }
 }
@@ -525,7 +571,7 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
         &self,
         index: IndexId,
         scope: &KeyScope,
-    ) -> Result<&BlindIndexKeyring, Error> {
+    ) -> Result<BlindIndexKeyring, Error> {
         (**self).blind_index_keyring(index, scope)
     }
 }

@@ -4,6 +4,12 @@ status: accepted
 
 # Keys are passed in; choosing which keys is application code
 
+> Amended when implemented (#100). The provider traits are removed entirely, not
+> reduced to `current_key()` / `key(id)`: the keyrings are the only key types.
+> A source returns its keyring by value, and cloning a keyring shares its keys.
+> A borrowed keyring could not be handed out from behind a lock, a swapped
+> snapshot, or a lazily filled per-scope cache, which a routing source needs.
+
 `seal`, `open`, and the index operations take the keys to use directly. The crate
 ships concrete keyrings (`EncryptionKeyring`, `BlindIndexKeyring`, and the `Keys`
 pair). Each holds the current key plus previous keys, looked up by the key ID in

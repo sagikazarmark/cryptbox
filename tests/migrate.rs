@@ -1023,13 +1023,13 @@ fn assert_verification_aborts_without_keys(sweep: &Sweep<'_, UserEmail>) {
 struct UnloadedKeys;
 
 impl EncryptionKeySource for UnloadedKeys {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<&EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
         Err(Error::KeysUnavailable)
     }
 }
 
 impl BlindIndexKeySource for UnloadedKeys {
-    fn blind_index_keyring(&self, _: IndexId, _: &KeyScope) -> Result<&BlindIndexKeyring, Error> {
+    fn blind_index_keyring(&self, _: IndexId, _: &KeyScope) -> Result<BlindIndexKeyring, Error> {
         Err(Error::KeysUnavailable)
     }
 }

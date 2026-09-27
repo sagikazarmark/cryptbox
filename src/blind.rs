@@ -606,9 +606,9 @@ pub(crate) fn derive_value<Spec: BlindIndexSpec>(
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<BlindIndex<Spec>, Error> {
     let domain = index_domain::<Spec>();
-    let key = keyring::<Spec>(keys, &domain)?.current();
+    let key = keyring::<Spec>(keys, &domain)?.current().clone();
 
-    derive_value_with_key::<Spec>(value, &domain, key)
+    derive_value_with_key::<Spec>(value, &domain, &key)
 }
 
 /// Returns the ID of the key that derives new stored indexes of `Spec`.
@@ -653,8 +653,9 @@ fn check_consistency<Spec: BlindIndexSpec>(
     let id = stored.index_key_id();
     let key = keyring::<Spec>(keys, &domain)?
         .get(id)
+        .cloned()
         .ok_or(Error::UnknownBlindIndexKey(id))?;
-    let derived = derive_value_with_key::<Spec>(value, &domain, key)?;
+    let derived = derive_value_with_key::<Spec>(value, &domain, &key)?;
 
     // Both representations carry Spec::BITS, so their lengths always agree.
     Ok(derived.as_bytes().ct_eq(stored.as_bytes()).into())
@@ -666,10 +667,10 @@ fn index_domain<Spec: BlindIndexSpec>() -> BindingDomain {
 }
 
 // Asks the source for the keyring of the index in the domain's key scope.
-fn keyring<'k, Spec: BlindIndexSpec>(
-    keys: &'k (impl BlindIndexKeySource + ?Sized),
+fn keyring<Spec: BlindIndexSpec>(
+    keys: &(impl BlindIndexKeySource + ?Sized),
     domain: &BindingDomain,
-) -> Result<&'k BlindIndexKeyring, Error> {
+) -> Result<BlindIndexKeyring, Error> {
     keys.blind_index_keyring(Spec::ID, domain.key_scope())
 }
 

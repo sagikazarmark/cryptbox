@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use cryptbox::{
@@ -177,15 +177,11 @@ struct ByField {
 }
 
 impl EncryptionKeySource for ByField {
-    fn encryption_keyring(
-        &self,
-        field: FieldId,
-        _: &KeyScope,
-    ) -> Result<&EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, field: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
         Ok(if field == Iban::ID {
-            &self.payments
+            self.payments.clone()
         } else {
-            &self.general
+            self.general.clone()
         })
     }
 }
@@ -214,12 +210,8 @@ fn a_custom_source_chooses_keyrings_by_field() {
 struct ByTenant(HashMap<KeyScope, EncryptionKeyring>);
 
 impl EncryptionKeySource for ByTenant {
-    fn encryption_keyring(
-        &self,
-        _: FieldId,
-        scope: &KeyScope,
-    ) -> Result<&EncryptionKeyring, Error> {
-        self.0.get(scope).ok_or(Error::KeysUnavailable)
+    fn encryption_keyring(&self, _: FieldId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
+        self.0.get(scope).cloned().ok_or(Error::KeysUnavailable)
     }
 }
 
@@ -246,6 +238,61 @@ fn a_source_receives_the_key_scope_of_the_binding() {
     );
 }
 
+/// An application source that loads each tenant's keyring on first use, as
+/// from a KMS, and caches it behind a lock.
+struct LazyTenants {
+    cache: RwLock<HashMap<KeyScope, EncryptionKeyring>>,
+    loads: Mutex<usize>,
+}
+
+impl LazyTenants {
+    fn load(scope: &KeyScope) -> EncryptionKeyring {
+        let acme = KeyScope::of(&Tenant(TenantId::new(b"acme".to_vec()).unwrap())).unwrap();
+        if *scope == acme {
+            keyring(GENERAL_KEY_ID, 1)
+        } else {
+            keyring(PAYMENTS_KEY_ID, 2)
+        }
+    }
+}
+
+impl EncryptionKeySource for LazyTenants {
+    fn encryption_keyring(&self, _: FieldId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
+        if let Some(keyring) = self.cache.read().unwrap().get(scope) {
+            return Ok(keyring.clone());
+        }
+
+        *self.loads.lock().unwrap() += 1;
+        Ok(self
+            .cache
+            .write()
+            .unwrap()
+            .entry(scope.clone())
+            .or_insert_with(|| Self::load(scope))
+            .clone())
+    }
+}
+
+#[test]
+fn a_source_can_hand_out_keyrings_from_behind_a_lock() {
+    let acme = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
+    let globex = Tenant(TenantId::new(b"globex".to_vec()).unwrap());
+    let keys = LazyTenants {
+        cache: RwLock::default(),
+        loads: Mutex::default(),
+    };
+
+    let note = b"renewal due".to_vec();
+    let acme_note = Sealed::<TenantNote>::seal(&note, &acme, &keys).unwrap();
+    let globex_note = Sealed::<TenantNote>::seal(&note, &globex, &keys).unwrap();
+
+    assert_eq!(acme_note.key_id(), GENERAL_KEY_ID);
+    assert_eq!(globex_note.key_id(), PAYMENTS_KEY_ID);
+    assert_eq!(acme_note.open(&acme, &keys).unwrap(), note);
+    assert_eq!(globex_note.open(&globex, &keys).unwrap(), note);
+    assert_eq!(*keys.loads.lock().unwrap(), 2);
+}
+
 #[test]
 fn a_field_only_binding_passes_the_empty_key_scope() {
     struct SeenScopes(Mutex<Vec<KeyScope>>, EncryptionKeyring);
@@ -255,9 +302,9 @@ fn a_field_only_binding_passes_the_empty_key_scope() {
             &self,
             _: FieldId,
             scope: &KeyScope,
-        ) -> Result<&EncryptionKeyring, Error> {
+        ) -> Result<EncryptionKeyring, Error> {
             self.0.lock().unwrap().push(scope.clone());
-            Ok(&self.1)
+            Ok(self.1.clone())
         }
     }
 
@@ -278,11 +325,11 @@ impl BlindIndexKeySource for ByIndex {
         &self,
         index: IndexId,
         _: &KeyScope,
-    ) -> Result<&BlindIndexKeyring, Error> {
+    ) -> Result<BlindIndexKeyring, Error> {
         Ok(if index == IbanLookup::ID {
-            &self.payments
+            self.payments.clone()
         } else {
-            &self.general
+            self.general.clone()
         })
     }
 }
