@@ -231,6 +231,11 @@ where
     }
 
     fn decode(bytes: &[u8]) -> Result<T, CodecError> {
-        postcard::from_bytes(bytes).map_err(|_| CodecError::new(CodecErrorKind::Decoding))
+        // `from_bytes` ignores trailing bytes, so a value followed by anything
+        // else (such as padding that was never removed) would decode silently.
+        match postcard::take_from_bytes(bytes) {
+            Ok((value, [])) => Ok(value),
+            _ => Err(CodecError::new(CodecErrorKind::Decoding)),
+        }
     }
 }

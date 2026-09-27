@@ -40,6 +40,11 @@
 - Add the opt-in `serde` feature for explicit stored-byte serialization of
   ciphertext and blind indexes (not included in the published 0.5.0 crate).
 
+- Fix `Postcard` silently ignoring bytes that follow a valid value. Trailing
+  bytes now fail with `CodecErrorKind::Decoding`. Bytes produced by
+  `Postcard::encode` are unaffected, but stored plaintext that carries extra
+  bytes, such as padding read as unpadded, no longer decodes.
+
 - Add task-oriented adoption guidance, document authority and version distinctions,
   shared feature/platform reference, and reproducible documentation link checks.
 

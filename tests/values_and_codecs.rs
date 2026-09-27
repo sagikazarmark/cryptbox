@@ -91,3 +91,24 @@ fn postcard_codec_round_trips_serde_values() {
         value
     );
 }
+
+#[cfg(feature = "postcard")]
+#[test]
+fn postcard_codec_rejects_trailing_bytes_after_a_valid_value() {
+    use cryptbox::{CodecErrorKind, Postcard};
+
+    let encoded = <Postcard as Codec<Vec<u32>>>::encode(&vec![1_u32, 2, 3]).unwrap();
+
+    for trailing in [&[0][..], &[0x80, 0, 0, 0], &[1, 2, 3]] {
+        let mut bytes = encoded.to_vec();
+        bytes.extend_from_slice(trailing);
+
+        assert_eq!(
+            <Postcard as Codec<Vec<u32>>>::decode(&bytes)
+                .unwrap_err()
+                .kind(),
+            CodecErrorKind::Decoding,
+            "trailing bytes {trailing:?} were accepted",
+        );
+    }
+}
