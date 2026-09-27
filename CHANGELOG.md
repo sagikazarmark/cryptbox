@@ -261,10 +261,11 @@
   the `keys` and `index` parts; without it, the index arguments are the binding
   itself when every part scopes blind indexes, and `()` when none does. A
   record is never a part. `#[derive(Field)]` gains `binding = Type`, `record`,
-  and `indexes(Spec, …)`. Part values go through the new sealed `PartType`
-  trait: `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, and `TenantId`, plus
+  and `indexes(Spec, …)`. Part values go through the new `PartType` trait:
+  `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, and `TenantId`, plus
   `uuid::Uuid` with the new `uuid` feature, which also converts a `Uuid` into a
-  `RecordId`.
+  `RecordId`. Implement it for an application's own ID types; a value of
+  another kind than the declared one fails with `Error::InvalidBinding`.
 - `Json` decodes every float to exactly the value that was encoded
   (`serde_json/float_roundtrip`). Before this, some stored floats were read back one ulp off.
 

@@ -317,7 +317,8 @@ pub fn derive_plaintext(input: TokenStream) -> TokenStream {
 ///
 /// A part without `keys` or `index` is bound only. A part holds a `[u8; 16]`
 /// UUID, a `uuid::Uuid` with `cryptbox`'s `uuid` feature, an `i64`, or bytes
-/// (`Vec<u8>`, `Box<[u8]>`, or `TenantId`); see `PartType`. A record is never a
+/// (`Vec<u8>`, `Box<[u8]>`, or `TenantId`), or any other type that implements
+/// `PartType`, such as an application's own ID newtype. A record is never a
 /// part: declare `record` on the field.
 ///
 /// | Struct key | Required | Meaning |

@@ -4,8 +4,8 @@
 use cryptbox::{
     Binding, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
     CodecErrorKind, EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, IndexId,
-    IndexKeyId, IndexList, KeyScope, Padding, PartKind, PartSpec, PartValue, PartValues, Plaintext,
-    RecordId, Sealed, Utf8, field_id, index_id, index_key_id, part_id,
+    IndexKeyId, IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues,
+    Plaintext, RecordId, Sealed, Utf8, field_id, index_id, index_key_id, part_id,
 };
 use zeroize::Zeroizing;
 
@@ -575,4 +575,60 @@ mod uuid_parts {
         );
         assert_eq!(RecordId::from(id), RecordId::Uuid(*id.as_bytes()));
     }
+}
+
+/// An application's own org ID, bound as a UUID part.
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
+struct OrgId([u8; 16]);
+
+impl PartType for OrgId {
+    const KIND: PartKind = PartKind::Uuid;
+
+    fn part_value(&self) -> PartValue<'_> {
+        PartValue::Uuid(self.0)
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+struct TypedOrg {
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    id: OrgId,
+}
+
+#[test]
+fn a_newtype_part_binds_like_its_inner_value() {
+    assert_eq!(TypedOrg::PARTS, Org::PARTS);
+    assert_eq!(
+        KeyScope::of(&TypedOrg {
+            id: OrgId([0x42; 16])
+        })
+        .unwrap(),
+        KeyScope::of(&Org { id: [0x42; 16] }).unwrap()
+    );
+}
+
+/// Declares one kind but supplies another.
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct Mislabeled(i64);
+
+impl PartType for Mislabeled {
+    const KIND: PartKind = PartKind::Uuid;
+
+    fn part_value(&self) -> PartValue<'_> {
+        PartValue::I64(self.0)
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+struct MislabeledScope {
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    id: Mislabeled,
+}
+
+#[test]
+fn a_part_value_of_another_kind_is_rejected() {
+    assert_eq!(
+        KeyScope::of(&MislabeledScope { id: Mislabeled(1) }),
+        Err(cryptbox::Error::InvalidBinding)
+    );
 }
