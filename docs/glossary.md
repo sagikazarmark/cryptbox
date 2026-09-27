@@ -41,9 +41,9 @@ and obscure equality more, without eliminating index leakage.
 
 **Installed keys**:
 The process-wide keys set once with `keys::install` and never replaced. The
-implicit forms (`encrypt()`, `decrypt()`, `prepare()`, `probes()`) read them and
-fail with `KeysNotInstalled` before installation; the explicit `_with` forms never
-read them.
+implicit forms (`encrypt()`, `decrypt()`, `prepare()`, `with_index()`,
+`probes()`) read them and fail with `KeysNotInstalled` before installation; the
+explicit `_with` forms never read them.
 <!-- Agent guidance: avoid “global key context” or “global providers”; the global is the installed keys. -->
 
 **Key context**:
