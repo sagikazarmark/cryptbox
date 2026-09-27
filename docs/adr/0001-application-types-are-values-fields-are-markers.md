@@ -4,6 +4,10 @@ status: accepted
 
 # Application types are values; fields are separate markers
 
+> Amended by [ADR-0005](0005-runtime-binding-is-the-core.md), which supersedes the
+> `Field` shape and the `Encrypted<F>` carrier. The split between values and
+> fields still stands.
+
 The `profile!` macro is replaced by traits plus thin derives. An application's own
 types (`struct Address { .. }`, `struct Email(String)`) are **values**: they say
 how they encode, never where they are stored. A **field** is a separate marker

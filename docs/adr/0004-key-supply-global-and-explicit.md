@@ -4,6 +4,10 @@ status: accepted
 
 # Keys are supplied globally or explicitly, with no feature gates
 
+> Amended by [ADR-0006](0006-keys-are-passed-in.md). The process-wide keys and the
+> automatic column remain only for `FieldOnly` fields. Explicit operations take
+> keyrings instead of routed providers.
+
 Every operation has an explicit form that takes keys (`encrypt_with`,
 `decrypt_with`, `prepare_with`, …) and is always available. On top of it, a
 process-wide `keys::install(Keys)` backs the implicit forms (`encrypt()`,
