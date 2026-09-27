@@ -68,6 +68,14 @@ where
         &self.sealed
     }
 
+    /// Consumes the preparation and returns the sealed storage value.
+    ///
+    /// Copy its indexes out with [`Self::index`] first.
+    #[must_use]
+    pub fn into_sealed(self) -> Sealed<F> {
+        self.sealed
+    }
+
     /// Adds an index derived from the same source value as the sealed value.
     ///
     /// The index is scoped by the `keys` and `index` parts of the binding the

@@ -266,6 +266,21 @@
   `uuid::Uuid` with the new `uuid` feature, which also converts a `Uuid` into a
   `RecordId`. Implement it for an application's own ID types; a value of
   another kind than the declared one fails with `Error::InvalidBinding`.
+- Add the `Record` trait for rows sealed and opened together under one binding,
+  and `open_matching::<R, S>(rows, query, &binding, &keys)`, which opens the
+  candidate rows of a blind-index lookup and drops false candidates.
+  `#[derive(Record)]` generates the sealed struct and a `seal_<field>` sealer
+  per field for partial updates from `#[cryptbox(record = id, sealed = Name,
+  attr(…))]` on the struct and `#[cryptbox(field = F, index(S as column))]` or
+  `#[cryptbox(plaintext)]` on every field. It rejects an unannotated field, an
+  encrypted record ID, and a field that does not write exactly the blind
+  indexes its `Field` declares, and forwards `#[sqlx(…)]` attributes to the
+  sealed struct.
+- Add `InRecord(&binding, record)` binding arguments, which bind the record
+  exactly when the field declares one, and `RecordId::of`, which makes a record
+  ID from any `PartType`.
+- Add `Prepared::into_sealed` and `BlindIndexRef::to_blind_index`, which take
+  owned values out of a preparation.
 - `Json` decodes every float to exactly the value that was encoded
   (`serde_json/float_roundtrip`). Before this, some stored floats were read back one ulp off.
 

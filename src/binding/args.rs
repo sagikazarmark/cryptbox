@@ -12,12 +12,17 @@ use crate::{Error, Field};
 /// | [`FieldOnly`], with a record | `RecordId` |
 /// | any binding, no record | `&F::Binding` |
 /// | any binding, with a record | `(&F::Binding, RecordId)` |
+/// | any binding, in a record | [`InRecord(&F::Binding, RecordId)`](InRecord) |
 ///
 /// Passing a binding of another type is a type error. Passing a record to a
 /// field that binds none, or omitting it for a field that binds one, fails the
 /// build when the call is first compiled. Like the [`Binding`](crate::Binding)
 /// checks, it runs after monomorphization, so `cargo check` does not report it;
 /// `cargo build` and `cargo test` do.
+///
+/// [`InRecord`] opts out of that check: it binds the record exactly when the
+/// field declares one. A [`Record`](crate::Record) uses it to pass its ID to
+/// every field, whichever of them bind it.
 ///
 /// This trait is sealed: the forms above are the only implementations.
 ///
@@ -164,6 +169,63 @@ impl<F: Field> sealed::Sealed<F> for (&F::Binding, RecordId<'_>) {
 
     fn with_parts<R>(self, f: impl FnOnce(&F::Binding, Option<RecordId<'_>>) -> R) -> R {
         f(self.0, Some(self.1))
+    }
+}
+
+/// The binding arguments of a field of a [`Record`](crate::Record): the
+/// record's binding and ID.
+///
+/// The record is bound exactly when the field declares [`Field::RECORD`], so
+/// one record ID serves every field of a row, whether or not it binds one.
+/// Unlike the other [`Args`] forms, a record passed to a field that binds none
+/// is not a build error: it is ignored. Pass `(&binding, record)` where the
+/// record must be bound.
+///
+/// ```
+/// use cryptbox::{
+///     EncryptionKey, EncryptionKeyring, Field, FieldId, InRecord, Padding, RecordId, Sealed,
+///     Tenant, TenantId, Utf8,
+/// };
+///
+/// /// Bound to its tenant only.
+/// struct CustomerNote;
+///
+/// impl Field for CustomerNote {
+///     const ID: FieldId = cryptbox::field_id!("0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38");
+///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
+///     type Value = String;
+///     type Codec = Utf8;
+///     type Binding = Tenant;
+///     type Indexes = ();
+/// }
+///
+/// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+/// let tenant = Tenant(TenantId::new(b"acme".to_vec())?);
+/// let record = RecordId::from(42_i64);
+///
+/// let sealed = Sealed::<CustomerNote>::seal(&"VIP".into(), InRecord(&tenant, record), &keys)?;
+/// // The field binds no record, so the value opens under the tenant alone.
+/// assert_eq!(sealed.open(&tenant, &keys)?, "VIP");
+/// # Ok::<(), cryptbox::Error>(())
+/// ```
+#[derive(Debug)]
+pub struct InRecord<'a, B>(pub &'a B, pub RecordId<'a>);
+
+// Derived impls would require `B: Copy`, but only the reference is copied.
+impl<B> Clone for InRecord<'_, B> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<B> Copy for InRecord<'_, B> {}
+
+impl<F: Field> sealed::Sealed<F> for InRecord<'_, F::Binding> {
+    const RECORD: bool = F::RECORD;
+
+    fn with_parts<R>(self, f: impl FnOnce(&F::Binding, Option<RecordId<'_>>) -> R) -> R {
+        f(self.0, F::RECORD.then_some(self.1))
     }
 }
 

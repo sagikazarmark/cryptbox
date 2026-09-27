@@ -30,6 +30,9 @@
 //!   keyring protects which field or scope is application code.
 //! - [`Prepared`] borrows a source value and derives sealed value and indexes for
 //!   an application-owned atomic write; it does not persist them.
+//! - A [`Record`] seals and opens a whole row under one binding and its
+//!   plaintext record ID, writing every blind index its fields declare;
+//!   [`open_matching`] opens the candidate rows of a lookup and keeps the matches.
 //! - A [`BlindIndexSpec`] binds a blind index to one field. A [`BlindIndex`] is a
 //!   candidate selector: use every [`BlindIndexSpec::probes_with`]
 //!   result, open candidates, and compare normalized plaintext.
@@ -149,6 +152,7 @@ pub mod keys;
 pub mod migrate;
 mod padding;
 mod prepare;
+mod record;
 pub mod schema;
 #[cfg(feature = "serde")]
 mod serde_impl;
@@ -161,8 +165,8 @@ mod value;
 
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    Args, Binding, FieldOnly, KeyScope, PartKind, PartRole, PartSpec, PartType, PartValue,
-    PartValues, RecordId, ShapeFingerprint, Tenant, TenantId,
+    Args, Binding, FieldOnly, InRecord, KeyScope, PartKind, PartRole, PartSpec, PartType,
+    PartValue, PartValues, RecordId, ShapeFingerprint, Tenant, TenantId,
 };
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexList, inspect_blind_index,
@@ -173,7 +177,7 @@ pub use codec::Json;
 pub use codec::Postcard;
 pub use codec::{Codec, Plaintext, Raw, Utf8};
 #[cfg(feature = "derive")]
-pub use cryptbox_derive::{Binding, BlindIndexSpec, Field, Plaintext};
+pub use cryptbox_derive::{Binding, BlindIndexSpec, Field, Plaintext, Record};
 pub use crypto::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, decrypt, encrypt, inspect_ciphertext,
     is_ciphertext, needs_reencryption, reencrypt,
@@ -187,6 +191,7 @@ pub use key::{
 };
 pub use padding::Padding;
 pub use prepare::Prepared;
+pub use record::{IndexedBy, Record, open_matching};
 pub use value::{Plain, Sealed, Secret};
 
 // Paths that derive-generated code names; not public API.
@@ -194,5 +199,5 @@ pub use value::{Plain, Sealed, Secret};
 pub mod __private {
     pub use zeroize::Zeroizing;
 
-    pub use crate::schema::has_duplicate;
+    pub use crate::schema::{has_duplicate, writes_declared_indexes};
 }

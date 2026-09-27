@@ -9,7 +9,7 @@ mod part;
 mod presets;
 mod scope;
 
-pub use args::Args;
+pub use args::{Args, InRecord};
 pub(crate) use args::{domain, domains};
 pub use part::PartType;
 pub use presets::{FieldOnly, Tenant, TenantId};
@@ -409,6 +409,17 @@ impl<'a> RecordId<'a> {
     #[must_use]
     pub const fn from_bytes(bytes: &'a [u8]) -> Self {
         Self::Bytes(bytes)
+    }
+
+    /// Creates a record ID from any [`PartType`], such as an application's own
+    /// ID newtype, with that type's kind and value.
+    #[must_use]
+    pub fn of<T: PartType + ?Sized>(id: &'a T) -> Self {
+        match id.part_value() {
+            PartValue::Uuid(uuid) => Self::Uuid(uuid),
+            PartValue::I64(value) => Self::I64(value),
+            PartValue::Bytes(bytes) => Self::Bytes(bytes),
+        }
     }
 }
 

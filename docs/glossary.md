@@ -15,7 +15,8 @@ authentication; opening under another shape reports a binding mismatch.
 The binding values of one seal or open, typed by the field (`Args<F>`): `()` for
 a `FieldOnly` field, `RecordId` for a `FieldOnly` field that binds a record,
 `&F::Binding`, or `(&F::Binding, RecordId)`. A missing or extra record fails the
-build.
+build. Within a record, `InRecord(&F::Binding, RecordId)` binds the record
+exactly when the field declares one.
 
 **Binding part**:
 One declared value of a binding scope, with a part ID, a value kind (uuid, i64,
@@ -139,6 +140,14 @@ A generation available for decryption or blind-index probing, including the
 current generation and any staged or retained generations. A readable generation
 may be staged before first use.
 <!-- Agent guidance: avoid “old key”; a readable generation may be staged before first use. -->
+
+**Record**:
+A row whose encrypted fields are sealed and opened together under one binding
+and the row's record ID (`Record`). The record ID is never encrypted: each field
+that declares `RECORD` binds it, so it must be readable before the row is
+opened. The sealed form holds every field's sealed value and the blind indexes
+its field declares; `#[derive(Record)]` rejects a record that omits one.
+<!-- Agent guidance: a “record” is the whole row; a field “binds a record” when it declares `RECORD`. `InRecord` passes the record ID to every field and binds it only where declared. Avoid “entity” or “model” for a record. -->
 
 **Schema manifest**:
 A reviewable listing of registered fields and blind indexes with their

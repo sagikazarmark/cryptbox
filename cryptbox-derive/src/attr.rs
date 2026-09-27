@@ -3,8 +3,8 @@
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote_spanned};
 use syn::{
-    Attribute, Ident, LitInt, LitStr, Path, Token, Type, meta::ParseNestedMeta, parenthesized,
-    parse::ParseStream, punctuated::Punctuated, spanned::Spanned,
+    Attribute, Ident, LitInt, LitStr, Meta, Path, Token, Type, meta::ParseNestedMeta,
+    parenthesized, parse::ParseStream, punctuated::Punctuated, spanned::Spanned,
 };
 
 /// Every key of the namespace. Each derive accepts a subset.
@@ -28,10 +28,15 @@ pub(crate) enum Key {
     Part,
     Keys,
     Index,
+    RecordId,
+    Sealed,
+    Attr,
+    IndexColumns,
+    Plaintext,
 }
 
 impl Key {
-    const ALL: [Self; 18] = [
+    const ALL: [Self; 23] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -50,6 +55,11 @@ impl Key {
         Self::Part,
         Self::Keys,
         Self::Index,
+        Self::RecordId,
+        Self::Sealed,
+        Self::Attr,
+        Self::IndexColumns,
+        Self::Plaintext,
     ];
 
     fn name(self) -> &'static str {
@@ -66,18 +76,25 @@ impl Key {
             Self::Normalizer => "normalizer",
             Self::Project => "project",
             Self::Binding => "binding",
-            Self::Record => "record",
+            // `RecordId` and `IndexColumns` reuse these names in `#[derive(Record)]`.
+            Self::Record | Self::RecordId => "record",
             Self::Indexes => "indexes",
             Self::IndexArgs => "index_args",
             Self::Part => "part",
             Self::Keys => "keys",
-            Self::Index => "index",
+            Self::Index | Self::IndexColumns => "index",
+            Self::Sealed => "sealed",
+            Self::Attr => "attr",
+            Self::Plaintext => "plaintext",
         }
     }
 
     /// Whether the key stands alone, without a value.
     fn is_flag(self) -> bool {
-        matches!(self, Self::Record | Self::Keys | Self::Index)
+        matches!(
+            self,
+            Self::Record | Self::Keys | Self::Index | Self::Plaintext
+        )
     }
 }
 
@@ -155,6 +172,11 @@ pub(crate) struct Attrs {
     pub(crate) part: Option<UuidLiteral>,
     pub(crate) keys: Option<Span>,
     pub(crate) index: Option<Span>,
+    pub(crate) record_id: Option<Ident>,
+    pub(crate) sealed: Option<Ident>,
+    pub(crate) attr: Option<Vec<Meta>>,
+    pub(crate) index_columns: Option<Vec<IndexColumn>>,
+    pub(crate) plaintext: Option<Span>,
     seen: Vec<Key>,
 }
 
@@ -187,10 +209,11 @@ impl Attrs {
                     return skip_value(meta.input);
                 }
 
+                // Two keys can share a name, so look only among the accepted ones.
                 let Some(key) = Key::ALL
                     .into_iter()
-                    .find(|key| meta.path.is_ident(key.name()))
                     .filter(|key| keys.contains(key))
+                    .find(|key| meta.path.is_ident(key.name()))
                 else {
                     errors.push(syn::Error::new_spanned(
                         &meta.path,
@@ -216,6 +239,10 @@ impl Attrs {
                     parsed.parse_flag(key, &meta)
                 } else if key == Key::Indexes {
                     parse_indexes(meta.input).map(|list| parsed.indexes = Some(list))
+                } else if key == Key::IndexColumns {
+                    parse_index_columns(meta.input).map(|list| parsed.index_columns = Some(list))
+                } else if key == Key::Attr {
+                    parse_attr(meta.input).map(|list| parsed.attr = Some(list))
                 } else {
                     meta.value()
                         .and_then(|input| parsed.parse_value(key, input))
@@ -255,7 +282,15 @@ impl Attrs {
             Key::Project => self.project = Some(input.parse()?),
             Key::Binding => self.binding = Some(input.parse()?),
             Key::IndexArgs => self.index_args = Some(input.parse()?),
-            Key::Record | Key::Keys | Key::Index | Key::Indexes => {
+            Key::RecordId => self.record_id = Some(input.parse()?),
+            Key::Sealed => self.sealed = Some(input.parse()?),
+            Key::Record
+            | Key::Keys
+            | Key::Index
+            | Key::Plaintext
+            | Key::Indexes
+            | Key::IndexColumns
+            | Key::Attr => {
                 unreachable!("flags and lists have no `= value`")
             }
         }
@@ -273,6 +308,7 @@ impl Attrs {
             Key::Record => self.record = Some(span),
             Key::Keys => self.keys = Some(span),
             Key::Index => self.index = Some(span),
+            Key::Plaintext => self.plaintext = Some(span),
             _ => unreachable!("only flags are parsed here"),
         }
 
@@ -363,6 +399,46 @@ fn parse_indexes(input: ParseStream) -> syn::Result<Vec<Type>> {
             "list at least one blind index, or omit `indexes`",
         ));
     }
+
+    Ok(list.into_iter().collect())
+}
+
+/// A blind index a record field writes, and the sealed struct's field that stores it.
+pub(crate) struct IndexColumn {
+    pub(crate) spec: Type,
+    pub(crate) column: Ident,
+}
+
+impl syn::parse::Parse for IndexColumn {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let spec = input.parse()?;
+        input.parse::<Token![as]>()?;
+        let column = input.parse()?;
+
+        Ok(Self { spec, column })
+    }
+}
+
+/// Parses `index(A as a, B as b, …)`: at least one blind index and its column.
+fn parse_index_columns(input: ParseStream) -> syn::Result<Vec<IndexColumn>> {
+    let content;
+    let parens = parenthesized!(content in input);
+    let list = Punctuated::<IndexColumn, Token![,]>::parse_terminated(&content)?;
+    if list.is_empty() {
+        return Err(syn::Error::new(
+            parens.span.join(),
+            "list at least one `Index as column`, or omit `index`",
+        ));
+    }
+
+    Ok(list.into_iter().collect())
+}
+
+/// Parses `attr(…)`: attributes for a generated item, without their `#[…]`.
+fn parse_attr(input: ParseStream) -> syn::Result<Vec<Meta>> {
+    let content;
+    parenthesized!(content in input);
+    let list = Punctuated::<Meta, Token![,]>::parse_terminated(&content)?;
 
     Ok(list.into_iter().collect())
 }

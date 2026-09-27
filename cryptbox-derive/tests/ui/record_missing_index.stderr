@@ -1,0 +1,5 @@
+error[E0080]: evaluation panicked: `email` must write every blind index its field declares in `indexes(…)`, each once, and no other: list them as `index(Spec as column, …)`
+  --> tests/ui/record_missing_index.rs:33:24
+   |
+33 |     #[cryptbox(field = UserEmail)]
+   |                        ^^^^^^^^^ evaluation of `_::_` failed here

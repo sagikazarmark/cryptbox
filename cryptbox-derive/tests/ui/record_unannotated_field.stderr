@@ -1,0 +1,5 @@
+error: `nickname` must say how it is stored: add `#[cryptbox(field = F)]` to seal it, or `#[cryptbox(plaintext)]` to store it as it is
+  --> tests/ui/record_unannotated_field.rs:12:5
+   |
+12 |     nickname: String,
+   |     ^^^^^^^^

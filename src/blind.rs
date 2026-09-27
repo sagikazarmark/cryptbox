@@ -539,6 +539,12 @@ impl<'a, Spec> BlindIndexRef<'a, Spec> {
     pub const fn as_bytes(&self) -> &'a [u8] {
         self.bytes
     }
+
+    /// Copies the borrowed representation into an owned [`BlindIndex`].
+    #[must_use]
+    pub fn to_blind_index(&self) -> BlindIndex<Spec> {
+        BlindIndex::from_validated_bytes(self.bytes.to_vec())
+    }
 }
 
 impl<Spec> AsRef<[u8]> for BlindIndexRef<'_, Spec> {
