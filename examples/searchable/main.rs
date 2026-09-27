@@ -4,8 +4,8 @@ use std::{env, error::Error, path::Path};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey, Field,
-    FieldId, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, index_id,
-    index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, index_key_id, inspect_blind_index,
+    inspect_ciphertext, key_id,
 };
 use sqlx::{Connection, QueryBuilder, Row};
 use zeroize::Zeroizing;
@@ -27,33 +27,26 @@ type DbConnection = <Db as sqlx::Database>::Connection;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type EmailCiphertext = Ciphertext<UserEmail>;
 
+#[derive(Field)]
+#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
+fn normalize_email(input: &str) -> std::result::Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    // Illustrative ASCII equality policy, not general email canonicalization.
+    let mut bytes = Zeroizing::new(input.trim().as_bytes().to_vec());
+    bytes.make_ascii_lowercase();
+    Ok(bytes)
 }
 
+#[derive(BlindIndexSpec)]
+#[cryptbox(
+    id = "80000000-0000-4000-8000-000000000008",
+    field = UserEmail,
+    bits = 128,
+    query = str,
+    normalize = normalize_email,
+)]
 struct EmailLookup;
-impl BlindIndexSpec for EmailLookup {
-    type Field = UserEmail;
-    const ID: IndexId = index_id!("80000000-0000-4000-8000-000000000008");
-    const BITS: u16 = 128;
-    type Query = str;
-
-    fn normalize_query(input: &str) -> std::result::Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        // Illustrative ASCII equality policy, not general email canonicalization.
-        let mut bytes = Zeroizing::new(input.trim().as_bytes().to_vec());
-        bytes.make_ascii_lowercase();
-        Ok(bytes)
-    }
-
-    fn normalize_value(value: &String) -> std::result::Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Self::normalize_query(value)
-    }
-}
 fn validate_email(value: &str) -> Result<()> {
     // Match the lookup policy's trimming while preserving the original stored value.
     // Illustrative application syntax only, not general email validation or provenance.

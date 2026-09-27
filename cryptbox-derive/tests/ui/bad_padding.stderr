@@ -1,0 +1,17 @@
+error: padding block size must be at least 2
+ --> tests/ui/bad_padding.rs:2:89
+  |
+2 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, padding = block(1))]
+  |                                                                                         ^
+
+error: fixed padding length must be at least 1
+ --> tests/ui/bad_padding.rs:6:90
+  |
+6 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, padding = length(0))]
+  |                                                                                          ^
+
+error: expected `none`, `block(size)`, or `length(len)`
+  --> tests/ui/bad_padding.rs:10:83
+   |
+10 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, padding = blocks(16))]
+   |                                                                                   ^^^^^^

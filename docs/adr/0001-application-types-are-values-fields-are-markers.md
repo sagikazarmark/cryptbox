@@ -44,6 +44,15 @@ a marker again).
   user would write by hand and nothing else: no `Debug`, `Deref`, `From`, or
   hidden items. IDs must be UUID literals validated at expansion and are never
   derived from identifiers. A codec is never inferred from a struct's shape.
+- One derive writes two impls. `#[derive(Plaintext)]` without `codec` on a
+  single-field tuple struct (`struct Email(String)`) makes the type its own
+  codec, which stores exactly the bytes of the inner type's `Plaintext` codec.
+  It emits `impl Codec<Self>` alongside `impl Plaintext`, because no
+  crate-provided adapter can wrap or unwrap the value without `From` or
+  `Deref`. This follows the inner type's declared default rather than inferring
+  a codec from the shape. Changing the inner type still changes the stored
+  bytes unless the new default encodes identically, so it needs the same
+  migration review as any codec change.
 - The derives live in a proc-macro crate, reversing the earlier rejection in
   `docs/research/profile-declaration-syntax.md`; the manual trait path stays
   first-class, so the derive remains optional.

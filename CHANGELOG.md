@@ -103,6 +103,16 @@
   default `K`. The docs show a Clippy `disallowed_methods` configuration for
   teams that forbid the global.
 
+- Add the opt-in `derive` feature with `#[derive(Field)]`,
+  `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
+  `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls
+  and nothing else. IDs are UUID string literals validated at expansion, and
+  padding and index precision are validated there too. A codec is never inferred:
+  a field without `codec` uses its value type's `Plaintext` codec. A
+  `#[derive(Plaintext)]` single-field tuple struct without `codec` stores
+  exactly its inner value's bytes. Add `from_u128` to the identifier types,
+  which the derives emit.
+
 - Add the opt-in `serde` feature for explicit stored-byte serialization of
   ciphertext and blind indexes (not included in the published 0.5.0 crate).
 

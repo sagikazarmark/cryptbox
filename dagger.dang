@@ -105,6 +105,17 @@ type Test {
   }
 
   """
+  Test the derive macros, including compiler diagnostics and expansion snapshots.
+  """
+  derive: String! @check {
+    self
+      .container
+      .withExec(["cargo", "install", "cargo-expand", "--version", "1.0.126", "--locked"])
+      .withExec(["cargo", "test", "--locked", "-p", "cryptbox-derive"])
+      .combinedOutput
+  }
+
+  """
    Execute SQLx integration and process-level E2E tests against live PostgreSQL.
   """
   postgres: String! @check {
@@ -136,49 +147,49 @@ type Test {
   Run the key rotation example.
   """
   keyRotation: String! @check {
-    self.example("key_rotation")
+    self.example("key_rotation", feature: ["derive"])
   }
 
   """
   Run the re-encryption sweep example.
   """
   reencryptionSweep: String! @check {
-    self.example("reencryption_sweep", feature: ["sqlx-sqlite"])
+    self.example("reencryption_sweep", feature: ["derive", "sqlx-sqlite"])
   }
 
   """
   Run the plaintext migration example.
   """
   plaintextMigration: String! @check {
-    self.example("plaintext_migration", feature: ["migrate", "sqlx-sqlite"])
+    self.example("plaintext_migration", feature: ["derive", "migrate", "sqlx-sqlite"])
   }
 
   """
   Run the legacy migration example.
   """
   legacyMigration: String! @check {
-    self.example("legacy_migration", feature: ["migrate", "sqlx-sqlite"])
+    self.example("legacy_migration", feature: ["derive", "migrate", "sqlx-sqlite"])
   }
 
   """
   Run the blind indexes example.
   """
   blindIndexes: String! @check {
-    self.example("blind_indexes")
+    self.example("blind_indexes", feature: ["derive"])
   }
 
   """
   Run the SQLx SQLite example.
   """
   sqlxSqlite: String! @check {
-    self.example("sqlx_sqlite", feature: ["sqlx-sqlite"])
+    self.example("sqlx_sqlite", feature: ["derive", "sqlx-sqlite"])
   }
 
   """
   Run the explicit Serde stored-value example.
   """
   storedValues: String! @check {
-    self.example("stored_values", feature: ["serde"])
+    self.example("stored_values", feature: ["derive", "serde"])
   }
 
   let example(

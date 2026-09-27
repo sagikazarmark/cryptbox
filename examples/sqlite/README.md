@@ -16,7 +16,7 @@ Start with a local checkout of this repository and network access for dependenci
 From the repository root, build the example and create a directory for its data:
 
 ```sh
-cargo build --locked --example sqlx_sqlite --features sqlx-sqlite
+cargo build --locked --example sqlx_sqlite --features derive,sqlx-sqlite
 mkdir -p examples/sqlite/demo
 ```
 
@@ -57,7 +57,7 @@ for the general design. This example uses one encryption generation only.
 ## 3. Write the field and exit
 
 ```sh
-cargo run --locked --example sqlx_sqlite --features sqlx-sqlite -- \
+cargo run --locked --example sqlx_sqlite --features derive,sqlx-sqlite -- \
   write examples/sqlite/demo/demo.sqlite3 examples/sqlite/demo/encryption-root.hex
 ```
 
@@ -78,7 +78,7 @@ rather than replacing the existing demonstration row.
 Run a second command after the first process has exited:
 
 ```sh
-cargo run --locked --example sqlx_sqlite --features sqlx-sqlite -- \
+cargo run --locked --example sqlx_sqlite --features derive,sqlx-sqlite -- \
   read examples/sqlite/demo/demo.sqlite3 examples/sqlite/demo/encryption-root.hex
 ```
 
@@ -99,7 +99,7 @@ or row fails instead of seeding new data. To observe missing-key behavior, use a
 path that does not exist:
 
 ```sh
-cargo run --locked --example sqlx_sqlite --features sqlx-sqlite -- \
+cargo run --locked --example sqlx_sqlite --features derive,sqlx-sqlite -- \
   read examples/sqlite/demo/demo.sqlite3 examples/sqlite/demo/missing-root.hex
 ```
 

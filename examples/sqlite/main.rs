@@ -4,8 +4,7 @@
 use std::{error::Error, fs::File, io::Read, path::Path};
 
 use cryptbox::{
-    Ciphertext, Encrypted, EncryptionKey, Field, FieldId, KeyId, LocalEncryptionKeyring, Padding,
-    Utf8, key_id,
+    Ciphertext, Encrypted, EncryptionKey, Field, KeyId, LocalEncryptionKeyring, key_id,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnectOptions, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -19,14 +18,9 @@ enum Command {
     Read,
 }
 
+#[derive(Field)]
+#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 struct UserEmail;
-
-impl Field for UserEmail {
-    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();

@@ -11,7 +11,7 @@ Run commands from the repository root unless an example's README says otherwise.
 | [First field](first_field.rs) | A field, local key, encryption, and decryption | `cargo run --locked --example first_field` |
 | [SQLite](sqlite/README.md) | Durable encrypted storage and a separate-process read | Follow the README to provision a key, then run `sqlx_sqlite` |
 | [Searchable storage](searchable/README.md) | Atomic ciphertext/index writes and verified lookup with SQLite or PostgreSQL | Follow the README for key and database setup |
-| [Stored values](stored_values/README.md) | Serde serialization of ciphertext and blind indexes | `cargo run --locked --example stored_values --features serde` |
+| [Stored values](stored_values/README.md) | Serde serialization of ciphertext and blind indexes | `cargo run --locked --example stored_values --features derive,serde` |
 | [Custom field](custom_field/README.md) | A field over `Secret<String>` with a validating codec, normalizer, and custom provider | `cargo run --locked --example custom_field` |
 
 The smaller examples use Cargo example targets from the root package. Searchable
@@ -25,11 +25,11 @@ These in-memory examples support the [operational guides](../docs/README.md#oper
 
 | Example | Command |
 | --- | --- |
-| [Blind-index lookup](blind_indexes.rs) | `cargo run --locked --example blind_indexes` |
-| [Key rotation](key_rotation.rs) | `cargo run --locked --example key_rotation` |
-| [Maintenance sweep](reencryption_sweep.rs) | `cargo run --locked --example reencryption_sweep --features sqlx-sqlite` |
-| [Legacy migration](legacy_migration.rs) | `cargo run --locked --example legacy_migration --features migrate,sqlx-sqlite` |
-| [Plaintext migration](plaintext_migration.rs) | `cargo run --locked --example plaintext_migration --features migrate,sqlx-sqlite` |
+| [Blind-index lookup](blind_indexes.rs) | `cargo run --locked --example blind_indexes --features derive` |
+| [Key rotation](key_rotation.rs) | `cargo run --locked --example key_rotation --features derive` |
+| [Maintenance sweep](reencryption_sweep.rs) | `cargo run --locked --example reencryption_sweep --features derive,sqlx-sqlite` |
+| [Legacy migration](legacy_migration.rs) | `cargo run --locked --example legacy_migration --features derive,migrate,sqlx-sqlite` |
+| [Plaintext migration](plaintext_migration.rs) | `cargo run --locked --example plaintext_migration --features derive,migrate,sqlx-sqlite` |
 
 For design questions, read [how CryptBox works](../docs/concepts.md),
 [integration trade-offs](../docs/integration.md), or the

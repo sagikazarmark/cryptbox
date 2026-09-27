@@ -5,6 +5,11 @@ included in the crate landing documentation.
 
 No features are enabled by default, and all features are additive:
 
+- `derive` adds `#[derive(Field)]`, `#[derive(BlindIndexSpec)]`, and
+  `#[derive(Plaintext)]` from the `cryptbox-derive` proc-macro crate. Each
+  expands to exactly the trait impls you would write by hand, so a manual impl
+  remains a first-class alternative. IDs are UUID string literals checked at
+  compile time; a codec is never inferred from a type's shape.
 - `json` adds the `Json` codec. Its serialized representation is part of the
   persistent schema. It implies `serde`; values need Serde traits.
 - `migrate` adds the explicit `migrate` module for adopting `CryptBox` over
@@ -29,8 +34,9 @@ credentials, TLS trust, and runtime startup belong to the application. Serde
 derives likewise require a direct `serde` dependency with `derive`; enabling
 `CryptBox`'s `serde` feature does not select derive macros.
 
-Feature-gated availability: `Json` requires `json`; `Postcard` requires
-`postcard`; `migrate` and its core types require `migrate`.
+Feature-gated availability: the derive macros require `derive`; `Json` requires
+`json`; `Postcard` requires `postcard`; `migrate` and its core types require
+`migrate`.
 `migrate::PostgresSweepStore` additionally requires `sqlx-postgres`,
 `migrate::SqliteSweepStore` requires `sqlx-sqlite`, and `migrate::SweepTable`
 requires either backend. Stored-value Serde implementations require `serde`;

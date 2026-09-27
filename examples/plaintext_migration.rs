@@ -3,9 +3,8 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, EncryptionKey, Field, IndexId,
-    IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, field_id,
-    index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, EncryptionKey, Field, IndexKeyId,
+    KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, index_key_id, key_id,
     migrate::{MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
@@ -16,33 +15,26 @@ const CURRENT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
 const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("30000000-0000-4000-8000-000000000003");
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("40000000-0000-4000-8000-000000000004");
 
+#[derive(Field)]
+#[cryptbox(id = "50000000-0000-4000-8000-000000000005", value = String)]
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
+#[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
+fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    Ok(Zeroizing::new(
+        input.trim().to_ascii_lowercase().into_bytes(),
+    ))
 }
 
+#[derive(BlindIndexSpec)]
+#[cryptbox(
+    id = "60000000-0000-4000-8000-000000000006",
+    field = UserEmail,
+    bits = 128,
+    query = str,
+    normalize = normalize_email,
+)]
 struct EmailLookup;
-
-impl BlindIndexSpec for EmailLookup {
-    type Field = UserEmail;
-    const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
-    const BITS: u16 = 128;
-    type Query = str;
-
-    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(Zeroizing::new(
-            input.trim().to_ascii_lowercase().into_bytes(),
-        ))
-    }
-
-    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Self::normalize_query(value)
-    }
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
     futures_executor::block_on(run())

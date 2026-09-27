@@ -13,12 +13,14 @@ categories = ["cryptography", "database"]
 exclude = ["/tests/e2e.rs", "/tests/e2e/"]
 
 [workspace]
-members = ["examples/searchable", "tests/fixtures/app"]
+members = ["cryptbox-derive", "examples/searchable", "tests/fixtures/app"]
 default-members = ["."]
 resolver = "2"
 
 [features]
 default = []
+# Derive macros for `Field`, `BlindIndexSpec`, and `Plaintext`.
+derive = ["dep:cryptbox-derive"]
 json = ["serde", "dep:serde_json"]
 migrate = []
 postcard = ["dep:postcard", "serde"]
@@ -29,6 +31,8 @@ sqlx-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 [dependencies]
 base64 = { version = "0.23.1", default-features = false }
 chacha20poly1305 = { version = "0.11.0", features = ["alloc"], default-features = false }
+# Lockstep: generated code names this exact version's public items.
+cryptbox-derive = { version = "=0.5.0", path = "cryptbox-derive", optional = true }
 getrandom = "0.4.3"
 hex = { version = "0.4.3", default-features = false }
 hkdf = "0.13.0"
@@ -72,19 +76,21 @@ name = "first_field"
 
 [[example]]
 name = "blind_indexes"
+required-features = ["derive"]
 
 [[example]]
 name = "key_rotation"
+required-features = ["derive"]
 
 [[example]]
 name = "stored_values"
 path = "examples/stored_values/main.rs"
-required-features = ["serde"]
+required-features = ["derive", "serde"]
 
 [[example]]
 name = "sqlx_sqlite"
 path = "examples/sqlite/main.rs"
-required-features = ["sqlx-sqlite"]
+required-features = ["derive", "sqlx-sqlite"]
 
 [[example]]
 name = "custom_field"
@@ -92,15 +98,15 @@ path = "examples/custom_field/main.rs"
 
 [[example]]
 name = "reencryption_sweep"
-required-features = ["sqlx-sqlite"]
+required-features = ["derive", "sqlx-sqlite"]
 
 [[example]]
 name = "plaintext_migration"
-required-features = ["migrate", "sqlx-sqlite"]
+required-features = ["derive", "migrate", "sqlx-sqlite"]
 
 [[example]]
 name = "legacy_migration"
-required-features = ["migrate", "sqlx-sqlite"]
+required-features = ["derive", "migrate", "sqlx-sqlite"]
 
 [package.metadata.docs.rs]
 all-features = true

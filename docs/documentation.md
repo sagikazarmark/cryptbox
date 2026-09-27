@@ -31,6 +31,21 @@ same test matrix. The separate all-target, all-feature test run covers the full
 feature set together.
 Run `dagger check rust:doc rust:test` for both matrices.
 
+The `cryptbox-derive` workspace package is outside the default members, so the
+commands above reach it only through `cryptbox`'s `derive` feature. Its compiler
+diagnostics (trybuild) and expansion snapshots (macrotest) need
+[cargo-expand](https://github.com/dtolnay/cargo-expand) 1.0.126
+(`cargo install cargo-expand --version 1.0.126 --locked`):
+
+```sh
+cargo clippy --locked -p cryptbox-derive --all-targets -- -D warnings
+cargo test --locked -p cryptbox-derive
+```
+
+Refresh the snapshots after an intended change with `TRYBUILD=overwrite` or
+`MACROTEST=overwrite`, then review the diff. Dagger runs them as
+`dagger check cryptbox:test:derive`.
+
 Process-level scenarios are Rust integration tests in `tests/e2e.rs`, included in
 the ordinary all-feature test run. They cover durable rotation, sweep restart,
 mixed-format migration and closure, backup recovery, SQLx macros, and sanitized

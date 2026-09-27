@@ -10,7 +10,7 @@ document, authenticates its ciphertext, and separately checks its blind index.
 From the repository root:
 
 ```sh
-cargo run --locked --example stored_values --features serde
+cargo run --locked --example stored_values --features derive,serde
 ```
 
 Expect `Stored bytes round-tripped; authenticated read and index consistency checked.`

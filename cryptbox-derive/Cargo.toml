@@ -1,0 +1,37 @@
+[package]
+name = "cryptbox-derive"
+version = "0.5.0"
+description = "Derive macros for cryptbox fields, blind indexes, and plaintext types"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/sagikazarmark/cryptbox"
+keywords = ["cryptography", "derive", "encryption"]
+categories = ["cryptography", "development-tools::procedural-macro-helpers"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+syn = { version = "3.0.3", default-features = false, features = ["derive", "parsing", "printing", "proc-macro"] }
+
+[dev-dependencies]
+cryptbox = { path = "..", features = ["derive", "json"] }
+macrotest = "1.2.1"
+serde = { version = "1.0.219", features = ["derive"] }
+trybuild = "1.0.121"
+zeroize = "1.8.1"
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+missing_crate_level_docs = "deny"

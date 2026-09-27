@@ -17,7 +17,7 @@ maintenance = ["cryptbox/migrate"]
 legacy-migration = ["maintenance", "dep:chacha20poly1305", "dep:getrandom"]
 
 [dependencies]
-cryptbox = { path = "../.." }
+cryptbox = { path = "../..", features = ["derive"] }
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"], optional = true }
 getrandom = { version = "0.4", optional = true }
 hex = "0.4"

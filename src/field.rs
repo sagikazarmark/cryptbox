@@ -41,6 +41,9 @@ use crate::{Codec, FieldId, Padding};
 /// }
 /// ```
 ///
+/// With the `derive` feature, `#[derive(Field)]` writes exactly this impl from
+/// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`.
+///
 /// A value type without a [`Plaintext`](crate::Plaintext) implementation has no
 /// default codec; implement `Plaintext` for it or name an explicit codec:
 ///

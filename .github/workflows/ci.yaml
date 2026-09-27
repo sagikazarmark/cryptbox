@@ -26,7 +26,9 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Run Clippy
-        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+        run: |
+          cargo clippy --locked --all-targets --all-features -- -D warnings
+          cargo clippy --locked -p cryptbox-derive --all-targets -- -D warnings
 
       - name: Install cargo-hack
         run: cargo install cargo-hack --version 0.6.45 --locked
@@ -43,15 +45,21 @@ jobs:
       - name: Run tests
         run: cargo test --locked --all-targets --all-features
 
+      - name: Install cargo-expand
+        run: cargo install cargo-expand --version 1.0.126 --locked
+
+      - name: Test derive macros
+        run: cargo test --locked -p cryptbox-derive
+
       - name: Run examples
         run: |
-          cargo run --locked --example key_rotation
-          cargo run --locked --example reencryption_sweep --features sqlx-sqlite
-          cargo run --locked --example plaintext_migration --features migrate,sqlx-sqlite
-          cargo run --locked --example legacy_migration --features migrate,sqlx-sqlite
-          cargo run --locked --example blind_indexes
-          cargo run --locked --example stored_values --features serde
-          cargo run --locked --example sqlx_sqlite --features sqlx-sqlite
+          cargo run --locked --example key_rotation --features derive
+          cargo run --locked --example reencryption_sweep --features derive,sqlx-sqlite
+          cargo run --locked --example plaintext_migration --features derive,migrate,sqlx-sqlite
+          cargo run --locked --example legacy_migration --features derive,migrate,sqlx-sqlite
+          cargo run --locked --example blind_indexes --features derive
+          cargo run --locked --example stored_values --features derive,serde
+          cargo run --locked --example sqlx_sqlite --features derive,sqlx-sqlite
 
       - name: Run documentation tests
         run: |

@@ -4,9 +4,9 @@ use std::error::Error;
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexSpec, Ciphertext,
-    Encrypted, EncryptionKey, EncryptionKeyProvider, Field, IndexId, IndexKeyId, KeyId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Router, Utf8, field_id, index_id,
-    index_key_id, inspect_blind_index, key_id,
+    Encrypted, EncryptionKey, EncryptionKeyProvider, Field, IndexKeyId, KeyId,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Router, index_key_id, inspect_blind_index,
+    key_id,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -19,33 +19,26 @@ const BATCH_SIZE: i64 = 2;
 // This name identifies one fixed target pair and attempt, never every rotation.
 const MIGRATION_NAME: &str = "users-email-e2-i2-attempt-1";
 
+#[derive(Field)]
+#[cryptbox(id = "50000000-0000-4000-8000-000000000005", value = String)]
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
+#[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
+fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    Ok(Zeroizing::new(
+        input.trim().to_ascii_lowercase().into_bytes(),
+    ))
 }
 
+#[derive(BlindIndexSpec)]
+#[cryptbox(
+    id = "60000000-0000-4000-8000-000000000006",
+    field = UserEmail,
+    bits = 128,
+    query = str,
+    normalize = normalize_email,
+)]
 struct EmailLookup;
-
-impl BlindIndexSpec for EmailLookup {
-    type Field = UserEmail;
-    const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
-    const BITS: u16 = 128;
-    type Query = str;
-
-    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(Zeroizing::new(
-            input.trim().to_ascii_lowercase().into_bytes(),
-        ))
-    }
-
-    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Self::normalize_query(value)
-    }
-}
 
 fn main() -> Result<(), Box<dyn Error>> {
     futures_executor::block_on(run())

@@ -1,9 +1,8 @@
 //! Prepares and safely queries a blind index across index-key rotation.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field, IndexId,
-    IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, field_id,
-    index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field, IndexKeyId,
+    KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -11,33 +10,26 @@ const ENCRYPTION_KEY_ID: KeyId = key_id!("40000000-0000-4000-8000-000000000004")
 const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("50000000-0000-4000-8000-000000000005");
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("60000000-0000-4000-8000-000000000006");
 
+#[derive(Field)]
+#[cryptbox(id = "70000000-0000-4000-8000-000000000007", value = String)]
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: cryptbox::FieldId = field_id!("70000000-0000-4000-8000-000000000007");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
+#[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
+fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    Ok(Zeroizing::new(
+        input.trim().to_ascii_lowercase().into_bytes(),
+    ))
 }
 
+#[derive(BlindIndexSpec)]
+#[cryptbox(
+    id = "80000000-0000-4000-8000-000000000008",
+    field = UserEmail,
+    bits = 128,
+    query = str,
+    normalize = normalize_email,
+)]
 struct EmailLookup;
-
-impl BlindIndexSpec for EmailLookup {
-    type Field = UserEmail;
-    const ID: IndexId = index_id!("80000000-0000-4000-8000-000000000008");
-    const BITS: u16 = 128;
-    type Query = str;
-
-    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(Zeroizing::new(
-            input.trim().to_ascii_lowercase().into_bytes(),
-        ))
-    }
-
-    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Self::normalize_query(value)
-    }
-}
 
 fn main() -> Result<(), cryptbox::Error> {
     // Encryption and blind-index roots must be generated and managed independently.

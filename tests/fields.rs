@@ -2,7 +2,7 @@
 
 use cryptbox::{
     Ciphertext, Codec, CodecError, CodecErrorKind, Encrypted, EncryptionKey, Error, Field, FieldId,
-    LocalEncryptionKeyring, Padding, Plaintext, Raw, Secret, Utf8, field_id,
+    IndexId, LocalEncryptionKeyring, Padding, Plaintext, Raw, Secret, Utf8, field_id, index_id,
 };
 use zeroize::Zeroizing;
 
@@ -220,4 +220,16 @@ fn secret_string_codec_rejects_invalid_utf8() {
     let error = <Utf8 as Codec<Secret<String>>>::decode(&[0xff]).unwrap_err();
 
     assert_eq!(error.kind(), CodecErrorKind::InvalidUtf8);
+}
+
+#[test]
+fn an_identifier_from_u128_reads_the_uuid_digits_in_order() {
+    assert_eq!(
+        FieldId::from_u128(0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64),
+        field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64")
+    );
+    assert_eq!(
+        IndexId::from_u128(0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53),
+        index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53")
+    );
 }

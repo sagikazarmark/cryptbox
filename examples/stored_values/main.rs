@@ -3,41 +3,34 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, Error, Field, FieldId, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
-    Padding, Utf8, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    EncryptionKey, Error, Field, LocalBlindIndexKeyring, LocalEncryptionKeyring, index_key_id,
+    inspect_blind_index, inspect_ciphertext, key_id,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+#[derive(Field)]
+#[cryptbox(id = "70000000-0000-4000-8000-000000000007", value = String)]
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: FieldId = cryptbox::field_id!("70000000-0000-4000-8000-000000000007");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
+#[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
+fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    // This example's equality rule is ASCII case-insensitive with trimmed spaces.
+    Ok(Zeroizing::new(
+        input.trim().to_ascii_lowercase().into_bytes(),
+    ))
 }
 
-struct EmailLookup;
-
-impl BlindIndexSpec for EmailLookup {
-    type Field = UserEmail;
-    const ID: IndexId = index_id!("80000000-0000-4000-8000-000000000008");
+#[derive(BlindIndexSpec)]
+#[cryptbox(
+    id = "80000000-0000-4000-8000-000000000008",
+    field = UserEmail,
     // Demonstration precision; choose precision and normalization for your domain.
-    const BITS: u16 = 128;
-    type Query = str;
-
-    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        // This example's equality rule is ASCII case-insensitive with trimmed spaces.
-        Ok(Zeroizing::new(
-            input.trim().to_ascii_lowercase().into_bytes(),
-        ))
-    }
-
-    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Self::normalize_query(value)
-    }
-}
+    bits = 128,
+    query = str,
+    normalize = normalize_email,
+)]
+struct EmailLookup;
 
 #[derive(Serialize, Deserialize)]
 struct StoredUser {

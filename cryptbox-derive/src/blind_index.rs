@@ -1,0 +1,116 @@
+//! Expands `#[derive(BlindIndexSpec)]`.
+
+use proc_macro2::{Span, TokenStream};
+use quote::{quote, quote_spanned};
+use syn::{DeriveInput, Ident, spanned::Spanned};
+
+use crate::attr::{Attrs, Errors, Key, required};
+
+const KEYS: &[Key] = &[
+    Key::Id,
+    Key::Field,
+    Key::Bits,
+    Key::Query,
+    Key::Normalize,
+    Key::Project,
+    Key::Crate,
+];
+
+pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
+    let mut errors = Errors::default();
+    let mut attrs = Attrs::parse(&input.attrs, KEYS, &mut errors);
+    let krate = attrs.krate();
+    let name = &input.ident;
+
+    let id = required(
+        attrs.id.take(),
+        &attrs,
+        Key::Id,
+        name,
+        "\"<uuid>\"",
+        &mut errors,
+    );
+    let field = required(
+        attrs.field.take(),
+        &attrs,
+        Key::Field,
+        name,
+        "Field",
+        &mut errors,
+    );
+    let bits = required(
+        attrs.bits.take(),
+        &attrs,
+        Key::Bits,
+        name,
+        "32",
+        &mut errors,
+    );
+    let query = required(
+        attrs.query.take(),
+        &attrs,
+        Key::Query,
+        name,
+        "str",
+        &mut errors,
+    );
+    let normalize = required(
+        attrs.normalize.take(),
+        &attrs,
+        Key::Normalize,
+        name,
+        "normalize_fn",
+        &mut errors,
+    );
+    errors.finish()?;
+    let (Some(id), Some(field), Some(bits), Some(query), Some(normalize)) =
+        (id, field, bits, query, normalize)
+    else {
+        unreachable!("missing keys are reported above");
+    };
+
+    // Mixed-site hygiene keeps the parameters from capturing the user's paths.
+    let query_arg = Ident::new("query", Span::mixed_site());
+    let value_arg = Ident::new("value", Span::mixed_site());
+
+    // Span the calls on the user's paths so type errors point at the attribute.
+    let normalize_query = quote_spanned!(normalize.span()=> #normalize(#query_arg));
+    let normalize_value = if let Some(project) = &attrs.project {
+        let projected = quote_spanned!(project.span()=> &#project(#value_arg));
+        quote_spanned!(normalize.span()=> #normalize(#projected))
+    } else {
+        // Point a value that does not fit the normalizer at the `field` key.
+        let value = Ident::new("value", Span::mixed_site().located_at(field.span()));
+        quote_spanned!(normalize.span()=> #normalize(#value))
+    };
+
+    let normalized = quote! {
+        ::core::result::Result<
+            #krate::__private::Zeroizing<::std::vec::Vec<u8>>,
+            #krate::BlindIndexError,
+        >
+    };
+    let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
+
+    Ok(quote! {
+        const _: () = {
+            #[automatically_derived]
+            impl #impl_generics #krate::BlindIndexSpec for #name #type_generics #where_clause {
+                type Field = #field;
+                const ID: #krate::IndexId = #krate::IndexId::from_u128(#id);
+                const BITS: u16 = #bits;
+                type Query = #query;
+
+                fn normalize_query(#query_arg: &#query) -> #normalized {
+                    #normalize_query
+                }
+
+                fn normalize_value(
+                    #value_arg: &<#field as #krate::Field>::Value,
+                ) -> #normalized {
+                    #normalize_value
+                }
+            }
+        };
+    })
+}

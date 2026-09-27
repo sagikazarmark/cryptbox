@@ -13,6 +13,15 @@ macro_rules! identifier {
                 Self(bytes)
             }
 
+            /// Creates an identifier from a UUID's 128 bits, most significant first.
+            ///
+            /// `0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64` names the same identifier
+            /// as the literal `"0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64"`.
+            #[must_use]
+            pub const fn from_u128(value: u128) -> Self {
+                Self(value.to_be_bytes())
+            }
+
             /// Returns the canonical 16-byte representation.
             #[must_use]
             pub const fn as_bytes(&self) -> &[u8; 16] {

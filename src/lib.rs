@@ -150,6 +150,8 @@ pub use codec::Json;
 #[cfg(feature = "postcard")]
 pub use codec::Postcard;
 pub use codec::{Codec, Plaintext, Raw, Utf8};
+#[cfg(feature = "derive")]
+pub use cryptbox_derive::{BlindIndexSpec, Field, Plaintext};
 pub use crypto::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, decrypt, encrypt, inspect_ciphertext,
     is_ciphertext, needs_reencryption, reencrypt,
@@ -166,3 +168,9 @@ pub use padding::Padding;
 pub use prepare::Prepared;
 pub use router::Router;
 pub use value::{Ciphertext, Encrypted, Secret};
+
+// Paths that derive-generated code names; not public API.
+#[doc(hidden)]
+pub mod __private {
+    pub use zeroize::Zeroizing;
+}
