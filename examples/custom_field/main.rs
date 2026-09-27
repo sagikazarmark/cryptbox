@@ -207,7 +207,7 @@ mod tests {
         assert_eq!(decode.kind(), CodecErrorKind::Decoding);
         assert_eq!(decode.to_string(), "codec decoding failed");
         assert_eq!(format!("{decode:?}"), "CodecError { kind: Decoding }");
-        let normalize = HandleEquality::normalize(&invalid).unwrap_err();
+        let normalize = HandleEquality::normalize_query(&invalid).unwrap_err();
         assert_eq!(normalize.to_string(), "blind-index normalization failed");
         assert_eq!(format!("{normalize:?}"), "BlindIndexError");
 
