@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{
     BlindIndexKeyProvider, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKeyProvider, Error, Field, KeyContext, blind::derive_value, keys,
+    EncryptionKeyProvider, Error, Field, blind::derive_value, keys,
 };
 
 struct PreparedIndex {
@@ -47,7 +47,6 @@ where
 impl<F, K> Encrypted<F, K>
 where
     F: Field,
-    K: KeyContext,
 {
     /// Encrypts this value into a prepared storage representation.
     ///

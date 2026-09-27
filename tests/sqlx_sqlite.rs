@@ -166,6 +166,41 @@ fn sqlite_round_trips_ciphertext_and_decrypts_encrypted_values() {
 }
 
 #[test]
+fn sqlite_binds_an_explicitly_decrypted_value_through_its_own_key_context() {
+    futures_executor::block_on(async {
+        let mut connection = SqliteConnection::connect("sqlite::memory:").await.unwrap();
+        sqlx::query("CREATE TABLE secrets (value BLOB NOT NULL)")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        let explicit = TestKeys::encryption_keys().unwrap();
+        let stored = Encrypted::<TestField>::new("mark@example.com")
+            .encrypt_with(explicit)
+            .unwrap();
+        let value = stored
+            .decrypt_with(explicit)
+            .unwrap()
+            .with_key_context::<TestKeys>();
+
+        sqlx::query("INSERT INTO secrets (value) VALUES (?)")
+            .bind(&value)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        let row = sqlx::query("SELECT value FROM secrets")
+            .fetch_one(&mut connection)
+            .await
+            .unwrap();
+        let decrypted: Encrypted<TestField, TestKeys> = row.try_get("value").unwrap();
+
+        assert_eq!(decrypted.expose_secret(), "mark@example.com");
+        assert_eq!(keys::installed().unwrap_err(), Error::KeysNotInstalled);
+    });
+}
+
+#[test]
 fn sqlite_default_column_fails_closed_without_installed_keys() {
     let value = Encrypted::<TestField>::new("mark@example.com");
     let mut buffer = Vec::new();

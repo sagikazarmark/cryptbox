@@ -153,8 +153,10 @@ spawned outside a scope would silently use other keys
 The automatic SQLx column `Encrypted<F, K>` takes its key source as a type,
 because SQLx decoding receives no context. The default `K`, `GlobalKeys`, reads
 the installed keys. Implement `KeyContext` over an application-owned static to
-use a second keyring, a tenant, or a test fixture without the global. A field
-does not choose its keys: route fields to providers instead.
+use a second keyring, a tenant, or a test fixture without the global. Explicit
+decryption returns `Encrypted<F>`; `with_key_context::<K>()` moves the value
+into that column type without re-encrypting it. A field does not choose its
+keys: route fields to providers instead.
 
 Teams that forbid the global can deny `keys::install` and the implicit forms with
 Clippy's `disallowed_methods`, using

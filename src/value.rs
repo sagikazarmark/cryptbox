@@ -3,8 +3,8 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Codec, EncryptionKeyProvider, Error, Field, GlobalKeys, KeyContext,
-    crypto::decrypt_with_policy, encrypt, keys, needs_reencryption, reencrypt,
+    Codec, EncryptionKeyProvider, Error, Field, GlobalKeys, crypto::decrypt_with_policy, encrypt,
+    keys, needs_reencryption, reencrypt,
 };
 
 /// A plaintext application value that must be encrypted at storage boundaries.
@@ -25,9 +25,10 @@ use crate::{
 /// `K` is the key source of the automatic `SQLx` column, which encrypts on encode
 /// and decrypts on decode without receiving keys. The default, [`GlobalKeys`],
 /// reads the keys installed with [`keys::install`]; name another
-/// [`KeyContext`] to use application-owned keys instead. The explicit forms
-/// ignore `K`, and the implicit [`Self::encrypt`] and [`Self::prepare`] exist
-/// only for the default.
+/// [`KeyContext`](crate::KeyContext) to use application-owned keys instead.
+/// The explicit forms ignore `K`, and the implicit [`Self::encrypt`] and
+/// [`Self::prepare`] exist only for the default. Decryption returns a
+/// value in the default; [`Self::with_key_context`] moves it into another.
 ///
 /// ```
 /// use cryptbox::{Field, FieldId, Padding, Utf8};
@@ -68,12 +69,12 @@ use crate::{
 #[doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub struct Encrypted<F: Field, K: KeyContext = GlobalKeys> {
+pub struct Encrypted<F: Field, K = GlobalKeys> {
     value: F::Value,
     marker: PhantomData<fn() -> (F, K)>,
 }
 
-impl<F: Field, K: KeyContext> Encrypted<F, K> {
+impl<F: Field, K> Encrypted<F, K> {
     /// Wraps a plaintext application value.
     ///
     /// Accepts anything convertible into the field's value type, so a `&str`
@@ -103,12 +104,46 @@ impl<F: Field, K: KeyContext> Encrypted<F, K> {
     pub fn into_secret(self) -> F::Value {
         self.value
     }
+
+    /// Moves this value into the column type of another key context.
+    ///
+    /// Decryption returns a value in the default key context. Convert it to
+    /// bind it through a column that reads application-owned keys. This
+    /// moves the plaintext; it neither copies nor re-encrypts it.
+    ///
+    /// ```
+    /// # use cryptbox::{EncryptionKeyProvider, Error, Field, FieldId, KeyContext, Padding, Utf8};
+    /// # struct UserEmail;
+    /// # impl Field for UserEmail {
+    /// #     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+    /// #     const PADDING: Padding = Padding::NONE;
+    /// #     type Value = String;
+    /// #     type Codec = Utf8;
+    /// # }
+    /// # struct ArchiveKeys;
+    /// # impl KeyContext for ArchiveKeys {
+    /// #     fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, Error> {
+    /// #         unimplemented!()
+    /// #     }
+    /// # }
+    /// use cryptbox::{Ciphertext, Encrypted};
+    ///
+    /// fn read(
+    ///     stored: &Ciphertext<UserEmail>,
+    ///     keys: &dyn EncryptionKeyProvider,
+    /// ) -> Result<Encrypted<UserEmail, ArchiveKeys>, Error> {
+    ///     Ok(stored.decrypt_with(keys)?.with_key_context())
+    /// }
+    /// ```
+    #[must_use]
+    pub fn with_key_context<K2>(self) -> Encrypted<F, K2> {
+        Encrypted::from_value(self.value)
+    }
 }
 
 impl<F, K> Clone for Encrypted<F, K>
 where
     F: Field,
-    K: KeyContext,
     F::Value: Clone,
 {
     fn clone(&self) -> Self {
@@ -116,7 +151,7 @@ where
     }
 }
 
-impl<F: Field, K: KeyContext> fmt::Debug for Encrypted<F, K> {
+impl<F: Field, K> fmt::Debug for Encrypted<F, K> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Encrypted([REDACTED])")
     }
@@ -206,7 +241,7 @@ impl<F: Field> fmt::Debug for Ciphertext<F> {
     }
 }
 
-impl<F: Field, K: KeyContext> Encrypted<F, K> {
+impl<F: Field, K> Encrypted<F, K> {
     /// Encodes and encrypts this value with an explicitly injected provider.
     ///
     /// # Errors
@@ -239,13 +274,15 @@ impl<F: Field> Encrypted<F> {
 
 // The automatic SQLx columns encrypt and decrypt with their key source `K`.
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
-impl<F: Field, K: KeyContext> Encrypted<F, K> {
+impl<F: Field, K: crate::KeyContext> Encrypted<F, K> {
     pub(crate) fn encrypt_for_column(&self) -> Result<Ciphertext<F>, Error> {
         self.encrypt_with(K::encryption_keys()?)
     }
 
     pub(crate) fn decrypt_column(bytes: Vec<u8>) -> Result<Self, Error> {
-        Ciphertext::<F>::from_bytes(bytes)?.decrypt_into(K::encryption_keys()?)
+        Ok(Ciphertext::<F>::from_bytes(bytes)?
+            .decrypt_with(K::encryption_keys()?)?
+            .with_key_context())
     }
 }
 
@@ -263,13 +300,6 @@ impl<F: Field> Ciphertext<F> {
     /// Returns an error for invalid envelopes, unknown keys, authentication
     /// failure, unavailable providers, invalid padding, or codec failure.
     pub fn decrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Encrypted<F>, Error> {
-        self.decrypt_into(keys)
-    }
-
-    fn decrypt_into<K: KeyContext>(
-        &self,
-        keys: &dyn EncryptionKeyProvider,
-    ) -> Result<Encrypted<F, K>, Error> {
         let plaintext = decrypt_with_policy(F::ID, F::PADDING, &self.bytes, keys)?;
         let value = F::Codec::decode(&plaintext)?;
 

@@ -102,13 +102,19 @@
   with `keys::installed()`, and fail with `Error::KeysNotInstalled` (was
   `KeyProviderNotInitialized`) before installation. `KeyProviderError::NotInitialized`
   and `Error::KeyProviderAlreadyInitialized` are removed.
-- **Breaking:** the automatic SQLx column is `Encrypted<F, K: KeyContext = GlobalKeys>`.
+- **Breaking:** the automatic SQLx column is `Encrypted<F, K = GlobalKeys>`,
+  whose column impls require `K: KeyContext`; the struct and its other methods
+  do not bound `K`, so generic application types need not repeat the bound.
   `GlobalKeys` replaces `GlobalKeyContext` and reads the installed keys;
   implement `KeyContext::encryption_keys` over an application-owned static to
   give a column its own keys without installing the global. `KeyContext` no
   longer has `blind_index_keys`, and `encryption_keys` returns `Error`. `encrypt()` and `prepare()` exist only for the
   default `K`. The docs show a Clippy `disallowed_methods` configuration for
   teams that forbid the global.
+- Add `Encrypted::with_key_context::<K>()`, which moves a value into another
+  key context. Every decryption form, on `Ciphertext` and
+  `migrate::MaybeEncrypted`, returns the default `Encrypted<F>`; convert it to
+  bind the value through a column with application-owned keys.
 
 - **Breaking:** new values are written as ciphertext format 2, which records in
   the authenticated envelope header whether the payload is padded (ADR-0002).

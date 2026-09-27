@@ -26,7 +26,8 @@ use super::{LegacyFormat, legacy};
 ///
 /// Reads are permissive; writes never are. `MaybeEncrypted` implements no
 /// storage `Encode` and no Serde: the only forward path is an [`Encrypted`]
-/// value, which always encrypts when stored.
+/// value, which always encrypts when stored. Decryption returns it in the
+/// default key context; [`Encrypted::with_key_context`] moves it into another.
 ///
 /// Legacy data that happens to begin with the 4-byte envelope magic is
 /// classified as ciphertext and then fails structurally or on authentication,

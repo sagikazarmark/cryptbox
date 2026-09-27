@@ -10,9 +10,11 @@ process-wide `keys::install(Keys)` backs the implicit forms (`encrypt()`,
 `decrypt()`). `Keys` holds the encryption and blind-index providers, usually
 routers. sqlx `Decode` receives no context, so the auto-encrypting column
 type takes its key source as a type parameter:
-`Encrypted<F, K: KeyContext = GlobalKeys>`. A user can name their own static
-(a second keyring, a tenant, a test fixture) instead of the global. Together,
-the explicit forms and `K` are the escape hatch from the global.
+`Encrypted<F, K = GlobalKeys>`, whose column impls require `K: KeyContext`. A
+user can name their own static (a second keyring, a tenant, a test fixture)
+instead of the global. Explicit decryption returns the default `K`;
+`with_key_context` moves the value into another. Together, the explicit forms
+and `K` are the escape hatch from the global.
 
 ## Considered Options
 

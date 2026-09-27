@@ -25,6 +25,36 @@ fn encrypted_values_require_explicit_plaintext_access() {
     assert_eq!(format!("{value:?}"), "Encrypted([REDACTED])");
 }
 
+/// Generic over the key context without bounding it: only the `SQLx` column
+/// needs `K: KeyContext`.
+struct Record<K> {
+    email: Encrypted<ExampleField, K>,
+}
+
+impl<K> Record<K> {
+    fn new(email: &str) -> Self {
+        Self {
+            email: Encrypted::new(email),
+        }
+    }
+
+    fn with_key_context<K2>(self) -> Record<K2> {
+        Record {
+            email: self.email.with_key_context(),
+        }
+    }
+}
+
+#[test]
+fn key_context_bounds_do_not_spread_into_user_generics() {
+    struct Unrelated;
+
+    let record = Record::<()>::new("mark@example.com").with_key_context::<Unrelated>();
+
+    assert_eq!(record.email.clone().expose_secret(), "mark@example.com");
+    assert_eq!(format!("{:?}", record.email), "Encrypted([REDACTED])");
+}
+
 #[test]
 fn built_in_byte_codecs_round_trip_owned_values() {
     let encoded = <Utf8 as Codec<String>>::encode(&"Zażółć".to_owned()).unwrap();
