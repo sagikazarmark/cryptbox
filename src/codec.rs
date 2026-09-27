@@ -19,11 +19,13 @@ impl ZeroizingByteBuffer {
         self.bytes
     }
 
+    #[cfg(feature = "postcard")]
     fn push(&mut self, byte: u8) {
         self.reserve(1);
         self.bytes.push(byte);
     }
 
+    #[cfg(feature = "json")]
     fn extend_from_slice(&mut self, bytes: &[u8]) {
         self.reserve(bytes.len());
         self.bytes.extend_from_slice(bytes);
@@ -167,6 +169,11 @@ pub trait Codec<T>: 'static {
 ///     type Codec = PostcodeCodec;
 /// }
 /// ```
+///
+/// With the `derive` feature, `#[derive(Plaintext)]` with
+/// `#[cryptbox(codec = PostcodeCodec)]` writes exactly the `Plaintext` impl.
+/// Without `codec`, it makes a single-field tuple struct such as `Postcode`
+/// its own codec, storing exactly the bytes of its inner value's default codec.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` has no default codec",
     label = "`{Self}` does not implement `cryptbox::Plaintext`",
