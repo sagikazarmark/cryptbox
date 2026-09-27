@@ -3,8 +3,8 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Codec, EncryptionKeyProvider, Error, Field, GlobalKeys, KeyContext, decrypt, encrypt, keys,
-    needs_reencryption,
+    Codec, EncryptionKeyProvider, Error, Field, GlobalKeys, KeyContext,
+    crypto::decrypt_with_policy, encrypt, keys, needs_reencryption, reencrypt,
 };
 
 /// A plaintext application value that must be encrypted at storage boundaries.
@@ -215,8 +215,7 @@ impl<F: Field, K: KeyContext> Encrypted<F, K> {
     /// encryption fails.
     pub fn encrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Ciphertext<F>, Error> {
         let plaintext = F::Codec::encode(&self.value)?;
-        let plaintext = F::PADDING.pad(plaintext)?;
-        let ciphertext = encrypt(F::ID, &plaintext, keys)?;
+        let ciphertext = encrypt(F::ID, F::PADDING, &plaintext, keys)?;
 
         Ok(Ciphertext::from_validated_bytes(ciphertext))
     }
@@ -271,8 +270,7 @@ impl<F: Field> Ciphertext<F> {
         &self,
         keys: &dyn EncryptionKeyProvider,
     ) -> Result<Encrypted<F, K>, Error> {
-        let plaintext = decrypt(F::ID, &self.bytes, keys)?;
-        let plaintext = F::PADDING.unpad(plaintext)?;
+        let plaintext = decrypt_with_policy(F::ID, F::PADDING, &self.bytes, keys)?;
         let value = F::Codec::decode(&plaintext)?;
 
         Ok(Encrypted::from_value(value))
@@ -290,7 +288,10 @@ impl<F: Field> Ciphertext<F> {
         self.decrypt_with(keys::installed()?)
     }
 
-    /// Reports whether this envelope uses a non-current suite or key.
+    /// Reports whether this envelope differs from what `F` currently writes.
+    ///
+    /// That is an older format, a non-current suite or key, or a padding flag
+    /// that disagrees with [`Field::PADDING`].
     ///
     /// Envelope metadata is unauthenticated until decryption succeeds.
     /// A `false` result does not establish authenticated readability or codec validity.
@@ -306,10 +307,13 @@ impl<F: Field> Ciphertext<F> {
     /// Returns an error for a malformed or unsupported envelope, or unavailable
     /// provider.
     pub fn needs_reencryption_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<bool, Error> {
-        needs_reencryption(F::ID, &self.bytes, keys)
+        needs_reencryption(F::ID, F::PADDING, &self.bytes, keys)
     }
 
-    /// Decrypts and rewrites this envelope with the active suite and current key.
+    /// Decrypts and rewrites this envelope as `F` currently writes it.
+    ///
+    /// The rewrite uses the current format, suite, key, and [`Field::PADDING`],
+    /// so a sweep can enable or disable padding.
     ///
     /// This authenticates the ciphertext and checks padding, but does not decode
     /// the value with the field's codec or check any stored blind indexes.
@@ -319,11 +323,7 @@ impl<F: Field> Ciphertext<F> {
     ///
     /// Returns any decryption, padding, or encryption error.
     pub fn reencrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Self, Error> {
-        let plaintext = decrypt(F::ID, &self.bytes, keys)?;
-        let plaintext = F::PADDING.unpad(plaintext)?;
-        let plaintext = F::PADDING.pad(plaintext)?;
-
-        encrypt(F::ID, &plaintext, keys).map(Self::from_validated_bytes)
+        reencrypt(F::ID, F::PADDING, &self.bytes, keys).map(Self::from_validated_bytes)
     }
 }
 

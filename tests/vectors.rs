@@ -1,51 +1,30 @@
-//! Provisional compatibility vectors for the experimental v0.1 formats.
+//! Provisional compatibility vectors for the experimental formats.
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, EncryptionKey, Error, Field,
     IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, Utf8,
-    decrypt, field_id, index_id, index_key_id, key_id,
+    decrypt, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
 };
 use zeroize::Zeroizing;
 
-struct PaddedVectorField;
+// docs/wire-format.md#provisional-envelope-vectors
+const UNPADDED: &str = "4342580002010011111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd4f8e9c4e8454cd34732e7966a50994cd";
+const PADDED: &str = "4342580002010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd489a56ec6e125f07deaa76f7502ad2613f";
+// docs/wire-format.md#format-1
+const FORMAT_1_UNPADDED: &str = "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d";
+const FORMAT_1_PADDED: &str = "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6";
 
-impl Field for PaddedVectorField {
-    const ID: cryptbox::FieldId = VectorField::ID;
-    const PADDING: Padding = Padding::block(16);
-    type Value = String;
-    type Codec = Utf8;
+fn keys() -> LocalEncryptionKeyring {
+    let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
+
+    LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap()
 }
 
-#[test]
-fn experimental_padded_envelope_vector_decrypts() {
-    let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
-    let keys = LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap();
-    let envelope = hex::decode(
-        "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6",
-    )
-    .unwrap();
-    let ciphertext = Ciphertext::<PaddedVectorField>::from_bytes(envelope).unwrap();
-
-    assert_eq!(
-        ciphertext.decrypt_with(&keys).unwrap().expose_secret(),
-        "cryptbox vector"
-    );
-}
-
-#[test]
-fn unpadded_envelope_vector_is_invalid_for_a_padded_field() {
-    let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
-    let keys = LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap();
-    let envelope = hex::decode(
-        "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d",
-    )
-    .unwrap();
-    let ciphertext = Ciphertext::<PaddedVectorField>::from_bytes(envelope).unwrap();
-
-    assert!(matches!(
-        ciphertext.decrypt_with(&keys),
-        Err(Error::InvalidPadding)
-    ));
+fn read<F: Field>(vector: &str) -> Result<F::Value, Error> {
+    Ciphertext::<F>::from_bytes(hex::decode(vector).unwrap())
+        .unwrap()
+        .decrypt_with(&keys())
+        .map(cryptbox::Encrypted::into_secret)
 }
 
 struct VectorField;
@@ -57,20 +36,80 @@ impl Field for VectorField {
     type Codec = Raw;
 }
 
-#[test]
-fn experimental_envelope_vector_decrypts() {
-    let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
-    let keys = LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap();
-    let envelope = hex::decode(
-        "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d",
-    )
-    .unwrap();
+struct PaddedVectorField;
 
+impl Field for PaddedVectorField {
+    const ID: cryptbox::FieldId = VectorField::ID;
+    const PADDING: Padding = Padding::block(16);
+    type Value = String;
+    type Codec = Utf8;
+}
+
+#[test]
+fn experimental_envelope_vectors_record_their_padding() {
+    for (vector, padded) in [(UNPADDED, false), (PADDED, true)] {
+        let envelope = hex::decode(vector).unwrap();
+        let info = inspect_ciphertext(&envelope).unwrap();
+
+        assert_eq!(info.format_version(), 2);
+        assert_eq!(info.padded(), Some(padded));
+        assert_eq!(
+            decrypt(VectorField::ID, &envelope, &keys())
+                .unwrap()
+                .as_slice(),
+            b"cryptbox vector"
+        );
+    }
+}
+
+#[test]
+fn experimental_envelope_vectors_decrypt_under_either_padding_policy() {
+    for vector in [UNPADDED, PADDED] {
+        assert_eq!(read::<VectorField>(vector).unwrap(), b"cryptbox vector");
+        assert_eq!(
+            read::<PaddedVectorField>(vector).unwrap(),
+            "cryptbox vector"
+        );
+    }
+}
+
+#[test]
+fn format_1_vectors_are_read_with_the_field_padding_policy() {
     assert_eq!(
-        decrypt(VectorField::ID, &envelope, &keys)
-            .unwrap()
-            .as_slice(),
+        read::<VectorField>(FORMAT_1_UNPADDED).unwrap(),
         b"cryptbox vector"
+    );
+    assert_eq!(
+        read::<PaddedVectorField>(FORMAT_1_PADDED).unwrap(),
+        "cryptbox vector"
+    );
+    // Format 1 does not record padding: a policy change before a sweep misreads it.
+    assert_eq!(
+        read::<VectorField>(FORMAT_1_PADDED).unwrap(),
+        b"cryptbox vector\x80"
+    );
+    assert_eq!(
+        read::<PaddedVectorField>(FORMAT_1_UNPADDED),
+        Err(Error::InvalidPadding)
+    );
+}
+
+#[test]
+fn format_1_vectors_are_stale_and_reencrypt_to_format_2() {
+    let keys = keys();
+    let legacy =
+        Ciphertext::<PaddedVectorField>::from_bytes(hex::decode(FORMAT_1_PADDED).unwrap()).unwrap();
+
+    assert!(legacy.needs_reencryption_with(&keys).unwrap());
+
+    let current = legacy.reencrypt_with(&keys).unwrap();
+    let info = inspect_ciphertext(current.as_bytes()).unwrap();
+    assert_eq!(info.format_version(), 2);
+    assert_eq!(info.padded(), Some(true));
+    assert!(!current.needs_reencryption_with(&keys).unwrap());
+    assert_eq!(
+        current.decrypt_with(&keys).unwrap().expose_secret(),
+        "cryptbox vector"
     );
 }
 

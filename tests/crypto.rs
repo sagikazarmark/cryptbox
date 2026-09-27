@@ -40,8 +40,8 @@ impl Field for PhoneField {
 fn encryption_is_randomized_and_authenticates_the_envelope() {
     let keys = keyring(CURRENT_KEY_ID, 7);
 
-    let first = encrypt(EmailField::ID, b"same plaintext", &keys).unwrap();
-    let second = encrypt(EmailField::ID, b"same plaintext", &keys).unwrap();
+    let first = encrypt(EmailField::ID, Padding::NONE, b"same plaintext", &keys).unwrap();
+    let second = encrypt(EmailField::ID, Padding::NONE, b"same plaintext", &keys).unwrap();
 
     assert_ne!(first, second);
     assert_eq!(
@@ -50,7 +50,8 @@ fn encryption_is_randomized_and_authenticates_the_envelope() {
     );
 
     let info = inspect_ciphertext(&first).unwrap();
-    assert_eq!(info.format_version(), 1);
+    assert_eq!(info.format_version(), 2);
+    assert_eq!(info.padded(), Some(false));
     assert_eq!(info.suite_id().get(), 1);
     assert_eq!(info.key_id(), CURRENT_KEY_ID);
 
@@ -65,9 +66,9 @@ fn encryption_is_randomized_and_authenticates_the_envelope() {
 #[test]
 fn empty_plaintext_is_a_valid_authenticated_message() {
     let keys = keyring(CURRENT_KEY_ID, 9);
-    let ciphertext = encrypt(EmailField::ID, b"", &keys).unwrap();
+    let ciphertext = encrypt(EmailField::ID, Padding::NONE, b"", &keys).unwrap();
 
-    assert_eq!(ciphertext.len(), 62);
+    assert_eq!(ciphertext.len(), 63);
     assert!(is_ciphertext(&ciphertext));
     assert!(
         decrypt(EmailField::ID, &ciphertext, &keys)
@@ -77,9 +78,55 @@ fn empty_plaintext_is_a_valid_authenticated_message() {
 }
 
 #[test]
+fn padded_encryption_records_the_flag_and_decryption_removes_the_padding() {
+    let keys = keyring(CURRENT_KEY_ID, 9);
+    let ciphertext = encrypt(EmailField::ID, Padding::block(16), b"padded", &keys).unwrap();
+
+    assert_eq!(ciphertext.len(), 63 + 16);
+    assert_eq!(
+        inspect_ciphertext(&ciphertext).unwrap().padded(),
+        Some(true)
+    );
+    assert_eq!(
+        decrypt(EmailField::ID, &ciphertext, &keys)
+            .unwrap()
+            .as_slice(),
+        b"padded"
+    );
+}
+
+#[test]
+fn flipping_the_padding_flag_fails_authentication() {
+    let keys = keyring(CURRENT_KEY_ID, 9);
+
+    for padding in [Padding::NONE, Padding::block(16)] {
+        let mut ciphertext = encrypt(EmailField::ID, padding, b"flagged", &keys).unwrap();
+        ciphertext[6] ^= 0x01;
+
+        assert_eq!(
+            decrypt(EmailField::ID, &ciphertext, &keys),
+            Err(Error::AuthenticationFailed)
+        );
+    }
+}
+
+#[test]
+fn reserved_flag_bits_are_rejected_before_authentication() {
+    let keys = keyring(CURRENT_KEY_ID, 9);
+    let mut ciphertext = encrypt(EmailField::ID, Padding::NONE, b"flagged", &keys).unwrap();
+    ciphertext[6] |= 0x02;
+
+    assert_eq!(inspect_ciphertext(&ciphertext), Err(Error::InvalidEnvelope));
+    assert_eq!(
+        decrypt(EmailField::ID, &ciphertext, &keys),
+        Err(Error::InvalidEnvelope)
+    );
+}
+
+#[test]
 fn field_binding_rejects_cross_field_ciphertext_substitution() {
     let keys = keyring(CURRENT_KEY_ID, 11);
-    let ciphertext = encrypt(EmailField::ID, b"mark@example.com", &keys).unwrap();
+    let ciphertext = encrypt(EmailField::ID, Padding::NONE, b"mark@example.com", &keys).unwrap();
 
     assert_eq!(
         decrypt(EmailField::ID, &ciphertext, &keys)
@@ -96,7 +143,7 @@ fn field_binding_rejects_cross_field_ciphertext_substitution() {
 #[test]
 fn decryption_resolves_only_the_key_named_by_the_envelope() {
     let writing_keys = keyring(OLD_KEY_ID, 13);
-    let ciphertext = encrypt(EmailField::ID, b"historical", &writing_keys).unwrap();
+    let ciphertext = encrypt(EmailField::ID, Padding::NONE, b"historical", &writing_keys).unwrap();
     let unrelated_keys = keyring(CURRENT_KEY_ID, 17);
 
     assert_eq!(
@@ -109,11 +156,17 @@ fn decryption_resolves_only_the_key_named_by_the_envelope() {
 fn changing_a_key_id_to_another_readable_generation_fails_authentication() {
     let old = key(OLD_KEY_ID, 13);
     let writing_keys = LocalEncryptionKeyring::new(old.clone(), []).unwrap();
-    let mut ciphertext = encrypt(EmailField::ID, b"bound to metadata", &writing_keys).unwrap();
+    let mut ciphertext = encrypt(
+        EmailField::ID,
+        Padding::NONE,
+        b"bound to metadata",
+        &writing_keys,
+    )
+    .unwrap();
     let current = key(CURRENT_KEY_ID, 17);
     let rotated = LocalEncryptionKeyring::new(current, [old]).unwrap();
 
-    ciphertext[6..22].copy_from_slice(CURRENT_KEY_ID.as_bytes());
+    ciphertext[7..23].copy_from_slice(CURRENT_KEY_ID.as_bytes());
 
     assert_eq!(
         decrypt(EmailField::ID, &ciphertext, &rotated),
@@ -125,7 +178,7 @@ fn changing_a_key_id_to_another_readable_generation_fails_authentication() {
 fn rotation_preserves_reads_and_reencryption_uses_the_current_key() {
     let old = key(OLD_KEY_ID, 19);
     let old_keys = LocalEncryptionKeyring::new(old.clone(), []).unwrap();
-    let ciphertext = encrypt(EmailField::ID, b"rotate me", &old_keys).unwrap();
+    let ciphertext = encrypt(EmailField::ID, Padding::NONE, b"rotate me", &old_keys).unwrap();
 
     let rotated = LocalEncryptionKeyring::new(key(CURRENT_KEY_ID, 23), [old]).unwrap();
     assert_eq!(
@@ -134,14 +187,14 @@ fn rotation_preserves_reads_and_reencryption_uses_the_current_key() {
             .as_slice(),
         b"rotate me"
     );
-    assert!(needs_reencryption(EmailField::ID, &ciphertext, &rotated).unwrap());
+    assert!(needs_reencryption(EmailField::ID, Padding::NONE, &ciphertext, &rotated).unwrap());
 
-    let rewritten = reencrypt(EmailField::ID, &ciphertext, &rotated).unwrap();
+    let rewritten = reencrypt(EmailField::ID, Padding::NONE, &ciphertext, &rotated).unwrap();
     assert_eq!(
         inspect_ciphertext(&rewritten).unwrap().key_id(),
         CURRENT_KEY_ID
     );
-    assert!(!needs_reencryption(EmailField::ID, &rewritten, &rotated).unwrap());
+    assert!(!needs_reencryption(EmailField::ID, Padding::NONE, &rewritten, &rotated).unwrap());
 }
 
 struct TypedEmail;
@@ -181,7 +234,7 @@ fn malformed_and_unknown_envelopes_fail_strictly() {
         Err(Error::NotCiphertext)
     );
 
-    let ciphertext = encrypt(EmailField::ID, b"value", &keys).unwrap();
+    let ciphertext = encrypt(EmailField::ID, Padding::NONE, b"value", &keys).unwrap();
     let mut truncated = ciphertext;
     truncated.truncate(30);
     assert_eq!(
@@ -189,7 +242,7 @@ fn malformed_and_unknown_envelopes_fail_strictly() {
         Err(Error::InvalidEnvelope)
     );
 
-    let mut unsupported = encrypt(EmailField::ID, b"value", &keys).unwrap();
+    let mut unsupported = encrypt(EmailField::ID, Padding::NONE, b"value", &keys).unwrap();
     unsupported[5] = 0xff;
     assert_eq!(
         decrypt(EmailField::ID, &unsupported, &keys),

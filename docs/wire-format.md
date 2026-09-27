@@ -8,7 +8,7 @@ needed to reproduce them.
 
 | Format | Format version | Suite ID |
 | --- | --- | --- |
-| [Ciphertext](#envelope) | 1 | [1](#encryption-suite-1) |
+| [Ciphertext](#envelope) | 2 | [1](#encryption-suite-1) |
 | [Blind index](#blind-index-format-1) | 1 | — |
 
 > [!WARNING]
@@ -29,8 +29,8 @@ The ciphertext envelope carries three identifiers with different jobs:
   provider must supply to decrypt this value. The ID is public; key material is
   never stored in the envelope.
 
-Format version `1` and suite ID `1` are separate identifiers that happen to have
-the same value. They identify separate parts of the protocol. Rotating keys
+Format version `2` and suite ID `1` are separate identifiers that identify
+separate parts of the protocol. Rotating keys
 changes the key generation used for new values; it does not change the format
 or suite.
 
@@ -96,34 +96,41 @@ The field supplies the expected binding; it is not stored in the envelope.
 This makes the application decide where a value belongs, rather than allowing
 stored bytes to select their own binding.
 
-Codec identity/version and padding policy are also absent. The application
-schema must supply these to interpret the plaintext after authentication.
+Codec identity and version are also absent: the application schema must supply
+them to interpret the plaintext after authentication. Whether the payload is
+padded is recorded in the envelope flags; padding parameters are not.
 
 ### Envelope
 
-Ciphertext format 1 starts with a 22-byte header containing the magic bytes,
-format version, suite ID, and `KeyId`. The suite determines the remaining layout.
-For suite 1, the nonce extends that header to a 46-byte prefix:
+Ciphertext format 2 starts with a 23-byte header containing the magic bytes,
+format version, suite ID, flags, and `KeyId`. The suite determines the remaining
+layout. For suite 1, the nonce extends that header to a 47-byte prefix:
 
 ```text
 offset  size  field
 0       4     43 42 58 00 ("CBX" + NUL)
-4       1     format version = 01
+4       1     format version = 02
 5       1     suite ID = 01
-6       16    KeyId
-22      24    XChaCha20 nonce
-46      N     ciphertext
-46+N    16    Poly1305 tag
+6       1     flags
+7       16    KeyId
+23      24    XChaCha20 nonce
+47      N     ciphertext
+47+N    16    Poly1305 tag
 ```
+
+Flag bit `01` records that the AEAD plaintext is [padded](#plaintext-padding).
+All other bits are reserved and must be zero; readers reject an envelope with a
+reserved bit set before authentication. The flags are part of the authenticated
+prefix, so changing them fails authentication.
 
 There is no embedded payload-length field: the enclosing storage or transport
 must supply the envelope boundary. Within that boundary, the last 16 bytes are
 the tag and the bytes between the prefix and tag are the encrypted payload.
 The prefix is readable without a key, but remains untrusted until authentication.
 
-The minimum envelope is 62 bytes and represents empty AEAD plaintext. For an
-unpadded field, ciphertext leaks encoded plaintext length exactly plus this
-fixed overhead. A padded field reveals its padded bucket length instead.
+The minimum envelope is 63 bytes and represents empty AEAD plaintext. For an
+unpadded value, ciphertext leaks encoded plaintext length exactly plus this
+fixed overhead. A padded value reveals its padded bucket length instead.
 See [size semantics and enforcement](#size-semantics-and-enforcement) for exact
 encoded, padded, and stored lengths and the suite's functional limit.
 
@@ -146,16 +153,16 @@ key_info = key_info_label
         || key_id
         || binding
 
-aad = aad_label || envelope[0..46] || binding
+aad = aad_label || envelope[0..47] || binding
 ```
 
 ### Encryption recipe
 
 Inputs are an independent 32-byte encryption root, its immutable 16-byte
 `KeyId`, the expected field binding, and AEAD plaintext bytes (encoded and
-optionally padded as below). Use the encoding conventions and binding bytes
-above, with `format_version = 01` and `suite_id = 01`. Rust type names and
-database names are not inputs.
+optionally padded as below), and whether it is padded. Use the encoding
+conventions and binding bytes above, with `format_version = 02` and
+`suite_id = 01`. Rust type names and database names are not inputs.
 
 1. Construct `key_info` in the order above. Perform **both** RFC 5869 stages:
    `PRK = HKDF-Extract-SHA256(salt, root_key)` (32-byte PRK), then
@@ -164,8 +171,9 @@ database names are not inputs.
 2. Generate a fresh 24-byte nonce from the operating-system random source for
    each encryption, failing if randomness is unavailable. The fixed nonces in
    the vectors are test inputs only, not a supported application nonce policy.
-3. Construct the 46-byte prefix from magic, version, suite, `KeyId`, and nonce
-   using the offset table. Form `aad = aad_label || prefix || binding`.
+3. Construct the 47-byte prefix from magic, version, suite, flags, `KeyId`, and
+   nonce using the offset table. Set flag bit `01` exactly when the AEAD
+   plaintext is padded. Form `aad = aad_label || prefix || binding`.
 4. Seal the complete AEAD plaintext with XChaCha20-Poly1305 using the 32-byte
    operational key, nonce, and AAD. Append the ciphertext (same length as AEAD
    plaintext) and the full 16-byte tag to the prefix. No text encoding, tag
@@ -173,11 +181,13 @@ database names are not inputs.
 
 For decryption, structurally validate the envelope, resolve only its exact
 `KeyId`, reconstruct the key and AAD with the **expected** binding, and verify
-the tag before returning any plaintext. Only after authentication may a typed
-field remove padding and decode. Wrong binding or changes to supported
-metadata, nonce, ciphertext, or tag fail authentication. Malformed/unsupported
-envelopes and unknown keys can fail before authentication. Successful decryption
-does not establish freshness or row identity.
+the tag before returning any plaintext. Only after authentication is padding
+removed, when the authenticated flag is set, and the value decoded; the reader's
+current padding policy never decides whether to remove padding. Wrong binding
+or changes to supported metadata, flags, nonce, ciphertext, or tag fail
+authentication. Malformed/unsupported envelopes and unknown keys can fail
+before authentication. Successful decryption does not establish freshness or
+row identity.
 
 ### Plaintext padding
 
@@ -185,25 +195,31 @@ Encryption preserves payload length, so padding lets a field hide the exact
 encoded length by expanding it to a block boundary or fixed target. Suite 1 does
 not require padding; it can encrypt any byte length within its size limit.
 
-Fields that enable padding use ISO/IEC 7816-4 padding before passing encoded
-plaintext to the encryption suite. Padding appends one `80` byte followed by as
-many `00` bytes as needed to reach the selected block or fixed length. Removal
-scans backward over zero bytes, requires the `80` marker, and strips it. It does
-not depend on the block size or fixed length that produced the padding.
+Padded values use ISO/IEC 7816-4 padding before the encoded plaintext is passed
+to the encryption suite. Padding appends one `80` byte followed by as many `00`
+bytes as needed to reach the selected block or fixed length. Removal scans
+backward over zero bytes, requires the `80` marker, and strips it. It does not
+depend on the block size or fixed length that produced the padding.
 
 For encoded length `E`, `Padding::NONE` passes through `E` bytes;
 `Padding::block(N)` (`N >= 2`) produces `N * ceil((E + 1) / N)` bytes; and
 `Padding::length(N)` (`N >= 1`) produces exactly `N` bytes, rejecting `E >= N`
 because the marker must fit. An aligned block input receives a whole extra
-block, and even an empty padded input contains a marker. The byte-level
-`encrypt`/`decrypt` functions do not apply or remove field padding.
+block, and even an empty padded input contains a marker.
 
-The envelope does not record whether padding is enabled or which parameters
-were used, and its format version remains unchanged. Enabling or disabling
-padding is therefore a persistent-schema change requiring migration. Changing
-the parameters of an already-padded field does not prevent old ciphertext
-from decrypting. Re-encryption rewrites authenticated plaintext with the
-field's current padding parameters.
+The writer sets the padded flag exactly when it applies padding, and a reader
+removes padding exactly when the authenticated flag is set. The reader's current
+padding policy is not consulted, so padded bytes are never returned with their
+marker, and an unpadded value ending in `80` or `80 00` never loses those bytes.
+A field's padding policy therefore describes only how new values are written: it
+can be enabled, disabled, or resized without making stored values unreadable.
+Re-encryption rewrites the payload and flag with the field's current policy.
+The byte-level `encrypt` function takes the policy to apply; `decrypt` removes
+recorded padding.
+
+The block size or fixed length is not recorded. Changing only those parameters
+is not visible in the envelope, so re-encryption applies them only to values it
+rewrites for another reason.
 
 ### Size semantics and enforcement
 
@@ -213,19 +229,19 @@ All lengths are byte counts, not character counts or Rust memory sizes:
 | --- | --- |
 | `E`: encoded bytes | Codec output before padding. `Utf8` counts UTF-8 bytes: `"é"` has `E = 2`. |
 | `P`: AEAD plaintext | Encoded bytes after padding, including the marker and zero fill when enabled. `Padding::NONE` gives `P = E`. |
-| `W`: envelope bytes | Complete binary ciphertext: 46-byte prefix, `P` ciphertext bytes, 16-byte tag. `W = P + 62`; excludes text encoding, database framing, and separate indexes. |
+| `W`: envelope bytes | Complete binary ciphertext: 47-byte prefix, `P` ciphertext bytes, 16-byte tag. `W = P + 63`; excludes text encoding, database framing, and separate indexes. |
 
 Padding boundary examples (ASCII input, one encoded byte per character):
 
 | Padding policy | `E` | Padding bytes | `P` | `W` | Result |
 | --- | ---: | ---: | ---: | ---: | --- |
-| `Padding::NONE` | 0 | 0 | 0 | 62 | Accepted |
-| `Padding::NONE` | 16 | 0 | 16 | 78 | Exact length preserved |
-| `Padding::block(16)` | 0 | 16 | 16 | 78 | Empty input still padded |
-| `Padding::block(16)` | 15 | 1 | 16 | 78 | Marker fills block |
-| `Padding::block(16)` | 16 | 16 | 32 | 94 | Marker starts next block |
-| `Padding::length(16)` | 0 | 16 | 16 | 78 | Empty input uses entire target |
-| `Padding::length(16)` | 15 | 1 | 16 | 78 | Largest fitting input |
+| `Padding::NONE` | 0 | 0 | 0 | 63 | Accepted |
+| `Padding::NONE` | 16 | 0 | 16 | 79 | Exact length preserved |
+| `Padding::block(16)` | 0 | 16 | 16 | 79 | Empty input still padded |
+| `Padding::block(16)` | 15 | 1 | 16 | 79 | Marker fills block |
+| `Padding::block(16)` | 16 | 16 | 32 | 95 | Marker starts next block |
+| `Padding::length(16)` | 0 | 16 | 16 | 79 | Empty input uses entire target |
+| `Padding::length(16)` | 15 | 1 | 16 | 79 | Largest fitting input |
 | `Padding::length(16)` | 16 | — | — | — | `PaddingOverflow`: marker cannot fit |
 
 Suite 1 enforces RFC 8439's functional maximum `P <= 274,877,906,880`
@@ -240,8 +256,9 @@ For an application-selected padded cap `L`, `Padding::NONE` permits `E <= L`;
 `Padding::block(N)` permits `E <= N * floor(L / N) - 1` if at least one block fits;
 `Padding::length(N)` requires `N <= L` and `E <= N - 1`. Bound encoding and compute
 padded size with checked arithmetic before allocating/encrypting. Bound incoming
-binary envelopes to `W <= L + 62` before copying/decrypting, and bound decoding
-expansion separately. Current padding parameters do not cap historical reads:
+binary envelopes to `W <= L + 63` before copying/decrypting, and bound decoding
+expansion separately; a [format 1](#format-1) envelope is one byte shorter, so
+the same bound admits it. Current padding parameters do not cap historical reads:
 unpadding accepts a valid marker independently of the original block/target size.
 A size check is not authentication.
 
@@ -250,10 +267,10 @@ A size check is not authentication.
 See [plaintext and key ownership](ownership.md) for buffer lifetimes and erasure
 obligations.
 
-### Provisional envelope vector
+### Provisional envelope vectors
 
 These fixed inputs and expected outputs help check byte-for-byte compatibility.
-The first vector encrypts unpadded plaintext bound to
+The first vector encrypts unpadded plaintext (flags `00`) bound to
 `FieldId 12345678-1234-4234-8234-1234567890ab`:
 
 ```text
@@ -262,18 +279,45 @@ KeyId:      11111111-2222-4333-8444-555555555555
 binding:    01123456781234423482341234567890ab
 plaintext:  6372797074626f7820766563746f72 ("cryptbox vector")
 nonce:      000102030405060708090a0b0c0d0e0f1011121314151617
-envelope:   43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d
+envelope:   4342580002010011111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd4f8e9c4e8454cd34732e7966a50994cd
 ```
 
-The vector is generated and consumed in separate tests, but it has not yet
-been cross-checked against an independent implementation.
-
 The padded vector uses the same root key, `KeyId`, binding, and nonce as the
-first vector, with `"cryptbox vector"` padded under `Padding::block(16)`:
+first vector, with `"cryptbox vector"` padded under `Padding::block(16)` and
+flags `01`:
 
 ```text
 padded plaintext: 6372797074626f7820766563746f7280
-envelope:         43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6
+envelope:         4342580002010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd489a56ec6e125f07deaa76f7502ad2613f
+```
+
+Both decrypt to `"cryptbox vector"` whatever the reader's padding policy. The
+vectors are generated and consumed in separate tests, but they have not yet been
+cross-checked against an independent implementation.
+
+### Format 1
+
+Ciphertext format 1 is the previous envelope. It is still read, but no longer
+written. It has no flags byte: a 22-byte header (magic, `01`, suite ID, `KeyId`)
+and, for suite 1, a 46-byte prefix, so `W = P + 62`. Key derivation uses
+`format_version = 01`, and the AAD covers `envelope[0..46]`; otherwise the
+recipe is unchanged.
+
+Format 1 does not record whether its payload is padded. A reader removes padding
+exactly when the field's **current** padding policy pads, which is how format 1
+was written. This is correct only while the policy is unchanged: a padded value
+read without padding keeps its `80 00…` bytes, and an unpadded value read with
+padding fails with `InvalidPadding` or loses trailing `80`/`80 00` bytes. The
+byte-level `decrypt` function has no policy and returns a format 1 payload as
+stored.
+
+A format 1 envelope always needs re-encryption, which rewrites it as format 2
+using the current policy. Sweep stored format 1 values before changing a field's
+padding policy. These format 1 vectors use the inputs above:
+
+```text
+unpadded envelope: 43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d
+padded envelope:   43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6
 ```
 
 ## Blind-index format 1

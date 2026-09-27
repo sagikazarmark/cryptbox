@@ -32,8 +32,8 @@
   longer `const`. The `From<T>` implementation for `Encrypted` is removed; use
   `Encrypted::new`.
 - **Breaking:** low-level primitives take the field instead of a binding and
-  context: `encrypt(F::ID, plaintext, keys)`, `decrypt(F::ID, …)`,
-  `reencrypt(F::ID, …)`, and `needs_reencryption(F::ID, …)`.
+  context: `encrypt(F::ID, F::PADDING, plaintext, keys)`, `decrypt(F::ID, …)`,
+  `reencrypt(F::ID, F::PADDING, …)`, and `needs_reencryption(F::ID, F::PADDING, …)`.
 
   Migrating from 0.5:
 
@@ -48,7 +48,7 @@
   | `Encrypted<String, P>`, `Encrypted::<_, P>` | `Encrypted<P>`, `Encrypted::<P>` |
   | `value.encrypt_with(&(), &keys)` | `value.encrypt_with(&keys)` |
   | `value.into()` into `Encrypted` | `Encrypted::new(value)` |
-  | `encrypt::<FieldBound<F>>(bytes, &(), &keys)` | `encrypt(F::ID, bytes, &keys)` |
+  | `encrypt::<FieldBound<F>>(bytes, &(), &keys)` | `encrypt(F::ID, F::PADDING, bytes, &keys)` |
   | `impl BlindIndexMetadata for S` plus `impl BlindIndexSpec<str> for S` and `impl BlindIndexSpec<String> for S` | one `impl BlindIndexSpec for S { type Field = F; const BITS: u16 = …; type Query = str; … }` |
   | `derive_blind_index::<S, String, F>(&value, &keys)` | `S::derive_with(&value, &keys)` |
   | `blind_index_probes::<S, str, F>(query, &keys)` | `S::probes_with(query, &keys)` |
@@ -102,6 +102,21 @@
   longer has `blind_index_keys`, and `encryption_keys` returns `Error`. `encrypt()` and `prepare()` exist only for the
   default `K`. The docs show a Clippy `disallowed_methods` configuration for
   teams that forbid the global.
+
+- **Breaking:** new values are written as ciphertext format 2, which records in
+  the authenticated envelope header whether the payload is padded (ADR-0002).
+  Readers remove padding only when that flag is set, so `Field::PADDING` is
+  write policy rather than persistent schema: a field can enable, disable, or
+  resize padding without making stored values unreadable, and re-encryption
+  rewrites them with the current policy. The header gains a flags byte, so
+  envelopes are one byte longer (`W = P + 63`). `encrypt`, `reencrypt`, and
+  `needs_reencryption` take the field's `Padding` after its ID
+  (`encrypt(F::ID, F::PADDING, bytes, &keys)`); `decrypt` removes recorded
+  padding. `needs_reencryption` also reports a format 1 envelope or a padding
+  flag that disagrees with the policy, so a sweep converges both.
+  `CiphertextInfo::padded` reports the flag. Format 1 stays readable, with
+  padding interpreted by the field's current policy as before; sweep it to
+  format 2 before changing a field's padding policy.
 
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new

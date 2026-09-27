@@ -9,9 +9,10 @@ This page explains those choices and their consequences. It builds on
 ## Persistent schema
 
 Encrypted storage is not entirely self-describing. An envelope identifies its
-format, suite, and encryption-key generation, but the application supplies the
-expected field ID, codec, and padding policy. A blind index additionally depends
-on a logical index ID and normalization rule that are not stored with it.
+format, suite, encryption-key generation, and whether its payload is padded, but
+the application supplies the expected field ID and codec. A blind index
+additionally depends on a logical index ID and normalization rule that are not
+stored with it.
 
 These choices form persistent schema just as database column types do:
 
@@ -19,7 +20,6 @@ These choices form persistent schema just as database column types do:
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
 | Field ID | Every value is bound to its field ID; a different ID fails authentication. |
-| Padding enabled/disabled | The envelope does not say whether the decrypted bytes contain padding. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
@@ -38,11 +38,16 @@ themselves; that mapping is persistent schema too. Two fields over one value typ
 (`HomeAddress` and `BillingAddress` over `Address`) have separate field IDs, so
 their ciphertext cannot be swapped.
 
-Padding has one useful exception: removal depends on the padding marker, not the
-original block size or target length. Changing parameters of an already-padded
-field preserves readability, while enabling or disabling padding requires
-migration. Current padding parameters also do not impose a limit on historical
+Padding is not persistent schema. The envelope records, under authentication,
+whether its payload is padded, and readers remove padding only when that flag is
+set. A field's padding policy describes how new values are written: enabling,
+disabling, or resizing it keeps existing values readable, and a
+[re-encryption sweep](reencryption-sweep.md) rewrites them with the current
+policy. Current padding parameters also do not impose a limit on historical
 reads. See the [size and padding contracts](wire-format.md#plaintext-padding).
+
+Sweep [format 1](wire-format.md#format-1) values, which predate the flag, before
+changing a field's padding policy.
 
 ## Storage boundaries
 

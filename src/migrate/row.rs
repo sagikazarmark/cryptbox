@@ -243,7 +243,7 @@ where
             Err(error) => return Err(error),
         }
 
-        if needs_reencryption(F::ID, ciphertext, self.keys)? {
+        if needs_reencryption(F::ID, F::PADDING, ciphertext, self.keys)? {
             return Ok(RowState::Stale);
         }
 
@@ -277,7 +277,7 @@ where
             Err(error) => return Err(error),
         }
 
-        let envelope_is_stale = needs_reencryption(F::ID, ciphertext, self.keys)?;
+        let envelope_is_stale = needs_reencryption(F::ID, F::PADDING, ciphertext, self.keys)?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
         for (column, bytes) in self.indexes.iter().zip(indexes) {
             stale_columns.push(column.is_stale(bytes)?);

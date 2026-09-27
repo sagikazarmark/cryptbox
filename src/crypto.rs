@@ -4,13 +4,20 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::{BindingDomain, EncryptionKey, EncryptionKeyProvider, Error, FieldId, KeyId, SuiteId};
+use crate::padding::unpad;
+use crate::{
+    BindingDomain, EncryptionKey, EncryptionKeyProvider, Error, FieldId, KeyId, Padding, SuiteId,
+};
 
 const MAGIC: &[u8; 4] = b"CBX\0";
-const FORMAT_VERSION: u8 = 1;
-const HEADER_LEN: usize = 22;
+const FORMAT_VERSION: u8 = 2;
+const HEADER_LEN: usize = 23;
+// Format 1 did not record padding; it stays readable until stored data is swept.
+// See ../docs/wire-format.md#format-1.
+const FORMAT_1_VERSION: u8 = 1;
+const FORMAT_1_HEADER_LEN: usize = 22;
+const FLAG_PADDED: u8 = 0x01;
 const NONCE_LEN: usize = 24;
-const PREFIX_LEN: usize = HEADER_LEN + NONCE_LEN;
 const TAG_LEN: usize = 16;
 const MAX_PLAINTEXT_LEN: u64 = 274_877_906_880;
 
@@ -31,6 +38,7 @@ pub const EXPERIMENTAL_XCHACHA20_POLY1305: SuiteId = SuiteId::new(1);
 pub struct CiphertextInfo {
     format_version: u8,
     suite_id: SuiteId,
+    padded: Option<bool>,
     key_id: KeyId,
 }
 
@@ -45,6 +53,15 @@ impl CiphertextInfo {
     #[must_use]
     pub const fn suite_id(self) -> SuiteId {
         self.suite_id
+    }
+
+    /// Returns whether the envelope records a padded payload.
+    ///
+    /// Format 1 envelopes do not record padding and return `None`; the field's
+    /// padding policy describes them.
+    #[must_use]
+    pub const fn padded(self) -> Option<bool> {
+        self.padded
     }
 
     /// Returns the encryption-key generation named by the envelope.
@@ -109,38 +126,58 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
 
 /// Encrypts opaque plaintext bytes for `field` with the provider's current key.
 ///
+/// `padding` is applied before encryption and recorded in the authenticated
+/// envelope, so [`decrypt`] removes it regardless of the policy in effect when
+/// the value is read.
+///
 /// # Errors
 ///
-/// Returns an error for unavailable keys, an unrouted field, failed OS
-/// randomness, or messages longer than the active suite's 274,877,906,880-byte
-/// limit.
+/// Returns an error for unavailable keys, an unrouted field, plaintext that
+/// does not fit fixed padding, failed OS randomness, or messages longer than
+/// the active suite's 274,877,906,880-byte limit.
 pub fn encrypt(
     field: FieldId,
+    padding: Padding,
     plaintext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Vec<u8>, Error> {
     let key = keys.current_key(field)?;
     let suite = active_suite();
-    let header = envelope_header(suite.id(), key.id());
+    let header = envelope_header(suite.id(), padding.is_padded(), key.id());
+    let domain = BindingDomain::field(field);
 
-    suite.seal(&header, plaintext, &BindingDomain::field(field), &key)
+    match padding.pad(plaintext)? {
+        Some(padded) => suite.seal(&header, &padded, &domain, &key),
+        None => suite.seal(&header, plaintext, &domain, &key),
+    }
 }
 
 /// Authenticates and decrypts opaque ciphertext bytes.
 ///
 /// The provider is asked only for the exact key ID named by the envelope.
 /// Success authenticates the envelope under the supplied key and `field`;
-/// it does not establish freshness, row identity, padding, or codec validity.
-/// Use [`crate::Ciphertext::decrypt_with`] to also unpad and decode a typed value.
+/// it does not establish freshness, row identity, or codec validity.
+/// Padding recorded by the envelope is removed. A format 1 envelope does not
+/// record padding, so its payload is returned as stored.
+/// Use [`crate::Ciphertext::decrypt_with`] to also decode a typed value.
 ///
 /// # Errors
 ///
 /// Returns a structured envelope, key-provider (including an unrouted field),
-/// unknown-key, or authentication
-/// error. A different field and modified ciphertext both report authentication
-/// failure.
+/// unknown-key, authentication, or padding error. A different field and
+/// modified ciphertext both report authentication failure.
 pub fn decrypt(
     field: FieldId,
+    ciphertext: &[u8],
+    keys: &dyn EncryptionKeyProvider,
+) -> Result<Zeroizing<Vec<u8>>, Error> {
+    decrypt_with_policy(field, Padding::NONE, ciphertext, keys)
+}
+
+/// Decrypts and unpads, reading a format 1 payload with the field's `padding`.
+pub(crate) fn decrypt_with_policy(
+    field: FieldId,
+    padding: Padding,
     ciphertext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
@@ -149,15 +186,32 @@ pub fn decrypt(
         .key(field, parsed.info.key_id)?
         .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id))?;
     let domain = BindingDomain::field(field);
+    let plaintext = registered_suite(parsed.info.suite_id)?.open(
+        parsed.header,
+        parsed.suite_payload,
+        &domain,
+        &key,
+    )?;
 
-    registered_suite(parsed.info.suite_id)?.open(parsed.header, parsed.suite_payload, &domain, &key)
+    // Only the authenticated flag decides unpadding; the current policy must not,
+    // or policy changes would silently misread stored values.
+    // See ../docs/adr/0002-authenticated-padding-flag.md.
+    match parsed.info.padded {
+        Some(true) => unpad(plaintext),
+        Some(false) => Ok(plaintext),
+        None => padding.unpad(plaintext),
+    }
 }
 
-/// Reports whether an envelope does not use the active suite or `field`'s current key.
+/// Reports whether an envelope differs from what `field` currently writes.
+///
+/// That is an older format, a non-active suite, a non-current key, or a padding
+/// flag that disagrees with `padding`. Padding parameters are not recorded, so
+/// changing only a block size or fixed length is not reported.
 ///
 /// This reads unauthenticated metadata and does not decrypt the payload.
-/// A `false` result means only that the parsed suite and key IDs are current,
-/// not that the ciphertext can be authenticated or decoded.
+/// A `false` result does not establish that the ciphertext can be
+/// authenticated or decoded.
 ///
 /// # Errors
 ///
@@ -165,38 +219,48 @@ pub fn decrypt(
 /// providers, or an unrouted field.
 pub fn needs_reencryption(
     field: FieldId,
+    padding: Padding,
     ciphertext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<bool, Error> {
     let info = inspect_ciphertext(ciphertext)?;
     let current = keys.current_key(field)?;
 
-    Ok(info.suite_id != active_suite().id() || info.key_id != current.id())
+    Ok(info.format_version != FORMAT_VERSION
+        || info.suite_id != active_suite().id()
+        || info.key_id != current.id()
+        || info.padded != Some(padding.is_padded()))
 }
 
-/// Decrypts an envelope and encrypts it with the active suite and current key.
+/// Decrypts an envelope and encrypts it as `field` currently writes it.
+///
+/// The value is rewritten with the current format, active suite, current key,
+/// and `padding`, so a sweep can enable or disable padding. A format 1 payload,
+/// which does not record padding, is read with `padding`.
 ///
 /// # Errors
 ///
-/// Returns any decryption or encryption error.
+/// Returns any decryption, padding, or encryption error.
 pub fn reencrypt(
     field: FieldId,
+    padding: Padding,
     ciphertext: &[u8],
     keys: &dyn EncryptionKeyProvider,
 ) -> Result<Vec<u8>, Error> {
-    let plaintext = decrypt(field, ciphertext, keys)?;
+    let plaintext = decrypt_with_policy(field, padding, ciphertext, keys)?;
 
-    encrypt(field, &plaintext, keys)
+    encrypt(field, padding, &plaintext, keys)
 }
 
 #[cfg(test)]
 fn seal_with_nonce(
     plaintext: &[u8],
+    padded: bool,
     domain: BindingDomain,
     key: &EncryptionKey,
     nonce: [u8; NONCE_LEN],
 ) -> Result<Vec<u8>, Error> {
-    let header = envelope_header(EXPERIMENTAL_XCHACHA20_POLY1305, key.id());
+    let header = envelope_header(EXPERIMENTAL_XCHACHA20_POLY1305, padded, key.id());
 
     XCHACHA20_POLY1305_SUITE.seal_with_nonce(&header, plaintext, &domain, key, nonce)
 }
@@ -205,40 +269,60 @@ fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> {
     if !is_ciphertext(bytes) {
         return Err(Error::NotCiphertext);
     }
-    if bytes.len() < HEADER_LEN {
+
+    // Too short for any format's header: malformed, whatever byte 4 claims.
+    if bytes.len() < FORMAT_1_HEADER_LEN {
         return Err(Error::InvalidEnvelope);
     }
-    if bytes[4] != FORMAT_VERSION {
-        return Err(Error::UnsupportedFormatVersion(bytes[4]));
+
+    // Offsets follow the layout table: ../docs/wire-format.md#envelope.
+    let format_version = bytes[4];
+    let header_len = match format_version {
+        FORMAT_VERSION => HEADER_LEN,
+        FORMAT_1_VERSION => FORMAT_1_HEADER_LEN,
+        _ => return Err(Error::UnsupportedFormatVersion(format_version)),
+    };
+    if bytes.len() < header_len {
+        return Err(Error::InvalidEnvelope);
     }
 
     let suite_id = SuiteId::new(bytes[5]);
-    registered_suite(suite_id)?.validate_payload(&bytes[HEADER_LEN..])?;
+    registered_suite(suite_id)?.validate_payload(&bytes[header_len..])?;
+
+    let padded = match (format_version, bytes[6]) {
+        (FORMAT_1_VERSION, _) => None,
+        (_, 0) => Some(false),
+        (_, FLAG_PADDED) => Some(true),
+        // Reject reserved bits so a flag this reader does not know is never ignored.
+        _ => return Err(Error::InvalidEnvelope),
+    };
 
     let mut key_id = [0_u8; 16];
-    key_id.copy_from_slice(&bytes[6..HEADER_LEN]);
+    key_id.copy_from_slice(&bytes[header_len - 16..header_len]);
 
     Ok(ParsedEnvelope {
         info: CiphertextInfo {
-            format_version: FORMAT_VERSION,
+            format_version,
             suite_id,
+            padded,
             key_id: KeyId::from_bytes(key_id),
         },
-        header: &bytes[..HEADER_LEN],
-        suite_payload: &bytes[HEADER_LEN..],
+        header: &bytes[..header_len],
+        suite_payload: &bytes[header_len..],
     })
 }
 
 fn derive_encryption_key(
     root: &EncryptionKey,
     domain: &BindingDomain,
+    format_version: u8,
     suite_id: SuiteId,
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
     // Preserve this canonical order: changing it makes stored ciphertext unreadable.
     // See ../docs/wire-format.md#encryption-recipe.
     let mut info = Vec::with_capacity(ENCRYPTION_KEY_LABEL.len() + 18 + domain.as_bytes().len());
     info.extend_from_slice(ENCRYPTION_KEY_LABEL);
-    info.push(FORMAT_VERSION);
+    info.push(format_version);
     info.push(suite_id.get());
     info.extend_from_slice(root.id().as_bytes());
     info.extend_from_slice(domain.as_bytes());
@@ -280,11 +364,11 @@ impl XChaCha20Poly1305Suite {
         validate_plaintext_len(plaintext.len())?;
 
         let nonce = XNonce::from(nonce);
-        let mut prefix = Vec::with_capacity(PREFIX_LEN);
+        let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
         prefix.extend_from_slice(header);
         prefix.extend_from_slice(&nonce);
 
-        let operational_key = derive_encryption_key(key, domain, self.id())?;
+        let operational_key = derive_encryption_key(key, domain, header[4], self.id())?;
         let cipher =
             XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
         let aad = envelope_aad(&prefix, domain);
@@ -351,11 +435,11 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         let nonce: &XNonce = payload[..NONCE_LEN]
             .try_into()
             .map_err(|_| Error::InvalidEnvelope)?;
-        let mut prefix = Vec::with_capacity(PREFIX_LEN);
+        let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
         prefix.extend_from_slice(header);
         prefix.extend_from_slice(nonce);
 
-        let operational_key = derive_encryption_key(key, domain, self.id())?;
+        let operational_key = derive_encryption_key(key, domain, header[4], self.id())?;
         let cipher =
             XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
         let aad = envelope_aad(&prefix, domain);
@@ -382,12 +466,13 @@ fn registered_suite(id: SuiteId) -> Result<&'static dyn EncryptionSuite, Error> 
         .ok_or(Error::UnsupportedSuite(id))
 }
 
-fn envelope_header(suite_id: SuiteId, key_id: KeyId) -> [u8; HEADER_LEN] {
+fn envelope_header(suite_id: SuiteId, padded: bool, key_id: KeyId) -> [u8; HEADER_LEN] {
     let mut header = [0_u8; HEADER_LEN];
     header[..4].copy_from_slice(MAGIC);
     header[4] = FORMAT_VERSION;
     header[5] = suite_id.get();
-    header[6..].copy_from_slice(key_id.as_bytes());
+    header[6] = if padded { FLAG_PADDED } else { 0 };
+    header[7..].copy_from_slice(key_id.as_bytes());
 
     header
 }
@@ -453,7 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn experimental_padded_envelope_vector_is_stable() {
+    fn experimental_padded_format_2_vector_is_stable() {
         let key = EncryptionKey::new(
             KeyId::from_uuid_literal("11111111-2222-4333-8444-555555555555"),
             [0x11; 32],
@@ -466,6 +551,7 @@ mod tests {
 
         let envelope = seal_with_nonce(
             b"cryptbox vector\x80",
+            true,
             BindingDomain::field(VECTOR_FIELD),
             &key,
             nonce,
@@ -474,12 +560,12 @@ mod tests {
 
         assert_eq!(
             hex::encode(envelope),
-            "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6"
+            "4342580002010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd489a56ec6e125f07deaa76f7502ad2613f"
         );
     }
 
     #[test]
-    fn experimental_envelope_vector_is_stable() {
+    fn experimental_format_2_vector_is_stable() {
         let key = EncryptionKey::new(
             KeyId::from_uuid_literal("11111111-2222-4333-8444-555555555555"),
             [0x11; 32],
@@ -492,6 +578,7 @@ mod tests {
 
         let envelope = seal_with_nonce(
             b"cryptbox vector",
+            false,
             BindingDomain::field(VECTOR_FIELD),
             &key,
             nonce,
@@ -500,7 +587,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(envelope),
-            "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d"
+            "4342580002010011111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd4f8e9c4e8454cd34732e7966a50994cd"
         );
     }
 }

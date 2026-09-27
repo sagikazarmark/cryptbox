@@ -58,7 +58,7 @@ use crate::{
 ///     .route::<Email>(general)?
 ///     .route::<Iban>(payments)?;
 ///
-/// let ciphertext = encrypt(Iban::ID, b"DE89370400440532013000", &keys)?;
+/// let ciphertext = encrypt(Iban::ID, Iban::PADDING, b"DE89370400440532013000", &keys)?;
 /// assert_eq!(decrypt(Iban::ID, &ciphertext, &keys)?.as_slice(), b"DE89370400440532013000");
 /// assert!(!keys.falls_back(Iban::ID));
 /// # Ok(())

@@ -8,10 +8,13 @@ use crate::Error;
 /// [`Padding::NONE`], [`Padding::block`], or [`Padding::length`]. The
 /// representation is private, so applications cannot define another policy.
 ///
-/// Whether a field uses padding is persistent schema: enabling or disabling
-/// padding for stored ciphertext requires an explicit migration. Padding
-/// parameters may change without migration because removal does not depend on
-/// the parameter that produced the padding.
+/// A policy describes how new values are written; it is not persistent schema.
+/// The ciphertext envelope records whether its payload is padded, and readers
+/// remove padding only when that authenticated flag is set. A field can enable or
+/// disable padding, or change its parameters, without making values unreadable;
+/// re-encryption rewrites a value whose flag disagrees with the current policy.
+/// Format 1 ciphertext does not record padding and is read with the current
+/// policy, so re-encrypt it before changing the policy; see the [format 1 rules].
 ///
 /// Padded values use ISO/IEC 7816-4 padding: a `0x80` marker followed by zero
 /// bytes. See the [custom-field example] and [ownership reference].
@@ -24,7 +27,8 @@ use crate::Error;
 ///
 #[doc = concat!(
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
+    "[format 1 rules]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#format-1",
 )]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Padding(Policy);
@@ -70,10 +74,18 @@ impl Padding {
         Self(Policy::Length(len))
     }
 
+    /// Reports whether this policy pads plaintext.
+    pub(crate) const fn is_padded(self) -> bool {
+        !matches!(self.0, Policy::None)
+    }
+
     /// Applies this policy to encoded plaintext.
-    pub(crate) fn pad(self, plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
+    ///
+    /// Returns `None` when the policy stores plaintext unchanged, so the caller
+    /// can encrypt its own buffer without a copy.
+    pub(crate) fn pad(self, plaintext: &[u8]) -> Result<Option<Zeroizing<Vec<u8>>>, Error> {
         match self.0 {
-            Policy::None => Ok(plaintext),
+            Policy::None => Ok(None),
             Policy::Block(size) => {
                 let length_with_marker = plaintext
                     .len()
@@ -82,28 +94,31 @@ impl Padding {
                 let blocks = length_with_marker.div_ceil(size);
                 let target = blocks.checked_mul(size).ok_or(Error::MessageTooLong)?;
 
-                Ok(pad_to_length(&plaintext, target))
+                Ok(Some(pad_to_length(plaintext, target)))
             }
             Policy::Length(length) => {
                 if plaintext.len() >= length {
                     return Err(Error::PaddingOverflow);
                 }
 
-                Ok(pad_to_length(&plaintext, length))
+                Ok(Some(pad_to_length(plaintext, length)))
             }
         }
     }
 
-    /// Removes ISO/IEC 7816-4 padding from decrypted plaintext.
+    /// Removes padding as this policy would have written it.
+    ///
+    /// Only format 1 ciphertext, which does not record padding, is read this way.
     pub(crate) fn unpad(self, plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
-        match self.0 {
-            Policy::None => Ok(plaintext),
-            Policy::Block(_) | Policy::Length(_) => unpad(plaintext),
+        if self.is_padded() {
+            unpad(plaintext)
+        } else {
+            Ok(plaintext)
         }
     }
 }
 
-fn pad_to_length(plaintext: &Zeroizing<Vec<u8>>, target: usize) -> Zeroizing<Vec<u8>> {
+fn pad_to_length(plaintext: &[u8], target: usize) -> Zeroizing<Vec<u8>> {
     // Preallocate before copying so growth cannot abandon a plaintext-bearing allocation.
     // See ../docs/wire-format.md#key-and-buffer-lifetime.
     let mut padded = Zeroizing::new(Vec::with_capacity(target));
@@ -114,7 +129,8 @@ fn pad_to_length(plaintext: &Zeroizing<Vec<u8>>, target: usize) -> Zeroizing<Vec
     padded
 }
 
-fn unpad(mut plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
+/// Removes ISO/IEC 7816-4 padding from decrypted plaintext.
+pub(crate) fn unpad(mut plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
     let marker = plaintext
         .iter()
         .rposition(|byte| *byte != 0)
@@ -135,11 +151,9 @@ mod tests {
     #[test]
     fn no_padding_preserves_plaintext() {
         let plaintext = Zeroizing::new(b"exact bytes".to_vec());
-        let padded = Padding::NONE.pad(plaintext).unwrap();
-
-        assert_eq!(padded.as_slice(), b"exact bytes");
+        assert_eq!(Padding::NONE.pad(&plaintext).unwrap(), None);
         assert_eq!(
-            Padding::NONE.unpad(padded).unwrap().as_slice(),
+            Padding::NONE.unpad(plaintext).unwrap().as_slice(),
             b"exact bytes"
         );
     }
@@ -151,18 +165,14 @@ mod tests {
 
     #[test]
     fn block_padding_matches_iso_7816_4_bytes() {
-        let padded = Padding::block(8)
-            .pad(Zeroizing::new(b"abc".to_vec()))
-            .unwrap();
+        let padded = Padding::block(8).pad(b"abc").unwrap().unwrap();
 
         assert_eq!(padded.as_slice(), b"abc\x80\0\0\0\0");
     }
 
     #[test]
     fn fixed_length_padding_matches_iso_7816_4_bytes() {
-        let padded = Padding::length(6)
-            .pad(Zeroizing::new(b"abc".to_vec()))
-            .unwrap();
+        let padded = Padding::length(6).pad(b"abc").unwrap().unwrap();
 
         assert_eq!(padded.as_slice(), b"abc\x80\0\0");
     }
@@ -171,9 +181,7 @@ mod tests {
     fn block_padding_always_adds_a_marker_and_round_trips() {
         for length in 0..=33 {
             let plaintext = vec![b'x'; length];
-            let padded = Padding::block(16)
-                .pad(Zeroizing::new(plaintext.clone()))
-                .unwrap();
+            let padded = Padding::block(16).pad(&plaintext).unwrap().unwrap();
 
             assert_eq!(padded.len(), (length / 16 + 1) * 16);
             assert_eq!(
@@ -187,9 +195,7 @@ mod tests {
     fn fixed_length_padding_fills_the_target_and_rejects_overflow() {
         for length in 0..32 {
             let plaintext = vec![b'x'; length];
-            let padded = Padding::length(32)
-                .pad(Zeroizing::new(plaintext.clone()))
-                .unwrap();
+            let padded = Padding::length(32).pad(&plaintext).unwrap().unwrap();
 
             assert_eq!(padded.len(), 32);
             assert_eq!(
@@ -199,16 +205,14 @@ mod tests {
         }
 
         assert_eq!(
-            Padding::length(32).pad(Zeroizing::new(vec![b'x'; 32])),
+            Padding::length(32).pad(&[b'x'; 32]),
             Err(Error::PaddingOverflow)
         );
     }
 
     #[test]
     fn padded_plaintext_can_be_unpadded_with_different_parameters() {
-        let padded = Padding::block(16)
-            .pad(Zeroizing::new(b"portable".to_vec()))
-            .unwrap();
+        let padded = Padding::block(16).pad(b"portable").unwrap().unwrap();
 
         assert_eq!(
             Padding::block(64).unpad(padded.clone()).unwrap().as_slice(),

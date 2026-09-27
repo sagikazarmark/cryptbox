@@ -31,5 +31,7 @@ point to change it.
 - `Field::PADDING` describes how new values are written; it is no longer
   persistent schema.
 - Two markers sharing a field ID, and `retag`/`cast`, leave the API.
-- Whether and how long to keep a format 1 reader is decided when the format
-  lands.
+- Format 1 stays readable, interpreted with the field's current padding policy
+  as it was written. Re-encryption reports and rewrites it as format 2, so a
+  sweep retires it. Until then, changing a field's padding policy can still
+  misread unswept format 1 values; sweep first.

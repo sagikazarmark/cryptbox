@@ -78,9 +78,11 @@
 //!
 //! # Persistent schema
 //!
-//! Codec compatibility, padding mode, field/index IDs, normalization,
-//! and index precision are persistent schema. Stored bytes do not describe all
-//! of them; changing them requires a migration plan. See [schema rules].
+//! Codec compatibility, field/index IDs, normalization, and index precision
+//! are persistent schema. Stored bytes do not describe them; changing them
+//! requires a migration plan. Padding is not schema: the envelope records it
+//! (except in format 1, which is read with the current policy).
+//! See [schema rules].
 //!
 #![doc = concat!(
     "[schema rules]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/integration.md#persistent-schema",

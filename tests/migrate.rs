@@ -451,7 +451,7 @@ fn planner_encrypts_legacy_plaintext_with_the_field_padding_policy() {
     let outcome = planner.plan_row(b"mark@example.com", &[]).unwrap();
     assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
-    assert_eq!(write.ciphertext().len(), 62 + 32);
+    assert_eq!(write.ciphertext().len(), 63 + 32);
     assert_eq!(
         Ciphertext::<PaddedUserEmail>::from_bytes(write.ciphertext().to_vec())
             .unwrap()
@@ -459,6 +459,31 @@ fn planner_encrypts_legacy_plaintext_with_the_field_padding_policy() {
             .unwrap()
             .expose_secret(),
         "mark@example.com"
+    );
+}
+
+#[test]
+fn planner_rewrites_current_key_envelopes_when_the_padding_policy_changes() {
+    let keys = rotated_keys();
+    let unpadded = encrypt_email("mark@example.com", &keys);
+    let planner = RowPlanner::<PaddedUserEmail>::new(&keys);
+
+    assert_eq!(
+        planner.classify_row(&unpadded, &[]).unwrap(),
+        RowState::Stale
+    );
+    let write = planner
+        .plan_row(&unpadded, &[])
+        .unwrap()
+        .into_write()
+        .unwrap();
+    assert_eq!(
+        inspect_ciphertext(write.ciphertext()).unwrap().padded(),
+        Some(true)
+    );
+    assert_eq!(
+        planner.classify_row(write.ciphertext(), &[]).unwrap(),
+        RowState::Current
     );
 }
 

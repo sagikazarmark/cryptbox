@@ -40,7 +40,7 @@ fn encryption_keys_can_be_generated_for_immediate_use() {
     assert_ne!(first.id(), second.id());
 
     let keys = LocalEncryptionKeyring::new(first, []).unwrap();
-    let ciphertext = encrypt(TestField::ID, b"generated key", &keys).unwrap();
+    let ciphertext = encrypt(TestField::ID, TestField::PADDING, b"generated key", &keys).unwrap();
 
     assert_eq!(
         decrypt(TestField::ID, &ciphertext, &keys)
@@ -75,7 +75,13 @@ fn encryption_keys_load_from_hex_and_base64() {
 
     let writing_keys = LocalEncryptionKeyring::new(hex_key, []).unwrap();
     let reading_keys = LocalEncryptionKeyring::new(base64_key, []).unwrap();
-    let ciphertext = encrypt(TestField::ID, b"loaded key", &writing_keys).unwrap();
+    let ciphertext = encrypt(
+        TestField::ID,
+        TestField::PADDING,
+        b"loaded key",
+        &writing_keys,
+    )
+    .unwrap();
 
     assert_eq!(
         decrypt(TestField::ID, &ciphertext, &reading_keys)

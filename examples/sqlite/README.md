@@ -119,7 +119,7 @@ the original plaintext, and no global provider is installed: `keys` supplies
 the key explicitly.
 
 Field binding identifies a logical field, not a row or tenant. Preserve the field
-ID, codec compatibility, binding, and padding choices with your stored data; see
+ID, codec compatibility, and binding choices with your stored data; see
 [persistent schema](../../docs/integration.md#persistent-schema).
 
 You now have durable encryption-only storage. If you also need equality lookup,

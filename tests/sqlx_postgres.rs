@@ -125,7 +125,7 @@ fn sqlx_encode_encrypts_plaintext_into_an_owned_argument_buffer() {
 #[test]
 fn typed_ciphertext_encoding_preserves_the_binary_envelope() {
     let keys = TestKeys::encryption_keys().unwrap();
-    let bytes = encrypt(TestField::ID, b"value", keys).unwrap();
+    let bytes = encrypt(TestField::ID, TestField::PADDING, b"value", keys).unwrap();
     let ciphertext = Ciphertext::<TestField>::from_bytes(bytes.clone()).unwrap();
     let mut buffer = PgArgumentBuffer::default();
 

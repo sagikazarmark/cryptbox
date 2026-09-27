@@ -45,8 +45,8 @@ fn fields_routed_to_different_providers_use_their_own_keys() {
         .route::<Iban>(keyring(PAYMENTS_KEY_ID, 2))
         .unwrap();
 
-    let email = encrypt(Email::ID, b"mark@example.com", &router).unwrap();
-    let iban = encrypt(Iban::ID, b"DE89370400440532013000", &router).unwrap();
+    let email = encrypt(Email::ID, Email::PADDING, b"mark@example.com", &router).unwrap();
+    let iban = encrypt(Iban::ID, Iban::PADDING, b"DE89370400440532013000", &router).unwrap();
 
     assert_eq!(inspect_ciphertext(&email).unwrap().key_id(), GENERAL_KEY_ID);
     assert_eq!(inspect_ciphertext(&iban).unwrap().key_id(), PAYMENTS_KEY_ID);
@@ -63,11 +63,11 @@ fn fields_routed_to_different_providers_use_their_own_keys() {
 #[test]
 fn strict_router_rejects_unrouted_fields_for_encryption_and_decryption() {
     let general = keyring(GENERAL_KEY_ID, 1);
-    let ciphertext = encrypt(Iban::ID, b"DE89370400440532013000", &general).unwrap();
+    let ciphertext = encrypt(Iban::ID, Iban::PADDING, b"DE89370400440532013000", &general).unwrap();
     let router = Router::strict().route::<Email>(general).unwrap();
 
     assert_eq!(
-        encrypt(Iban::ID, b"DE89370400440532013000", &router),
+        encrypt(Iban::ID, Iban::PADDING, b"DE89370400440532013000", &router),
         Err(Error::UnroutedField(Iban::ID))
     );
     assert_eq!(
@@ -156,7 +156,13 @@ fn markers_sharing_a_field_id_resolve_to_the_same_route() {
         .route::<Email>(keyring(GENERAL_KEY_ID, 1))
         .unwrap();
 
-    let ciphertext = encrypt(ContactEmail::ID, b"mark@example.com", &router).unwrap();
+    let ciphertext = encrypt(
+        ContactEmail::ID,
+        ContactEmail::PADDING,
+        b"mark@example.com",
+        &router,
+    )
+    .unwrap();
 
     assert_eq!(
         inspect_ciphertext(&ciphertext).unwrap().key_id(),
@@ -189,8 +195,8 @@ fn a_fallback_router_serves_unrouted_fields_visibly() {
         .route::<Iban>(keyring(PAYMENTS_KEY_ID, 2))
         .unwrap();
 
-    let email = encrypt(Email::ID, b"mark@example.com", &router).unwrap();
-    let iban = encrypt(Iban::ID, b"DE89370400440532013000", &router).unwrap();
+    let email = encrypt(Email::ID, Email::PADDING, b"mark@example.com", &router).unwrap();
+    let iban = encrypt(Iban::ID, Iban::PADDING, b"DE89370400440532013000", &router).unwrap();
 
     assert_eq!(inspect_ciphertext(&email).unwrap().key_id(), GENERAL_KEY_ID);
     assert_eq!(inspect_ciphertext(&iban).unwrap().key_id(), PAYMENTS_KEY_ID);
@@ -229,8 +235,8 @@ fn fields_can_route_to_providers_of_different_types() {
         .route::<Iban>(Arc::new(PaymentsKms(keyring(PAYMENTS_KEY_ID, 2))))
         .unwrap();
 
-    let email = encrypt(Email::ID, b"mark@example.com", &router).unwrap();
-    let iban = encrypt(Iban::ID, b"DE89370400440532013000", &router).unwrap();
+    let email = encrypt(Email::ID, Email::PADDING, b"mark@example.com", &router).unwrap();
+    let iban = encrypt(Iban::ID, Iban::PADDING, b"DE89370400440532013000", &router).unwrap();
 
     assert_eq!(inspect_ciphertext(&email).unwrap().key_id(), GENERAL_KEY_ID);
     assert_eq!(inspect_ciphertext(&iban).unwrap().key_id(), PAYMENTS_KEY_ID);

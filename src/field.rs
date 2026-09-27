@@ -15,9 +15,10 @@ use crate::{Codec, FieldId, Padding};
 /// authentication. Declaring the same ID on several types deliberately makes them
 /// the same logical field.
 ///
-/// The value type, codec representation, field ID, and presence or absence of
-/// padding define persistent schema. The ciphertext envelope does not store a
-/// codec identifier, so incompatible changes require an explicit data migration.
+/// The value type, codec representation, and field ID define persistent schema.
+/// The ciphertext envelope does not store a codec identifier, so incompatible
+/// changes require an explicit data migration. Padding is write policy instead:
+/// the envelope records whether a value is padded.
 ///
 /// For blind indexes, the field domain-separates derivation; it does not
 /// authenticate the stored index representation. Field binding does not prevent
@@ -74,10 +75,13 @@ pub trait Field: 'static {
     /// The stable identifier, independent of Rust and database names.
     const ID: FieldId;
 
-    /// The padding policy applied between the codec and encryption.
+    /// The padding policy applied to new values between the codec and encryption.
     ///
-    /// Enabling or disabling padding for stored ciphertext requires an explicit
-    /// migration. Parameters of an already-padded policy may change freely.
+    /// This describes how values are written, not how they are read: the
+    /// envelope records whether its payload is padded. Changing the policy keeps
+    /// format 2 values readable, and re-encryption rewrites them with it. Format 1
+    /// values are read with the current policy, so re-encrypt them first; see
+    /// [`Padding`].
     const PADDING: Padding;
 
     /// The plaintext application type stored in this field.

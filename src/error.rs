@@ -154,9 +154,10 @@ pub enum Error {
     PaddingOverflow,
     /// Authenticated plaintext does not carry valid padding.
     ///
-    /// This indicates a field/schema mismatch, such as enabling padding for
-    /// existing unpadded ciphertext. Padding is checked only after successful
-    /// authenticated decryption.
+    /// Format 2 records padding, so this indicates a defective writer. A format 1
+    /// value, which does not record padding, reports it when read under a field
+    /// whose padding policy changed before the value was re-encrypted. Padding
+    /// is checked only after successful authenticated decryption.
     #[error("plaintext padding is invalid")]
     InvalidPadding,
     /// A blind-index representation or bit count is invalid.

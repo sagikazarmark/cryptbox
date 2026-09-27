@@ -4,8 +4,10 @@ Rewrite stored values in bounded, resumable batches.
 [Documentation](README.md) · [Key lifecycle](key-rotation.md) · [Legacy adoption](legacy-migration.md).
 
 Rotation selects keys for future writes; a later sweep converges existing
-ciphertext and indexes. The `migrate` feature supplies `RowPlanner`, `Sweep` and
-`SweepStore`; the [manual SQLite example](../examples/reencryption_sweep.rs)
+ciphertext and indexes. The same sweep rewrites ciphertext in an older format or
+whose padding flag disagrees with the field's current policy, so it also upgrades
+format 1 values and applies a padding change. The `migrate` feature supplies
+`RowPlanner`, `Sweep` and `SweepStore`; the [manual SQLite example](../examples/reencryption_sweep.rs)
 demonstrates the same concurrency rules without the driver.
 
 ## Preconditions
@@ -78,7 +80,8 @@ Register each index in the same order in `RowPlanner::with_index_with` and
 
 1. Load rows strictly after the saved cursor in ascending order.
 2. Classify stored bytes. Skip current rows without new nonces or writes; rewrite
-   stale ciphertext with the target encryption generation and stale indexes from
+   stale ciphertext with the target encryption generation, current format, and
+   the field's padding policy, and stale indexes from
    authenticated, decoded authoritative ciphertext. Legacy recovery is covered in
    the [adoption recipe](legacy-migration.md#running-the-sweep).
 3. Atomically write the replacement tuple with a predicate matching **every

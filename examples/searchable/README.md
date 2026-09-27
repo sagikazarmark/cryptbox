@@ -96,7 +96,7 @@ TLS trust policy (for example `sslmode=verify-full` with the appropriate CA).
 Both schemas store complete ciphertext envelopes and index tokens in `BYTEA`/`BLOB`
 columns. The lookup index is **non-unique**. A check constraint pairs `NULL` email
 with `NULL` lookup; it does not establish cryptographic consistency. Preserve
-field/index IDs, codec, binding, padding, normalization and precision as
+field/index IDs, codec, binding, normalization and precision as
 [persistent schema](../../docs/integration.md#persistent-schema).
 
 This example supports nullable fields. The packaged maintenance rehearsal linked
