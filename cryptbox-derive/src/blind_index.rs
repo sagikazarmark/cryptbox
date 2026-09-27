@@ -1,8 +1,8 @@
 //! Expands `#[derive(BlindIndexSpec)]`.
 
 use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, quote, quote_spanned};
-use syn::{DeriveInput, Ident, LitStr, Path, spanned::Spanned};
+use quote::{quote, quote_spanned};
+use syn::{DeriveInput, Ident, spanned::Spanned};
 
 use crate::attr::{Attrs, Errors, Key, required};
 
@@ -63,9 +63,19 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         "normalize_fn",
         &mut errors,
     );
+    // Never derived from the normalizer's path: renaming a function does not
+    // change stored indexes, and changing its body does.
+    let normalizer_name = required(
+        attrs.normalizer.take(),
+        &attrs,
+        Key::Normalizer,
+        name,
+        "\"email/1\"",
+        &mut errors,
+    );
     errors.finish()?;
-    let (Some(id), Some(field), Some(bits), Some(query), Some(normalize)) =
-        (id, field, bits, query, normalize)
+    let (Some(id), Some(field), Some(bits), Some(query), Some(normalize), Some(normalizer_name)) =
+        (id, field, bits, query, normalize, normalizer_name)
     else {
         unreachable!("missing keys are reported above");
     };
@@ -84,20 +94,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         let value = Ident::new("value", Span::mixed_site().located_at(field.span()));
         quote_spanned!(normalize.span()=> #normalize(#value))
     };
-
-    // Without an explicit name, the paths name the normalization, so rewiring
-    // it changes the schema manifest.
-    let normalizer_name = attrs.normalizer.as_ref().map_or_else(
-        || {
-            let path = |path: &Path| path.to_token_stream().to_string().replace(' ', "");
-            let name = match &attrs.project {
-                Some(project) => format!("{}({})", path(&normalize), path(project)),
-                None => path(&normalize),
-            };
-            LitStr::new(&name, normalize.span())
-        },
-        Clone::clone,
-    );
 
     let normalized = quote! {
         ::core::result::Result<

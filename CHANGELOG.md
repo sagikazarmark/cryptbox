@@ -133,9 +133,9 @@
   representation: `"utf8"`, `"raw"`, `"json/1"`, and `"postcard/1"` for the
   crate's codecs. A derived transparent `Plaintext` codec reuses its inner
   codec's ID. `BlindIndexSpec` requires `const NORMALIZER: &'static str`, a
-  name for its normalization rules. `#[derive(BlindIndexSpec)]` takes it from
-  the new `normalizer = "…"` key, or else from the `normalize` and `project`
-  paths. Neither is stored; the schema manifest reports both.
+  name for its normalization rules, which `#[derive(BlindIndexSpec)]` takes
+  from the new, required `normalizer = "…"` key. Neither is stored; the schema
+  manifest reports both.
 - Add schema guardrails for CI. `cryptbox::testing::assert_encoding::<F>(&value, hex)`
   pins a field's codec bytes to a committed fixture in both directions.
   `cryptbox::schema::Manifest` lists registered fields with their ID, value type,

@@ -37,6 +37,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
     bits = 128,
     query = str,
     normalize = normalize_email,
+    normalizer = "email/1",
 )]
 struct EmailLookup;
 

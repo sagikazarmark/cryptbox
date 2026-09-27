@@ -26,6 +26,7 @@ fn normalize_street(street: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>
     bits = 64,
     query = str,
     normalize = normalize_street,
+    normalizer = "street/1",
     project = street,
 )]
 pub struct StreetLookup;

@@ -27,3 +27,9 @@ error: expected `=`
   |
 3 | #[cryptbox(bits = 32, field, query = str, normalize = normalize)]
   |                            ^
+
+error: missing `normalizer`: add `#[cryptbox(normalizer = "email/1")]`
+ --> tests/ui/errors_are_combined.rs:4:8
+  |
+4 | struct EveryMistake;
+  |        ^^^^^^^^^^^^

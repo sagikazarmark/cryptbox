@@ -16,6 +16,7 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
     bits = 257,
     query = str,
     normalize = normalize_email,
+    normalizer = "email/1",
 )]
 struct TooManyBits;
 

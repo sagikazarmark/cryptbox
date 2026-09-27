@@ -45,6 +45,7 @@ fn normalize_email(input: &str) -> std::result::Result<Zeroizing<Vec<u8>>, Blind
     bits = 128,
     query = str,
     normalize = normalize_email,
+    normalizer = "email/1",
 )]
 struct EmailLookup;
 fn validate_email(value: &str) -> Result<()> {

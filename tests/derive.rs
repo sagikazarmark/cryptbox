@@ -155,6 +155,7 @@ fn normalize_text(text: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
     bits = 32,
     query = str,
     normalize = normalize_text,
+    normalizer = "text/1",
 )]
 struct EmailLookup;
 
@@ -165,7 +166,7 @@ impl BlindIndexSpec for ManualEmailLookup {
     type Field = ManualUserEmail;
     const ID: IndexId = index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
     const BITS: u16 = 32;
-    const NORMALIZER: &'static str = "normalize_text";
+    const NORMALIZER: &'static str = "text/1";
     type Query = str;
 
     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -209,6 +210,7 @@ fn street(address: &Address) -> &str {
     query = str,
     normalize = normalize_text,
     project = street,
+    normalizer = "street/1",
 )]
 struct StreetLookup;
 
@@ -219,7 +221,7 @@ impl BlindIndexSpec for ManualStreetLookup {
     type Field = BillingAddress;
     const ID: IndexId = index_id!("3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64");
     const BITS: u16 = 64;
-    const NORMALIZER: &'static str = "normalize_text(street)";
+    const NORMALIZER: &'static str = "street/1";
     type Query = str;
 
     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -334,22 +336,10 @@ fn derives_can_name_cryptbox_through_another_path() {
     assert_codec::<RenamedCratePostcode, PostcodeCodec>();
 }
 
-#[derive(BlindIndexSpec)]
-#[cryptbox(
-    id = "4a6e9d3c-7f51-4ca8-9d42-9b3e8f0a6c75",
-    field = UserEmail,
-    bits = 32,
-    query = str,
-    normalize = normalize_text,
-    normalizer = "email/2",
-)]
-struct VersionedEmailLookup;
-
 #[test]
 fn a_derived_blind_index_names_its_normalizer() {
-    assert_eq!(EmailLookup::NORMALIZER, "normalize_text");
-    assert_eq!(StreetLookup::NORMALIZER, "normalize_text(street)");
-    assert_eq!(VersionedEmailLookup::NORMALIZER, "email/2");
+    assert_eq!(EmailLookup::NORMALIZER, ManualEmailLookup::NORMALIZER);
+    assert_eq!(StreetLookup::NORMALIZER, ManualStreetLookup::NORMALIZER);
 }
 
 #[test]

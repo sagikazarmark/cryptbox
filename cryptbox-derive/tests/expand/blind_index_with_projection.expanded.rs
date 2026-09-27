@@ -33,6 +33,7 @@ fn normalize_street(street: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>
     bits = 64,
     query = str,
     normalize = normalize_street,
+    normalizer = "street/1",
     project = street,
 )]
 pub struct StreetLookup;
@@ -44,7 +45,7 @@ const _: () = {
             0x3f5d8c2b_6e40_4b97_8c31_8a2f7d9e5b64,
         );
         const BITS: u16 = 64;
-        const NORMALIZER: &'static str = "normalize_street(street)";
+        const NORMALIZER: &'static str = "street/1";
         type Query = str;
         fn normalize_query(
             query: &str,

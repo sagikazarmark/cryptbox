@@ -68,8 +68,8 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 ///
 /// With the `derive` feature, `#[derive(BlindIndexSpec)]` writes exactly this
 /// impl from `#[cryptbox(id = "…", field = UserEmail, bits = 32, query = str,
-/// normalize = normalize_email)]`, given a free `normalize_email` function with
-/// `normalize_query`'s body.
+/// normalize = normalize_email, normalizer = "email/1")]`, given a free
+/// `normalize_email` function with `normalize_query`'s body.
 ///
 /// Invalid precision is rejected when the specification is used:
 ///
