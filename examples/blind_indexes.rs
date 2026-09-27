@@ -1,10 +1,9 @@
 //! Prepares and safely queries a blind index across index-key rotation.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Encrypted, EncryptionKey,
-    Field, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding,
-    Utf8, blind_index_probes, field_id, index_id, index_key_id, key_id,
-    verify_blind_index_candidate,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field, IndexId,
+    IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, field_id,
+    index_id, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -23,22 +22,20 @@ impl Field for UserEmail {
 
 struct EmailLookup;
 
-impl BlindIndexMetadata for EmailLookup {
+impl BlindIndexSpec for EmailLookup {
+    type Field = UserEmail;
     const ID: IndexId = index_id!("80000000-0000-4000-8000-000000000008");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = str;
 
-impl BlindIndexSpec<str> for EmailLookup {
-    fn normalize(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(Zeroizing::new(
             input.trim().to_ascii_lowercase().into_bytes(),
         ))
     }
-}
 
-impl BlindIndexSpec<String> for EmailLookup {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        <Self as BlindIndexSpec<str>>::normalize(input)
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -61,7 +58,7 @@ fn main() -> Result<(), cryptbox::Error> {
         [old_index_key],
     )?;
     let query = "mark@example.com";
-    let probes = blind_index_probes::<EmailLookup, str, UserEmail>(query, &index_keys)?;
+    let probes = EmailLookup::probes_with(query, &index_keys)?;
 
     // Stored indexes are lookup tokens, not plaintext secrets, so ordinary
     // equality is appropriate when matching every probe during key rotation.
@@ -70,7 +67,7 @@ fn main() -> Result<(), cryptbox::Error> {
 
     // A blind-index hit is only a candidate: decrypt and compare normalized plaintext.
     let candidate = stored_ciphertext.decrypt_with(&encryption_keys)?;
-    assert!(verify_blind_index_candidate::<EmailLookup, str>(
+    assert!(EmailLookup::verify_candidate(
         query,
         candidate.expose_secret(),
     )?);

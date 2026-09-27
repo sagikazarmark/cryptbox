@@ -163,10 +163,12 @@ from trusted application schema, not stored metadata.
    provider. Authentication, padding, codec and key-availability failures all fail
    the audit. Validate decoded application constraints; account for every row.
 4. **Recompute every index.** Parse as `BlindIndex<ExpectedSpec>`. After convergence,
-   use `derive_blind_index` on authenticated plaintext with the intended binding
-   and current index provider; compare **complete stored bytes**, not just IDs.
-   To audit a mixed-generation store, use `blind_index_probes` on that plaintext
-   for every allowed readable generation and require a complete-byte match.
+   use `ExpectedSpec::derive_with` on authenticated plaintext with the current
+   index provider; compare **complete stored bytes**, not just IDs.
+   To audit a mixed-generation store, use `ExpectedSpec::probes_with` with the
+   query that corresponds to that plaintext (for a computed index, such as an
+   email domain, the computed part) for every allowed readable generation and
+   require a complete-byte match.
    Unknown/disallowed generations fail the check.
 5. **Resolve failures and reconcile coverage.** Record sanitized row/run metadata
    and compare coverage with the inventory and expected searches. Repair only

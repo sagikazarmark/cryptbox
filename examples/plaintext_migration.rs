@@ -3,9 +3,9 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, EncryptionKey,
-    Field, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding,
-    Utf8, blind_index_probes, field_id, index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, EncryptionKey, Field, IndexId,
+    IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, field_id,
+    index_id, index_key_id, key_id,
     migrate::{MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
@@ -27,16 +27,20 @@ impl Field for UserEmail {
 
 struct EmailLookup;
 
-impl BlindIndexMetadata for EmailLookup {
+impl BlindIndexSpec for EmailLookup {
+    type Field = UserEmail;
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = str;
 
-impl BlindIndexSpec<String> for EmailLookup {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(Zeroizing::new(
             input.trim().to_ascii_lowercase().into_bytes(),
         ))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -129,10 +133,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     assert_eq!(report.current, 4);
 
     // Separately demonstrate strict authenticated reading for this lookup.
-    let probes = blind_index_probes::<EmailLookup, String, UserEmail>(
-        &"first@example.com".to_owned(),
-        &index_keys,
-    )?;
+    let probes = EmailLookup::probes_with("first@example.com", &index_keys)?;
     let mut matched = 0;
     for probe in probes {
         let rows = sqlx::query("SELECT email_ciphertext FROM users WHERE email_bidx = ?")

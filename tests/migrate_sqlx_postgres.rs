@@ -6,14 +6,13 @@
 use std::{future::Future, panic::AssertUnwindSafe};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, Error, Field, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding,
-    Utf8, blind_index_probes, field_id, index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey, Error,
+    Field, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, field_id,
+    index_id, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyFormat, MaybeEncrypted, PostgresSweepStore, RowPlanner, Sweep,
         SweepReport, SweepStore, SweepTable,
     },
-    verify_blind_index_candidate,
 };
 use sqlx::{Connection, PgConnection, Row};
 use zeroize::Zeroizing;
@@ -29,16 +28,20 @@ impl Field for UserEmail {
 
 struct EmailLookup;
 
-impl BlindIndexMetadata for EmailLookup {
+impl BlindIndexSpec for EmailLookup {
+    type Field = UserEmail;
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = str;
 
-impl BlindIndexSpec<String> for EmailLookup {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(Zeroizing::new(
             input.trim().to_ascii_lowercase().into_bytes(),
         ))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -158,8 +161,8 @@ async fn search(
     keys: &LocalEncryptionKeyring,
     index_keys: &LocalBlindIndexKeyring,
 ) -> (Vec<i64>, Vec<i64>) {
-    let query = " ALICE@example.com ".to_owned();
-    let probes = blind_index_probes::<EmailLookup, String, UserEmail>(&query, index_keys).unwrap();
+    let query = " ALICE@example.com ";
+    let probes = EmailLookup::probes_with(query, index_keys).unwrap();
     let mut candidates = Vec::new();
     let mut matches = Vec::new();
     for probe in probes {
@@ -173,9 +176,7 @@ async fn search(
             candidates.push(id);
             let ciphertext: Ciphertext<UserEmail> = row.get("email_ciphertext");
             let value = ciphertext.decrypt_with(keys).unwrap();
-            if verify_blind_index_candidate::<EmailLookup, String>(&query, value.expose_secret())
-                .unwrap()
-            {
+            if EmailLookup::verify_candidate(query, value.expose_secret()).unwrap() {
                 matches.push(id);
             }
         }

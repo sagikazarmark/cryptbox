@@ -3,11 +3,10 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexMetadata,
-    BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey, EncryptionKeyProvider, Field, IndexId,
-    IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Router, Utf8,
-    blind_index_probes, derive_blind_index, field_id, index_id, index_key_id, inspect_blind_index,
-    key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexSpec, Ciphertext,
+    Encrypted, EncryptionKey, EncryptionKeyProvider, Field, IndexId, IndexKeyId, KeyId,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Router, Utf8, field_id, index_id,
+    index_key_id, inspect_blind_index, key_id,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -31,16 +30,20 @@ impl Field for UserEmail {
 
 struct EmailLookup;
 
-impl BlindIndexMetadata for EmailLookup {
+impl BlindIndexSpec for EmailLookup {
+    type Field = UserEmail;
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = str;
 
-impl BlindIndexSpec<String> for EmailLookup {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(Zeroizing::new(
             input.trim().to_ascii_lowercase().into_bytes(),
         ))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -133,11 +136,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
         Router::strict().route::<UserEmail>(LocalBlindIndexKeyring::new(current_index_key, [])?)?;
     assert!(verify_sweep(&mut connection, &current_keys, &current_index_keys).await?);
     assert_eq!(
-        blind_index_probes::<EmailLookup, String, UserEmail>(
-            &"first@example.com".to_owned(),
-            &current_index_keys,
-        )?
-        .len(),
+        EmailLookup::probes_with("first@example.com", &current_index_keys)?.len(),
         1
     );
 
@@ -222,10 +221,7 @@ async fn sweep_batch(
         };
         let rewritten_index = if index_is_stale {
             let plaintext = rewritten_ciphertext.decrypt_with(keys)?;
-            derive_blind_index::<EmailLookup, String, UserEmail>(
-                plaintext.expose_secret(),
-                index_keys,
-            )?
+            EmailLookup::derive_with(plaintext.expose_secret(), index_keys)?
         } else {
             index
         };

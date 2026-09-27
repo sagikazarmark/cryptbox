@@ -2,9 +2,8 @@
 #![cfg(test)]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Encrypted, EncryptionKey,
-    Field, FieldId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
-    blind_index_probes, verify_blind_index_candidate,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field, FieldId,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
 };
 use zeroize::Zeroizing;
 
@@ -19,15 +18,19 @@ impl Field for UserEmail {
 
 struct EmailLookup;
 
-impl BlindIndexMetadata for EmailLookup {
+impl BlindIndexSpec for EmailLookup {
+    type Field = UserEmail;
     const ID: cryptbox::IndexId = cryptbox::index_id!("80000000-0000-4000-8000-000000000008");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = str;
 
-impl BlindIndexSpec<String> for EmailLookup {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         // Exact-byte equality for this fixture; no email canonicalization claim.
         Ok(Zeroizing::new(input.as_bytes().to_vec()))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -71,8 +74,7 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
     let prepared = value
         .prepare_with(&keys)?
         .with_index_with::<EmailLookup>(&indexes)?;
-    let query = plaintext.to_owned();
-    let probes = blind_index_probes::<EmailLookup, String, UserEmail>(&query, &indexes)?;
+    let probes = EmailLookup::probes_with(plaintext, &indexes)?;
     let stored_index = prepared.index::<EmailLookup>()?;
     assert!(
         probes
@@ -80,12 +82,12 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
             .any(|probe| probe.as_bytes() == stored_index.as_bytes())
     );
     let candidate = prepared.ciphertext().decrypt_with(&keys)?;
-    assert!(verify_blind_index_candidate::<EmailLookup, String>(
-        &query,
+    assert!(EmailLookup::verify_candidate(
+        plaintext,
         candidate.expose_secret(),
     )?);
-    assert!(!verify_blind_index_candidate::<EmailLookup, String>(
-        &"not-the-query@example.test".to_owned(),
+    assert!(!EmailLookup::verify_candidate(
+        "not-the-query@example.test",
         candidate.expose_secret(),
     )?);
     Ok(())

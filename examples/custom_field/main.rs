@@ -2,9 +2,9 @@
 
 // ANCHOR: custom-field
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, Encrypted, EncryptionKey, EncryptionKeyProvider, Field, FieldId, KeyId,
-    KeyProviderError, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Secret,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Codec, CodecError, CodecErrorKind, Encrypted,
+    EncryptionKey, EncryptionKeyProvider, Field, FieldId, KeyId, KeyProviderError,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Secret,
 };
 use zeroize::Zeroizing;
 
@@ -51,13 +51,13 @@ impl Field for Handle {
 
 struct HandleEquality;
 
-impl BlindIndexMetadata for HandleEquality {
+impl BlindIndexSpec for HandleEquality {
+    type Field = Handle;
     const ID: cryptbox::IndexId = cryptbox::index_id!("6c0e20d5-cb30-4b84-8dd1-995f872b417c");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = Secret<String>;
 
-impl BlindIndexSpec<Secret<String>> for HandleEquality {
-    fn normalize(input: &Secret<String>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &Secret<String>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         let bytes = input.expose_secret().as_bytes();
         if !valid_handle(bytes) {
             return Err(BlindIndexError::new());
@@ -65,6 +65,10 @@ impl BlindIndexSpec<Secret<String>> for HandleEquality {
         let mut normalized = Zeroizing::new(bytes.to_vec());
         normalized.make_ascii_lowercase();
         Ok(normalized)
+    }
+
+    fn normalize_value(value: &Secret<String>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -108,14 +112,12 @@ fn main() -> Result<(), cryptbox::Error> {
     // After index-key promotion, query every readable generation, including old data.
     let index_reader = LocalBlindIndexKeyring::new(BlindIndexKey::generate()?, [old_index_key])?;
     let query = Secret::new("ALICE-7".to_owned());
-    let probes = cryptbox::blind_index_probes::<HandleEquality, _, Handle>(&query, &index_reader)?;
+    let probes = HandleEquality::probes_with(&query, &index_reader)?;
     assert_eq!(probes.len(), 2);
     assert!(probes.iter().any(|probe| probe.as_bytes() == stored_index));
     // An index hit is only a candidate: authenticate and compare normalized plaintext.
     let decrypted = ciphertext.decrypt_with(&keys)?.into_secret();
-    assert!(cryptbox::verify_blind_index_candidate::<HandleEquality, _>(
-        &query, &decrypted
-    )?);
+    assert!(HandleEquality::verify_candidate(&query, &decrypted)?);
     assert_eq!(decrypted.expose_secret(), "Alice-7");
     assert_eq!(value.expose_secret().expose_secret(), "Alice-7");
     println!("Custom field round trip and normalized lookup succeeded.");
@@ -139,11 +141,9 @@ mod tests {
         let alice = Secret::new("Alice-7".to_owned());
         let query = Secret::new("ALICE-7".to_owned());
         let bob = Secret::new("Bob-7".to_owned());
-        assert_eq!(&*HandleEquality::normalize(&alice)?, b"alice-7");
-        assert!(cryptbox::verify_blind_index_candidate::<HandleEquality, _>(
-            &alice, &query
-        )?);
-        assert!(!cryptbox::verify_blind_index_candidate::<HandleEquality, _>(&bob, &query)?);
+        assert_eq!(&*HandleEquality::normalize_value(&alice)?, b"alice-7");
+        assert!(HandleEquality::verify_candidate(&alice, &query)?);
+        assert!(!HandleEquality::verify_candidate(&bob, &query)?);
         Ok(())
     }
 

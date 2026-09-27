@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{
     BlindIndex, BlindIndexKeyProvider, BlindIndexSpec, Ciphertext, Codec, Encrypted,
-    EncryptionKeyProvider, Error, Field, derive_blind_index, inspect_blind_index,
+    EncryptionKeyProvider, Error, Field, blind::derive_value, inspect_blind_index,
     needs_reencryption,
 };
 
@@ -93,9 +93,9 @@ fn derive_index_bytes<F, Spec>(
 ) -> Result<Vec<u8>, Error>
 where
     F: Field,
-    Spec: BlindIndexSpec<F::Value>,
+    Spec: BlindIndexSpec<Field = F>,
 {
-    derive_blind_index::<Spec, F::Value, F>(value, keys).map(BlindIndex::into_bytes)
+    derive_value::<Spec>(value, keys).map(BlindIndex::into_bytes)
 }
 
 struct IndexColumn<'a, F>
@@ -158,7 +158,7 @@ where
     #[must_use]
     pub fn with_index_with<Spec>(mut self, keys: &'a dyn BlindIndexKeyProvider) -> Self
     where
-        Spec: BlindIndexSpec<F::Value>,
+        Spec: BlindIndexSpec<Field = F>,
     {
         self.indexes.push(IndexColumn {
             derive: derive_index_bytes::<F, Spec>,

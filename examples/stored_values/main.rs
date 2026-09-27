@@ -2,10 +2,9 @@
 //! See README.md beside this source for usage and trust boundaries.
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext,
-    Encrypted, EncryptionKey, Error, Field, FieldId, IndexId, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Padding, Utf8, blind_index_probes, derive_blind_index, index_id,
-    index_key_id, inspect_blind_index, inspect_ciphertext, key_id, verify_blind_index_candidate,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted,
+    EncryptionKey, Error, Field, FieldId, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
+    Padding, Utf8, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -21,18 +20,22 @@ impl Field for UserEmail {
 
 struct EmailLookup;
 
-impl BlindIndexMetadata for EmailLookup {
+impl BlindIndexSpec for EmailLookup {
+    type Field = UserEmail;
     const ID: IndexId = index_id!("80000000-0000-4000-8000-000000000008");
     // Demonstration precision; choose precision and normalization for your domain.
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = str;
 
-impl BlindIndexSpec<String> for EmailLookup {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         // This example's equality rule is ASCII case-insensitive with trimmed spaces.
         Ok(Zeroizing::new(
             input.trim().to_ascii_lowercase().into_bytes(),
         ))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -83,27 +86,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(plaintext.expose_secret(), "Mark@Example.com");
 
     // Separately check index consistency, here after convergence to the current key.
-    let recomputed = derive_blind_index::<EmailLookup, String, UserEmail>(
-        plaintext.expose_secret(),
-        &index_keys,
-    )?;
+    let recomputed = EmailLookup::derive_with(plaintext.expose_secret(), &index_keys)?;
     assert_eq!(restored.email_lookup, recomputed);
 
     // Lookup searches every readable generation and compares authenticated plaintext.
-    let query = "mark@example.com".to_owned();
-    let probes = blind_index_probes::<EmailLookup, String, UserEmail>(&query, &index_keys)?;
+    let query = "mark@example.com";
+    let probes = EmailLookup::probes_with(query, &index_keys)?;
     let matches = probes.iter().any(|probe| probe == &restored.email_lookup)
-        && verify_blind_index_candidate::<EmailLookup, String>(&query, plaintext.expose_secret())?;
+        && EmailLookup::verify_candidate(query, plaintext.expose_secret())?;
     assert!(matches);
 
     // Plaintext comparison alone cannot detect a stored index for another value.
-    let unrelated_index = derive_blind_index::<EmailLookup, String, UserEmail>(
-        &"other@example.com".to_owned(),
-        &index_keys,
-    )?;
+    let unrelated_index = EmailLookup::derive_with(&"other@example.com".to_owned(), &index_keys)?;
     assert_ne!(unrelated_index, recomputed);
-    assert!(verify_blind_index_candidate::<EmailLookup, String>(
-        &query,
+    assert!(EmailLookup::verify_candidate(
+        query,
         plaintext.expose_secret()
     )?);
 

@@ -7,7 +7,7 @@ use sqlx::{
     sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted, Field};
+use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted, Field};
 
 fn blob_type_info() -> SqliteTypeInfo {
     <Vec<u8> as Type<Sqlite>>::type_info()
@@ -151,7 +151,7 @@ impl<'row, F: Field> Decode<'row, Sqlite> for Ciphertext<F> {
 
 impl<'row, Spec> Decode<'row, Sqlite> for BlindIndex<Spec>
 where
-    Spec: BlindIndexMetadata,
+    Spec: BlindIndexSpec,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;

@@ -33,9 +33,7 @@
   `Encrypted::new`.
 - **Breaking:** low-level primitives take the field instead of a binding and
   context: `encrypt(F::ID, plaintext, keys)`, `decrypt(F::ID, …)`,
-  `reencrypt(F::ID, …)`, `needs_reencryption(F::ID, …)`,
-  `derive_blind_index::<Spec, Input, F>`, and
-  `blind_index_probes::<Spec, Input, F>`.
+  `reencrypt(F::ID, …)`, and `needs_reencryption(F::ID, …)`.
 
   Migrating from 0.5:
 
@@ -51,6 +49,27 @@
   | `value.encrypt_with(&(), &keys)` | `value.encrypt_with(&keys)` |
   | `value.into()` into `Encrypted` | `Encrypted::new(value)` |
   | `encrypt::<FieldBound<F>>(bytes, &(), &keys)` | `encrypt(F::ID, bytes, &keys)` |
+  | `impl BlindIndexMetadata for S` plus `impl BlindIndexSpec<str> for S` and `impl BlindIndexSpec<String> for S` | one `impl BlindIndexSpec for S { type Field = F; const BITS: u16 = …; type Query = str; … }` |
+  | `derive_blind_index::<S, String, F>(&value, &keys)` | `S::derive_with(&value, &keys)` |
+  | `blind_index_probes::<S, str, F>(query, &keys)` | `S::probes_with(query, &keys)` |
+  | `verify_blind_index_candidate::<S, str>(query, candidate)` | `S::verify_candidate(query, candidate)` |
+
+- **Breaking:** blind-index specifications are bound to one field (ADR-0001).
+  `BlindIndexSpec` merges `BlindIndexMetadata` and the per-input
+  `BlindIndexSpec<Input>`: it declares `type Field`, `const ID`,
+  `const BITS: u16` (was `usize`), and `type Query`, and normalizes lookups with
+  `normalize_query` and stored field values with `normalize_value`, so one spec
+  no longer needs duplicate `str` and `String` impls, and an index can be
+  computed from part of a value or combine several parts. The free functions
+  `derive_blind_index`, `blind_index_probes`, and `verify_blind_index_candidate`
+  are replaced by the provided methods `S::derive_with`, `S::probes_with`, and
+  `S::verify_candidate`, which read the field from the spec; `S::probes` uses
+  `GlobalKeyContext`. `Prepared::with_index_with`, `Prepared::with_index`,
+  `Prepared::index`, and `RowPlanner::with_index_with` require
+  `S: BlindIndexSpec<Field = F>`, so attaching another field's index is a type
+  error. A spec previously used with several fields becomes one spec per field,
+  or a spec generic over its field. Stored blind indexes are unchanged for the
+  same field, index ID, precision, and normalization.
 
 - **Breaking:** key providers receive the field they serve.
   `EncryptionKeyProvider::current_key(field)` and `key(field, id)`, and the

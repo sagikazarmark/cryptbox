@@ -4,8 +4,8 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
-    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, Error, Field, IndexId,
-    IndexKeyId,
+    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, Error, Field,
+    GlobalKeyContext, IndexId, IndexKeyId, KeyContext,
     crypto::{hkdf_sha256_32, hmac_sha256},
 };
 
@@ -16,63 +16,105 @@ const MAX_INDEX_BITS: usize = 256;
 const INDEX_KEY_LABEL: &[u8] = b"cryptbox/blind-index-key/v1\0";
 const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 
-/// Stable metadata for a logical blind index.
+/// A logical blind index over one field.
+///
+/// A specification binds an index to exactly one [`Field`]: the field's ID
+/// domain-separates derivation, stored indexes are derived from the field's
+/// value with [`Self::normalize_value`], and lookups normalize a [`Self::Query`]
+/// with [`Self::normalize_query`]. Both normalizers must produce identical bytes
+/// for inputs that should match. `normalize_value` receives the whole value, so
+/// an index can be computed from part of it, such as an email domain, or combine
+/// several of its parts.
 ///
 /// `BITS` must be between 1 and 256. The logical [`IndexId`] is part of key
 /// derivation but is not stored in the index bytes. Changing the ID,
 /// normalization, field, or precision creates a new logical index and
 /// requires a migration.
 ///
+/// # Examples
+///
+/// ```
+/// use cryptbox::{BlindIndexError, BlindIndexSpec, Field, FieldId, IndexId, Padding, Utf8};
+/// use zeroize::Zeroizing;
+///
+/// struct UserEmail;
+///
+/// impl Field for UserEmail {
+///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+///     const PADDING: Padding = Padding::NONE;
+///     type Value = String;
+///     type Codec = Utf8;
+/// }
+///
+/// struct EmailLookup;
+///
+/// impl BlindIndexSpec for EmailLookup {
+///     type Field = UserEmail;
+///     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
+///     const BITS: u16 = 32;
+///     type Query = str;
+///
+///     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+///         Ok(Zeroizing::new(query.trim().to_ascii_lowercase().into_bytes()))
+///     }
+///
+///     fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+///         Self::normalize_query(value)
+///     }
+/// }
+/// ```
+///
 /// Invalid precision is rejected when the specification is used:
 ///
-/// ```compile_fail
-/// use cryptbox::{BlindIndex, BlindIndexMetadata, IndexId};
-///
+/// ```compile_fail,E0080
+/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Field, FieldId, IndexId, Padding, Raw};
+/// # use zeroize::Zeroizing;
+/// # struct Bytes;
+/// # impl Field for Bytes {
+/// #     const ID: FieldId = FieldId::from_bytes([1; 16]);
+/// #     const PADDING: Padding = Padding::NONE;
+/// #     type Value = Vec<u8>;
+/// #     type Codec = Raw;
+/// # }
 /// struct ZeroBits;
 ///
-/// impl BlindIndexMetadata for ZeroBits {
+/// impl BlindIndexSpec for ZeroBits {
+///     type Field = Bytes;
 ///     const ID: IndexId = IndexId::from_bytes([0; 16]);
-///     const BITS: usize = 0;
+///     const BITS: u16 = 0;
+///     type Query = [u8];
+/// #   fn normalize_query(q: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(q.to_vec())) }
+/// #   fn normalize_value(v: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(v.clone())) }
 /// }
 ///
 /// let _ = BlindIndex::<ZeroBits>::from_bytes(Vec::new());
 /// ```
 ///
-/// ```compile_fail
-/// use cryptbox::{BlindIndex, BlindIndexMetadata, IndexId};
-///
+/// ```compile_fail,E0080
+/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Field, FieldId, IndexId, Padding, Raw};
+/// # use zeroize::Zeroizing;
+/// # struct Bytes;
+/// # impl Field for Bytes {
+/// #     const ID: FieldId = FieldId::from_bytes([1; 16]);
+/// #     const PADDING: Padding = Padding::NONE;
+/// #     type Value = Vec<u8>;
+/// #     type Codec = Raw;
+/// # }
 /// struct TooManyBits;
 ///
-/// impl BlindIndexMetadata for TooManyBits {
+/// impl BlindIndexSpec for TooManyBits {
+///     type Field = Bytes;
 ///     const ID: IndexId = IndexId::from_bytes([0; 16]);
-///     const BITS: usize = 300;
+///     const BITS: u16 = 300;
+///     type Query = [u8];
+/// #   fn normalize_query(q: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(q.to_vec())) }
+/// #   fn normalize_value(v: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(v.clone())) }
 /// }
 ///
 /// let _ = BlindIndex::<TooManyBits>::from_bytes(Vec::new());
 /// ```
-pub trait BlindIndexMetadata: Sized + 'static {
-    /// The stable logical index identifier.
-    const ID: IndexId;
-    /// The number of most-significant HMAC bits retained for candidate lookup.
-    const BITS: usize;
-}
-
-trait ValidBlindIndexBits {
-    const ASSERT_VALID_BITS: ();
-}
-
-impl<Spec: BlindIndexMetadata> ValidBlindIndexBits for Spec {
-    const ASSERT_VALID_BITS: () = assert!(
-        valid_bits(Spec::BITS),
-        "BlindIndexMetadata::BITS must be between 1 and 256",
-    );
-}
-
-fn assert_valid_bits<Spec: BlindIndexMetadata>() {
-    let () = <Spec as ValidBlindIndexBits>::ASSERT_VALID_BITS;
-}
-
-/// Deterministically normalizes an arbitrary input for one logical index.
+///
+/// # Implementor obligations
 ///
 /// Normalization is persistent schema and must be identical for writes,
 /// queries, and candidate verification. Return only the bytes relevant to
@@ -80,8 +122,6 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
 /// unrelated secrets, key material, randomness, or unstable formatting state.
 /// Changes to normalization, index ID, field, or precision require a migration
 /// and compatible queries while old projections remain stored.
-///
-/// # Implementor obligations
 ///
 /// This interface is extensible. Return a zeroizing buffer and protect all
 /// intermediate normalized/plaintext allocations on success and error paths.
@@ -93,6 +133,9 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
 /// retain the input in third-party errors. Candidate verification must use the
 /// same normalization after authenticated decryption, not accept an index hit alone.
 ///
+/// Implement only the associated items and the two normalizers; do not override
+/// the provided derivation, probe, and verification methods.
+///
 /// See the [custom-field example] and [ownership reference].
 /// Padding is a closed set of policies; a custom normalizer does not add row binding.
 ///
@@ -100,13 +143,116 @@ fn assert_valid_bits<Spec: BlindIndexMetadata>() {
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
-    /// Returns normalized bytes owned by a zeroizing buffer.
+pub trait BlindIndexSpec: Sized + 'static {
+    /// The field whose values this index projects.
+    type Field: Field;
+
+    /// The stable logical index identifier.
+    const ID: IndexId;
+
+    /// The number of most-significant HMAC bits retained for candidate lookup.
+    const BITS: u16;
+
+    /// The lookup input, such as `str` for an index over `String` values.
+    type Query: ?Sized;
+
+    /// Normalizes a lookup input into bytes owned by a zeroizing buffer.
     ///
     /// # Errors
     ///
-    /// Returns a sanitized error when this input cannot be normalized.
-    fn normalize(input: &Input) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>;
+    /// Returns a sanitized error when this query cannot be normalized.
+    fn normalize_query(query: &Self::Query) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>;
+
+    /// Normalizes a field value into bytes owned by a zeroizing buffer.
+    ///
+    /// # Errors
+    ///
+    /// Returns a sanitized error when this value cannot be normalized.
+    fn normalize_value(
+        value: &<Self::Field as Field>::Value,
+    ) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>;
+
+    /// Derives the current stored index for a value of [`Self::Field`].
+    ///
+    /// Use this to recompute a stored index from decrypted plaintext. New
+    /// writes usually derive indexes through [`crate::Prepared::with_index_with`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for normalization failure, an unavailable key provider, or
+    /// an unrouted field.
+    fn derive_with(
+        value: &<Self::Field as Field>::Value,
+        keys: &dyn BlindIndexKeyProvider,
+    ) -> Result<BlindIndex<Self>, Error> {
+        derive_value::<Self>(value, keys)
+    }
+
+    /// Derives one candidate probe for every currently readable index generation.
+    ///
+    /// Results are candidates only; decrypt candidate rows and verify their
+    /// normalized plaintext with [`Self::verify_candidate`].
+    /// See the complete [blind-index example].
+    ///
+    #[doc = concat!(
+        "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/blind_indexes.rs",
+    )]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for normalization failure, an unavailable key provider, or
+    /// an unrouted field.
+    fn probes_with(
+        query: &Self::Query,
+        keys: &dyn BlindIndexKeyProvider,
+    ) -> Result<Vec<BlindIndex<Self>>, Error> {
+        derive_probes::<Self>(query, keys)
+    }
+
+    /// Derives probes with the process-wide [`GlobalKeyContext`] blind-index provider.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when providers are uninitialized or probe derivation fails.
+    fn probes(query: &Self::Query) -> Result<Vec<BlindIndex<Self>>, Error> {
+        derive_probes::<Self>(query, GlobalKeyContext::blind_index_keys()?)
+    }
+
+    /// Compares a normalized query with normalized candidate plaintext after lookup.
+    ///
+    /// Decrypt and authenticate the candidate ciphertext before calling this.
+    /// This receives no stored index or keys: it rejects false plaintext
+    /// matches but does not authenticate index metadata or establish
+    /// index/ciphertext consistency.
+    ///
+    /// Equal-length normalized values are compared in constant time. A normalized
+    /// length mismatch returns early, so callers must treat normalized lengths as
+    /// observable.
+    ///
+    /// # Errors
+    ///
+    /// Returns a sanitized error when either input cannot be normalized.
+    fn verify_candidate(
+        query: &Self::Query,
+        candidate: &<Self::Field as Field>::Value,
+    ) -> Result<bool, Error> {
+        compare_normalized::<Self>(query, candidate)
+    }
+}
+
+trait ValidBlindIndexBits {
+    const ASSERT_VALID_BITS: ();
+}
+
+impl<Spec: BlindIndexSpec> ValidBlindIndexBits for Spec {
+    const ASSERT_VALID_BITS: () = assert!(
+        valid_bits(Spec::BITS as usize),
+        "BlindIndexSpec::BITS must be between 1 and 256",
+    );
+}
+
+fn assert_valid_bits<Spec: BlindIndexSpec>() {
+    let () = <Spec as ValidBlindIndexBits>::ASSERT_VALID_BITS;
 }
 
 /// A stored, typed blind-index value used only for candidate lookup.
@@ -114,19 +260,19 @@ pub trait BlindIndexSpec<Input: ?Sized>: BlindIndexMetadata {
 /// Blind indexes leak equality and frequency information. Avoid indexing
 /// low-cardinality or highly skewed sensitive values, never use a truncated
 /// index as a uniqueness constraint, and always verify candidate plaintext.
-/// `Spec` is phantom and its [`BlindIndexMetadata::ID`] is not stored in the
+/// `Spec` is phantom and implies the field. Its [`BlindIndexSpec::ID`] is not stored in the
 /// representation. With the `serde` feature, this type serializes only its
 /// complete stored binary representation.
 /// Deserialization uses [`Self::from_bytes`] for structural and precision checks,
 /// without keys. Neither operation authenticates stored metadata or establishes
 /// consistency with a ciphertext. Candidate plaintext comparison is a separate
-/// operation; see [`verify_blind_index_candidate`].
+/// operation; see [`BlindIndexSpec::verify_candidate`].
 pub struct BlindIndex<Spec> {
     bytes: Vec<u8>,
     marker: PhantomData<fn() -> Spec>,
 }
 
-impl<Spec: BlindIndexMetadata> BlindIndex<Spec> {
+impl<Spec: BlindIndexSpec> BlindIndex<Spec> {
     /// Validates and wraps a stored blind-index representation.
     ///
     /// # Errors
@@ -140,7 +286,7 @@ impl<Spec: BlindIndexMetadata> BlindIndex<Spec> {
         let bytes = bytes.into();
         let info = inspect_blind_index(&bytes)?;
 
-        if info.bits != Spec::BITS {
+        if info.bits != usize::from(Spec::BITS) {
             return Err(Error::InvalidBlindIndex);
         }
 
@@ -169,7 +315,7 @@ impl<Spec> BlindIndex<Spec> {
     }
 }
 
-impl<Spec: BlindIndexMetadata> TryFrom<Vec<u8>> for BlindIndex<Spec> {
+impl<Spec: BlindIndexSpec> TryFrom<Vec<u8>> for BlindIndex<Spec> {
     type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
@@ -272,7 +418,7 @@ impl BlindIndexInfo {
 /// ciphertext, recompute with the intended specification, field, and an allowed
 /// key generation, and compare the complete stored representation. A match is
 /// consistency at the configured precision, not proof of provenance or freshness.
-/// [`verify_blind_index_candidate`] only compares plaintexts; it does not perform
+/// [`BlindIndexSpec::verify_candidate`] only compares plaintexts; it does not perform
 /// this recomputation or authenticate stored index metadata.
 ///
 /// # Errors
@@ -309,83 +455,37 @@ pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
     })
 }
 
-/// Derives the current stored candidate index for `input` in field `F`.
-///
-/// # Errors
-///
-/// Returns an error for normalization failure, an unavailable key provider, or
-/// an unrouted field.
-pub fn derive_blind_index<Spec, Input, F>(
-    input: &Input,
+pub(crate) fn derive_value<Spec: BlindIndexSpec>(
+    value: &<Spec::Field as Field>::Value,
     keys: &dyn BlindIndexKeyProvider,
-) -> Result<BlindIndex<Spec>, Error>
-where
-    Input: ?Sized,
-    Spec: BlindIndexSpec<Input>,
-    F: Field,
-{
-    let normalized = Spec::normalize(input)?;
-    let key = keys.current_key(F::ID)?;
+) -> Result<BlindIndex<Spec>, Error> {
+    let normalized = Spec::normalize_value(value)?;
+    let field = <Spec::Field as Field>::ID;
+    let key = keys.current_key(field)?;
 
-    derive_normalized::<Spec>(&normalized, &BindingDomain::field(F::ID), &key)
+    derive_normalized::<Spec>(&normalized, &BindingDomain::field(field), &key)
 }
 
-/// Derives one candidate probe for every currently readable index generation.
-///
-/// Results are candidates only; decrypt matching rows and verify their
-/// normalized plaintext with [`verify_blind_index_candidate`].
-/// See the complete [blind-index example].
-///
-#[doc = concat!(
-    "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/blind_indexes.rs",
-)]
-///
-/// # Errors
-///
-/// Returns an error for normalization failure, an unavailable key provider, or
-/// an unrouted field.
-pub fn blind_index_probes<Spec, Input, F>(
-    input: &Input,
+fn derive_probes<Spec: BlindIndexSpec>(
+    query: &Spec::Query,
     keys: &dyn BlindIndexKeyProvider,
-) -> Result<Vec<BlindIndex<Spec>>, Error>
-where
-    Input: ?Sized,
-    Spec: BlindIndexSpec<Input>,
-    F: Field,
-{
-    let normalized = Spec::normalize(input)?;
-    let domain = BindingDomain::field(F::ID);
+) -> Result<Vec<BlindIndex<Spec>>, Error> {
+    let normalized = Spec::normalize_query(query)?;
+    let field = <Spec::Field as Field>::ID;
+    let domain = BindingDomain::field(field);
 
-    keys.readable_keys(F::ID)?
+    keys.readable_keys(field)?
         .iter()
         .map(|key| derive_normalized::<Spec>(&normalized, &domain, key))
         .collect()
 }
 
-/// Compares normalized query and candidate plaintext after candidate lookup.
-///
-/// Decrypt and authenticate the candidate ciphertext before calling this.
-/// This function receives no stored index, keys, or field: it rejects
-/// false plaintext matches but does not authenticate index metadata or establish
-/// index/ciphertext consistency.
-///
-/// Equal-length normalized values are compared in constant time. A normalized
-/// length mismatch returns early, so callers must treat normalized lengths as
-/// observable.
-///
-/// # Errors
-///
-/// Returns a sanitized error when either value cannot be normalized.
-pub fn verify_blind_index_candidate<Spec, Input>(
-    query: &Input,
-    candidate: &Input,
-) -> Result<bool, Error>
-where
-    Input: ?Sized,
-    Spec: BlindIndexSpec<Input>,
-{
-    let query = Spec::normalize(query)?;
-    let candidate = Spec::normalize(candidate)?;
+fn compare_normalized<Spec: BlindIndexSpec>(
+    query: &Spec::Query,
+    candidate: &<Spec::Field as Field>::Value,
+) -> Result<bool, Error> {
+    let query = Spec::normalize_query(query)?;
+    let candidate = Spec::normalize_value(candidate)?;
 
     if query.len() != candidate.len() {
         return Ok(false);
@@ -394,13 +494,13 @@ where
     Ok(query.as_slice().ct_eq(candidate.as_slice()).into())
 }
 
-fn derive_normalized<Spec: BlindIndexMetadata>(
+fn derive_normalized<Spec: BlindIndexSpec>(
     normalized: &[u8],
     domain: &BindingDomain,
     key: &BlindIndexKey,
 ) -> Result<BlindIndex<Spec>, Error> {
     assert_valid_bits::<Spec>();
-    let bits = u16::try_from(Spec::BITS).map_err(|_| Error::InvalidBlindIndex)?;
+    let bits = Spec::BITS;
     let mut header = [0_u8; INDEX_HEADER_LEN];
     header[0] = INDEX_FORMAT_VERSION;
     header[1..17].copy_from_slice(key.id().as_bytes());
@@ -426,15 +526,15 @@ fn derive_normalized<Spec: BlindIndexMetadata>(
         &[INDEX_VALUE_LABEL, &context, &normalized_len, normalized],
     )?;
 
-    let digest_len = Spec::BITS.div_ceil(8);
+    let digest_len = usize::from(bits).div_ceil(8);
     let mut stored = Vec::with_capacity(INDEX_HEADER_LEN + digest_len);
     stored.extend_from_slice(&header);
     stored.extend_from_slice(&digest[..digest_len]);
 
-    if Spec::BITS % 8 != 0 {
+    if bits % 8 != 0 {
         // One encoding per retained bit string; unused bits must not leak extra precision.
         // Parsing enforces the same rule: ../docs/wire-format.md#blind-index-recipe.
-        let retained_bits = Spec::BITS % 8;
+        let retained_bits = bits % 8;
         let mask = u8::MAX << (8 - retained_bits);
         let final_byte = stored.last_mut().ok_or(Error::InvalidBlindIndex)?;
         *final_byte &= mask;

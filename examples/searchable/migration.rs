@@ -174,7 +174,7 @@ async fn lookup(
     // The quarantine gate and candidate read must observe the same snapshot.
     quarantine_gate(&mut tx).await?;
     let legacy = PreviousEncryption::load()?;
-    let probes = blind_index_probes::<EmailLookup, str, UserEmail>(query, indexes)?;
+    let probes = EmailLookup::probes_with(query, indexes)?;
     // One statement selects a row once, even when it matches both predicates.
     // A single statement snapshot avoids moving rows between a scan and probe query.
     let mut sql = QueryBuilder::<Db>::new(
@@ -193,7 +193,7 @@ async fn lookup(
         let collision =
             row.try_get::<Option<String>, _>("format")?.as_deref() == Some("legacy-collision");
         let candidate = recover(row.try_get("email")?, collision, keys, &legacy)?;
-        if verify_blind_index_candidate::<EmailLookup, str>(query, candidate.expose_secret())? {
+        if EmailLookup::verify_candidate(query, candidate.expose_secret())? {
             matches.push(row.try_get("id")?);
         } else {
             rejected += 1;

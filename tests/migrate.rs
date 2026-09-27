@@ -8,11 +8,10 @@ use std::{
 };
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, EncryptionKeyProvider, Error, Field, FieldId, IndexId, IndexKeyId, KeyId,
-    KeyProviderError, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
-    derive_blind_index, field_id, index_id, index_key_id, inspect_blind_index, inspect_ciphertext,
-    key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey,
+    EncryptionKeyProvider, Error, Field, FieldId, IndexId, IndexKeyId, KeyId, KeyProviderError,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, field_id, index_id,
+    index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
@@ -47,33 +46,41 @@ struct EmailLookup;
 
 struct EmailDomain;
 
-impl BlindIndexMetadata for EmailLookup {
+impl BlindIndexSpec for EmailLookup {
+    type Field = UserEmail;
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = str;
 
-impl BlindIndexSpec<String> for EmailLookup {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(Zeroizing::new(
             input.trim().to_ascii_lowercase().into_bytes(),
         ))
     }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
+    }
 }
 
-impl BlindIndexMetadata for EmailDomain {
+impl BlindIndexSpec for EmailDomain {
+    type Field = UserEmail;
     const ID: IndexId = index_id!("70000000-0000-4000-8000-000000000007");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = str;
 
-impl BlindIndexSpec<String> for EmailDomain {
-    fn normalize(input: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(Zeroizing::new(
             input
                 .rsplit_once('@')
-                .map_or(input.as_str(), |(_, domain)| domain)
+                .map_or(input, |(_, domain)| domain)
                 .to_ascii_lowercase()
                 .into_bytes(),
         ))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -109,13 +116,13 @@ fn encrypt_email(email: &str, keys: &LocalEncryptionKeyring) -> Vec<u8> {
 }
 
 fn derive_email_index(email: &str, index_keys: &LocalBlindIndexKeyring) -> Vec<u8> {
-    derive_blind_index::<EmailLookup, String, UserEmail>(&email.to_owned(), index_keys)
+    EmailLookup::derive_with(&email.to_owned(), index_keys)
         .unwrap()
         .into_bytes()
 }
 
 fn derive_email_domain_index(email: &str, index_keys: &LocalBlindIndexKeyring) -> Vec<u8> {
-    derive_blind_index::<EmailDomain, String, UserEmail>(&email.to_owned(), index_keys)
+    EmailDomain::derive_with(&email.to_owned(), index_keys)
         .unwrap()
         .into_bytes()
 }

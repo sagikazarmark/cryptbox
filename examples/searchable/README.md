@@ -250,7 +250,7 @@ async fn search(
     encryption: &LocalEncryptionKeyring,
     indexes: &LocalBlindIndexKeyring,
 ) -> Result<()> {
-    let probes = blind_index_probes::<EmailLookup, str, UserEmail>(query, indexes)?;
+    let probes = EmailLookup::probes_with(query, indexes)?;
     let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
     let mut values = sql.separated(", ");
     for probe in &probes {
@@ -263,7 +263,7 @@ async fn search(
     for row in rows {
         let ciphertext: EmailCiphertext = row.try_get("email")?;
         let candidate = ciphertext.decrypt_with(encryption)?;
-        if verify_blind_index_candidate::<EmailLookup, str>(query, candidate.expose_secret())? {
+        if EmailLookup::verify_candidate(query, candidate.expose_secret())? {
             matches.push(row.try_get("id")?);
         } else {
             rejected += 1; // A collision is an ordinary non-match, not an assertion failure.

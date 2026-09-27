@@ -3,10 +3,9 @@
 use std::{env, error::Error, path::Path};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, Field, FieldId, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
-    Padding, Utf8, blind_index_probes, index_id, index_key_id, inspect_blind_index,
-    inspect_ciphertext, key_id, verify_blind_index_candidate,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey, Field,
+    FieldId, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, index_id,
+    index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
 };
 use sqlx::{Connection, QueryBuilder, Row};
 use zeroize::Zeroizing;
@@ -38,24 +37,23 @@ impl Field for UserEmail {
 }
 
 struct EmailLookup;
-impl BlindIndexMetadata for EmailLookup {
+impl BlindIndexSpec for EmailLookup {
+    type Field = UserEmail;
     const ID: IndexId = index_id!("80000000-0000-4000-8000-000000000008");
-    const BITS: usize = 128;
-}
-impl BlindIndexSpec<str> for EmailLookup {
-    fn normalize(input: &str) -> std::result::Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    const BITS: u16 = 128;
+    type Query = str;
+
+    fn normalize_query(input: &str) -> std::result::Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         // Illustrative ASCII equality policy, not general email canonicalization.
         let mut bytes = Zeroizing::new(input.trim().as_bytes().to_vec());
         bytes.make_ascii_lowercase();
         Ok(bytes)
     }
-}
-impl BlindIndexSpec<String> for EmailLookup {
-    fn normalize(input: &String) -> std::result::Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        <Self as BlindIndexSpec<str>>::normalize(input)
+
+    fn normalize_value(value: &String) -> std::result::Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
-
 fn validate_email(value: &str) -> Result<()> {
     // Match the lookup policy's trimming while preserving the original stored value.
     // Illustrative application syntax only, not general email validation or provenance.
@@ -223,10 +221,7 @@ async fn audit_current(
             let ciphertext: EmailCiphertext = row.try_get("email")?;
             let value = ciphertext.decrypt_with(encryption)?;
             validate_email(value.expose_secret())?;
-            let expected = cryptbox::derive_blind_index::<EmailLookup, String, UserEmail>(
-                value.expose_secret(),
-                indexes,
-            )?;
+            let expected = EmailLookup::derive_with(value.expose_secret(), indexes)?;
             if expected.as_bytes() != row.try_get::<Vec<u8>, _>("email_lookup")? {
                 return Err("index consistency check failed".into());
             }
@@ -368,7 +363,7 @@ fn rotation_ready(
         return Err("canary plaintext mismatch".into());
     }
     let token = hex::decode(lines[1])?;
-    let probes = blind_index_probes::<EmailLookup, str, UserEmail>(CANARY, indexes)?;
+    let probes = EmailLookup::probes_with(CANARY, indexes)?;
     if !probes.iter().any(|probe| probe.as_bytes() == token) {
         return Err("canary index generation unavailable or mismatched".into());
     }
@@ -434,7 +429,7 @@ async fn search(
     encryption: &LocalEncryptionKeyring,
     indexes: &LocalBlindIndexKeyring,
 ) -> Result<()> {
-    let probes = blind_index_probes::<EmailLookup, str, UserEmail>(query, indexes)?;
+    let probes = EmailLookup::probes_with(query, indexes)?;
     let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
     let mut values = sql.separated(", ");
     for probe in &probes {
@@ -447,7 +442,7 @@ async fn search(
     for row in rows {
         let ciphertext: EmailCiphertext = row.try_get("email")?;
         let candidate = ciphertext.decrypt_with(encryption)?;
-        if verify_blind_index_candidate::<EmailLookup, str>(query, candidate.expose_secret())? {
+        if EmailLookup::verify_candidate(query, candidate.expose_secret())? {
             matches.push(row.try_get("id")?);
         } else {
             rejected += 1; // A collision is an ordinary non-match, not an assertion failure.

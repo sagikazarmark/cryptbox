@@ -1,9 +1,9 @@
 //! Public-boundary tests for safe key construction.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexMetadata, BlindIndexSpec,
-    EncryptionKey, Error, Field, FieldId, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
-    Padding, Raw, decrypt, derive_blind_index, encrypt, index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexSpec, EncryptionKey, Error,
+    Field, FieldId, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, decrypt,
+    encrypt, index_id, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -18,14 +18,18 @@ impl Field for TestField {
 
 struct ExactValue;
 
-impl BlindIndexMetadata for ExactValue {
+impl BlindIndexSpec for ExactValue {
+    type Field = TestField;
     const ID: IndexId = index_id!("abcdefab-cdef-4abc-8def-abcdefabcdef");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = [u8];
 
-impl BlindIndexSpec<str> for ExactValue {
-    fn normalize(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(Zeroizing::new(input.as_bytes().to_vec()))
+    fn normalize_query(input: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(Zeroizing::new(input.to_vec()))
+    }
+
+    fn normalize_value(value: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -96,8 +100,8 @@ fn blind_index_keys_load_from_hex_and_base64() {
     let base64_keys = LocalBlindIndexKeyring::new(base64_key, []).unwrap();
 
     assert_eq!(
-        derive_blind_index::<ExactValue, str, TestField>("loaded key", &hex_keys).unwrap(),
-        derive_blind_index::<ExactValue, str, TestField>("loaded key", &base64_keys).unwrap(),
+        ExactValue::derive_with(&b"loaded key".to_vec(), &hex_keys).unwrap(),
+        ExactValue::derive_with(&b"loaded key".to_vec(), &base64_keys).unwrap(),
     );
 }
 

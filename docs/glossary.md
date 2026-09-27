@@ -6,8 +6,9 @@ bytes are found. Every value is bound to its field ID. Field binding identifies 
 logical field, not a row or tenant.
 
 **Blind index**:
-A separately keyed, truncated searchable projection of a normalized value.
-It deliberately reveals equality and frequency information.
+A separately keyed, truncated searchable projection of a normalized field value.
+Each blind index is declared over exactly one field, whose field ID
+domain-separates it. It deliberately reveals equality and frequency information.
 
 **Candidate**:
 A row selected by a probe that still requires authenticated decryption and

@@ -1,9 +1,9 @@
 //! Provisional compatibility vectors for the experimental v0.1 formats.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, EncryptionKey,
-    Error, Field, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring,
-    Padding, Raw, Utf8, decrypt, derive_blind_index, field_id, index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, EncryptionKey, Error, Field,
+    IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, Utf8,
+    decrypt, field_id, index_id, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -76,28 +76,31 @@ fn experimental_envelope_vector_decrypts() {
 
 struct VectorIndex;
 
-impl BlindIndexMetadata for VectorIndex {
-    const BITS: usize = 13;
+impl BlindIndexSpec for VectorIndex {
+    type Field = VectorField;
     const ID: IndexId = index_id!("abcdefab-cdef-4def-8def-abcdefabcdef");
-}
+    const BITS: u16 = 13;
+    type Query = str;
 
-impl BlindIndexSpec<str> for VectorIndex {
-    fn normalize(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(Zeroizing::new(input.as_bytes().to_vec()))
+    fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(Zeroizing::new(query.as_bytes().to_vec()))
+    }
+
+    fn normalize_value(value: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(Zeroizing::new(value.clone()))
     }
 }
 
 #[test]
 fn experimental_blind_index_vector_is_stable() {
+    const VECTOR: &str = "01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d71e0";
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = LocalBlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
 
-    let index =
-        derive_blind_index::<VectorIndex, str, VectorField>("normalized@example.com", &keys)
-            .unwrap();
+    let index = VectorIndex::derive_with(&b"normalized@example.com".to_vec(), &keys).unwrap();
+    let probes = VectorIndex::probes_with("normalized@example.com", &keys).unwrap();
 
-    assert_eq!(
-        hex::encode(index.as_bytes()),
-        "01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d71e0"
-    );
+    assert_eq!(hex::encode(index.as_bytes()), VECTOR);
+    assert_eq!(probes.len(), 1);
+    assert_eq!(hex::encode(probes[0].as_bytes()), VECTOR);
 }

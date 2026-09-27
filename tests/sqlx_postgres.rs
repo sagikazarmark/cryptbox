@@ -5,14 +5,15 @@
 use std::sync::Once;
 
 use cryptbox::{
-    BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted, EncryptionKey,
-    EncryptionKeyProvider, Field, GlobalKeyContext, GlobalProviders, IndexId, KeyContext, KeyId,
-    LocalEncryptionKeyring, Padding, Utf8, encrypt, index_id, key_id,
+    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted,
+    EncryptionKey, EncryptionKeyProvider, Field, GlobalKeyContext, GlobalProviders, IndexId,
+    KeyContext, KeyId, LocalEncryptionKeyring, Padding, Utf8, encrypt, index_id, key_id,
 };
 use sqlx::{
     Connection, Decode, Encode, Postgres, Row, Type,
     postgres::{PgArgumentBuffer, PgConnection, PgTypeInfo},
 };
+use zeroize::Zeroizing;
 
 const KEY_ID: KeyId = key_id!("c0000000-0000-4000-8000-00000000000c");
 
@@ -41,9 +42,19 @@ impl Field for TestField {
 
 struct IndexSpec;
 
-impl BlindIndexMetadata for IndexSpec {
-    const BITS: usize = 128;
+impl BlindIndexSpec for IndexSpec {
+    type Field = TestField;
     const ID: IndexId = index_id!("d0000000-0000-4000-8000-00000000000d");
+    const BITS: u16 = 128;
+    type Query = str;
+
+    fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(Zeroizing::new(query.as_bytes().to_vec()))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
+    }
 }
 
 fn assert_sqlx_traits<T>()

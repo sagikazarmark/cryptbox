@@ -106,6 +106,12 @@ text for a case-insensitive lookup. It does not alter the encrypted source value
 or depend on its codec or padding. Index derivation uses independently generated
 keys and retains a chosen number of digest bits.
 
+Each blind index is declared over exactly one field. It normalizes the field's
+stored value for writes and a lookup input, such as a `str` query, for searches;
+both must produce the same bytes for values that should match. Normalizing the
+whole value lets an index cover part of it, such as an email domain, or combine
+several parts.
+
 A query derives a **probe** for each readable index-key generation. Rows selected
 by those probes are **candidates**: each must be authenticated, decrypted, and
 compared using the same normalization before acceptance. Truncation allows

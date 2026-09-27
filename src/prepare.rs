@@ -1,9 +1,8 @@
 use std::fmt;
 
 use crate::{
-    BlindIndexKeyProvider, BlindIndexMetadata, BlindIndexRef, BlindIndexSpec, Ciphertext,
-    Encrypted, EncryptionKeyProvider, Error, Field, GlobalKeyContext, KeyContext,
-    derive_blind_index,
+    BlindIndexKeyProvider, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted,
+    EncryptionKeyProvider, Error, Field, GlobalKeyContext, KeyContext, blind::derive_value,
 };
 
 struct PreparedIndex {
@@ -89,19 +88,76 @@ where
 
     /// Adds an index derived from the same source value as the ciphertext.
     ///
+    /// The index must be declared over this field. Attaching another field's
+    /// index is a type error:
+    ///
+    /// ```compile_fail,E0271
+    /// use cryptbox::{
+    ///     BlindIndexError, BlindIndexSpec, Encrypted, Field, FieldId, IndexId,
+    ///     LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
+    /// };
+    /// use zeroize::Zeroizing;
+    ///
+    /// struct UserEmail;
+    ///
+    /// impl Field for UserEmail {
+    ///     const ID: FieldId = FieldId::from_bytes([1; 16]);
+    ///     const PADDING: Padding = Padding::NONE;
+    ///     type Value = String;
+    ///     type Codec = Utf8;
+    /// }
+    ///
+    /// struct InviteEmail;
+    ///
+    /// impl Field for InviteEmail {
+    ///     const ID: FieldId = FieldId::from_bytes([2; 16]);
+    ///     const PADDING: Padding = Padding::NONE;
+    ///     type Value = String;
+    ///     type Codec = Utf8;
+    /// }
+    ///
+    /// struct InviteEmailLookup;
+    ///
+    /// impl BlindIndexSpec for InviteEmailLookup {
+    ///     type Field = InviteEmail;
+    ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
+    ///     const BITS: u16 = 32;
+    ///     type Query = str;
+    ///
+    ///     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    ///         Ok(Zeroizing::new(query.as_bytes().to_vec()))
+    ///     }
+    ///
+    ///     fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    ///         Self::normalize_query(value)
+    ///     }
+    /// }
+    ///
+    /// fn prepare(
+    ///     keys: &LocalEncryptionKeyring,
+    ///     index_keys: &LocalBlindIndexKeyring,
+    /// ) -> Result<(), cryptbox::Error> {
+    ///     let email = Encrypted::<UserEmail>::new("mark@example.com");
+    ///     email
+    ///         .prepare_with(keys)?
+    ///         .with_index_with::<InviteEmailLookup>(index_keys)?;
+    ///     Ok(())
+    /// }
+    /// ```
+    ///
     /// # Errors
     ///
     /// Returns an error for duplicate index IDs, normalization failure,
     /// invalid precision, or an unavailable provider.
     pub fn with_index_with<Spec>(mut self, keys: &dyn BlindIndexKeyProvider) -> Result<Self, Error>
     where
-        Spec: BlindIndexSpec<F::Value>,
+        Spec: BlindIndexSpec<Field = F>,
     {
         if self.indexes.iter().any(|index| index.id == Spec::ID) {
             return Err(Error::DuplicatePreparedIndex(Spec::ID));
         }
 
-        let index = derive_blind_index::<Spec, F::Value, F>(self.source, keys)?;
+        let index = derive_value::<Spec>(self.source, keys)?;
         self.indexes.push(PreparedIndex {
             id: Spec::ID,
             bytes: index.into_bytes(),
@@ -118,7 +174,7 @@ where
     /// failed index derivation.
     pub fn with_index<Spec>(self) -> Result<Self, Error>
     where
-        Spec: BlindIndexSpec<F::Value>,
+        Spec: BlindIndexSpec<Field = F>,
     {
         self.with_index_with::<Spec>(GlobalKeyContext::blind_index_keys()?)
     }
@@ -130,7 +186,7 @@ where
     /// Returns [`Error::BlindIndexNotPrepared`] when the index was not added.
     pub fn index<Spec>(&self) -> Result<BlindIndexRef<'_, Spec>, Error>
     where
-        Spec: BlindIndexMetadata,
+        Spec: BlindIndexSpec<Field = F>,
     {
         self.indexes
             .iter()

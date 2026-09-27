@@ -5,7 +5,7 @@ use sqlx::{
     postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted, Field};
+use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted, Field};
 
 fn bytea_type_info() -> PgTypeInfo {
     <Vec<u8> as Type<Postgres>>::type_info()
@@ -107,7 +107,7 @@ impl<Spec> Encode<'_, Postgres> for BlindIndex<Spec> {
 
 impl<'row, Spec> Decode<'row, Postgres> for BlindIndex<Spec>
 where
-    Spec: BlindIndexMetadata,
+    Spec: BlindIndexSpec,
 {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;

@@ -1,13 +1,12 @@
 //! Public-boundary tests for routing field keys to providers.
 
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyProvider, Error, Field, FieldId, IndexId, IndexKeyId, KeyId, KeyProviderError,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, Router, blind_index_probes,
-    decrypt, derive_blind_index, encrypt, field_id, index_id, index_key_id, inspect_blind_index,
-    inspect_ciphertext, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, EncryptionKeyProvider, Error,
+    Field, FieldId, IndexId, IndexKeyId, KeyId, KeyProviderError, LocalBlindIndexKeyring,
+    LocalEncryptionKeyring, Padding, Raw, Router, decrypt, encrypt, field_id, index_id,
+    index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -77,16 +76,21 @@ fn strict_router_rejects_unrouted_fields_for_encryption_and_decryption() {
     );
 }
 
-struct Exact;
+/// One exact-match index per byte field.
+struct Exact<F>(PhantomData<F>);
 
-impl BlindIndexMetadata for Exact {
-    const BITS: usize = 32;
+impl<F: Field<Value = Vec<u8>>> BlindIndexSpec for Exact<F> {
+    type Field = F;
     const ID: IndexId = index_id!("50000000-0000-4000-8000-000000000005");
-}
+    const BITS: u16 = 32;
+    type Query = [u8];
 
-impl BlindIndexSpec<str> for Exact {
-    fn normalize(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(Zeroizing::new(input.as_bytes().to_vec()))
+    fn normalize_query(query: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(Zeroizing::new(query.to_vec()))
+    }
+
+    fn normalize_value(value: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -102,8 +106,8 @@ fn routed_blind_indexes_use_their_fields_provider() {
         .route::<Iban>(index_keyring(PAYMENTS_INDEX_KEY_ID, 4))
         .unwrap();
 
-    let email = derive_blind_index::<Exact, str, Email>("mark@example.com", &router).unwrap();
-    let iban = blind_index_probes::<Exact, str, Iban>("DE89", &router).unwrap();
+    let email = Exact::<Email>::derive_with(&b"mark@example.com".to_vec(), &router).unwrap();
+    let iban = Exact::<Iban>::probes_with(b"DE89", &router).unwrap();
 
     assert_eq!(
         inspect_blind_index(email.as_bytes())
@@ -127,11 +131,11 @@ fn strict_router_rejects_unrouted_fields_for_blind_indexes() {
         .unwrap();
 
     assert_eq!(
-        derive_blind_index::<Exact, str, Iban>("DE89", &router).unwrap_err(),
+        Exact::<Iban>::derive_with(&b"DE89".to_vec(), &router).unwrap_err(),
         Error::UnroutedField(Iban::ID)
     );
     assert_eq!(
-        blind_index_probes::<Exact, str, Iban>("DE89", &router).unwrap_err(),
+        Exact::<Iban>::probes_with(b"DE89", &router).unwrap_err(),
         Error::UnroutedField(Iban::ID)
     );
 }

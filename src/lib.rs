@@ -23,7 +23,8 @@
 //!   providers receive the [`FieldId`] of every request.
 //! - [`Prepared`] borrows a source value and derives ciphertext/indexes for an
 //!   application-owned atomic write; it does not persist them.
-//! - A [`BlindIndex`] is a candidate selector. Use every [`blind_index_probes`]
+//! - A [`BlindIndexSpec`] binds a blind index to one field. A [`BlindIndex`] is a
+//!   candidate selector: use every [`BlindIndexSpec::probes_with`]
 //!   result, decrypt candidates, and compare normalized plaintext.
 //!
 #![doc = "<div>"]
@@ -140,10 +141,7 @@ mod sqlx_postgres;
 mod sqlx_sqlite;
 mod value;
 
-pub use blind::{
-    BlindIndex, BlindIndexInfo, BlindIndexMetadata, BlindIndexRef, BlindIndexSpec,
-    blind_index_probes, derive_blind_index, inspect_blind_index, verify_blind_index_candidate,
-};
+pub use blind::{BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, inspect_blind_index};
 #[cfg(feature = "json")]
 pub use codec::Json;
 #[cfg(feature = "postcard")]

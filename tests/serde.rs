@@ -3,9 +3,9 @@
 #![cfg(any(feature = "json", feature = "postcard"))]
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Encrypted,
-    EncryptionKey, Field, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
-    derive_blind_index, index_id, index_key_id, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field,
+    IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, index_id, index_key_id,
+    key_id,
 };
 #[cfg(feature = "json")]
 use serde_json::Value;
@@ -22,14 +22,18 @@ impl Field for EmailField {
 
 struct EmailExact;
 
-impl BlindIndexMetadata for EmailExact {
+impl BlindIndexSpec for EmailExact {
+    type Field = EmailField;
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
-    const BITS: usize = 128;
-}
+    const BITS: u16 = 128;
+    type Query = str;
 
-impl BlindIndexSpec<str> for EmailExact {
-    fn normalize(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(Zeroizing::new(input.as_bytes().to_vec()))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
     }
 }
 
@@ -43,7 +47,7 @@ fn blind_index() -> BlindIndex<EmailExact> {
     )
     .unwrap();
 
-    derive_blind_index::<EmailExact, str, EmailField>("mark@example.com", &keys).unwrap()
+    EmailExact::derive_with(&"mark@example.com".to_owned(), &keys).unwrap()
 }
 
 fn encryption_keys() -> LocalEncryptionKeyring {
