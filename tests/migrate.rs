@@ -10,7 +10,7 @@ use std::{
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexSpec, Ciphertext, Encrypted, EncryptionKey,
     EncryptionKeyProvider, Error, Field, FieldId, IndexId, IndexKeyId, KeyId, KeyProviderError,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, field_id, index_id,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Router, Utf8, field_id, index_id,
     index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
@@ -23,6 +23,7 @@ const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
 const CURRENT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
 const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("30000000-0000-4000-8000-000000000003");
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("40000000-0000-4000-8000-000000000004");
+const OTHER_FIELD_ID: FieldId = field_id!("80000000-0000-4000-8000-000000000008");
 
 struct UserEmail;
 
@@ -1007,6 +1008,60 @@ fn stepped_verification_matches_a_full_pass() {
     assert_eq!(stepped, full);
     assert_eq!(store.update_calls, 0);
     assert_eq!(store.checkpoint_saves, 0);
+}
+
+fn envelope_rows() -> Vec<(i64, Vec<u8>, Vec<Vec<u8>>)> {
+    let keys = rotated_keys();
+    let index_keys = rotated_index_keys();
+    vec![
+        (
+            1,
+            encrypt_email("first@example.com", &keys),
+            vec![derive_email_index("first@example.com", &index_keys)],
+        ),
+        (
+            2,
+            encrypt_email("second@example.com", &keys),
+            vec![derive_email_index("second@example.com", &index_keys)],
+        ),
+    ]
+}
+
+fn assert_verification_aborts_as_unrouted(sweep: &Sweep<'_, UserEmail>) {
+    let mut store = MemoryStore::new(envelope_rows());
+
+    assert!(matches!(
+        futures_executor::block_on(sweep.verify(&mut store)),
+        Err(SweepError::Row(Error::UnroutedField(field))) if field == UserEmail::ID
+    ));
+    // The batch aborts rather than returning a report that counts every row
+    // as malformed.
+    assert!(matches!(
+        futures_executor::block_on(sweep.verify_batch(&mut store, None)),
+        Err(SweepError::Row(Error::UnroutedField(field))) if field == UserEmail::ID
+    ));
+}
+
+#[test]
+fn verification_aborts_when_a_strict_router_has_no_encryption_route() {
+    let keys = Router::strict()
+        .route_id(OTHER_FIELD_ID, rotated_keys())
+        .unwrap();
+    let index_keys = rotated_index_keys();
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
+
+    assert_verification_aborts_as_unrouted(&Sweep::new(planner));
+}
+
+#[test]
+fn verification_aborts_when_a_strict_router_has_no_blind_index_route() {
+    let keys = rotated_keys();
+    let index_keys = Router::strict()
+        .route_id(OTHER_FIELD_ID, rotated_index_keys())
+        .unwrap();
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
+
+    assert_verification_aborts_as_unrouted(&Sweep::new(planner));
 }
 
 #[test]

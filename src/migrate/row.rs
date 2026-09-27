@@ -234,7 +234,8 @@ where
     /// # Errors
     ///
     /// Returns an error for malformed envelopes or blind indexes, an index
-    /// column arity mismatch, or an unavailable key provider.
+    /// column arity mismatch, an unavailable key provider, or a field the key
+    /// provider does not route.
     pub fn classify_row(&self, ciphertext: &[u8], indexes: &[&[u8]]) -> Result<RowState, Error> {
         self.check_arity(indexes)?;
 

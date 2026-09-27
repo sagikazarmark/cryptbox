@@ -83,7 +83,8 @@
   keyrings ignore the field.
 - Add `Router`, a key provider that routes fields to providers by field ID for
   both encryption and blind-index roles. `Router::strict()` rejects unrouted
-  fields with `Error::UnroutedField`; `Router::new(default)` falls back and
+  fields with `Error::UnroutedField`, which aborts a sweep verification pass
+  rather than counting rows as malformed; `Router::new(default)` falls back and
   reports fallback fields through `Router::falls_back`. A second route for one
   field ID fails with `Error::DuplicateRoute`. `Arc<P>` now implements both
   provider traits, so one router can hold providers of different types.

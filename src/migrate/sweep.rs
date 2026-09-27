@@ -292,8 +292,10 @@ where
     ///
     /// # Errors
     ///
-    /// Returns a storage error, an index column arity mismatch, or an
-    /// unavailable key provider. Malformed rows are counted, not errors.
+    /// Returns a storage error or a configuration or environment failure, such
+    /// as an index column arity mismatch, an unavailable key provider, or a
+    /// field that a strict router does not route. Malformed rows are counted,
+    /// not errors.
     pub async fn verify_batch<S: SweepStore>(
         &self,
         store: &mut S,
@@ -316,15 +318,8 @@ where
             let indexes: Vec<&[u8]> = row.indexes.iter().map(Vec::as_slice).collect();
             match self.planner.classify_row(&row.ciphertext, &indexes) {
                 Ok(state) => report.record(state),
-                // Configuration and environment failures abort the pass;
-                // only per-row data failures count as malformed.
-                Err(
-                    error @ (Error::IndexColumnMismatch { .. }
-                    | Error::KeyProviderUnavailable
-                    | Error::KeysNotInstalled
-                    | Error::BlindIndexKeysNotConfigured),
-                ) => return Err(SweepError::Row(error)),
-                Err(_) => report.malformed += 1,
+                Err(error) if is_row_data_failure(&error) => report.malformed += 1,
+                Err(error) => return Err(SweepError::Row(error)),
             }
         }
 
@@ -386,4 +381,43 @@ pub struct BatchOutcome<C> {
     /// The cursor after this batch, to pass as `after` for the next step.
     /// `None` means the scan is exhausted.
     pub checkpoint: Option<C>,
+}
+
+/// Reports whether `error` describes one row's stored bytes, rather than the
+/// configuration or environment.
+///
+/// Verification counts row data failures as malformed and aborts on everything
+/// else, since a misconfigured pass would misreport every row. The match is
+/// exhaustive so that a new error variant must be classified here.
+const fn is_row_data_failure(error: &Error) -> bool {
+    match error {
+        Error::NotCiphertext
+        | Error::InvalidEnvelope
+        | Error::UnsupportedFormatVersion(_)
+        | Error::UnsupportedSuite(_)
+        | Error::UnknownEncryptionKey(_)
+        | Error::UnknownBlindIndexKey(_)
+        | Error::AuthenticationFailed
+        | Error::CodecFailed(_)
+        | Error::BlindIndexNormalizationFailed
+        | Error::MessageTooLong
+        | Error::PaddingOverflow
+        | Error::InvalidPadding
+        | Error::InvalidBlindIndex
+        | Error::LegacyRecoveryFailed(_) => true,
+        Error::KeyProviderUnavailable
+        | Error::KeysNotInstalled
+        | Error::UnroutedField(_)
+        | Error::DuplicateRoute(_)
+        | Error::BlindIndexKeysNotConfigured
+        | Error::KeysAlreadyInstalled
+        | Error::DuplicateEncryptionKey(_)
+        | Error::DuplicateBlindIndexKey(_)
+        | Error::RandomnessUnavailable
+        | Error::InvalidKeyEncoding
+        | Error::Internal
+        | Error::DuplicatePreparedIndex(_)
+        | Error::BlindIndexNotPrepared(_)
+        | Error::IndexColumnMismatch { .. } => false,
+    }
 }
