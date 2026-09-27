@@ -21,10 +21,11 @@
 - 🔎 **Search encrypted data using blind indexes.**
 - 🧹 **Prevent sensitive data exposure in logs.**
 
-It can protect encrypted fields in a stolen database dump when keys stay
-separate. It does not protect a compromised application, prevent replay or
-same-field cross-row substitution, or hide query patterns. Blind indexes leak
-equality/frequency; every hit requires decrypted, normalized comparison.
+| Capability | Protection |
+| --- | --- |
+| ✅ It CAN | Protect encrypted fields in a stolen database dump when keys stay separate. |
+| ❌ It CAN'T | Protect a compromised application. |
+| ❌ It CAN'T | Prevent replay or same-field cross-row substitution. |
 
 [Try it](docs/first-field.md) · [How it works](docs/concepts.md) ·
 [Security](docs/security.md) · [Documentation](docs/README.md) ·
