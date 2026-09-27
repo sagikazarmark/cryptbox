@@ -186,3 +186,18 @@ pub(crate) fn domain<F: Field, A: Args<F>>(args: A) -> Result<BindingDomain, Err
 
     args.with_parts(|binding, record| BindingDomain::of(F::ID, binding, record))
 }
+
+/// Encodes the binding of field `F` under `args`, as [`domain`] does, together
+/// with the blind-index domain of its `keys` and `index` parts.
+pub(crate) fn domains<F: Field, A: Args<F>>(
+    args: A,
+) -> Result<(BindingDomain, BindingDomain), Error> {
+    const { check_record(F::RECORD, <A as sealed::Sealed<F>>::RECORD) };
+
+    args.with_parts(|binding, record| {
+        Ok((
+            BindingDomain::of(F::ID, binding, record)?,
+            BindingDomain::index_of(F::ID, binding)?,
+        ))
+    })
+}

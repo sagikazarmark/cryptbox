@@ -173,7 +173,7 @@ async fn lookup(
     // The quarantine gate and candidate read must observe the same snapshot.
     quarantine_gate(&mut tx).await?;
     let legacy = PreviousEncryption::load()?;
-    let probes = EmailLookup::probes_with(query, indexes)?;
+    let probes = EmailLookup::probes_with(query, &(), indexes)?;
     // One statement selects a row once, even when it matches both predicates.
     // A single statement snapshot avoids moving rows between a scan and probe query.
     let mut sql = QueryBuilder::<Db>::new(

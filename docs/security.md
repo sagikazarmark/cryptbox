@@ -44,7 +44,7 @@ randomness and a compatible target are required; see [platform constraints](feat
 | Copy ciphertext to another scope, such as another tenant | Authentication rejects other binding values of a field that declares them. A `FieldOnly` field has no scope. |
 | Copy ciphertext between rows of the same field | Authentication rejects another record of a field that binds one. For a field without a record, substitution within the same scope can succeed. |
 | Restore an older authentic value | No replay, rollback, or freshness protection. |
-| Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency, currently across every scope of a field; access patterns remain visible. |
+| Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency within the scope of their `keys` and `index` parts, and across bound-only parts and records; a `FieldOnly` field's indexes leak across the whole field. Access patterns remain visible. |
 | Alter indexes or omit query results | Candidate comparison rejects false matches, but cannot detect omitted matches. Search completeness is not guaranteed. |
 | Compromise the live application | Plaintext and keys can be exposed. CryptBox supplies no process-isolation boundary. |
 

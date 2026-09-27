@@ -50,7 +50,7 @@ fn main() -> Result<(), cryptbox::Error> {
         [old_index_key],
     )?;
     let query = "mark@example.com";
-    let probes = EmailLookup::probes_with(query, &index_keys)?;
+    let probes = EmailLookup::probes_with(query, &(), &index_keys)?;
 
     // Stored indexes are lookup tokens, not plaintext secrets, so ordinary
     // equality is appropriate when matching every probe during key rotation.

@@ -9,7 +9,7 @@ mod presets;
 mod scope;
 
 pub use args::Args;
-pub(crate) use args::domain;
+pub(crate) use args::{domain, domains};
 pub use presets::{FieldOnly, Tenant, TenantId};
 pub use scope::KeyScope;
 
@@ -165,6 +165,10 @@ pub trait Binding: Clone + Hash + Eq + Send + Sync + 'static {
 
     /// Returns one value for each `keys` and `index` part, in
     /// [`PARTS`](Self::PARTS) order.
+    ///
+    /// These must equal the values [`values`](Self::values) returns for the same
+    /// parts: a sealed value's prepared indexes take their scope from its
+    /// binding, and probes take theirs from these arguments.
     fn index_values(args: &Self::IndexArgs) -> PartValues<'_>;
 }
 
@@ -617,6 +621,57 @@ impl BindingDomain {
             &values.0,
             record.map(RecordId::part_value),
         )
+    }
+
+    /// Encodes the blind-index domain of field `id` under a query's arguments.
+    ///
+    /// The domain is the binding restricted to its `keys` and `index` parts,
+    /// without a record: field-only when the binding has no such parts.
+    // See ../docs/wire-format.md#index-binding.
+    pub(crate) fn index<B: Binding>(id: FieldId, args: &B::IndexArgs) -> Result<Self, Error> {
+        const { check_parts(B::PARTS) };
+
+        let specs: Vec<_> = B::PARTS
+            .iter()
+            .copied()
+            .filter(|spec| spec.role.scopes_index())
+            .collect();
+
+        Self::index_parts(id, &specs, &B::index_values(args).0)
+    }
+
+    /// Encodes the blind-index domain of field `id` under a whole binding: the
+    /// same domain as [`Self::index`] under the binding's `keys` and `index`
+    /// values.
+    pub(crate) fn index_of<B: Binding>(id: FieldId, binding: &B) -> Result<Self, Error> {
+        const { check_parts(B::PARTS) };
+
+        let values = binding.values();
+        check_values(B::PARTS, &values.0)?;
+        let (specs, values): (Vec<_>, Vec<_>) = B::PARTS
+            .iter()
+            .copied()
+            .zip(values.0)
+            .filter(|(spec, _)| spec.role.scopes_index())
+            .unzip();
+
+        Self::index_parts(id, &specs, &values)
+    }
+
+    fn index_parts(
+        id: FieldId,
+        specs: &[PartSpec],
+        values: &[PartValue<'_>],
+    ) -> Result<Self, Error> {
+        if specs.is_empty() {
+            return if values.is_empty() {
+                Ok(Self::field(id))
+            } else {
+                Err(Error::InvalidBinding)
+            };
+        }
+
+        Self::scoped(id, BindingShape::new(specs, false), values, None)
     }
 
     pub(crate) fn field_id(&self) -> FieldId {

@@ -2,11 +2,8 @@ use std::fmt;
 
 use crate::{
     BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec, EncryptionKeySource, Error, Field,
-    FieldOnly, IndexKeyId, Sealed,
-    binding::domain,
-    blind::{current_key_id, derive_value},
-    crypto::needs_reencryption_bound,
-    inspect_blind_index,
+    FieldOnly, IndexKeyId, Sealed, binding::domain, blind::current_key_id,
+    crypto::needs_reencryption_bound, inspect_blind_index,
 };
 
 use super::{LegacyFormat, legacy};
@@ -96,16 +93,18 @@ fn derive_index_bytes<F, Spec>(
     keys: &dyn BlindIndexKeySource,
 ) -> Result<Vec<u8>, Error>
 where
-    F: Field,
+    F: Field<Binding = FieldOnly>,
     Spec: BlindIndexSpec<Field = F>,
 {
-    derive_value::<Spec>(value, keys).map(BlindIndex::into_bytes)
+    Spec::derive_with(value, &(), keys).map(BlindIndex::into_bytes)
 }
 
-fn current_index_key_id<Spec: BlindIndexSpec>(
-    keys: &dyn BlindIndexKeySource,
-) -> Result<IndexKeyId, Error> {
-    current_key_id::<Spec>(keys)
+fn current_index_key_id<F, Spec>(keys: &dyn BlindIndexKeySource) -> Result<IndexKeyId, Error>
+where
+    F: Field<Binding = FieldOnly>,
+    Spec: BlindIndexSpec<Field = F>,
+{
+    current_key_id::<Spec>(&(), keys)
 }
 
 // Reads the unauthenticated header only, without copying the envelope.
@@ -243,7 +242,7 @@ where
     {
         self.indexes.push(IndexColumn {
             derive: derive_index_bytes::<F, Spec>,
-            current_key: current_index_key_id::<Spec>,
+            current_key: current_index_key_id::<F, Spec>,
             keys,
         });
 

@@ -3,8 +3,9 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Args, Codec, EncryptionKeySource, Error, Field, FieldOnly, GlobalKeys, KeyId, Prepared,
-    binding::domain,
+    Args, BindingDomain, Codec, EncryptionKeySource, Error, Field, FieldOnly, GlobalKeys, KeyId,
+    Prepared,
+    binding::{domain, domains},
     crypto::{decrypt_bound, encrypt_bound, needs_reencryption_bound, validated_key_id},
     keys,
 };
@@ -107,8 +108,16 @@ impl<F: Field> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
+        Self::seal_in(value, &domain(args)?, keys)
+    }
+
+    fn seal_in(
+        value: &F::Value,
+        domain: &BindingDomain,
+        keys: &(impl EncryptionKeySource + ?Sized),
+    ) -> Result<Self, Error> {
         let plaintext = F::Codec::encode(value)?;
-        let sealed = encrypt_bound(&domain(args)?, F::PADDING, &plaintext, keys)?;
+        let sealed = encrypt_bound(domain, F::PADDING, &plaintext, keys)?;
 
         Ok(Self::from_validated_bytes(sealed))
     }
@@ -152,7 +161,13 @@ impl<F: Field> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Prepared<'a, F>, Error> {
-        Ok(Prepared::new(value, Self::seal(value, args, keys)?))
+        let (domain, index_domain) = domains(args)?;
+
+        Ok(Prepared::new(
+            value,
+            Self::seal_in(value, &domain, keys)?,
+            index_domain,
+        ))
     }
 
     /// Reports whether this envelope differs from what `F` currently writes.

@@ -165,7 +165,7 @@ async fn search(
     index_keys: &BlindIndexKeyring,
 ) -> (Vec<i64>, Vec<i64>) {
     let query = " ALICE@example.com ";
-    let probes = EmailLookup::probes_with(query, index_keys).unwrap();
+    let probes = EmailLookup::probes_with(query, &(), index_keys).unwrap();
     let mut candidates = Vec::new();
     let mut matches = Vec::new();
     for probe in probes {

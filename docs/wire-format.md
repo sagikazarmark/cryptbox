@@ -511,8 +511,9 @@ bits in the final byte are zero and noncanonical stored values are rejected.
 
 The logical `IndexId` distinguishes indexes, such as two differently normalized
 projections of the same field. It is separate from `IndexKeyId`: one identifies
-the index's meaning, the other its key generation. `IndexId`, binding, and
-normalization come from the application schema and are not stored in the index.
+the index's meaning, the other its key generation. `IndexId` and normalization
+come from the application schema, and the index binding from each call; none
+of them is stored in the index.
 
 Exact domain labels include the terminating NUL byte:
 
@@ -529,14 +530,30 @@ key_info = key_info_label || context
 mac_input = MAC_label || context || normalized_length_be_u64 || normalized_bytes
 ```
 
+### Index binding
+
+A blind index is derived under its **index binding**: the field's binding
+restricted to its `keys` and `index` parts. Bound-only parts and the record are
+left out, because a query knows its scope but not the row. The index binding
+uses the [binding](#binding) encoding:
+
+- With no `keys` or `index` parts, it is the field-only binding (tag `01`), as
+  for `FieldOnly`. Such indexes are byte-identical to earlier releases.
+- Otherwise it is a [scoped binding](#scoped-binding) of those parts, with no
+  record: tag `02`, the field ID, `00`, then the parts sorted by part ID.
+
+Two bindings that agree on their `keys` and `index` values share the index
+binding, so their indexes of the same value are equal. The key source receives
+the key scope of the `keys` parts.
+
 ### Blind-index recipe
 
 Inputs are an independent 32-byte blind-index root (never an encryption root),
-its immutable `IndexKeyId`, the expected binding, logical `IndexId`, retained
-bit count, and normalized bytes. `IndexKeyId`, `IndexId`, and any `FieldId` are
-encoded using the UUID convention above, and binding uses the same encoding as
-encryption. The version is one byte `01`; `bits_be` is a two-byte unsigned
-big-endian count in `1..=256`.
+its immutable `IndexKeyId`, the expected [index binding](#index-binding),
+logical `IndexId`, retained bit count, and normalized bytes. `IndexKeyId`,
+`IndexId`, and any `FieldId` are encoded using the UUID convention above, and
+`binding` is the encoded index binding. The version is one byte `01`; `bits_be`
+is a two-byte unsigned big-endian count in `1..=256`.
 
 1. Run the application's deterministic normalizer for this logical index.
    There is no built-in case folding, Unicode normalization, or text encoding
@@ -582,3 +599,15 @@ stored value: 01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d71e0
 
 The final byte `e0` has its three unused low bits cleared. This vector has not
 yet been cross-checked against an independent implementation.
+
+### Scoped blind-index vector
+
+The same inputs, for a field bound to the `Tenant` preset with tenant `acme`.
+The index binding is the field's `Tenant` binding without a record:
+
+```text
+binding:      02123456781234423482341234567890ab0000011e8306bf31354570831c6732f92550e9030000000461636d65
+stored value: 01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d35b8
+```
+
+This vector was computed from the recipe above with OpenSSL's HKDF and HMAC.

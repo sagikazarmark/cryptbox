@@ -123,13 +123,13 @@ fn encrypt_email(email: &str, keys: &EncryptionKeyring) -> Vec<u8> {
 }
 
 fn derive_email_index(email: &str, index_keys: &BlindIndexKeyring) -> Vec<u8> {
-    EmailLookup::derive_with(&email.to_owned(), index_keys)
+    EmailLookup::derive_with(&email.to_owned(), &(), index_keys)
         .unwrap()
         .into_bytes()
 }
 
 fn derive_email_domain_index(email: &str, index_keys: &BlindIndexKeyring) -> Vec<u8> {
-    EmailDomain::derive_with(&email.to_owned(), index_keys)
+    EmailDomain::derive_with(&email.to_owned(), &(), index_keys)
         .unwrap()
         .into_bytes()
 }

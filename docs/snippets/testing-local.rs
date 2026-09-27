@@ -77,7 +77,7 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
 
     let prepared = Sealed::<UserEmail>::prepare(&value, (), &keys)?
         .with_index_with::<EmailLookup>(&indexes)?;
-    let probes = EmailLookup::probes_with(plaintext, &indexes)?;
+    let probes = EmailLookup::probes_with(plaintext, &(), &indexes)?;
     let stored_index = prepared.index::<EmailLookup>()?;
     assert!(
         probes

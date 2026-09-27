@@ -240,6 +240,20 @@
   | `impl EncryptionKeyProvider for MyKms { fn current_key(…); fn key(…) }` | `impl EncryptionKeySource for MyKms { fn encryption_keyring(&self, field, scope) -> Result<EncryptionKeyring, Error> }` |
   | `fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, Error>` | `fn keys() -> Result<&'static Keys, Error>` |
   | `keys::install(keys)?` into `cryptbox::Error` | `keys::install(keys)?` into an error that wraps `keys::AlreadyInstalled` |
+- **Breaking:** blind indexes are scoped by binding (ADR-0005). An index is
+  derived under its field's binding restricted to the `keys` and `index`
+  parts, without bound-only parts or a record, and its key source receives
+  that binding's `KeyScope`. `derive_with`, `probes_with`, and
+  `is_consistent_with` take the field binding's `IndexArgs` before the keys;
+  `Prepared::with_index_with` takes the scope from the binding the value was
+  sealed with. Indexes of `FieldOnly` fields, and of bindings without `keys` or
+  `index` parts, are byte-identical to earlier releases.
+
+  | Before | Now |
+  | --- | --- |
+  | `S::derive_with(&value, &keys)` | `S::derive_with(&value, &(), &keys)`, or `&index_args` for a scoped field |
+  | `S::probes_with(query, &keys)` | `S::probes_with(query, &(), &keys)` |
+  | `S::is_consistent_with(&value, &stored, &keys)` | `S::is_consistent_with(&value, &stored, &(), &keys)` |
 - `Json` decodes every float to exactly the value that was encoded
   (`serde_json/float_roundtrip`). Before this, some stored floats were read back one ulp off.
 

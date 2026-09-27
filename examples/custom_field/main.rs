@@ -136,7 +136,7 @@ fn main() -> Result<(), cryptbox::Error> {
     // After index-key promotion, query every readable generation, including old data.
     let index_reader = BlindIndexKeyring::new(BlindIndexKey::generate()?, [old_index_key])?;
     let query = Secret::new("ALICE-7".to_owned());
-    let probes = HandleEquality::probes_with(&query, &index_reader)?;
+    let probes = HandleEquality::probes_with(&query, &(), &index_reader)?;
     assert_eq!(probes.len(), 2);
     assert!(probes.iter().any(|probe| probe.as_bytes() == stored_index));
     // An index hit is only a candidate: authenticate and compare normalized plaintext.

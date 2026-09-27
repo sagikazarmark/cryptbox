@@ -110,8 +110,8 @@ fn blind_index_keys_load_from_hex_and_base64() {
     let base64_keys = BlindIndexKeyring::new(base64_key, []).unwrap();
 
     assert_eq!(
-        ExactValue::derive_with(&b"loaded key".to_vec(), &hex_keys).unwrap(),
-        ExactValue::derive_with(&b"loaded key".to_vec(), &base64_keys).unwrap(),
+        ExactValue::derive_with(&b"loaded key".to_vec(), &(), &hex_keys).unwrap(),
+        ExactValue::derive_with(&b"loaded key".to_vec(), &(), &base64_keys).unwrap(),
     );
 }
 

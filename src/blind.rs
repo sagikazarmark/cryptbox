@@ -4,8 +4,8 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
-    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, Error,
-    Field, FieldOnly, IndexId, IndexKeyId,
+    Binding, BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring,
+    Error, Field, FieldOnly, IndexId, IndexKeyId,
     crypto::{hkdf_sha256_32, hmac_sha256},
     keys,
 };
@@ -17,6 +17,9 @@ const MAX_INDEX_BITS: usize = 256;
 const INDEX_KEY_LABEL: &[u8] = b"cryptbox/blind-index-key/v1\0";
 const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 
+/// The query-time arguments of `Spec`: its field binding's `keys` and `index` part values.
+type IndexArgs<Spec> = <<<Spec as BlindIndexSpec>::Field as Field>::Binding as Binding>::IndexArgs;
+
 /// A logical blind index over one field.
 ///
 /// A specification binds an index to exactly one [`Field`]: the field's ID
@@ -26,6 +29,15 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 /// for inputs that should match. `normalize_value` receives the whole value, so
 /// an index can be computed from part of it, such as an email domain, or combine
 /// several of its parts.
+///
+/// Indexes are scoped by the field's [`Binding`]. Each operation takes the
+/// binding's [`IndexArgs`](Binding::IndexArgs), the values of its
+/// [`keys`](crate::PartRole::Keys) and [`index`](crate::PartRole::Index)
+/// parts, and derives in that scope; a [`FieldOnly`] field passes `&()`. Equal
+/// values under other `keys` or `index` values derive unrelated indexes, and
+/// the key source receives the scope's [`KeyScope`](crate::KeyScope).
+/// Bound-only parts and the record never scope an index, since a query cannot
+/// know them. See the [index binding].
 ///
 /// `BITS` must be between 1 and 256. The logical [`IndexId`] is part of key
 /// derivation but is not stored in the index bytes. Changing the ID,
@@ -159,7 +171,8 @@ const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 ///
 #[doc = concat!(
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
+    "[index binding]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#index-binding",
 )]
 pub trait BlindIndexSpec: Sized + 'static {
     /// The field whose values this index projects.
@@ -199,22 +212,28 @@ pub trait BlindIndexSpec: Sized + 'static {
         value: &<Self::Field as Field>::Value,
     ) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>;
 
-    /// Derives the current stored index for a value of [`Self::Field`].
+    /// Derives the current stored index for a value of [`Self::Field`] in the
+    /// scope of `args`.
     ///
     /// Use this to recompute a stored index from decrypted plaintext. New
-    /// writes usually derive indexes through [`crate::Prepared::with_index_with`].
+    /// writes usually derive indexes through [`crate::Prepared::with_index_with`],
+    /// which takes the scope from the binding the value was sealed with.
     ///
     /// # Errors
     ///
-    /// Returns an error for normalization failure, or unavailable keys.
+    /// Returns [`Error::InvalidBinding`] when `args` does not match the
+    /// binding's `keys` and `index` parts, or an error for normalization
+    /// failure or unavailable keys.
     fn derive_with(
         value: &<Self::Field as Field>::Value,
+        args: &IndexArgs<Self>,
         keys: &(impl BlindIndexKeySource + ?Sized),
     ) -> Result<BlindIndex<Self>, Error> {
-        derive_value::<Self>(value, keys)
+        derive_value::<Self>(value, &index_domain::<Self>(args)?, keys)
     }
 
-    /// Derives one candidate probe for every currently readable index generation.
+    /// Derives one candidate probe in the scope of `args` for every currently
+    /// readable index generation.
     ///
     /// Results are candidates only; decrypt candidate rows and verify their
     /// normalized plaintext with [`Self::verify_candidate`].
@@ -226,17 +245,20 @@ pub trait BlindIndexSpec: Sized + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an error for normalization failure, or unavailable keys.
+    /// Returns [`Error::InvalidBinding`] when `args` does not match the
+    /// binding's `keys` and `index` parts, or an error for normalization
+    /// failure or unavailable keys.
     fn probes_with(
         query: &Self::Query,
+        args: &IndexArgs<Self>,
         keys: &(impl BlindIndexKeySource + ?Sized),
     ) -> Result<Vec<BlindIndex<Self>>, Error> {
-        derive_probes::<Self>(query, keys)
+        derive_probes::<Self>(query, args, keys)
     }
 
     /// Derives probes with the [installed keys](keys::installed).
     ///
-    /// This is exactly `Self::probes_with(query, keys::installed()?)`.
+    /// This is exactly `Self::probes_with(query, &(), keys::installed()?)`.
     /// The installed keys serve only [`FieldOnly`] fields.
     ///
     /// # Errors
@@ -247,7 +269,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     where
         Self::Field: Field<Binding = FieldOnly>,
     {
-        Self::probes_with(query, keys::installed()?)
+        Self::probes_with(query, &(), keys::installed()?)
     }
 
     /// Compares a normalized query with normalized candidate plaintext after lookup.
@@ -271,7 +293,8 @@ pub trait BlindIndexSpec: Sized + 'static {
         compare_normalized::<Self>(query, candidate)
     }
 
-    /// Checks a stored index against the value it should have been derived from.
+    /// Checks a stored index against the value it should have been derived
+    /// from in the scope of `args`.
     ///
     /// Decrypt and authenticate the associated ciphertext before calling this.
     /// This resolves exactly the index-key generation that `stored` names,
@@ -285,14 +308,16 @@ pub trait BlindIndexSpec: Sized + 'static {
     ///
     /// Returns [`Error::UnknownBlindIndexKey`] when the keyring does not hold
     /// the generation named by `stored`, so an unverifiable index is reported
-    /// distinctly from an inconsistent one. Also returns an error for
-    /// normalization failure or unavailable keys.
+    /// distinctly from an inconsistent one, and [`Error::InvalidBinding`] when
+    /// `args` does not match the binding's `keys` and `index` parts. Also
+    /// returns an error for normalization failure or unavailable keys.
     fn is_consistent_with(
         value: &<Self::Field as Field>::Value,
         stored: &BlindIndex<Self>,
+        args: &IndexArgs<Self>,
         keys: &(impl BlindIndexKeySource + ?Sized),
     ) -> Result<bool, Error> {
-        check_consistency::<Self>(value, stored, keys)
+        check_consistency::<Self>(value, stored, args, keys)
     }
 }
 
@@ -601,22 +626,25 @@ pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
     })
 }
 
+/// Derives the current stored index of `Spec` in `domain`, an index domain of
+/// `Spec`'s field.
 pub(crate) fn derive_value<Spec: BlindIndexSpec>(
     value: &<Spec::Field as Field>::Value,
+    domain: &BindingDomain,
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<BlindIndex<Spec>, Error> {
-    let domain = index_domain::<Spec>();
-    let key = keyring::<Spec>(keys, &domain)?.current().clone();
+    let key = keyring::<Spec>(keys, domain)?.current().clone();
 
-    derive_value_with_key::<Spec>(value, &domain, &key)
+    derive_value_with_key::<Spec>(value, domain, &key)
 }
 
-/// Returns the ID of the key that derives new stored indexes of `Spec`.
+/// Returns the ID of the key that derives new stored indexes of `Spec` under `args`.
 #[cfg(feature = "migrate")]
 pub(crate) fn current_key_id<Spec: BlindIndexSpec>(
+    args: &IndexArgs<Spec>,
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<IndexKeyId, Error> {
-    Ok(keyring::<Spec>(keys, &index_domain::<Spec>())?
+    Ok(keyring::<Spec>(keys, &index_domain::<Spec>(args)?)?
         .current()
         .id())
 }
@@ -633,10 +661,11 @@ fn derive_value_with_key<Spec: BlindIndexSpec>(
 
 fn derive_probes<Spec: BlindIndexSpec>(
     query: &Spec::Query,
+    args: &IndexArgs<Spec>,
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<Vec<BlindIndex<Spec>>, Error> {
     let normalized = Spec::normalize_query(query)?;
-    let domain = index_domain::<Spec>();
+    let domain = index_domain::<Spec>(args)?;
 
     keyring::<Spec>(keys, &domain)?
         .readable()
@@ -647,9 +676,10 @@ fn derive_probes<Spec: BlindIndexSpec>(
 fn check_consistency<Spec: BlindIndexSpec>(
     value: &<Spec::Field as Field>::Value,
     stored: &BlindIndex<Spec>,
+    args: &IndexArgs<Spec>,
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<bool, Error> {
-    let domain = index_domain::<Spec>();
+    let domain = index_domain::<Spec>(args)?;
     let id = stored.index_key_id();
     let key = keyring::<Spec>(keys, &domain)?
         .get(id)
@@ -661,9 +691,10 @@ fn check_consistency<Spec: BlindIndexSpec>(
     Ok(derived.as_bytes().ct_eq(stored.as_bytes()).into())
 }
 
-// Blind indexes are domain-separated by their field alone.
-fn index_domain<Spec: BlindIndexSpec>() -> BindingDomain {
-    BindingDomain::field(<Spec::Field as Field>::ID)
+// Blind indexes are domain-separated by their field and the `keys` and `index`
+// parts of its binding, never by bound-only parts or a record.
+fn index_domain<Spec: BlindIndexSpec>(args: &IndexArgs<Spec>) -> Result<BindingDomain, Error> {
+    BindingDomain::index::<<Spec::Field as Field>::Binding>(<Spec::Field as Field>::ID, args)
 }
 
 // Asks the source for the keyring of the index in the domain's key scope.

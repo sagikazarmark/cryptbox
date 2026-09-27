@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::{
-    BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Field, FieldOnly, Sealed,
-    blind::derive_value, keys,
+    BindingDomain, BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Field, FieldOnly,
+    Sealed, blind::derive_value, keys,
 };
 
 struct PreparedIndex {
@@ -27,6 +27,7 @@ where
 {
     source: &'a F::Value,
     sealed: Sealed<F>,
+    index_domain: BindingDomain,
     indexes: Vec<PreparedIndex>,
 }
 
@@ -48,10 +49,15 @@ impl<'a, F> Prepared<'a, F>
 where
     F: Field,
 {
-    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F>) -> Self {
+    pub(crate) const fn new(
+        source: &'a F::Value,
+        sealed: Sealed<F>,
+        index_domain: BindingDomain,
+    ) -> Self {
         Self {
             source,
             sealed,
+            index_domain,
             indexes: Vec::new(),
         }
     }
@@ -63,6 +69,11 @@ where
     }
 
     /// Adds an index derived from the same source value as the sealed value.
+    ///
+    /// The index is scoped by the `keys` and `index` parts of the binding the
+    /// value was sealed with, so probes with the same
+    /// [`IndexArgs`](crate::Binding::IndexArgs) find it. The key source
+    /// receives that scope's [`KeyScope`](crate::KeyScope).
     ///
     /// The index must be declared over this field. Attaching another field's
     /// index is a type error:
@@ -142,7 +153,7 @@ where
             return Err(Error::DuplicatePreparedIndex(Spec::ID));
         }
 
-        let index = derive_value::<Spec>(self.source, keys)?;
+        let index = derive_value::<Spec>(self.source, &self.index_domain, keys)?;
         self.indexes.push(PreparedIndex {
             id: Spec::ID,
             bytes: index.into_bytes(),

@@ -25,8 +25,10 @@ record ID is never a part: it is always bound only.
 
 **Blind index**:
 A separately keyed, truncated searchable projection of a normalized field value.
-Each blind index is declared over exactly one field, whose field ID
-domain-separates it. It deliberately reveals equality and frequency information.
+Each blind index is declared over exactly one field. Its field ID and its
+index arguments (`IndexArgs`, the values of the binding's `keys` and `index`
+parts) domain-separate it; bound-only parts and the record do not, since a
+query cannot know them. It deliberately reveals equality and frequency information.
 
 **Candidate**:
 A row selected by a probe that still requires authenticated decryption and

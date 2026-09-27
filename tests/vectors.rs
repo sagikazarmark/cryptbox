@@ -3,7 +3,7 @@
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Raw, Sealed,
-    Utf8, decrypt, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
+    Tenant, TenantId, Utf8, decrypt, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -140,8 +140,55 @@ fn experimental_blind_index_vector_is_stable() {
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
 
-    let index = VectorIndex::derive_with(&b"normalized@example.com".to_vec(), &keys).unwrap();
-    let probes = VectorIndex::probes_with("normalized@example.com", &keys).unwrap();
+    let index = VectorIndex::derive_with(&b"normalized@example.com".to_vec(), &(), &keys).unwrap();
+    let probes = VectorIndex::probes_with("normalized@example.com", &(), &keys).unwrap();
+
+    assert_eq!(hex::encode(index.as_bytes()), VECTOR);
+    assert_eq!(probes.len(), 1);
+    assert_eq!(hex::encode(probes[0].as_bytes()), VECTOR);
+}
+
+struct TenantVectorField;
+
+impl Field for TenantVectorField {
+    const ID: cryptbox::FieldId = VectorField::ID;
+    const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
+    type Value = Vec<u8>;
+    type Codec = Raw;
+    type Binding = Tenant;
+    type Indexes = ();
+}
+
+struct TenantVectorIndex;
+
+impl BlindIndexSpec for TenantVectorIndex {
+    type Field = TenantVectorField;
+    const ID: IndexId = VectorIndex::ID;
+    const BITS: u16 = VectorIndex::BITS;
+    const NORMALIZER: &'static str = "exact/1";
+    type Query = str;
+
+    fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(Zeroizing::new(query.as_bytes().to_vec()))
+    }
+
+    fn normalize_value(value: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(Zeroizing::new(value.clone()))
+    }
+}
+
+#[test]
+fn experimental_scoped_blind_index_vector_is_stable() {
+    // docs/wire-format.md#scoped-blind-index-vector
+    const VECTOR: &str = "01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d35b8";
+    let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+    let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
+    let acme = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
+
+    let index =
+        TenantVectorIndex::derive_with(&b"normalized@example.com".to_vec(), &acme, &keys).unwrap();
+    let probes = TenantVectorIndex::probes_with("normalized@example.com", &acme, &keys).unwrap();
 
     assert_eq!(hex::encode(index.as_bytes()), VECTOR);
     assert_eq!(probes.len(), 1);

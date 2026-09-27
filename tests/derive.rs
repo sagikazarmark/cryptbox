@@ -180,14 +180,16 @@ fn a_derived_blind_index_derives_the_same_index_as_its_manual_equivalent() {
     assert_eq!(EmailLookup::ID, ManualEmailLookup::ID);
     assert_eq!(EmailLookup::BITS, 32);
     assert_eq!(
-        EmailLookup::derive_with(&email, &keys).unwrap().as_bytes(),
-        ManualEmailLookup::derive_with(&email, &keys)
+        EmailLookup::derive_with(&email, &(), &keys)
+            .unwrap()
+            .as_bytes(),
+        ManualEmailLookup::derive_with(&email, &(), &keys)
             .unwrap()
             .as_bytes()
     );
     assert_eq!(
-        EmailLookup::probes_with("mark@example.com", &keys).unwrap()[0].as_bytes(),
-        ManualEmailLookup::probes_with("mark@example.com", &keys).unwrap()[0].as_bytes()
+        EmailLookup::probes_with("mark@example.com", &(), &keys).unwrap()[0].as_bytes(),
+        ManualEmailLookup::probes_with("mark@example.com", &(), &keys).unwrap()[0].as_bytes()
     );
     assert!(EmailLookup::verify_candidate("MARK@example.com", &email).unwrap());
 }
@@ -232,10 +234,10 @@ fn a_projected_blind_index_normalizes_part_of_the_value() {
     let keys = index_keys();
 
     assert_eq!(
-        StreetLookup::derive_with(&address(), &keys)
+        StreetLookup::derive_with(&address(), &(), &keys)
             .unwrap()
             .as_bytes(),
-        ManualStreetLookup::derive_with(&address(), &keys)
+        ManualStreetLookup::derive_with(&address(), &(), &keys)
             .unwrap()
             .as_bytes()
     );

@@ -158,7 +158,7 @@ fn a_blind_index_keyring_lists_its_current_key_first() {
     let ids: Vec<_> = keyring.readable().map(BlindIndexKey::id).collect();
     assert_eq!(ids, [PAYMENTS_INDEX_KEY_ID, GENERAL_INDEX_KEY_ID]);
 
-    let probes = EmailLookup::probes_with(b"ada", &keyring).unwrap();
+    let probes = EmailLookup::probes_with(b"ada", &(), &keyring).unwrap();
     let probe_ids: Vec<_> = probes
         .iter()
         .map(|probe| {
@@ -341,8 +341,8 @@ fn a_custom_source_chooses_blind_index_keyrings_by_index() {
         payments: index_keyring(PAYMENTS_INDEX_KEY_ID, 4),
     };
 
-    let email = EmailLookup::derive_with(&b"ada@example.com".to_vec(), &keys).unwrap();
-    let iban = IbanLookup::probes_with(b"DE89", &keys).unwrap();
+    let email = EmailLookup::derive_with(&b"ada@example.com".to_vec(), &(), &keys).unwrap();
+    let iban = IbanLookup::probes_with(b"DE89", &(), &keys).unwrap();
 
     assert_eq!(
         inspect_blind_index(email.as_bytes())
@@ -364,7 +364,7 @@ fn keys_without_a_blind_index_keyring_reject_index_operations() {
     let keys = Keys::new(keyring(GENERAL_KEY_ID, 1));
 
     assert_eq!(
-        EmailLookup::probes_with(b"ada", &keys).unwrap_err(),
+        EmailLookup::probes_with(b"ada", &(), &keys).unwrap_err(),
         Error::BlindIndexKeysNotConfigured
     );
     assert_eq!(
@@ -424,7 +424,7 @@ fn references_and_shared_encryption_sources_are_sources() {
 #[test]
 fn references_and_shared_blind_index_sources_are_sources() {
     fn probe_with(keys: impl BlindIndexKeySource) -> IndexKeyId {
-        let probes = EmailLookup::probes_with(b"ada", &keys).unwrap();
+        let probes = EmailLookup::probes_with(b"ada", &(), &keys).unwrap();
         inspect_blind_index(probes[0].as_bytes())
             .unwrap()
             .index_key_id()
@@ -433,4 +433,73 @@ fn references_and_shared_blind_index_sources_are_sources() {
     let index_keys = index_keyring(GENERAL_INDEX_KEY_ID, 3);
     assert_eq!(probe_with(&index_keys), GENERAL_INDEX_KEY_ID);
     assert_eq!(probe_with(Arc::new(index_keys)), GENERAL_INDEX_KEY_ID);
+}
+
+struct TenantNoteLookup;
+
+impl BlindIndexSpec for TenantNoteLookup {
+    type Field = TenantNote;
+    const ID: IndexId = index_id!("b0000000-0000-4000-8000-00000000000b");
+    const BITS: u16 = 32;
+    const NORMALIZER: &'static str = "exact/1";
+    type Query = [u8];
+
+    fn normalize_query(query: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(Zeroizing::new(query.to_vec()))
+    }
+
+    fn normalize_value(value: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(value)
+    }
+}
+
+/// An application source that keeps one blind-index keyring per tenant.
+struct IndexesByTenant(HashMap<KeyScope, BlindIndexKeyring>);
+
+impl BlindIndexKeySource for IndexesByTenant {
+    fn blind_index_keyring(
+        &self,
+        _: IndexId,
+        scope: &KeyScope,
+    ) -> Result<BlindIndexKeyring, Error> {
+        self.0.get(scope).cloned().ok_or(Error::KeysUnavailable)
+    }
+}
+
+#[test]
+fn a_blind_index_source_receives_the_key_scope_of_the_index_arguments() {
+    let acme = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
+    let globex = Tenant(TenantId::new(b"globex".to_vec()).unwrap());
+    let initech = Tenant(TenantId::new(b"initech".to_vec()).unwrap());
+    let index_keys = IndexesByTenant(HashMap::from([
+        (
+            KeyScope::of(&acme).unwrap(),
+            index_keyring(GENERAL_INDEX_KEY_ID, 3),
+        ),
+        (
+            KeyScope::of(&globex).unwrap(),
+            index_keyring(PAYMENTS_INDEX_KEY_ID, 4),
+        ),
+    ]));
+    let key_of = |index: &[u8]| inspect_blind_index(index).unwrap().index_key_id();
+    let note = b"renewal due".to_vec();
+
+    let derived = TenantNoteLookup::derive_with(&note, &acme, &index_keys).unwrap();
+    let probes = TenantNoteLookup::probes_with(b"renewal due", &globex, &index_keys).unwrap();
+    let prepared = Sealed::<TenantNote>::prepare(&note, &globex, &keyring(GENERAL_KEY_ID, 1))
+        .unwrap()
+        .with_index_with::<TenantNoteLookup>(&index_keys)
+        .unwrap();
+
+    assert_eq!(key_of(derived.as_bytes()), GENERAL_INDEX_KEY_ID);
+    assert_eq!(key_of(probes[0].as_bytes()), PAYMENTS_INDEX_KEY_ID);
+    assert_eq!(
+        key_of(prepared.index::<TenantNoteLookup>().unwrap().as_bytes()),
+        PAYMENTS_INDEX_KEY_ID
+    );
+    assert!(TenantNoteLookup::is_consistent_with(&note, &derived, &acme, &index_keys).unwrap());
+    assert_eq!(
+        TenantNoteLookup::derive_with(&note, &initech, &index_keys),
+        Err(Error::KeysUnavailable)
+    );
 }
