@@ -3,7 +3,7 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Codec, EncryptionKeyProvider, Error, Field, GlobalKeyContext, KeyContext, decrypt, encrypt,
+    Codec, EncryptionKeyProvider, Error, Field, GlobalKeys, KeyContext, decrypt, encrypt, keys,
     needs_reencryption,
 };
 
@@ -21,6 +21,13 @@ use crate::{
 ///
 /// The field selects the value type: `Encrypted<UserEmail>` contains the
 /// `String` declared by `UserEmail`.
+///
+/// `K` is the key source of the automatic `SQLx` column, which encrypts on encode
+/// and decrypts on decode without receiving keys. The default, [`GlobalKeys`],
+/// reads the keys installed with [`keys::install`]; name another
+/// [`KeyContext`] to use application-owned keys instead. The explicit forms
+/// ignore `K`, and the implicit [`Self::encrypt`] and [`Self::prepare`] exist
+/// only for the default.
 ///
 /// ```
 /// use cryptbox::{Field, FieldId, Padding, Utf8};
@@ -61,12 +68,12 @@ use crate::{
 #[doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub struct Encrypted<F: Field> {
+pub struct Encrypted<F: Field, K: KeyContext = GlobalKeys> {
     value: F::Value,
-    field: PhantomData<fn() -> F>,
+    field: PhantomData<fn() -> (F, K)>,
 }
 
-impl<F: Field> Encrypted<F> {
+impl<F: Field, K: KeyContext> Encrypted<F, K> {
     /// Wraps a plaintext application value.
     ///
     /// Accepts anything convertible into the field's value type, so a `&str`
@@ -98,9 +105,10 @@ impl<F: Field> Encrypted<F> {
     }
 }
 
-impl<F> Clone for Encrypted<F>
+impl<F, K> Clone for Encrypted<F, K>
 where
     F: Field,
+    K: KeyContext,
     F::Value: Clone,
 {
     fn clone(&self) -> Self {
@@ -108,7 +116,7 @@ where
     }
 }
 
-impl<F: Field> fmt::Debug for Encrypted<F> {
+impl<F: Field, K: KeyContext> fmt::Debug for Encrypted<F, K> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Encrypted([REDACTED])")
     }
@@ -198,7 +206,7 @@ impl<F: Field> fmt::Debug for Ciphertext<F> {
     }
 }
 
-impl<F: Field> Encrypted<F> {
+impl<F: Field, K: KeyContext> Encrypted<F, K> {
     /// Encodes and encrypts this value with an explicitly injected provider.
     ///
     /// # Errors
@@ -212,15 +220,21 @@ impl<F: Field> Encrypted<F> {
 
         Ok(Ciphertext::from_validated_bytes(ciphertext))
     }
+}
 
-    /// Encodes and encrypts this value with the process-wide [`GlobalKeyContext`].
+impl<F: Field> Encrypted<F> {
+    /// Encodes and encrypts this value with the [installed keys](keys::installed).
+    ///
+    /// This is exactly `self.encrypt_with(keys::installed()?)`. It is available
+    /// only for the default key source: an `Encrypted<F, K>` with its own `K`
+    /// encrypts through its `SQLx` column or [`Self::encrypt_with`].
     ///
     /// # Errors
     ///
-    /// Returns an error when providers are uninitialized or when encoding or
-    /// encryption fails.
+    /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
+    /// encoding or encryption fails.
     pub fn encrypt(&self) -> Result<Ciphertext<F>, Error> {
-        self.encrypt_with(GlobalKeyContext::encryption_keys()?)
+        self.encrypt_with(keys::installed()?)
     }
 }
 
@@ -245,13 +259,16 @@ impl<F: Field> Ciphertext<F> {
         Ok(Encrypted::from_value(value))
     }
 
-    /// Decrypts this value with the process-wide [`GlobalKeyContext`].
+    /// Decrypts this value with the [installed keys](keys::installed).
+    ///
+    /// This is exactly `self.decrypt_with(keys::installed()?)`.
     ///
     /// # Errors
     ///
-    /// Returns an error when providers are uninitialized or decryption fails.
+    /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
+    /// decryption fails.
     pub fn decrypt(&self) -> Result<Encrypted<F>, Error> {
-        self.decrypt_with(GlobalKeyContext::encryption_keys()?)
+        self.decrypt_with(keys::installed()?)
     }
 
     /// Reports whether this envelope uses a non-current suite or key.

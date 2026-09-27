@@ -53,7 +53,7 @@ keys are needed and where plaintext becomes available:
 | --- | --- |
 | Explicit encryption or preparation | Produce ciphertext before calling storage. Key failures happen at that explicit step; the stored representation can then cross a database or serialization boundary. |
 | Read as `Ciphertext<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to authenticate and decrypt. Useful when only some loaded values need plaintext. |
-| Automatic SQLx `Encrypted<F>` | The adapter encrypts on encode and authenticates/decrypts on decode. It resolves providers through the process-wide `GlobalKeyContext`, so ordinary database conversion needs it installed. |
+| Automatic SQLx `Encrypted<F>` | The adapter encrypts on encode and authenticates/decrypts on decode. It reads keys from its key context: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Encrypted<F, K>`. |
 
 Automatic SQLx adapters are available for every field. Explicit-provider operations are useful when dependencies and plaintext
 access should be visible at the call site. Automatic adapters are useful when
@@ -71,10 +71,11 @@ Try [explicit SQLite storage](../examples/sqlite/README.md), the
 
 ## Key providers and key contexts
 
-A provider is the source of current and readable key generations. A **key
-context** selects the providers used by context-less operations and automatic
-adapters. The field ID determines where a value belongs; it never supplies key
-material, but every provider request names the field it serves.
+A provider is the source of current and readable key generations. The
+**installed keys** back the implicit forms, and a **key context** selects the
+keys of an automatic SQLx column. The field ID determines where a value belongs;
+it never supplies key material, but every provider request names the field it
+serves.
 
 A provider that serves every field alike, such as the local keyrings, ignores
 the field. To protect fields with different key hierarchies, route them with
@@ -86,11 +87,33 @@ A second route for the same field ID is rejected. Routes are deployment
 configuration: the envelope records the key ID, so a field can move to another
 provider that resolves the same generations.
 
-Explicit `encrypt_with`, `decrypt_with`, and `prepare_with` calls use the provider
-passed by the caller. This allows each test or application component to own its
-dependencies. Context-less calls and automatic adapters use the process-wide
-`GlobalKeyContext`, installed once per process; it cannot be reset. A field does
-not choose its key context: route fields to providers instead.
+Explicit `encrypt_with`, `decrypt_with`, `prepare_with`, and `probes_with` calls
+use the provider passed by the caller and never read the installed keys. This
+allows each test or application component to own its dependencies. `Keys`
+combines an encryption and a blind-index provider, usually two routers, into one
+value that every explicit form accepts.
+
+The implicit forms (`encrypt()`, `decrypt()`, `prepare()`, `with_index()`,
+`probes()`) are the explicit forms called with `keys::installed()`.
+`keys::install(keys)` sets the installed keys once per process, from the binary
+entry point; a second call returns `AlreadyInstalled` and never replaces them.
+Before installation the implicit forms return `Error::KeysNotInstalled`: there is
+no default and no panic. There are no thread- or task-scoped keys, because work
+spawned outside a scope would silently use other keys
+([ADR-0004](adr/0004-key-supply-global-and-explicit.md)).
+
+The automatic SQLx column `Encrypted<F, K>` takes its key source as a type,
+because SQLx decoding receives no context. The default `K`, `GlobalKeys`, reads
+the installed keys. Implement `KeyContext` over an application-owned static to
+use a second keyring, a tenant, or a test fixture without the global. A field
+does not choose its keys: route fields to providers instead.
+
+Teams that forbid the global can deny `keys::install` and the implicit forms with
+Clippy's `disallowed_methods`, using
+[this `clippy.toml`](snippets/clippy-no-global-keys.toml). Denying `install` alone
+keeps the installed keys empty, so implicit calls fail at run time; denying the
+implicit forms also reports them at lint time. With the `migrate` feature, also
+deny `MaybeEncrypted::decrypt` and `MaybeEncrypted::decrypt_legacy`.
 
 Providers resolve keys synchronously. Applications load secrets from their chosen
 source and make them available locally; CryptBox does not distribute secrets or

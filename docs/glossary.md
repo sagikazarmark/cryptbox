@@ -39,10 +39,18 @@ ciphertext; a different field ID fails authentication.
 The number of retained blind-index bits. Fewer bits increase false candidates
 and obscure equality more, without eliminating index leakage.
 
+**Installed keys**:
+The process-wide keys set once with `keys::install` and never replaced. The
+implicit forms (`encrypt()`, `decrypt()`, `prepare()`, `probes()`) read them and
+fail with `KeysNotInstalled` before installation; the explicit `_with` forms never
+read them.
+<!-- Agent guidance: avoid “global key context” or “global providers”; the global is the installed keys. -->
+
 **Key context**:
-The process-wide access point to encryption and blind-index key providers used
-by operations that do not take keys explicitly. It belongs to the process, not
-to a field.
+The key source of an automatic SQLx column, named in its type as
+`Encrypted<F, K>`: the installed keys (`GlobalKeys`, the default) or an
+application-owned static. It belongs to the column type, not to a field; fields
+reach providers through a router.
 <!-- Agent guidance: avoid “binding context” as a synonym. -->
 
 **Key generation**:

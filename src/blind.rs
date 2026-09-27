@@ -4,9 +4,10 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
-    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, Error, Field,
-    GlobalKeyContext, IndexId, IndexKeyId, KeyContext,
+    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, Error, Field, IndexId,
+    IndexKeyId,
     crypto::{hkdf_sha256_32, hmac_sha256},
+    keys,
 };
 
 const INDEX_FORMAT_VERSION: u8 = 1;
@@ -209,13 +210,16 @@ pub trait BlindIndexSpec: Sized + 'static {
         derive_probes::<Self>(query, keys)
     }
 
-    /// Derives probes with the process-wide [`GlobalKeyContext`] blind-index provider.
+    /// Derives probes with the [installed keys](keys::installed).
+    ///
+    /// This is exactly `Self::probes_with(query, keys::installed()?)`.
     ///
     /// # Errors
     ///
-    /// Returns an error when providers are uninitialized or probe derivation fails.
+    /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
+    /// probe derivation fails.
     fn probes(query: &Self::Query) -> Result<Vec<BlindIndex<Self>>, Error> {
-        derive_probes::<Self>(query, GlobalKeyContext::blind_index_keys()?)
+        Self::probes_with(query, keys::installed()?)
     }
 
     /// Compares a normalized query with normalized candidate plaintext after lookup.

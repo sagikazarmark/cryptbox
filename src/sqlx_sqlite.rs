@@ -7,7 +7,7 @@ use sqlx::{
     sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted, Field};
+use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted, Field, KeyContext};
 
 fn blob_type_info() -> SqliteTypeInfo {
     <Vec<u8> as Type<Sqlite>>::type_info()
@@ -17,7 +17,7 @@ fn blob_compatible(ty: &SqliteTypeInfo) -> bool {
     <Vec<u8> as Type<Sqlite>>::compatible(ty)
 }
 
-impl<F: Field> Type<Sqlite> for Encrypted<F> {
+impl<F: Field, K: KeyContext> Type<Sqlite> for Encrypted<F, K> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -57,15 +57,16 @@ impl<Spec> Type<Sqlite> for BlindIndexRef<'_, Spec> {
     }
 }
 
-impl<'q, F> Encode<'q, Sqlite> for Encrypted<F>
+impl<'q, F, K> Encode<'q, Sqlite> for Encrypted<F, K>
 where
     F: Field,
+    K: KeyContext,
 {
     fn encode_by_ref(
         &self,
         buffer: &mut Vec<SqliteArgumentValue<'q>>,
     ) -> Result<IsNull, BoxDynError> {
-        let ciphertext = self.encrypt()?;
+        let ciphertext = self.encrypt_with(K::encryption_keys()?)?;
         buffer.push(SqliteArgumentValue::Blob(Cow::Owned(
             ciphertext.into_bytes(),
         )));
@@ -129,15 +130,18 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
     }
 }
 
-impl<'row, F> Decode<'row, Sqlite> for Encrypted<F>
+impl<'row, F, K> Decode<'row, Sqlite> for Encrypted<F, K>
 where
     F: Field,
+    K: KeyContext,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
         let ciphertext = Ciphertext::<F>::from_bytes(bytes)?;
 
-        Ok(ciphertext.decrypt()?)
+        let value = ciphertext.decrypt_with(K::encryption_keys()?)?;
+
+        Ok(Self::from_value(value.into_secret()))
     }
 }
 

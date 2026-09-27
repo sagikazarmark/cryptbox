@@ -70,9 +70,6 @@ pub enum KeyProviderError {
     /// The provider is temporarily or permanently unavailable.
     #[error("key provider is unavailable")]
     Unavailable,
-    /// The process-global provider has not been installed.
-    #[error("key provider is not initialized")]
-    NotInitialized,
     /// The provider does not serve this field, such as a strict router
     /// without a route for it.
     #[error("no key provider is routed for field {0}")]
@@ -113,9 +110,9 @@ pub enum Error {
     /// A local key provider was unavailable.
     #[error("key provider is unavailable")]
     KeyProviderUnavailable,
-    /// A required process-global provider was not installed.
-    #[error("key provider is not initialized")]
-    KeyProviderNotInitialized,
+    /// An implicit form was used before [`keys::install`](crate::keys::install).
+    #[error("keys are not installed")]
+    KeysNotInstalled,
     /// The key provider does not serve the field, such as a strict router
     /// without a route for it.
     #[error("no key provider is routed for field {0}")]
@@ -123,9 +120,9 @@ pub enum Error {
     /// A router was given more than one route for the same field ID.
     #[error("duplicate route for field {0}")]
     DuplicateRoute(FieldId),
-    /// Process-global providers were already installed.
-    #[error("key providers are already initialized")]
-    KeyProviderAlreadyInitialized,
+    /// Keys were already installed; see [`keys::AlreadyInstalled`](crate::keys::AlreadyInstalled).
+    #[error("keys are already installed")]
+    KeysAlreadyInstalled,
     /// A keyring contains the same encryption key ID more than once.
     #[error("duplicate encryption key ID {0}")]
     DuplicateEncryptionKey(KeyId),
@@ -183,7 +180,6 @@ impl From<KeyProviderError> for Error {
     fn from(error: KeyProviderError) -> Self {
         match error {
             KeyProviderError::Unavailable => Self::KeyProviderUnavailable,
-            KeyProviderError::NotInitialized => Self::KeyProviderNotInitialized,
             KeyProviderError::UnroutedField(field) => Self::UnroutedField(field),
         }
     }
@@ -192,5 +188,11 @@ impl From<KeyProviderError> for Error {
 impl From<BlindIndexError> for Error {
     fn from(_: BlindIndexError) -> Self {
         Self::BlindIndexNormalizationFailed
+    }
+}
+
+impl From<crate::keys::AlreadyInstalled> for Error {
+    fn from(_: crate::keys::AlreadyInstalled) -> Self {
+        Self::KeysAlreadyInstalled
     }
 }

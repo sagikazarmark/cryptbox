@@ -1,0 +1,9 @@
+disallowed-methods = [
+    { path = "cryptbox::keys::install", reason = "pass keys explicitly with the *_with forms" },
+    { path = "cryptbox::keys::installed", reason = "pass keys explicitly with the *_with forms" },
+    { path = "cryptbox::Encrypted::encrypt", reason = "use encrypt_with" },
+    { path = "cryptbox::Encrypted::prepare", reason = "use prepare_with" },
+    { path = "cryptbox::Ciphertext::decrypt", reason = "use decrypt_with" },
+    { path = "cryptbox::Prepared::with_index", reason = "use with_index_with" },
+    { path = "cryptbox::BlindIndexSpec::probes", reason = "use probes_with" },
+]

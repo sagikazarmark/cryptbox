@@ -82,9 +82,9 @@ before sweeping: old-generation writers can reintroduce dependencies behind prog
 
 The consumer loads `LocalEncryptionKeyring` and `LocalBlindIndexKeyring` once at
 startup. File/environment changes do not replace a running snapshot; drain/restart
-the process. For automatic adapters, `GlobalKeyContext::install` is immutable and
-one-time per process. Restart, or have the originally installed custom provider
-refresh its own synchronized snapshot. That provider owns consistency, refresh
+the process. The installed keys (`keys::install`) are immutable and one-time per process.
+Restart, or have the originally installed custom provider refresh its own
+synchronized snapshot. That provider owns consistency, refresh
 failures and readiness; synchronous CryptBox calls do not distribute secrets or
 refresh KMS state. See [provider obligations](../examples/custom_field/README.md#implementor-obligations).
 

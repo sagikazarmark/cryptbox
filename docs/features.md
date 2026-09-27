@@ -19,8 +19,9 @@ No features are enabled by default, and all features are additive:
 - `sqlx-sqlite` adds `SQLx` 0.8 `BLOB` storage for `SQLite`.
 
 The `SQLx` adapters automatically encrypt and decrypt `Encrypted` for every
-field, using the process-wide `GlobalKeyContext`. `Ciphertext` and blind-index
-storage need no keys. These features do not
+field. `Encrypted<F>` uses the keys installed with `keys::install`; name another
+key source as `Encrypted<F, K>` to use application-owned keys. `Ciphertext` and
+blind-index storage need no keys. These features do not
 choose an async runtime or TLS implementation for the application. Add `SQLx`
 0.8 directly with your backend and chosen runtime/TLS features; `CryptBox`'s
 dependency disables `SQLx` defaults. Database services, connection configuration,

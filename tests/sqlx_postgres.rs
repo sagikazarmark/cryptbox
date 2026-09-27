@@ -2,12 +2,12 @@
 
 #![cfg(feature = "sqlx-postgres")]
 
-use std::sync::Once;
+use std::sync::LazyLock;
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, EncryptionKeyProvider, Field, GlobalKeyContext, GlobalProviders, IndexId,
-    KeyContext, KeyId, LocalEncryptionKeyring, Padding, Utf8, encrypt, index_id, key_id,
+    EncryptionKey, EncryptionKeyProvider, Error, Field, IndexId, KeyContext, KeyId,
+    LocalEncryptionKeyring, Padding, Utf8, encrypt, index_id, key_id, keys,
 };
 use sqlx::{
     Connection, Decode, Encode, Postgres, Row, Type,
@@ -17,18 +17,18 @@ use zeroize::Zeroizing;
 
 const KEY_ID: KeyId = key_id!("c0000000-0000-4000-8000-00000000000c");
 
-/// Installs the process-wide keys that automatic encoding and decoding read.
-///
-/// Each integration-test binary is its own process, so the global is isolated
-/// from other test files; every test here shares the same fixed keyring.
-fn install_keys() -> &'static dyn EncryptionKeyProvider {
-    static INSTALL: Once = Once::new();
-    INSTALL.call_once(|| {
-        let keys = LocalEncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap();
-        GlobalKeyContext::install(GlobalProviders::new(keys)).unwrap();
-    });
+/// The automatic columns' key source. No test in this binary installs the
+/// global, so every column round trip here proves the column reads `K`.
+struct TestKeys;
 
-    GlobalKeyContext::encryption_keys().unwrap()
+impl KeyContext for TestKeys {
+    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, Error> {
+        static KEYS: LazyLock<LocalEncryptionKeyring> = LazyLock::new(|| {
+            LocalEncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap()
+        });
+
+        Ok(&*KEYS)
+    }
 }
 
 struct TestField;
@@ -82,7 +82,7 @@ where
 
 #[test]
 fn encrypted_storage_types_map_to_postgres_bytea() {
-    assert_sqlx_traits::<Encrypted<TestField>>();
+    assert_sqlx_traits::<Encrypted<TestField, TestKeys>>();
     assert_sqlx_traits::<Ciphertext<TestField>>();
     assert_sqlx_traits::<BlindIndex<IndexSpec>>();
     assert_sqlx_encode::<BlindIndexRef<'static, IndexSpec>>();
@@ -93,7 +93,10 @@ fn encrypted_storage_types_map_to_postgres_bytea() {
     assert_sqlx_decode::<cryptbox::migrate::MaybeEncrypted<TestField>>();
 
     let bytea: PgTypeInfo = <Vec<u8> as Type<Postgres>>::type_info();
-    assert_eq!(<Encrypted<TestField> as Type<Postgres>>::type_info(), bytea);
+    assert_eq!(
+        <Encrypted<TestField, TestKeys> as Type<Postgres>>::type_info(),
+        bytea
+    );
     assert_eq!(
         <Ciphertext<TestField> as Type<Postgres>>::type_info(),
         bytea
@@ -106,12 +109,14 @@ fn encrypted_storage_types_map_to_postgres_bytea() {
 
 #[test]
 fn sqlx_encode_encrypts_plaintext_into_an_owned_argument_buffer() {
-    install_keys();
-    let value = Encrypted::<TestField>::new("mark@example.com".to_owned());
+    let value = Encrypted::<TestField, TestKeys>::new("mark@example.com".to_owned());
     let mut buffer = PgArgumentBuffer::default();
 
-    let result =
-        <Encrypted<TestField> as Encode<'_, Postgres>>::encode_by_ref(&value, &mut buffer).unwrap();
+    let result = <Encrypted<TestField, TestKeys> as Encode<'_, Postgres>>::encode_by_ref(
+        &value,
+        &mut buffer,
+    )
+    .unwrap();
 
     assert!(!result.is_null());
     assert!(buffer.starts_with(b"CBX\0"));
@@ -119,7 +124,7 @@ fn sqlx_encode_encrypts_plaintext_into_an_owned_argument_buffer() {
 
 #[test]
 fn typed_ciphertext_encoding_preserves_the_binary_envelope() {
-    let keys = install_keys();
+    let keys = TestKeys::encryption_keys().unwrap();
     let bytes = encrypt(TestField::ID, b"value", keys).unwrap();
     let ciphertext = Ciphertext::<TestField>::from_bytes(bytes.clone()).unwrap();
     let mut buffer = PgArgumentBuffer::default();
@@ -139,7 +144,6 @@ fn typed_ciphertext_encoding_preserves_the_binary_envelope() {
 #[test]
 #[ignore = "requires a PostgreSQL server; set DATABASE_URL and run with --ignored"]
 fn postgres_round_trips_ciphertext_and_decrypts_encrypted_values() {
-    install_keys();
     let url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL must point at a PostgreSQL server to run this test");
 
@@ -155,7 +159,7 @@ fn postgres_round_trips_ciphertext_and_decrypts_encrypted_values() {
             .await
             .unwrap();
 
-        let value = Encrypted::<TestField>::new("mark@example.com".to_owned());
+        let value = Encrypted::<TestField, TestKeys>::new("mark@example.com".to_owned());
         sqlx::query("INSERT INTO secrets (value) VALUES ($1)")
             .bind(&value)
             .execute(&mut connection)
@@ -167,9 +171,36 @@ fn postgres_round_trips_ciphertext_and_decrypts_encrypted_values() {
             .await
             .unwrap();
         let ciphertext: Ciphertext<TestField> = row.try_get("value").unwrap();
-        let decrypted: Encrypted<TestField> = row.try_get("value").unwrap();
+        let decrypted: Encrypted<TestField, TestKeys> = row.try_get("value").unwrap();
 
         assert!(ciphertext.as_bytes().starts_with(b"CBX\0"));
         assert_eq!(decrypted.expose_secret(), "mark@example.com");
+        // The column used `TestKeys`; the global was never installed.
+        assert_eq!(
+            ciphertext
+                .decrypt_with(TestKeys::encryption_keys().unwrap())
+                .unwrap()
+                .expose_secret(),
+            "mark@example.com"
+        );
+        assert_eq!(keys::installed().unwrap_err(), Error::KeysNotInstalled);
     });
+}
+
+#[test]
+fn postgres_default_column_fails_closed_without_installed_keys() {
+    let value = Encrypted::<TestField>::new("mark@example.com");
+    let mut buffer = PgArgumentBuffer::default();
+
+    let Err(error) =
+        <Encrypted<TestField> as Encode<'_, Postgres>>::encode_by_ref(&value, &mut buffer)
+    else {
+        panic!("encoding without installed keys must fail");
+    };
+
+    assert_eq!(
+        error.downcast_ref::<Error>(),
+        Some(&Error::KeysNotInstalled)
+    );
+    assert!(buffer.is_empty());
 }

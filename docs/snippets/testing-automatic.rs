@@ -3,9 +3,8 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field, FieldId,
-    GlobalKeyContext, GlobalProviders, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding,
-    Utf8,
+    BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field, FieldId, Keys,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, keys,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -59,7 +58,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         [],
     )?;
     // Once per process: the global cannot be replaced, so each fixture runs in its own process.
-    GlobalKeyContext::install(GlobalProviders::new(encryption).with_blind_indexes(indexes))?;
+    keys::install(Keys::new(encryption).with_blind_indexes(indexes))?;
     futures_executor::block_on(round_trip(plaintext))?;
     println!("Automatic adapter round trip succeeded.");
     Ok(())
@@ -84,7 +83,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     assert_eq!(read.expose_secret(), plaintext); // Automatic authenticated decryption.
     assert!(row.try_get::<Option<Vec<u8>>, _>("email_idx")?.is_none());
 
-    // Context-less preparation resolves BOTH providers through the global key context.
+    // Implicit preparation resolves BOTH providers through the installed keys.
     // One statement maintains the ciphertext/index pair atomically.
     let prepared = email.prepare()?.with_index::<EmailLookup>()?;
     sqlx::query("UPDATE users SET email = ?, email_idx = ?")

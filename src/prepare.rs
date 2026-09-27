@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{
     BlindIndexKeyProvider, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKeyProvider, Error, Field, GlobalKeyContext, KeyContext, blind::derive_value,
+    EncryptionKeyProvider, Error, Field, KeyContext, blind::derive_value, keys,
 };
 
 struct PreparedIndex {
@@ -44,9 +44,10 @@ where
     }
 }
 
-impl<F> Encrypted<F>
+impl<F, K> Encrypted<F, K>
 where
     F: Field,
+    K: KeyContext,
 {
     /// Encrypts this value into a prepared storage representation.
     ///
@@ -65,14 +66,23 @@ where
             indexes: Vec::new(),
         })
     }
+}
 
-    /// Prepares this value with the process-wide [`GlobalKeyContext`] encryption provider.
+impl<F> Encrypted<F>
+where
+    F: Field,
+{
+    /// Prepares this value with the [installed keys](keys::installed).
+    ///
+    /// This is exactly `self.prepare_with(keys::installed()?)`, and exists only
+    /// for the default key source.
     ///
     /// # Errors
     ///
-    /// Returns an error when providers are uninitialized or encryption fails.
+    /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
+    /// encryption fails.
     pub fn prepare(&self) -> Result<Prepared<'_, F>, Error> {
-        self.prepare_with(GlobalKeyContext::encryption_keys()?)
+        self.prepare_with(keys::installed()?)
     }
 }
 
@@ -166,17 +176,19 @@ where
         Ok(self)
     }
 
-    /// Adds an index with the process-wide [`GlobalKeyContext`] blind-index provider.
+    /// Adds an index with the [installed keys](keys::installed).
+    ///
+    /// This is exactly `self.with_index_with::<Spec>(keys::installed()?)`.
     ///
     /// # Errors
     ///
-    /// Returns an error for duplicate index IDs, unavailable providers, or
-    /// failed index derivation.
+    /// Returns [`Error::KeysNotInstalled`] before installation, or an error for
+    /// duplicate index IDs, unavailable providers, or failed index derivation.
     pub fn with_index<Spec>(self) -> Result<Self, Error>
     where
         Spec: BlindIndexSpec<Field = F>,
     {
-        self.with_index_with::<Spec>(GlobalKeyContext::blind_index_keys()?)
+        self.with_index_with::<Spec>(keys::installed()?)
     }
 
     /// Returns a prepared logical index by its typed specification.

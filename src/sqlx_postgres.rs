@@ -5,7 +5,7 @@ use sqlx::{
     postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted, Field};
+use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, Ciphertext, Encrypted, Field, KeyContext};
 
 fn bytea_type_info() -> PgTypeInfo {
     <Vec<u8> as Type<Postgres>>::type_info()
@@ -15,7 +15,7 @@ fn bytea_compatible(ty: &PgTypeInfo) -> bool {
     <Vec<u8> as Type<Postgres>>::compatible(ty)
 }
 
-impl<F: Field> Type<Postgres> for Encrypted<F> {
+impl<F: Field, K: KeyContext> Type<Postgres> for Encrypted<F, K> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -25,12 +25,13 @@ impl<F: Field> Type<Postgres> for Encrypted<F> {
     }
 }
 
-impl<F> Encode<'_, Postgres> for Encrypted<F>
+impl<F, K> Encode<'_, Postgres> for Encrypted<F, K>
 where
     F: Field,
+    K: KeyContext,
 {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
-        let ciphertext = self.encrypt()?;
+        let ciphertext = self.encrypt_with(K::encryption_keys()?)?;
         buffer.extend_from_slice(ciphertext.as_bytes());
 
         Ok(IsNull::No)
@@ -41,15 +42,18 @@ where
     }
 }
 
-impl<'row, F> Decode<'row, Postgres> for Encrypted<F>
+impl<'row, F, K> Decode<'row, Postgres> for Encrypted<F, K>
 where
     F: Field,
+    K: KeyContext,
 {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
         let ciphertext = Ciphertext::<F>::from_bytes(bytes)?;
 
-        Ok(ciphertext.decrypt()?)
+        let value = ciphertext.decrypt_with(K::encryption_keys()?)?;
+
+        Ok(Self::from_value(value.into_secret()))
     }
 }
 

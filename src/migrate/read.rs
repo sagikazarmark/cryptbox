@@ -217,14 +217,14 @@ impl<F> MaybeEncrypted<F>
 where
     F: Field,
 {
-    /// Consumes the read and decrypts with the process-wide [`GlobalKeyContext`](crate::GlobalKeyContext).
+    /// Consumes the read and decrypts with the [installed keys](crate::keys::installed).
     ///
     /// Legacy bytes use identity recovery without touching the providers.
     ///
     /// # Errors
     ///
-    /// Returns an error when providers are uninitialized, decryption fails, or
-    /// legacy bytes cannot be decoded by the field's codec.
+    /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
+    /// decryption fails or legacy bytes cannot be decoded by the field's codec.
     pub fn decrypt(self) -> Result<Encrypted<F>, Error> {
         match self.state {
             State::Ciphertext(ciphertext) => ciphertext.decrypt(),
@@ -234,7 +234,7 @@ where
     }
 
     /// Consumes the read and recovers legacy bytes with an explicit handler,
-    /// using the process-wide [`GlobalKeyContext`](crate::GlobalKeyContext) for `CryptBox` envelopes.
+    /// using the [installed keys](crate::keys::installed) for `CryptBox` envelopes.
     ///
     /// # Errors
     ///

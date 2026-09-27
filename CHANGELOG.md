@@ -14,8 +14,8 @@
   `RowPlanner<'_, UserEmail>`, and `Sweep<'_, UserEmail>`. The unit `&()`
   binding context argument is dropped from every `*_with` method and from
   `RowPlanner::new`. Implicit forms (`encrypt()`, `decrypt()`, `prepare()`, and
-  the automatic SQLx adapters) read `GlobalKeyContext`; a custom `KeyContext`
-  can no longer be selected per field. Stored field-bound ciphertext and blind
+  the automatic SQLx adapters) read the keys installed with `keys::install`; a field
+  can no longer name its own key context. Stored field-bound ciphertext and blind
   indexes are unchanged and need no data migration.
   Binding tag `00` is reserved, so data written with `Unbound` is no longer
   readable.
@@ -44,7 +44,7 @@
   | `type Binding = FieldBound<Other>;` | `const ID: FieldId = Other::ID;` |
   | `binding: unbound,` | re-encrypt existing data under a field ID first |
   | `type Padding = PadToBlock<16>;` | `const PADDING: Padding = Padding::block(16);` |
-  | `type Keys = …;`, `Field::NAME` | remove; install keys with `GlobalKeyContext::install` |
+  | `type Keys = …;`, `Field::NAME` | remove; route the field in a `Router` and install it with `keys::install(Keys::new(router))` |
   | `Encrypted<String, P>`, `Encrypted::<_, P>` | `Encrypted<P>`, `Encrypted::<P>` |
   | `value.encrypt_with(&(), &keys)` | `value.encrypt_with(&keys)` |
   | `value.into()` into `Encrypted` | `Encrypted::new(value)` |
@@ -64,7 +64,7 @@
   `derive_blind_index`, `blind_index_probes`, and `verify_blind_index_candidate`
   are replaced by the provided methods `S::derive_with`, `S::probes_with`, and
   `S::verify_candidate`, which read the field from the spec; `S::probes` uses
-  `GlobalKeyContext`. `Prepared::with_index_with`, `Prepared::with_index`,
+  the installed keys. `Prepared::with_index_with`, `Prepared::with_index`,
   `Prepared::index`, and `RowPlanner::with_index_with` require
   `S: BlindIndexSpec<Field = F>`, so attaching another field's index is a type
   error. A spec previously used with several fields becomes one spec per field,
@@ -81,6 +81,24 @@
   reports fallback fields through `Router::falls_back`. A second route for one
   field ID fails with `Error::DuplicateRoute`. `Arc<P>` now implements both
   provider traits, so one router can hold providers of different types.
+- **Breaking:** keys are supplied explicitly or installed once per process
+  (ADR-0004). `cryptbox::keys::install(Keys)` replaces
+  `GlobalKeyContext::install(GlobalProviders)` and returns
+  `keys::AlreadyInstalled` (convertible to `Error::KeysAlreadyInstalled`) instead
+  of replacing installed keys. `Keys::new(encryption).with_blind_indexes(indexes)`
+  replaces `GlobalProviders` and is itself a provider for both roles, so it can be
+  passed to every explicit form. The implicit forms (`encrypt()`, `decrypt()`,
+  `prepare()`, `with_index()`, `probes()`) are exactly their `_with` forms called
+  with `keys::installed()`, and fail with `Error::KeysNotInstalled` (was
+  `KeyProviderNotInitialized`) before installation. `KeyProviderError::NotInitialized`
+  and `Error::KeyProviderAlreadyInitialized` are removed.
+- **Breaking:** the automatic SQLx column is `Encrypted<F, K: KeyContext = GlobalKeys>`.
+  `GlobalKeys` replaces `GlobalKeyContext` and reads the installed keys;
+  implement `KeyContext::encryption_keys` over an application-owned static to
+  give a column its own keys without installing the global. `KeyContext` no
+  longer has `blind_index_keys`, and `encryption_keys` returns `Error`. `encrypt()` and `prepare()` exist only for the
+  default `K`. The docs show a Clippy `disallowed_methods` configuration for
+  teams that forbid the global.
 
 - Add the opt-in `serde` feature for explicit stored-byte serialization of
   ciphertext and blind indexes (not included in the published 0.5.0 crate).

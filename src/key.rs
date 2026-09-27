@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, sync::Arc, sync::OnceLock};
+use std::{collections::BTreeMap, fmt, sync::Arc};
 
 use base64::Engine as _;
 use zeroize::Zeroizing;
@@ -479,37 +479,41 @@ impl BlindIndexKeyProvider for LocalBlindIndexKeyring {
     }
 }
 
-/// Supplies statically reachable providers to context-less operations.
+/// The encryption and blind-index providers that operations draw keys from.
 ///
-/// The implicit forms (`encrypt()`, `decrypt()`, `prepare()`) and automatic
-/// storage adapters read [`GlobalKeyContext`].
-pub trait KeyContext: Sized + 'static {
-    /// Returns the installed encryption provider.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the provider is unavailable or uninitialized.
-    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, KeyProviderError>;
-
-    /// Returns the installed blind-index provider.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the provider is unavailable or uninitialized.
-    fn blind_index_keys() -> Result<&'static dyn BlindIndexKeyProvider, KeyProviderError>;
-}
-
-/// The provider set accepted by [`GlobalKeyContext::install`].
-pub struct GlobalProviders {
+/// `Keys` is itself a provider for both roles, so it can be passed to any
+/// explicit form (`encrypt_with`, `prepare_with`, `probes_with`, …). It is also
+/// what [`keys::install`](crate::keys::install) installs for the implicit forms.
+/// Each role is usually a [`Router`](crate::Router) that assigns fields to
+/// providers.
+///
+/// Blind-index operations fail with [`Error::KeyProviderUnavailable`] when no
+/// blind-index provider was added.
+///
+/// # Examples
+///
+/// ```
+/// use cryptbox::{
+///     BlindIndexKey, EncryptionKey, Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring,
+/// };
+///
+/// # fn main() -> Result<(), cryptbox::Error> {
+/// let keys = Keys::new(LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?)
+///     .with_blind_indexes(LocalBlindIndexKeyring::new(BlindIndexKey::generate()?, [])?);
+/// # let _ = keys;
+/// # Ok(())
+/// # }
+/// ```
+pub struct Keys {
     encryption: Box<dyn EncryptionKeyProvider>,
     blind_indexes: Option<Box<dyn BlindIndexKeyProvider>>,
 }
 
-impl GlobalProviders {
-    /// Creates a provider set with encryption keys only.
-    pub fn new(provider: impl EncryptionKeyProvider + 'static) -> Self {
+impl Keys {
+    /// Creates a key set with an encryption provider only.
+    pub fn new(encryption: impl EncryptionKeyProvider + 'static) -> Self {
         Self {
-            encryption: Box::new(provider),
+            encryption: Box::new(encryption),
             blind_indexes: None,
         }
     }
@@ -520,61 +524,116 @@ impl GlobalProviders {
         self.blind_indexes = Some(Box::new(provider));
         self
     }
+
+    fn blind_indexes(&self) -> Result<&dyn BlindIndexKeyProvider, KeyProviderError> {
+        self.blind_indexes
+            .as_deref()
+            .ok_or(KeyProviderError::Unavailable)
+    }
 }
 
-static GLOBAL_PROVIDERS: OnceLock<GlobalProviders> = OnceLock::new();
+impl fmt::Debug for Keys {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Keys")
+            .field("blind_indexes", &self.blind_indexes.is_some())
+            .finish_non_exhaustive()
+    }
+}
 
-/// Process-global initialized-once providers for context-less adapters.
-///
-/// Install providers once during process startup before using
-/// [`crate::Encrypted::encrypt`], [`crate::Encrypted::prepare`], or an automatic
-/// storage adapter. Prefer explicit provider APIs where process-global state is
-/// undesirable.
-///
-/// The installed providers cannot be replaced or reset. Applications should
-/// therefore call [`Self::install`] only from their binary entry point, not from
-/// reusable library code or test setup. Tests should normally inject providers
-/// through methods such as [`crate::Encrypted::encrypt_with`] and
-/// [`crate::Ciphertext::decrypt_with`]. Tests of automatic storage adapters
-/// install providers once per test process. Synchronizing individual provider
-/// calls does not isolate a whole test: cases replacing shared keys must be
-/// serialized for their entire setup/use lifetime or run in separate processes.
-/// See the [testing guide].
-///
-#[doc = concat!(
-    "[testing guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/testing.md#automatic-adapters",
-)]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct GlobalKeyContext;
+impl EncryptionKeyProvider for Keys {
+    fn current_key(&self, field: FieldId) -> Result<EncryptionKey, KeyProviderError> {
+        self.encryption.current_key(field)
+    }
 
-impl GlobalKeyContext {
-    /// Installs runtime-created providers for the remainder of the process.
+    fn key(&self, field: FieldId, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
+        self.encryption.key(field, id)
+    }
+}
+
+impl BlindIndexKeyProvider for Keys {
+    fn current_key(&self, field: FieldId) -> Result<BlindIndexKey, KeyProviderError> {
+        self.blind_indexes()?.current_key(field)
+    }
+
+    fn key(
+        &self,
+        field: FieldId,
+        id: IndexKeyId,
+    ) -> Result<Option<BlindIndexKey>, KeyProviderError> {
+        self.blind_indexes()?.key(field, id)
+    }
+
+    fn readable_keys(&self, field: FieldId) -> Result<Vec<BlindIndexKey>, KeyProviderError> {
+        self.blind_indexes()?.readable_keys(field)
+    }
+}
+
+/// The key source of an automatic `SQLx` column, `Encrypted<F, K>`.
+///
+/// `SQLx` encoding and decoding receive no context, so the column names its
+/// keys in its type. The default, [`GlobalKeys`], reads the keys installed with
+/// [`keys::install`](crate::keys::install). Implement this trait over your own
+/// static to use another keyring (a tenant, a second deployment, a test
+/// fixture) without installing the global.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::LazyLock;
+///
+/// use cryptbox::{
+///     Encrypted, EncryptionKey, EncryptionKeyProvider, Error, Field, FieldId, KeyContext,
+///     LocalEncryptionKeyring, Padding, Utf8,
+/// };
+///
+/// struct UserEmail;
+///
+/// impl Field for UserEmail {
+///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+///     const PADDING: Padding = Padding::NONE;
+///     type Value = String;
+///     type Codec = Utf8;
+/// }
+///
+/// struct ArchiveKeys;
+///
+/// impl KeyContext for ArchiveKeys {
+///     fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, Error> {
+///         // Load durable key material here; a generated key is for demonstration only.
+///         static KEYS: LazyLock<Result<LocalEncryptionKeyring, Error>> =
+///             LazyLock::new(|| LocalEncryptionKeyring::new(EncryptionKey::generate()?, []));
+///
+///         match &*KEYS {
+///             Ok(keys) => Ok(keys),
+///             Err(error) => Err(error.clone()),
+///         }
+///     }
+/// }
+///
+/// // A column that encrypts and decrypts with `ArchiveKeys`, never the installed keys.
+/// let email = Encrypted::<UserEmail, ArchiveKeys>::new("user@example.com");
+/// # let _ = email;
+/// ```
+pub trait KeyContext: 'static {
+    /// Returns the encryption provider for this key source.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::KeyProviderAlreadyInitialized`] after the first
-    /// successful installation.
-    pub fn install(providers: GlobalProviders) -> Result<(), Error> {
-        GLOBAL_PROVIDERS
-            .set(providers)
-            .map_err(|_| Error::KeyProviderAlreadyInitialized)
-    }
+    /// Returns an error when the keys are unavailable, such as
+    /// [`Error::KeysNotInstalled`] for [`GlobalKeys`] before installation.
+    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, Error>;
 }
 
-impl KeyContext for GlobalKeyContext {
-    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, KeyProviderError> {
-        GLOBAL_PROVIDERS
-            .get()
-            .map(|providers| providers.encryption.as_ref())
-            .ok_or(KeyProviderError::NotInitialized)
-    }
+/// The key source that reads the keys installed with
+/// [`keys::install`](crate::keys::install).
+///
+/// This is the default key source of [`Encrypted`](crate::Encrypted).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GlobalKeys;
 
-    fn blind_index_keys() -> Result<&'static dyn BlindIndexKeyProvider, KeyProviderError> {
-        GLOBAL_PROVIDERS
-            .get()
-            .ok_or(KeyProviderError::NotInitialized)?
-            .blind_indexes
-            .as_deref()
-            .ok_or(KeyProviderError::Unavailable)
+impl KeyContext for GlobalKeys {
+    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, Error> {
+        Ok(crate::keys::installed()?)
     }
 }

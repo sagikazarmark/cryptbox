@@ -41,10 +41,12 @@
 )]
 //!
 //! Row/tenant binding is future work. Explicit-provider methods
-//! (`encrypt_with`, `decrypt_with`, `prepare_with`) take keys separately; the
-//! implicit forms (`encrypt()`, `decrypt()`, `prepare()`) and automatic storage
-//! adapters read the process-wide [`GlobalKeyContext`]. [`Padding`] is a closed
-//! set of const policies.
+//! (`encrypt_with`, `decrypt_with`, `prepare_with`) take keys separately and
+//! never read the global; the implicit forms (`encrypt()`, `decrypt()`,
+//! `prepare()`) read the keys installed with [`keys::install`] and fail with
+//! [`Error::KeysNotInstalled`] before installation. The automatic `SQLx` column
+//! `Encrypted<F, K>` reads its keys from `K`, the installed keys
+//! ([`GlobalKeys`]) by default. [`Padding`] is a closed set of const policies.
 //!
 //! The [documentation index] links integration and operational guides.
 //!
@@ -128,6 +130,7 @@ mod error;
 mod field;
 mod id;
 mod key;
+pub mod keys;
 #[cfg(feature = "migrate")]
 pub mod migrate;
 mod padding;
@@ -156,8 +159,8 @@ pub(crate) use field::BindingDomain;
 pub use field::Field;
 pub use id::{FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, SuiteId};
 pub use key::{
-    BlindIndexKey, BlindIndexKeyProvider, EncryptionKey, EncryptionKeyProvider, GlobalKeyContext,
-    GlobalProviders, KeyContext, LocalBlindIndexKeyring, LocalEncryptionKeyring,
+    BlindIndexKey, BlindIndexKeyProvider, EncryptionKey, EncryptionKeyProvider, GlobalKeys,
+    KeyContext, Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring,
 };
 pub use padding::Padding;
 pub use prepare::Prepared;
