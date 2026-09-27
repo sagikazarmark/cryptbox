@@ -203,8 +203,7 @@
   `Sealed::open_global`, for `FieldOnly` fields only. `Prepared::ciphertext()`
   is renamed `Prepared::sealed()`. `MaybeEncrypted` opens with
   `open(args, keys)`, `open_legacy`, `open_global`, and `open_global_legacy`,
-  returns the bare value, and exposes `as_sealed()`. `RowPlanner` and `Sweep`
-  serve `FieldOnly` fields only.
+  returns the bare value, and exposes `as_sealed()`.
 
   | Before | Now |
   | --- | --- |
@@ -279,6 +278,30 @@
 - Add `InRecord(&binding, record)` binding arguments, which bind the record
   exactly when the field declares one, and `RecordId::of`, which makes a record
   ID from any `PartType`.
+- **Breaking:** sweeps serve bound fields and migrate binding shapes
+  (ADR-0005). `RowPlanner<'_, F, R = ()>` and `Sweep<'_, F, R = ()>` take the
+  type of a row's columns: `RowPlanner::for_key_scope(key_scope, keys, row_args)`
+  plans the rows of one `KeyScope`, building each row's `RowArgs` (binding and record
+  ID) from its columns, and `RowPlanner::new(keys)` still serves a `FieldOnly`
+  field without a record. `classify_row` and `plan_row` take the row's columns
+  first; `SweepStore` gains `type Columns`, which `SweepRow` carries in its new
+  `columns` field (the packaged SQLx stores use `()`). A row whose arguments
+  name another key scope is `RowState::OutOfScope`, counted in
+  `SweepReport::out_of_scope` and left alone rather than failing the sweep.
+  `RowPlanner::legacy_binding::<Old>(old_keys)` opens a legacy-binding window:
+  rows whose header names the older shape `Old` are `RowState::LegacyBinding`,
+  counted in `SweepReport::legacy_binding`, opened under `Old` with its parts
+  taken from the current binding by part ID (and the row's record when
+  the header names `Old` with one), and resealed with every index
+  derived again. `migrate::probes_across` and `migrate::open_across` keep
+  lookups working over both shapes during the window. `is_terminal` also
+  requires zero legacy-binding and out-of-scope rows.
+
+  | Before | Now |
+  | --- | --- |
+  | `planner.plan_row(&ciphertext, &indexes)` | `planner.plan_row(&(), &ciphertext, &indexes)` |
+  | `impl SweepStore for S { type Cursor = i64; … }` | add `type Columns = ();` |
+  | `SweepRow { cursor, ciphertext, indexes }` | `SweepRow { cursor, columns: (), ciphertext, indexes }` |
 - Add `Prepared::into_sealed` and `BlindIndexRef::to_blind_index`, which take
   owned values out of a preparation.
 - `Json` decodes every float to exactly the value that was encoded

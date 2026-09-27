@@ -1,14 +1,20 @@
 use std::fmt;
 
+use zeroize::Zeroizing;
+
 use crate::{
-    BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec, EncryptionKeySource, Error, Field,
-    FieldOnly, IndexKeyId, Sealed, binding::domain, blind::current_key_id,
-    crypto::needs_reencryption_bound, inspect_blind_index,
+    Binding, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
+    EncryptionKeySource, Error, Field, FieldOnly, IndexKeyId, KeyScope, RecordId,
+    binding::{ShapeFingerprint, shape_fingerprint},
+    blind::{current_key_id, derive_value},
+    crypto::{decrypt_bound, encrypt_bound, needs_reencryption_bound},
+    inspect_blind_index, inspect_ciphertext,
 };
 
 use super::{LegacyFormat, legacy};
 
-/// The classification of one stored row against the current key generations.
+/// The classification of one stored row against the current key generations
+/// and binding shape.
 ///
 /// Malformed rows are not a state: classification returns an error for them.
 /// Classification inspects unauthenticated structure and generation metadata,
@@ -24,6 +30,17 @@ pub enum RowState {
     /// The stored bytes are legacy data rather than a `CryptBox` envelope.
     #[doc(alias = "Plaintext")]
     Legacy,
+    /// The envelope's header names an older binding shape registered with
+    /// [`RowPlanner::legacy_binding`].
+    ///
+    /// Only the unauthenticated shape fingerprint is compared.
+    LegacyBinding,
+    /// The row's binding arguments name another key scope than the planner's.
+    ///
+    /// This is an anomaly, not a row to rewrite: the store returned a row of
+    /// another partition, or the row's `keys` columns disagree with the job's key
+    /// scope. The row is neither decrypted nor written.
+    OutOfScope,
 }
 
 /// Replacement bytes for one row.
@@ -71,7 +88,7 @@ impl RowOutcome {
         self.state
     }
 
-    /// Returns the replacement bytes, absent for a current row.
+    /// Returns the replacement bytes, absent for a current or out-of-scope row.
     #[must_use]
     pub fn write(&self) -> Option<&RowWrite> {
         self.write.as_ref()
@@ -82,46 +99,99 @@ impl RowOutcome {
     pub fn into_write(self) -> Option<RowWrite> {
         self.write
     }
+
+    const fn unchanged(state: RowState) -> Self {
+        Self { state, write: None }
+    }
 }
 
-type IndexDeriver<F> = fn(&<F as Field>::Value, &dyn BlindIndexKeySource) -> Result<Vec<u8>, Error>;
+/// The binding arguments of one stored row, which a [`RowPlanner`]'s row
+/// closure builds from the row's columns.
+///
+/// It holds the row's binding and, for a field that declares
+/// [`Field::RECORD`], its record ID. A record passed to a field that binds
+/// none, or omitted for a field that binds one, fails planning with
+/// [`Error::InvalidBinding`].
+///
+/// The `keys` parts come from the job's configuration, never from the row: a
+/// closure may read them from the row's columns only for the planner to compare
+/// with its own key scope, and a row of another key scope is reported as
+/// [`RowState::OutOfScope`]. The other parts and the record come from the row.
+#[derive(Clone, Debug)]
+pub struct RowArgs<'r, B> {
+    binding: B,
+    record: Option<RecordId<'r>>,
+}
 
-type CurrentIndexKey = fn(&dyn BlindIndexKeySource) -> Result<IndexKeyId, Error>;
+impl<'r, B: Binding> RowArgs<'r, B> {
+    /// Creates the arguments of a row bound to `binding` without a record.
+    pub const fn new(binding: B) -> Self {
+        Self {
+            binding,
+            record: None,
+        }
+    }
 
-fn derive_index_bytes<F, Spec>(
-    value: &F::Value,
+    /// Binds the row's record ID too.
+    #[must_use]
+    pub fn with_record(self, record: RecordId<'r>) -> Self {
+        Self {
+            record: Some(record),
+            ..self
+        }
+    }
+}
+
+type RowArgsFn<'a, F, R> =
+    Box<dyn for<'r> Fn(&'r R) -> Result<RowArgs<'r, <F as Field>::Binding>, Error> + 'a>;
+
+type IndexDeriver<F> =
+    fn(&<F as Field>::Value, &BindingDomain, &dyn BlindIndexKeySource) -> Result<Vec<u8>, Error>;
+
+type CurrentIndexKey = fn(&BindingDomain, &dyn BlindIndexKeySource) -> Result<IndexKeyId, Error>;
+
+fn derive_index_bytes<Spec: BlindIndexSpec>(
+    value: &<Spec::Field as Field>::Value,
+    domain: &BindingDomain,
     keys: &dyn BlindIndexKeySource,
-) -> Result<Vec<u8>, Error>
-where
-    F: Field<Binding = FieldOnly>,
-    Spec: BlindIndexSpec<Field = F>,
-{
-    Spec::derive_with(value, &(), keys).map(BlindIndex::into_bytes)
-}
-
-fn current_index_key_id<F, Spec>(keys: &dyn BlindIndexKeySource) -> Result<IndexKeyId, Error>
-where
-    F: Field<Binding = FieldOnly>,
-    Spec: BlindIndexSpec<Field = F>,
-{
-    current_key_id::<Spec>(&(), keys)
-}
-
-// Reads the unauthenticated header only, without copying the envelope.
-fn is_stale_envelope<F: Field<Binding = FieldOnly>>(
-    ciphertext: &[u8],
-    keys: &dyn EncryptionKeySource,
-) -> Result<bool, Error> {
-    needs_reencryption_bound(&domain::<F, ()>(())?, F::PADDING, ciphertext, keys)
+) -> Result<Vec<u8>, Error> {
+    derive_value::<Spec>(value, domain, keys).map(BlindIndex::into_bytes)
 }
 
 struct IndexColumn<'a, F>
 where
     F: Field,
 {
-    derive: IndexDeriver<F>,
+    deriver: IndexDeriver<F>,
     current_key: CurrentIndexKey,
     keys: &'a dyn BlindIndexKeySource,
+}
+
+/// An older binding shape whose rows the planner reseals, and its keys.
+struct LegacyShape<'a, F>
+where
+    F: Field,
+{
+    /// The shape's fingerprint without a record.
+    unrecorded: Option<ShapeFingerprint>,
+    /// The shape's fingerprint with a record, for a field that binds one.
+    recorded: Option<ShapeFingerprint>,
+    domain: fn(&F::Binding, Option<RecordId<'_>>) -> Result<BindingDomain, Error>,
+    keys: &'a dyn EncryptionKeySource,
+}
+
+/// The binding of one row under the planner's field.
+struct RowBinding {
+    domain: BindingDomain,
+    index_domain: BindingDomain,
+}
+
+// Panics become build errors in `const` context.
+const fn check_no_record(record: bool) {
+    assert!(
+        !record,
+        "this field binds a record: build each row's record with `RowPlanner::for_key_scope`"
+    );
 }
 
 /// Plans the rewrite of one encrypted column and its blind-index columns.
@@ -137,25 +207,67 @@ where
 /// index bytes are retained without checking consistency. Use a separate
 /// authenticated-read and index-recomputation pass when those checks are required.
 ///
-/// The planner serves [`FieldOnly`] fields without a record.
-pub struct RowPlanner<'a, F>
+/// # Bindings
+///
+/// Each row is sealed under its own binding arguments, which a row closure
+/// builds from `R`, the row's columns ([`Self::for_key_scope`]). A planner serves
+/// one key scope, taken from the job's configuration: a sweep is partitioned
+/// by key scope, because its keys are. A row whose arguments name another key
+/// scope is reported as [`RowState::OutOfScope`] and left alone. [`Self::new`]
+/// serves a [`FieldOnly`] field without a record, whose rows need no columns.
+///
+/// To change a field's binding shape, register the shape it had before with
+/// [`Self::legacy_binding`]: rows whose header still names that shape are
+/// opened under it and resealed under the current one.
+pub struct RowPlanner<'a, F, R = ()>
 where
     F: Field,
 {
     keys: &'a dyn EncryptionKeySource,
+    scope: KeyScope,
+    row_args: RowArgsFn<'a, F, R>,
     legacy: Option<&'a dyn LegacyFormat>,
+    legacy_shapes: Vec<LegacyShape<'a, F>>,
     indexes: Vec<IndexColumn<'a, F>>,
 }
 
-impl<'a, F> RowPlanner<'a, F>
+impl<'a, F, R> RowPlanner<'a, F, R>
 where
     F: Field<Binding = FieldOnly>,
 {
-    /// Creates a planner for field `F` and an encryption key source.
+    /// Creates a planner for a [`FieldOnly`] field `F` without a record and an
+    /// encryption key source.
+    ///
+    /// A field that binds a record fails the build; use [`Self::for_key_scope`].
     pub fn new(keys: &'a dyn EncryptionKeySource) -> Self {
+        const { check_no_record(F::RECORD) };
+
+        Self::for_key_scope(KeyScope::empty(), keys, |_| Ok(RowArgs::new(FieldOnly)))
+    }
+}
+
+impl<'a, F, R> RowPlanner<'a, F, R>
+where
+    F: Field,
+{
+    /// Creates a planner for the rows of one key scope of field `F`.
+    ///
+    /// `key_scope` comes from the job's configuration, and `keys` serves it.
+    /// `row_args` builds each row's binding arguments from its columns; a row
+    /// whose arguments name another key scope is reported as
+    /// [`RowState::OutOfScope`]. An error from `row_args` is returned as it is,
+    /// and stops a sweep or verification pass.
+    pub fn for_key_scope(
+        key_scope: KeyScope,
+        keys: &'a dyn EncryptionKeySource,
+        row_args: impl for<'r> Fn(&'r R) -> Result<RowArgs<'r, F::Binding>, Error> + 'a,
+    ) -> Self {
         Self {
             keys,
+            scope: key_scope,
+            row_args: Box::new(row_args),
             legacy: None,
+            legacy_shapes: Vec::new(),
             indexes: Vec::new(),
         }
     }
@@ -167,6 +279,35 @@ where
     #[must_use]
     pub fn with_legacy(mut self, legacy: &'a dyn LegacyFormat) -> Self {
         self.legacy = Some(legacy);
+        self
+    }
+
+    /// Opens a legacy-binding window: rows sealed with the older binding shape
+    /// `Old` are opened under it with `keys` and resealed under the field's
+    /// current binding.
+    ///
+    /// `Old` takes each part's value from the row's current binding, by part ID.
+    /// A row whose header names `Old` with a record is opened with the row's
+    /// record, so a field that binds one can still add parts. The window covers
+    /// moving from [`FieldOnly`] to any binding, adding parts or a record, and
+    /// changing a part's role, but not removing a part or changing its kind. A part of `Old` that the
+    /// current binding lacks, or holds with another kind, fails planning with
+    /// [`Error::InvalidBinding`].
+    ///
+    /// Such rows are classified as [`RowState::LegacyBinding`] by their header's
+    /// shape fingerprint, and every blind index is derived again under the
+    /// current binding. Close the window once a verification pass counts none.
+    #[must_use]
+    pub fn legacy_binding<Old: Binding>(mut self, keys: &'a dyn EncryptionKeySource) -> Self {
+        self.legacy_shapes.push(LegacyShape {
+            unrecorded: shape_fingerprint::<Old>(false),
+            recorded: F::RECORD.then(|| shape_fingerprint::<Old>(true)).flatten(),
+            domain: |binding, record| {
+                BindingDomain::projected::<Old, F::Binding>(F::ID, binding, record)
+            },
+            keys,
+        });
+
         self
     }
 
@@ -241,8 +382,8 @@ where
         Spec: BlindIndexSpec<Field = F>,
     {
         self.indexes.push(IndexColumn {
-            derive: derive_index_bytes::<F, Spec>,
-            current_key: current_index_key_id::<F, Spec>,
+            deriver: derive_index_bytes::<Spec>,
+            current_key: current_key_id::<Spec>,
             keys,
         });
 
@@ -251,8 +392,10 @@ where
 
     /// Classifies one stored row without producing writes or consuming nonces.
     ///
-    /// Checks structure and compares unauthenticated generation IDs. It does not
-    /// decrypt, decode, recover legacy data, or recompute indexes. Index parsing
+    /// `row` holds the columns the row's binding arguments are built from.
+    /// Checks the row's key scope and structure, and compares unauthenticated
+    /// shape fingerprints and generation IDs. It does not decrypt, decode,
+    /// recover legacy data, or recompute indexes. Index parsing
     /// checks the stored format, not agreement with the registered specification's
     /// precision or logical ID. Classification may stop at the first legacy or
     /// stale component, so later columns need not have been inspected.
@@ -260,23 +403,40 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error for malformed envelopes or blind indexes, an index
-    /// column arity mismatch, or unavailable keys.
-    pub fn classify_row(&self, ciphertext: &[u8], indexes: &[&[u8]]) -> Result<RowState, Error> {
+    /// Returns an error for malformed envelopes or blind indexes, an envelope
+    /// of an unregistered binding shape, an index column arity mismatch,
+    /// invalid binding arguments, or unavailable keys.
+    pub fn classify_row(
+        &self,
+        row: &R,
+        ciphertext: &[u8],
+        indexes: &[&[u8]],
+    ) -> Result<RowState, Error> {
         self.check_arity(indexes)?;
+        let args = (self.row_args)(row)?;
+        let Some(binding) = self.bind(&args)? else {
+            return Ok(RowState::OutOfScope);
+        };
 
-        match crate::inspect_ciphertext(ciphertext) {
+        match inspect_ciphertext(ciphertext) {
+            Ok(info)
+                if self
+                    .legacy_shape(&binding, info.shape_fingerprint())
+                    .is_some() =>
+            {
+                return Ok(RowState::LegacyBinding);
+            }
             Ok(_) => {}
             Err(Error::NotCiphertext) => return Ok(RowState::Legacy),
             Err(error) => return Err(error),
         }
 
-        if is_stale_envelope::<F>(ciphertext, self.keys)? {
+        if needs_reencryption_bound(&binding.domain, F::PADDING, ciphertext, self.keys)? {
             return Ok(RowState::Stale);
         }
 
         for (column, bytes) in self.indexes.iter().zip(indexes) {
-            if column.is_stale(bytes)? {
+            if column.is_stale(bytes, &binding.index_domain)? {
                 return Ok(RowState::Stale);
             }
         }
@@ -286,53 +446,67 @@ where
 
     /// Classifies one stored row and builds its replacement bytes when needed.
     ///
-    /// Current rows are returned without decryption. Current index columns keep
-    /// their bytes even when another component is rewritten. Re-encryption alone
-    /// authenticates and checks padding but does not decode with the codec;
-    /// stale-index derivation also decrypts and decodes the value.
+    /// Current and out-of-scope rows are returned without decryption. Current
+    /// index columns keep their bytes even when another component is
+    /// rewritten. Re-encryption alone authenticates and checks padding but does
+    /// not decode with the codec; stale-index derivation also decrypts and
+    /// decodes the value. A row of a legacy binding shape is opened under that
+    /// shape and every index is derived again.
     ///
     /// # Errors
     ///
     /// Returns an error under the same conditions as [`Self::classify_row`],
     /// and additionally when decryption, codec decoding, encryption, or index
     /// derivation fails while building the replacement.
-    pub fn plan_row(&self, ciphertext: &[u8], indexes: &[&[u8]]) -> Result<RowOutcome, Error> {
+    pub fn plan_row(
+        &self,
+        row: &R,
+        ciphertext: &[u8],
+        indexes: &[&[u8]],
+    ) -> Result<RowOutcome, Error> {
         self.check_arity(indexes)?;
+        let args = (self.row_args)(row)?;
+        let Some(binding) = self.bind(&args)? else {
+            return Ok(RowOutcome::unchanged(RowState::OutOfScope));
+        };
 
-        match crate::inspect_ciphertext(ciphertext) {
-            Ok(_) => {}
-            Err(Error::NotCiphertext) => return self.plan_legacy_row(ciphertext),
+        match inspect_ciphertext(ciphertext) {
+            Ok(info) => {
+                if let Some(legacy) = self.legacy_shape(&binding, info.shape_fingerprint()) {
+                    return self.plan_legacy_binding_row(legacy, &args, &binding, ciphertext);
+                }
+            }
+            Err(Error::NotCiphertext) => return self.plan_legacy_row(&binding, ciphertext),
             Err(error) => return Err(error),
         }
 
-        let envelope_is_stale = is_stale_envelope::<F>(ciphertext, self.keys)?;
+        let envelope_is_stale =
+            needs_reencryption_bound(&binding.domain, F::PADDING, ciphertext, self.keys)?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
         for (column, bytes) in self.indexes.iter().zip(indexes) {
-            stale_columns.push(column.is_stale(bytes)?);
+            stale_columns.push(column.is_stale(bytes, &binding.index_domain)?);
+        }
+        let indexes_are_stale = stale_columns.contains(&true);
+
+        if !envelope_is_stale && !indexes_are_stale {
+            return Ok(RowOutcome::unchanged(RowState::Current));
         }
 
-        if !envelope_is_stale && !stale_columns.contains(&true) {
-            return Ok(RowOutcome {
-                state: RowState::Current,
-                write: None,
-            });
-        }
-
-        let parsed = Sealed::<F>::from_validated_bytes(ciphertext.to_vec());
-        let rewritten = if envelope_is_stale {
-            parsed.reseal((), self.keys)?
+        let plaintext = decrypt_bound(&binding.domain, F::PADDING, ciphertext, self.keys)?;
+        let ciphertext = if envelope_is_stale {
+            encrypt_bound(&binding.domain, F::PADDING, &plaintext, self.keys)?
         } else {
-            parsed
+            ciphertext.to_vec()
         };
 
-        let indexes = if stale_columns.contains(&true) {
+        let indexes = if indexes_are_stale {
             // The ciphertext is authoritative: stale indexes are re-derived
             // from decrypted plaintext, never trusted index metadata.
-            let value = rewritten.open((), self.keys)?;
+            let value = F::Codec::decode(&plaintext)?;
             let mut replacements = Vec::with_capacity(self.indexes.len());
             for ((column, bytes), stale) in self.indexes.iter().zip(indexes).zip(&stale_columns) {
                 replacements.push(if *stale {
-                    (column.derive)(&value, column.keys)?
+                    column.derive(&value, &binding.index_domain)?
                 } else {
                     bytes.to_vec()
                 });
@@ -346,28 +520,104 @@ where
         Ok(RowOutcome {
             state: RowState::Stale,
             write: Some(RowWrite {
-                ciphertext: rewritten.into_bytes(),
+                ciphertext,
                 indexes,
             }),
         })
     }
 
-    fn plan_legacy_row(&self, bytes: &[u8]) -> Result<RowOutcome, Error> {
+    /// Encodes the row's binding, or returns `None` for a row of another key scope.
+    fn bind(&self, args: &RowArgs<'_, F::Binding>) -> Result<Option<RowBinding>, Error> {
+        if args.record.is_some() != F::RECORD {
+            return Err(Error::InvalidBinding);
+        }
+
+        let domain = BindingDomain::of(F::ID, &args.binding, args.record)?;
+        if domain.key_scope() != &self.scope {
+            return Ok(None);
+        }
+
+        Ok(Some(RowBinding {
+            domain,
+            index_domain: BindingDomain::index_of(F::ID, &args.binding)?,
+        }))
+    }
+
+    /// Returns the registered legacy shape an envelope's header names, and
+    /// whether it names that shape with a record, unless it names the current
+    /// shape.
+    fn legacy_shape(
+        &self,
+        binding: &RowBinding,
+        stored: Option<ShapeFingerprint>,
+    ) -> Option<(&LegacyShape<'a, F>, bool)> {
+        if stored == binding.domain.fingerprint() {
+            return None;
+        }
+
+        self.legacy_shapes.iter().find_map(|legacy| {
+            if stored == legacy.unrecorded {
+                Some((legacy, false))
+            } else if stored.is_some() && stored == legacy.recorded {
+                Some((legacy, true))
+            } else {
+                None
+            }
+        })
+    }
+
+    fn plan_legacy_binding_row(
+        &self,
+        (legacy, recorded): (&LegacyShape<'a, F>, bool),
+        args: &RowArgs<'_, F::Binding>,
+        binding: &RowBinding,
+        ciphertext: &[u8],
+    ) -> Result<RowOutcome, Error> {
+        let record = if recorded { args.record } else { None };
+        let old = (legacy.domain)(&args.binding, record)?;
+        let plaintext = decrypt_bound(&old, F::PADDING, ciphertext, legacy.keys)?;
+        let ciphertext = encrypt_bound(&binding.domain, F::PADDING, &plaintext, self.keys)?;
+        // The index binding may have changed with the shape, so every index
+        // is derived again.
+        let indexes = if self.indexes.is_empty() {
+            Vec::new()
+        } else {
+            self.derive_indexes(&F::Codec::decode(&plaintext)?, binding)?
+        };
+
+        Ok(RowOutcome {
+            state: RowState::LegacyBinding,
+            write: Some(RowWrite {
+                ciphertext,
+                indexes,
+            }),
+        })
+    }
+
+    fn plan_legacy_row(&self, binding: &RowBinding, bytes: &[u8]) -> Result<RowOutcome, Error> {
         let plaintext = legacy::recover(bytes, self.legacy)?;
         let value = F::Codec::decode(&plaintext)?;
-        let sealed = Sealed::<F>::seal(&value, (), self.keys)?;
-        let mut indexes = Vec::with_capacity(self.indexes.len());
-        for column in &self.indexes {
-            indexes.push((column.derive)(&value, column.keys)?);
-        }
+        let plaintext: Zeroizing<Vec<u8>> = F::Codec::encode(&value)?;
+        let ciphertext = encrypt_bound(&binding.domain, F::PADDING, &plaintext, self.keys)?;
 
         Ok(RowOutcome {
             state: RowState::Legacy,
             write: Some(RowWrite {
-                ciphertext: sealed.into_bytes(),
-                indexes,
+                ciphertext,
+                indexes: self.derive_indexes(&value, binding)?,
             }),
         })
+    }
+
+    fn derive_indexes(
+        &self,
+        value: &F::Value,
+        binding: &RowBinding,
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        self.indexes
+            .iter()
+            .map(|column| column.derive(value, &binding.index_domain))
+            .collect()
     }
 
     fn check_arity(&self, indexes: &[&[u8]]) -> Result<(), Error> {
@@ -386,19 +636,25 @@ impl<F> IndexColumn<'_, F>
 where
     F: Field,
 {
-    fn is_stale(&self, bytes: &[u8]) -> Result<bool, Error> {
-        Ok(inspect_blind_index(bytes)?.index_key_id() != (self.current_key)(self.keys)?)
+    fn is_stale(&self, bytes: &[u8], domain: &BindingDomain) -> Result<bool, Error> {
+        Ok(inspect_blind_index(bytes)?.index_key_id() != (self.current_key)(domain, self.keys)?)
+    }
+
+    fn derive(&self, value: &F::Value, domain: &BindingDomain) -> Result<Vec<u8>, Error> {
+        (self.deriver)(value, domain, self.keys)
     }
 }
 
-impl<F> fmt::Debug for RowPlanner<'_, F>
+impl<F, R> fmt::Debug for RowPlanner<'_, F, R>
 where
     F: Field,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("RowPlanner")
+            .field("scope", &self.scope)
             .field("legacy", &self.legacy.is_some())
+            .field("legacy_shapes", &self.legacy_shapes.len())
             .field("indexes", &self.indexes.len())
             .finish_non_exhaustive()
     }

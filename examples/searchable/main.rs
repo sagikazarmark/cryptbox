@@ -259,7 +259,7 @@ async fn maintenance(
             let row = rows.first().ok_or("conflict rehearsal needs a stale row")?;
             let planner =
                 RowPlanner::<UserEmail>::new(encryption).with_index_with::<EmailLookup>(indexes);
-            let plan = planner.plan_row(&row.ciphertext, &[&row.indexes[0]])?;
+            let plan = planner.plan_row(&(), &row.ciphertext, &[&row.indexes[0]])?;
             let replacement = plan.write().ok_or("conflict rehearsal needs a stale row")?;
             let mut writer = DbConnection::connect(&database_url()?).await?;
             put(

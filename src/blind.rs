@@ -18,7 +18,8 @@ const INDEX_KEY_LABEL: &[u8] = b"cryptbox/blind-index-key/v1\0";
 const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
 
 /// The query-time arguments of `Spec`: its field binding's `keys` and `index` part values.
-type IndexArgs<Spec> = <<<Spec as BlindIndexSpec>::Field as Field>::Binding as Binding>::IndexArgs;
+pub(crate) type IndexArgs<Spec> =
+    <<<Spec as BlindIndexSpec>::Field as Field>::Binding as Binding>::IndexArgs;
 
 /// A logical blind index over one field.
 ///
@@ -644,15 +645,14 @@ pub(crate) fn derive_value<Spec: BlindIndexSpec>(
     derive_value_with_key::<Spec>(value, domain, &key)
 }
 
-/// Returns the ID of the key that derives new stored indexes of `Spec` under `args`.
+/// Returns the ID of the key that derives new stored indexes of `Spec` in
+/// `domain`, an index domain of `Spec`'s field.
 #[cfg(feature = "migrate")]
 pub(crate) fn current_key_id<Spec: BlindIndexSpec>(
-    args: &IndexArgs<Spec>,
-    keys: &(impl BlindIndexKeySource + ?Sized),
+    domain: &BindingDomain,
+    keys: &dyn BlindIndexKeySource,
 ) -> Result<IndexKeyId, Error> {
-    Ok(keyring::<Spec>(keys, &index_domain::<Spec>(args)?)?
-        .current()
-        .id())
+    Ok(keyring::<Spec>(keys, domain)?.current().id())
 }
 
 fn derive_value_with_key<Spec: BlindIndexSpec>(
@@ -670,12 +670,21 @@ fn derive_probes<Spec: BlindIndexSpec>(
     args: &IndexArgs<Spec>,
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<Vec<BlindIndex<Spec>>, Error> {
-    let normalized = Spec::normalize_query(query)?;
-    let domain = index_domain::<Spec>(args)?;
+    probes_in::<Spec>(query, &index_domain::<Spec>(args)?, keys)
+}
 
-    keyring::<Spec>(keys, &domain)?
+/// Derives one probe of `Spec` in `domain`, an index domain of `Spec`'s field,
+/// for every readable index generation.
+pub(crate) fn probes_in<Spec: BlindIndexSpec>(
+    query: &Spec::Query,
+    domain: &BindingDomain,
+    keys: &(impl BlindIndexKeySource + ?Sized),
+) -> Result<Vec<BlindIndex<Spec>>, Error> {
+    let normalized = Spec::normalize_query(query)?;
+
+    keyring::<Spec>(keys, domain)?
         .readable()
-        .map(|key| derive_normalized::<Spec>(&normalized, &domain, key))
+        .map(|key| derive_normalized::<Spec>(&normalized, domain, key))
         .collect()
 }
 

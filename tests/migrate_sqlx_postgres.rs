@@ -360,7 +360,7 @@ fn postgres_guarded_updates_preserve_competing_ciphertext_and_index_writes() {
             assert_eq!(rows.len(), 1);
             let row = &rows[0];
             let plan = planner
-                .plan_row(&row.ciphertext, &[&row.indexes[0]])
+                .plan_row(&(), &row.ciphertext, &[&row.indexes[0]])
                 .unwrap();
             let replacement = plan.write().unwrap();
 
@@ -407,7 +407,7 @@ fn postgres_guarded_updates_preserve_competing_ciphertext_and_index_writes() {
         let rows = store.load_batch(None, 1).await.unwrap();
         let row = &rows[0];
         let plan = planner
-            .plan_row(&row.ciphertext, &[&row.indexes[0]])
+            .plan_row(&(), &row.ciphertext, &[&row.indexes[0]])
             .unwrap();
         let replacement = plan.write().unwrap();
         assert!(store.update(row, replacement).await.unwrap());

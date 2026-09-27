@@ -44,6 +44,7 @@ impl<'a> SqliteSweepStore<'a> {
 
 impl SweepStore for SqliteSweepStore<'_> {
     type Cursor = i64;
+    type Columns = ();
     type Error = sqlx::Error;
 
     async fn load_checkpoint(&mut self) -> Result<Option<i64>, sqlx::Error> {
@@ -86,6 +87,7 @@ impl SweepStore for SqliteSweepStore<'_> {
 
             batch.push(SweepRow {
                 cursor,
+                columns: (),
                 ciphertext,
                 indexes,
             });

@@ -1,0 +1,773 @@
+//! Public-boundary tests for migrating a field's binding shape.
+
+#![cfg(feature = "migrate")]
+
+use std::{
+    convert::Infallible,
+    future::{Future, ready},
+};
+
+use cryptbox::{
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, Field, FieldOnly, IndexId, KeyScope, Padding, RecordId, Sealed,
+    Tenant, TenantId, Utf8, field_id, index_id, index_key_id, key_id,
+    migrate::{
+        RowArgs, RowPlanner, RowState, RowWrite, Sweep, SweepRow, SweepStore, open_across,
+        probes_across,
+    },
+};
+use futures_executor::block_on;
+use zeroize::Zeroizing;
+
+/// The field after the migration: bound to its tenant and its record.
+struct CustomerEmail;
+
+impl Field for CustomerEmail {
+    const ID: cryptbox::FieldId = field_id!("8a000000-0000-4000-8000-00000000000a");
+    const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = true;
+    type Value = String;
+    type Codec = Utf8;
+    type Binding = Tenant;
+    type Indexes = (EmailLookup,);
+}
+
+/// The same field as it was declared before the migration.
+struct FieldOnlyEmail;
+
+impl Field for FieldOnlyEmail {
+    const ID: cryptbox::FieldId = CustomerEmail::ID;
+    const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
+    type Value = String;
+    type Codec = Utf8;
+    type Binding = FieldOnly;
+    type Indexes = (FieldOnlyEmailLookup,);
+}
+
+const LOOKUP_ID: IndexId = index_id!("8b000000-0000-4000-8000-00000000000b");
+
+fn normalize(input: &str) -> Zeroizing<Vec<u8>> {
+    Zeroizing::new(input.trim().to_ascii_lowercase().into_bytes())
+}
+
+struct EmailLookup;
+
+impl BlindIndexSpec for EmailLookup {
+    type Field = CustomerEmail;
+    const ID: IndexId = LOOKUP_ID;
+    const BITS: u16 = 128;
+    const NORMALIZER: &'static str = "email/1";
+    type Query = str;
+
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(normalize(input))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(normalize(value))
+    }
+}
+
+/// The lookup as it was declared before the migration.
+struct FieldOnlyEmailLookup;
+
+impl BlindIndexSpec for FieldOnlyEmailLookup {
+    type Field = FieldOnlyEmail;
+    const ID: IndexId = LOOKUP_ID;
+    const BITS: u16 = 128;
+    const NORMALIZER: &'static str = "email/1";
+    type Query = str;
+
+    fn normalize_query(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(normalize(input))
+    }
+
+    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Ok(normalize(value))
+    }
+}
+
+/// The columns a row's binding arguments are built from.
+#[derive(Clone, Debug)]
+struct Columns {
+    tenant: Vec<u8>,
+    id: i64,
+}
+
+fn row(tenant: &[u8], id: i64) -> Columns {
+    Columns {
+        tenant: tenant.to_vec(),
+        id,
+    }
+}
+
+fn tenant(name: &[u8]) -> Tenant {
+    Tenant(TenantId::new(name.to_vec()).unwrap())
+}
+
+fn row_args(row: &Columns) -> Result<RowArgs<'_, Tenant>, Error> {
+    Ok(
+        RowArgs::new(Tenant(TenantId::new(row.tenant.clone())?))
+            .with_record(RecordId::from(row.id)),
+    )
+}
+
+/// The keys the application used before the migration.
+fn field_only_keys() -> EncryptionKeyring {
+    EncryptionKeyring::new(
+        EncryptionKey::new(key_id!("81000000-0000-4000-8000-000000000001"), [0x11; 32]),
+        [],
+    )
+    .unwrap()
+}
+
+fn field_only_index_keys() -> BlindIndexKeyring {
+    BlindIndexKeyring::new(
+        BlindIndexKey::new(
+            index_key_id!("83000000-0000-4000-8000-000000000003"),
+            [0x33; 32],
+        ),
+        [],
+    )
+    .unwrap()
+}
+
+/// The keys of tenant `acme`.
+fn acme_keys() -> EncryptionKeyring {
+    EncryptionKeyring::new(
+        EncryptionKey::new(key_id!("82000000-0000-4000-8000-000000000002"), [0x22; 32]),
+        [],
+    )
+    .unwrap()
+}
+
+fn acme_index_keys() -> BlindIndexKeyring {
+    BlindIndexKeyring::new(
+        BlindIndexKey::new(
+            index_key_id!("84000000-0000-4000-8000-000000000004"),
+            [0x44; 32],
+        ),
+        [],
+    )
+    .unwrap()
+}
+
+fn acme_scope() -> KeyScope {
+    KeyScope::of(&tenant(b"acme")).unwrap()
+}
+
+/// Seals `email` for `row` the way the application writes it after the migration.
+fn seal_current(row: &Columns, email: &str) -> (Vec<u8>, Vec<u8>) {
+    let email = email.to_owned();
+    let prepared = Sealed::<CustomerEmail>::prepare(
+        &email,
+        (&tenant(&row.tenant), RecordId::from(row.id)),
+        &acme_keys(),
+    )
+    .unwrap()
+    .with_index_with::<EmailLookup>(&acme_index_keys())
+    .unwrap();
+    let index = prepared.index::<EmailLookup>().unwrap().as_bytes().to_vec();
+
+    (prepared.into_sealed().into_bytes(), index)
+}
+
+fn planner<'a>(
+    keys: &'a EncryptionKeyring,
+    index_keys: &'a BlindIndexKeyring,
+) -> RowPlanner<'a, CustomerEmail, Columns> {
+    RowPlanner::for_key_scope(acme_scope(), keys, row_args)
+        .with_index_with::<EmailLookup>(index_keys)
+}
+
+#[test]
+fn planner_skips_a_current_row_bound_to_its_scope_and_record() {
+    let (keys, index_keys) = (acme_keys(), acme_index_keys());
+    let row = row(b"acme", 7);
+    let (ciphertext, index) = seal_current(&row, "ada@example.com");
+    let planner = planner(&keys, &index_keys);
+
+    assert_eq!(
+        planner.classify_row(&row, &ciphertext, &[&index]).unwrap(),
+        RowState::Current
+    );
+    let outcome = planner.plan_row(&row, &ciphertext, &[&index]).unwrap();
+    assert_eq!(outcome.state(), RowState::Current);
+    assert!(outcome.write().is_none());
+}
+
+#[test]
+fn planner_reports_a_row_of_another_scope_as_out_of_scope_without_reading_it() {
+    let (keys, index_keys) = (acme_keys(), acme_index_keys());
+    let globex = row(b"globex", 7);
+    let planner = planner(&keys, &index_keys);
+
+    // Bytes that are not even an envelope: the row is left alone before its
+    // stored bytes are looked at.
+    assert_eq!(
+        planner
+            .classify_row(&globex, b"ada@example.com", &[b""])
+            .unwrap(),
+        RowState::OutOfScope
+    );
+    let outcome = planner
+        .plan_row(&globex, b"ada@example.com", &[b""])
+        .unwrap();
+    assert_eq!(outcome.state(), RowState::OutOfScope);
+    assert!(outcome.write().is_none());
+}
+
+#[test]
+fn planner_rejects_row_args_without_the_fields_record() {
+    let (keys, index_keys) = (acme_keys(), acme_index_keys());
+    let planner = RowPlanner::<CustomerEmail, Columns>::for_key_scope(acme_scope(), &keys, |row| {
+        Ok(RowArgs::new(Tenant(TenantId::new(row.tenant.clone())?)))
+    })
+    .with_index_with::<EmailLookup>(&index_keys);
+    let row = row(b"acme", 7);
+    let (ciphertext, index) = seal_current(&row, "ada@example.com");
+
+    assert_eq!(
+        planner
+            .classify_row(&row, &ciphertext, &[&index])
+            .unwrap_err(),
+        Error::InvalidBinding
+    );
+}
+
+/// Seals `email` the way the application wrote it before the migration.
+fn seal_field_only(email: &str) -> (Vec<u8>, Vec<u8>) {
+    let email = email.to_owned();
+    let prepared = Sealed::<FieldOnlyEmail>::prepare(&email, (), &field_only_keys())
+        .unwrap()
+        .with_index_with::<FieldOnlyEmailLookup>(&field_only_index_keys())
+        .unwrap();
+    let index = prepared
+        .index::<FieldOnlyEmailLookup>()
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+
+    (prepared.into_sealed().into_bytes(), index)
+}
+
+fn migrating_planner<'a>(
+    keys: &'a EncryptionKeyring,
+    old_keys: &'a EncryptionKeyring,
+    index_keys: &'a BlindIndexKeyring,
+) -> RowPlanner<'a, CustomerEmail, Columns> {
+    planner(keys, index_keys).legacy_binding::<FieldOnly>(old_keys)
+}
+
+#[test]
+fn planner_reseals_a_field_only_row_under_its_scope_and_record() {
+    let (keys, old_keys, index_keys) = (acme_keys(), field_only_keys(), acme_index_keys());
+    let row = row(b"acme", 7);
+    let (ciphertext, index) = seal_field_only("Ada@Example.com");
+    let planner = migrating_planner(&keys, &old_keys, &index_keys);
+
+    assert_eq!(
+        planner.classify_row(&row, &ciphertext, &[&index]).unwrap(),
+        RowState::LegacyBinding
+    );
+    let outcome = planner.plan_row(&row, &ciphertext, &[&index]).unwrap();
+    assert_eq!(outcome.state(), RowState::LegacyBinding);
+    let write = outcome.into_write().unwrap();
+
+    let sealed = Sealed::<CustomerEmail>::from_bytes(write.ciphertext()).unwrap();
+    assert_eq!(
+        sealed
+            .open((&tenant(b"acme"), RecordId::from(7_i64)), &keys)
+            .unwrap(),
+        "Ada@Example.com"
+    );
+    assert_eq!(
+        sealed
+            .open((&tenant(b"acme"), RecordId::from(8_i64)), &keys)
+            .unwrap_err(),
+        Error::AuthenticationFailed
+    );
+    // The index is derived again under the tenant's index binding.
+    assert_eq!(write.indexes(), [seal_current(&row, "ada@example.com").1]);
+    assert_eq!(
+        planner
+            .classify_row(&row, write.ciphertext(), &[&write.indexes()[0]])
+            .unwrap(),
+        RowState::Current
+    );
+}
+
+#[test]
+fn a_field_only_row_without_a_legacy_binding_window_is_a_binding_mismatch() {
+    let (keys, index_keys) = (acme_keys(), acme_index_keys());
+    let row = row(b"acme", 7);
+    let (ciphertext, index) = seal_field_only("ada@example.com");
+    let planner = planner(&keys, &index_keys);
+
+    assert_eq!(
+        planner
+            .classify_row(&row, &ciphertext, &[&index])
+            .unwrap_err(),
+        Error::BindingMismatch
+    );
+    assert_eq!(
+        planner.plan_row(&row, &ciphertext, &[&index]).unwrap_err(),
+        Error::BindingMismatch
+    );
+}
+
+/// The same field when it was bound to its tenant but not yet to its record.
+struct TenantEmail;
+
+impl Field for TenantEmail {
+    const ID: cryptbox::FieldId = CustomerEmail::ID;
+    const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
+    type Value = String;
+    type Codec = Utf8;
+    type Binding = Tenant;
+    type Indexes = ();
+}
+
+#[test]
+fn a_legacy_binding_takes_its_parts_from_the_rows_binding() {
+    let (keys, index_keys) = (acme_keys(), acme_index_keys());
+    let row = row(b"acme", 7);
+    let ciphertext =
+        Sealed::<TenantEmail>::seal(&"ada@example.com".into(), &tenant(b"acme"), &keys)
+            .unwrap()
+            .into_bytes();
+    // Adding a record leaves the index binding, and so the index, unchanged.
+    let index = seal_current(&row, "ada@example.com").1;
+    let planner = planner(&keys, &index_keys).legacy_binding::<Tenant>(&keys);
+
+    let write = planner
+        .plan_row(&row, &ciphertext, &[&index])
+        .unwrap()
+        .into_write()
+        .unwrap();
+
+    assert_eq!(
+        Sealed::<CustomerEmail>::from_bytes(write.ciphertext())
+            .unwrap()
+            .open((&tenant(b"acme"), RecordId::from(7_i64)), &keys)
+            .unwrap(),
+        "ada@example.com"
+    );
+    assert_eq!(write.indexes(), [index]);
+}
+
+/// A binding whose one part the current binding does not have.
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct Region;
+
+impl cryptbox::Binding for Region {
+    const PARTS: &'static [cryptbox::PartSpec] = &[cryptbox::PartSpec::keys(
+        cryptbox::part_id!("8c000000-0000-4000-8000-00000000000c"),
+        cryptbox::PartKind::Bytes,
+    )];
+    type IndexArgs = ();
+
+    fn values(&self) -> cryptbox::PartValues<'_> {
+        cryptbox::PartValues::from([cryptbox::PartValue::Bytes(b"eu")])
+    }
+
+    fn index_values((): &()) -> cryptbox::PartValues<'_> {
+        cryptbox::PartValues::from([cryptbox::PartValue::Bytes(b"eu")])
+    }
+}
+
+#[test]
+fn a_legacy_binding_with_a_part_the_current_binding_lacks_is_invalid() {
+    let (keys, index_keys) = (acme_keys(), acme_index_keys());
+    let row = row(b"acme", 7);
+    let ciphertext = Sealed::<RegionEmail>::seal(&"ada@example.com".into(), &Region, &keys)
+        .unwrap()
+        .into_bytes();
+    let planner = planner(&keys, &index_keys).legacy_binding::<Region>(&keys);
+
+    assert_eq!(
+        planner.classify_row(&row, &ciphertext, &[b""]).unwrap(),
+        RowState::LegacyBinding
+    );
+    assert_eq!(
+        planner.plan_row(&row, &ciphertext, &[b""]).unwrap_err(),
+        Error::InvalidBinding
+    );
+}
+
+struct RegionEmail;
+
+impl Field for RegionEmail {
+    const ID: cryptbox::FieldId = CustomerEmail::ID;
+    const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = false;
+    type Value = String;
+    type Codec = Utf8;
+    type Binding = Region;
+    type Indexes = ();
+}
+
+/// An in-memory [`SweepStore`] over one partition's rows, with their columns.
+struct MemoryStore {
+    rows: Vec<StoredRow>,
+    checkpoint: Option<i64>,
+}
+
+#[derive(Clone)]
+struct StoredRow {
+    columns: Columns,
+    ciphertext: Vec<u8>,
+    indexes: Vec<Vec<u8>>,
+}
+
+impl SweepStore for MemoryStore {
+    type Cursor = i64;
+    type Columns = Columns;
+    type Error = Infallible;
+
+    fn load_checkpoint(&mut self) -> impl Future<Output = Result<Option<i64>, Infallible>> + Send {
+        ready(Ok(self.checkpoint))
+    }
+
+    fn save_checkpoint(
+        &mut self,
+        cursor: &i64,
+    ) -> impl Future<Output = Result<(), Infallible>> + Send {
+        self.checkpoint = Some(*cursor);
+        ready(Ok(()))
+    }
+
+    fn load_batch(
+        &mut self,
+        after: Option<&i64>,
+        limit: usize,
+    ) -> impl Future<Output = Result<Vec<SweepRow<i64, Columns>>, Infallible>> + Send {
+        let after = after.copied().unwrap_or(i64::MIN);
+        ready(Ok(self
+            .rows
+            .iter()
+            .filter(|row| row.columns.id > after)
+            .take(limit)
+            .map(|row| SweepRow {
+                cursor: row.columns.id,
+                columns: row.columns.clone(),
+                ciphertext: row.ciphertext.clone(),
+                indexes: row.indexes.clone(),
+            })
+            .collect()))
+    }
+
+    fn update(
+        &mut self,
+        row: &SweepRow<i64, Columns>,
+        replacement: &RowWrite,
+    ) -> impl Future<Output = Result<bool, Infallible>> + Send {
+        let stored = self
+            .rows
+            .iter_mut()
+            .find(|stored| stored.columns.id == row.cursor)
+            .unwrap();
+        if stored.ciphertext != row.ciphertext || stored.indexes != row.indexes {
+            return ready(Ok(false));
+        }
+
+        stored.ciphertext = replacement.ciphertext().to_vec();
+        stored.indexes = replacement.indexes().to_vec();
+        ready(Ok(true))
+    }
+}
+
+const EMAILS: [&str; 4] = [
+    "ada@example.com",
+    "grace@example.com",
+    "alan@example.com",
+    "edsger@example.com",
+];
+
+/// Three rows written before the migration and one written after it.
+fn half_written_store() -> MemoryStore {
+    let rows = EMAILS
+        .iter()
+        .zip(1..)
+        .map(|(email, id)| {
+            let columns = row(b"acme", id);
+            let (ciphertext, index) = if id == 4 {
+                seal_current(&columns, email)
+            } else {
+                seal_field_only(email)
+            };
+            StoredRow {
+                columns,
+                ciphertext,
+                indexes: vec![index],
+            }
+        })
+        .collect();
+
+    MemoryStore {
+        rows,
+        checkpoint: None,
+    }
+}
+
+#[test]
+fn a_sweep_migrates_a_field_only_field_to_its_scope_and_record() {
+    let (keys, old_keys, index_keys) = (acme_keys(), field_only_keys(), acme_index_keys());
+    let sweep = Sweep::new(migrating_planner(&keys, &old_keys, &index_keys)).with_batch_size(2);
+    let mut store = half_written_store();
+
+    let before = block_on(sweep.verify(&mut store)).unwrap();
+    assert_eq!((before.legacy_binding, before.current), (3, 1));
+    assert!(!before.is_terminal());
+
+    let report = block_on(sweep.run(&mut store)).unwrap();
+    assert_eq!((report.legacy_binding, report.current), (3, 1));
+
+    let after = block_on(sweep.verify(&mut store)).unwrap();
+    assert_eq!((after.legacy_binding, after.current), (0, 4));
+    assert!(after.is_terminal());
+    for (row, email) in store.rows.iter().zip(EMAILS) {
+        let args = (&tenant(b"acme"), RecordId::from(row.columns.id));
+        let sealed = Sealed::<CustomerEmail>::from_bytes(row.ciphertext.clone()).unwrap();
+        assert_eq!(sealed.open(args, &keys).unwrap(), email);
+        assert_eq!(row.indexes, [seal_current(&row.columns, email).1]);
+    }
+}
+
+#[test]
+fn a_sweep_reports_a_row_of_another_scope_as_an_anomaly() {
+    let (keys, old_keys, index_keys) = (acme_keys(), field_only_keys(), acme_index_keys());
+    let sweep = Sweep::new(migrating_planner(&keys, &old_keys, &index_keys));
+    let mut store = half_written_store();
+    store.rows[1].columns.tenant = b"globex".to_vec();
+    let foreign = store.rows[1].clone();
+
+    let report = block_on(sweep.run(&mut store)).unwrap();
+    assert_eq!(
+        (report.out_of_scope, report.legacy_binding, report.current),
+        (1, 2, 1)
+    );
+    assert_eq!(store.rows[1].ciphertext, foreign.ciphertext);
+    assert_eq!(store.rows[1].indexes, foreign.indexes);
+
+    let verified = block_on(sweep.verify(&mut store)).unwrap();
+    assert_eq!((verified.out_of_scope, verified.malformed), (1, 0));
+    assert!(!verified.is_terminal());
+}
+
+/// Looks `email` up the way the application does during the window: probes
+/// over both index shapes, then opening each candidate under either shape.
+fn look_up(store: &MemoryStore, email: &str) -> Vec<(i64, String)> {
+    let acme = tenant(b"acme");
+    let probes = probes_across::<FieldOnly, EmailLookup>(
+        email,
+        &acme,
+        &acme_index_keys(),
+        &field_only_index_keys(),
+    )
+    .unwrap();
+
+    store
+        .rows
+        .iter()
+        .filter(|row| {
+            probes
+                .iter()
+                .any(|probe| probe.as_bytes() == row.indexes[0])
+        })
+        .map(|row| {
+            let sealed = Sealed::<CustomerEmail>::from_bytes(row.ciphertext.clone()).unwrap();
+            let args = (&acme, RecordId::from(row.columns.id));
+            let value =
+                open_across::<FieldOnly, _>(&sealed, args, &acme_keys(), &field_only_keys())
+                    .unwrap();
+            assert!(EmailLookup::verify_candidate(email, &value).unwrap());
+            (row.columns.id, value)
+        })
+        .collect()
+}
+
+fn assert_every_email_is_found(store: &MemoryStore) {
+    for (email, id) in EMAILS.iter().zip(1..) {
+        assert_eq!(
+            look_up(store, email),
+            [(id, (*email).to_owned())],
+            "{email}"
+        );
+    }
+}
+
+#[test]
+fn lookups_keep_working_throughout_the_window() {
+    let (keys, old_keys, index_keys) = (acme_keys(), field_only_keys(), acme_index_keys());
+    let sweep = Sweep::new(migrating_planner(&keys, &old_keys, &index_keys)).with_batch_size(2);
+    let mut store = half_written_store();
+    assert_every_email_is_found(&store);
+
+    let first = block_on(sweep.run_batch(&mut store)).unwrap();
+    assert_eq!(first.report.legacy_binding, 2);
+    assert_every_email_is_found(&store);
+
+    block_on(sweep.run(&mut store)).unwrap();
+    assert!(block_on(sweep.verify(&mut store)).unwrap().is_terminal());
+    assert_every_email_is_found(&store);
+}
+
+#[test]
+fn probes_across_cover_the_old_and_the_new_index_shapes() {
+    let acme = tenant(b"acme");
+    let probes = probes_across::<FieldOnly, EmailLookup>(
+        "ada@example.com",
+        &acme,
+        &acme_index_keys(),
+        &field_only_index_keys(),
+    )
+    .unwrap();
+    let new = EmailLookup::probes_with("ada@example.com", &acme, &acme_index_keys()).unwrap();
+    let old = FieldOnlyEmailLookup::probes_with("ada@example.com", &(), &field_only_index_keys())
+        .unwrap();
+
+    let probes: Vec<_> = probes
+        .iter()
+        .map(|probe| probe.as_bytes().to_vec())
+        .collect();
+    let expected: Vec<_> = new
+        .iter()
+        .map(|probe| probe.as_bytes().to_vec())
+        .chain(old.iter().map(|probe| probe.as_bytes().to_vec()))
+        .collect();
+    assert_eq!(probes, expected);
+}
+
+#[test]
+fn a_probe_both_index_shapes_share_is_returned_once() {
+    // Adding a record leaves the index binding unchanged.
+    let acme = tenant(b"acme");
+    let probes = probes_across::<Tenant, EmailLookup>(
+        "ada@example.com",
+        &acme,
+        &acme_index_keys(),
+        &acme_index_keys(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        probes,
+        EmailLookup::probes_with("ada@example.com", &acme, &acme_index_keys()).unwrap()
+    );
+}
+
+#[test]
+fn open_across_reports_a_value_of_neither_shape_as_a_binding_mismatch() {
+    let keys = acme_keys();
+    let sealed =
+        Sealed::<TenantEmail>::seal(&"ada@example.com".into(), &tenant(b"acme"), &keys).unwrap();
+    let sealed = Sealed::<CustomerEmail>::from_bytes(sealed.into_bytes()).unwrap();
+
+    assert_eq!(
+        open_across::<FieldOnly, _>(
+            &sealed,
+            (&tenant(b"acme"), RecordId::from(7_i64)),
+            &keys,
+            &field_only_keys(),
+        )
+        .unwrap_err(),
+        Error::BindingMismatch
+    );
+}
+
+/// A tenant plus a bound-only workspace: [`Tenant`]'s part, and one more.
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct TenantWorkspace {
+    tenant: Vec<u8>,
+    workspace: i64,
+}
+
+impl cryptbox::Binding for TenantWorkspace {
+    const PARTS: &'static [cryptbox::PartSpec] = &[
+        // The part ID of `Tenant`.
+        cryptbox::PartSpec::keys(
+            cryptbox::part_id!("1e8306bf-3135-4570-831c-6732f92550e9"),
+            cryptbox::PartKind::Bytes,
+        ),
+        cryptbox::PartSpec::bound(
+            cryptbox::part_id!("8d000000-0000-4000-8000-00000000000d"),
+            cryptbox::PartKind::I64,
+        ),
+    ];
+    type IndexArgs = Tenant;
+
+    fn values(&self) -> cryptbox::PartValues<'_> {
+        cryptbox::PartValues::from([
+            cryptbox::PartValue::Bytes(&self.tenant),
+            cryptbox::PartValue::I64(self.workspace),
+        ])
+    }
+
+    fn index_values(args: &Tenant) -> cryptbox::PartValues<'_> {
+        cryptbox::PartValues::from([cryptbox::PartValue::Bytes(args.0.as_bytes())])
+    }
+}
+
+/// The field after a workspace part is added to a binding that already binds a record.
+struct WorkspaceEmail;
+
+impl Field for WorkspaceEmail {
+    const ID: cryptbox::FieldId = CustomerEmail::ID;
+    const PADDING: Padding = Padding::NONE;
+    const RECORD: bool = true;
+    type Value = String;
+    type Codec = Utf8;
+    type Binding = TenantWorkspace;
+    type Indexes = ();
+}
+
+#[test]
+fn a_legacy_binding_keeps_the_record_its_rows_were_sealed_with() {
+    let keys = acme_keys();
+    let row = row(b"acme", 7);
+    let (ciphertext, _) = seal_current(&row, "ada@example.com");
+    let planner =
+        RowPlanner::<WorkspaceEmail, Columns>::for_key_scope(acme_scope(), &keys, |row| {
+            let binding = TenantWorkspace {
+                tenant: row.tenant.clone(),
+                workspace: 3,
+            };
+            Ok(RowArgs::new(binding).with_record(RecordId::from(row.id)))
+        })
+        .legacy_binding::<Tenant>(&keys);
+
+    assert_eq!(
+        planner.classify_row(&row, &ciphertext, &[]).unwrap(),
+        RowState::LegacyBinding
+    );
+    let write = planner
+        .plan_row(&row, &ciphertext, &[])
+        .unwrap()
+        .into_write()
+        .unwrap();
+    let binding = TenantWorkspace {
+        tenant: b"acme".to_vec(),
+        workspace: 3,
+    };
+    let sealed = Sealed::<WorkspaceEmail>::from_bytes(write.ciphertext()).unwrap();
+    assert_eq!(
+        sealed
+            .open((&binding, RecordId::from(7_i64)), &keys)
+            .unwrap(),
+        "ada@example.com"
+    );
+
+    let old = Sealed::<WorkspaceEmail>::from_bytes(ciphertext).unwrap();
+    assert_eq!(
+        open_across::<Tenant, _>(&old, (&binding, RecordId::from(7_i64)), &keys, &keys).unwrap(),
+        "ada@example.com"
+    );
+    assert_eq!(
+        open_across::<Tenant, _>(&old, (&binding, RecordId::from(8_i64)), &keys, &keys)
+            .unwrap_err(),
+        Error::AuthenticationFailed
+    );
+}

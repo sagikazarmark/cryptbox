@@ -44,6 +44,7 @@ impl<'a> PostgresSweepStore<'a> {
 
 impl SweepStore for PostgresSweepStore<'_> {
     type Cursor = i64;
+    type Columns = ();
     type Error = sqlx::Error;
 
     async fn load_checkpoint(&mut self) -> Result<Option<i64>, sqlx::Error> {
@@ -86,6 +87,7 @@ impl SweepStore for PostgresSweepStore<'_> {
 
             batch.push(SweepRow {
                 cursor,
+                columns: (),
                 ciphertext,
                 indexes,
             });

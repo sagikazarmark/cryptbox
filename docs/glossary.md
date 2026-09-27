@@ -104,6 +104,14 @@ stored data still needs (`EncryptionKeyring`, `BlindIndexKeyring`); `Keys`
 pairs the two roles. Key IDs are generated UUIDs, unique within a keyring and
 never shared across keyrings, so opening with the wrong keyring fails loudly.
 
+**Legacy-binding window**:
+The bounded period in which a field's values may still be sealed with the
+binding shape it had before a shape change. Readers open both shapes and probe
+both index bindings, and a sweep reseals the old shape, recognized by the shape
+fingerprint in each header. The window closes once a complete verification pass
+counts no such rows.
+<!-- Agent guidance: distinct from legacy data, which is not a CryptBox envelope at all (`RowState::Legacy`); a legacy-binding row is a valid envelope of an older shape (`RowState::LegacyBinding`). -->
+
 **Migration-state verification**:
 Inspection of stored structure and generation convergence. It is distinct from
 authenticated readability and from stored-index consistency.

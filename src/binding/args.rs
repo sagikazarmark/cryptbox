@@ -249,6 +249,20 @@ pub(crate) fn domain<F: Field, A: Args<F>>(args: A) -> Result<BindingDomain, Err
     args.with_parts(|binding, record| BindingDomain::of(F::ID, binding, record))
 }
 
+/// Encodes the binding of field `F` under `args`, as [`domain`] does, and
+/// passes it to `f` with the binding and record it was encoded from.
+#[cfg(feature = "migrate")]
+pub(crate) fn with_domain<F: Field, A: Args<F>, T>(
+    args: A,
+    f: impl FnOnce(BindingDomain, &F::Binding, Option<RecordId<'_>>) -> Result<T, Error>,
+) -> Result<T, Error> {
+    const { check_record(F::RECORD, <A as sealed::Sealed<F>>::RECORD) };
+
+    args.with_parts(|binding, record| {
+        f(BindingDomain::of(F::ID, binding, record)?, binding, record)
+    })
+}
+
 /// Encodes the binding of field `F` under `args`, as [`domain`] does, together
 /// with the blind-index domain of its `keys` and `index` parts.
 pub(crate) fn domains<F: Field, A: Args<F>>(

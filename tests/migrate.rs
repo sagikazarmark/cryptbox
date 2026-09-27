@@ -349,10 +349,10 @@ fn planner_skips_current_rows_without_writes() {
     let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
 
     assert_eq!(
-        planner.classify_row(&ciphertext, &[&index]).unwrap(),
+        planner.classify_row(&(), &ciphertext, &[&index]).unwrap(),
         RowState::Current
     );
-    let outcome = planner.plan_row(&ciphertext, &[&index]).unwrap();
+    let outcome = planner.plan_row(&(), &ciphertext, &[&index]).unwrap();
     assert_eq!(outcome.state(), RowState::Current);
     assert!(outcome.into_write().is_none());
 }
@@ -366,10 +366,10 @@ fn planner_reencrypts_stale_envelopes_and_keeps_current_index_bytes() {
     let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
 
     assert_eq!(
-        planner.classify_row(&ciphertext, &[&index]).unwrap(),
+        planner.classify_row(&(), &ciphertext, &[&index]).unwrap(),
         RowState::Stale
     );
-    let outcome = planner.plan_row(&ciphertext, &[&index]).unwrap();
+    let outcome = planner.plan_row(&(), &ciphertext, &[&index]).unwrap();
     assert_eq!(outcome.state(), RowState::Stale);
     let write = outcome.into_write().unwrap();
     assert_eq!(
@@ -394,7 +394,7 @@ fn planner_rederives_stale_indexes_from_the_authoritative_ciphertext() {
     let index = derive_email_index("mark@example.com", &old_index_keys());
     let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
 
-    let outcome = planner.plan_row(&ciphertext, &[&index]).unwrap();
+    let outcome = planner.plan_row(&(), &ciphertext, &[&index]).unwrap();
     assert_eq!(outcome.state(), RowState::Stale);
     let write = outcome.into_write().unwrap();
     // A current envelope is kept byte-identical: no fresh nonce is consumed.
@@ -419,7 +419,7 @@ fn planner_encrypts_legacy_plaintext_and_derives_every_index() {
 
     let placeholder: &[u8] = &[];
     let outcome = planner
-        .plan_row(b"mark@example.com", &[placeholder])
+        .plan_row(&(), b"mark@example.com", &[placeholder])
         .unwrap();
     assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
@@ -441,7 +441,7 @@ fn planner_encrypts_legacy_plaintext_with_the_field_padding_policy() {
     let keys = rotated_keys();
     let planner = RowPlanner::<PaddedUserEmail>::new(&keys);
 
-    let outcome = planner.plan_row(b"mark@example.com", &[]).unwrap();
+    let outcome = planner.plan_row(&(), b"mark@example.com", &[]).unwrap();
     assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
     assert_eq!(write.ciphertext().len(), 63 + 32);
@@ -461,11 +461,11 @@ fn planner_rewrites_current_key_envelopes_when_the_padding_policy_changes() {
     let planner = RowPlanner::<PaddedUserEmail>::new(&keys);
 
     assert_eq!(
-        planner.classify_row(&unpadded, &[]).unwrap(),
+        planner.classify_row(&(), &unpadded, &[]).unwrap(),
         RowState::Stale
     );
     let write = planner
-        .plan_row(&unpadded, &[])
+        .plan_row(&(), &unpadded, &[])
         .unwrap()
         .into_write()
         .unwrap();
@@ -474,7 +474,7 @@ fn planner_rewrites_current_key_envelopes_when_the_padding_policy_changes() {
         Some(true)
     );
     assert_eq!(
-        planner.classify_row(write.ciphertext(), &[]).unwrap(),
+        planner.classify_row(&(), write.ciphertext(), &[]).unwrap(),
         RowState::Current
     );
 }
@@ -489,7 +489,7 @@ fn planner_recovers_foreign_ciphertext_and_derives_indexes() {
         .with_index_with::<EmailDomain>(&index_keys);
 
     let outcome = planner
-        .plan_row(b"legacy:mark@example.com", &[&[], &[]])
+        .plan_row(&(), b"legacy:mark@example.com", &[&[], &[]])
         .unwrap();
     assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
@@ -515,7 +515,7 @@ fn planner_propagates_legacy_recovery_failure() {
     let planner = RowPlanner::<UserEmail>::new(&keys).with_legacy(&FailingLegacy);
 
     assert_eq!(
-        planner.plan_row(b"legacy:broken", &[]).unwrap_err(),
+        planner.plan_row(&(), b"legacy:broken", &[]).unwrap_err(),
         Error::LegacyRecoveryFailed(LegacyError::new(LegacyErrorKind::AuthenticationFailed))
     );
 }
@@ -527,11 +527,11 @@ fn planner_ignores_the_handler_for_envelope_rows() {
     let planner = RowPlanner::<UserEmail>::new(&keys).with_legacy(&PanickingLegacy);
 
     assert_eq!(
-        planner.classify_row(&ciphertext, &[]).unwrap(),
+        planner.classify_row(&(), &ciphertext, &[]).unwrap(),
         RowState::Current
     );
     assert_eq!(
-        planner.plan_row(&ciphertext, &[]).unwrap().state(),
+        planner.plan_row(&(), &ciphertext, &[]).unwrap().state(),
         RowState::Current
     );
 }
@@ -545,11 +545,15 @@ fn planner_propagates_malformed_index_bytes() {
 
     let malformed: &[u8] = b"not an index";
     assert_eq!(
-        planner.classify_row(&ciphertext, &[malformed]).unwrap_err(),
+        planner
+            .classify_row(&(), &ciphertext, &[malformed])
+            .unwrap_err(),
         Error::InvalidBlindIndex
     );
     assert_eq!(
-        planner.plan_row(&ciphertext, &[malformed]).unwrap_err(),
+        planner
+            .plan_row(&(), &ciphertext, &[malformed])
+            .unwrap_err(),
         Error::InvalidBlindIndex
     );
 }
@@ -562,7 +566,7 @@ fn planner_rejects_index_column_arity_mismatch() {
     let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
 
     assert_eq!(
-        planner.classify_row(&ciphertext, &[]).unwrap_err(),
+        planner.classify_row(&(), &ciphertext, &[]).unwrap_err(),
         Error::IndexColumnMismatch {
             expected: 1,
             actual: 0
@@ -596,6 +600,7 @@ impl MemoryStore {
 
 impl SweepStore for MemoryStore {
     type Cursor = i64;
+    type Columns = ();
     type Error = Infallible;
 
     fn load_checkpoint(&mut self) -> impl Future<Output = Result<Option<i64>, Infallible>> + Send {
@@ -624,6 +629,7 @@ impl SweepStore for MemoryStore {
             .take(limit)
             .map(|(cursor, ciphertext, indexes)| SweepRow {
                 cursor: *cursor,
+                columns: (),
                 ciphertext: ciphertext.clone(),
                 indexes: indexes.clone(),
             })
@@ -717,7 +723,7 @@ fn terminal_verification_does_not_establish_authenticated_readability() {
 
     let planner = RowPlanner::<UserEmail>::new(&keys);
     assert_eq!(
-        planner.classify_row(&bytes, &[]).unwrap(),
+        planner.classify_row(&(), &bytes, &[]).unwrap(),
         RowState::Current
     );
     let sweep = Sweep::new(planner);

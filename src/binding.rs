@@ -9,6 +9,8 @@ mod part;
 mod presets;
 mod scope;
 
+#[cfg(feature = "migrate")]
+pub(crate) use args::with_domain;
 pub use args::{Args, InRecord};
 pub(crate) use args::{domain, domains};
 pub use part::PartType;
@@ -217,6 +219,32 @@ fn check_values<'s>(
         Some(_) => Err(Error::InvalidBinding),
         None => Ok(()),
     }
+}
+
+/// Takes the value of each of `specs` from `parts` by part ID; a missing part or
+/// another kind is [`Error::InvalidBinding`].
+#[cfg(feature = "migrate")]
+fn project<'v>(
+    specs: &[PartSpec],
+    parts: &(impl Iterator<Item = (&'v PartSpec, &'v PartValue<'v>)> + Clone),
+) -> Result<Vec<PartValue<'v>>, Error> {
+    specs
+        .iter()
+        .map(|spec| {
+            parts
+                .clone()
+                .find(|(part, _)| part.id == spec.id && part.kind == spec.kind)
+                .map(|(_, value)| *value)
+                .ok_or(Error::InvalidBinding)
+        })
+        .collect()
+}
+
+/// The shape fingerprint of binding `B`, with or without a record, as a scoped
+/// header carries it; `None` for a field-only binding.
+#[cfg(feature = "migrate")]
+pub(crate) fn shape_fingerprint<B: Binding>(record: bool) -> Option<ShapeFingerprint> {
+    (record || !B::PARTS.is_empty()).then(|| BindingShape::new(B::PARTS, record).fingerprint())
 }
 
 /// The canonical kind of a part or record value.
@@ -685,6 +713,61 @@ impl BindingDomain {
         Self::index_parts(id, &specs, &values)
     }
 
+    /// Encodes the binding of field `id` under the older shape `Old`, taking each
+    /// of `Old`'s parts from `binding` by part ID, and binding `record` if any.
+    ///
+    /// A part of `Old` that `binding` lacks, or holds with another kind, is
+    /// [`Error::InvalidBinding`].
+    #[cfg(feature = "migrate")]
+    pub(crate) fn projected<Old: Binding, B: Binding>(
+        id: FieldId,
+        binding: &B,
+        record: Option<RecordId<'_>>,
+    ) -> Result<Self, Error> {
+        const { check_parts(Old::PARTS) };
+        const { check_parts(B::PARTS) };
+
+        let values = binding.values();
+        check_values(B::PARTS, &values.0)?;
+        let values = project(Old::PARTS, &B::PARTS.iter().zip(&values.0))?;
+
+        match record {
+            Some(record) => Self::scoped(
+                id,
+                BindingShape::new(Old::PARTS, true),
+                &values,
+                Some(record.part_value()),
+            ),
+            None => Self::index_parts(id, Old::PARTS, &values),
+        }
+    }
+
+    /// Encodes the blind-index domain of field `id` under the older shape
+    /// `Old`, taking each of its `keys` and `index` parts from a query's
+    /// arguments for binding `B`, by part ID.
+    #[cfg(feature = "migrate")]
+    pub(crate) fn index_projected<Old: Binding, B: Binding>(
+        id: FieldId,
+        args: &B::IndexArgs,
+    ) -> Result<Self, Error> {
+        const { check_parts(Old::PARTS) };
+        const { check_parts(B::PARTS) };
+
+        let values = B::index_values(args);
+        let specs = B::PARTS.iter().filter(|spec| spec.role.scopes_index());
+        check_values(specs.clone(), &values.0)?;
+        let old: Vec<_> = Old::PARTS
+            .iter()
+            .copied()
+            .filter(|spec| spec.role.scopes_index())
+            .collect();
+        let values = project(&old, &specs.zip(&values.0))?;
+
+        Self::index_parts(id, &old, &values)
+    }
+
+    // Encodes `specs` with `values`: field-only without parts, scoped without a
+    // record otherwise.
     fn index_parts(
         id: FieldId,
         specs: &[PartSpec],

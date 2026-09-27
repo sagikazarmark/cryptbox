@@ -2,18 +2,21 @@ use std::{fmt, future::Future};
 
 use zeroize::Zeroize;
 
-use crate::{Error, Field, FieldOnly};
+use crate::{Error, Field};
 
-use super::{RowPlanner, RowState, RowWrite, SweepReport};
+use super::{RowPlanner, RowWrite, SweepReport};
 
 /// One loaded row: its cursor plus the exact bytes read from every migrated
 /// column.
 ///
 /// The stored bytes may be legacy data, including plaintext, so the buffers are
 /// zeroized on drop and `Debug` prints lengths only.
-pub struct SweepRow<C> {
+pub struct SweepRow<C, R = ()> {
     /// The row's unique, immutable cursor value.
     pub cursor: C,
+    /// The columns the planner builds the row's binding arguments from; see
+    /// [`RowPlanner::for_key_scope`].
+    pub columns: R,
     /// The encrypted column's bytes exactly as read.
     pub ciphertext: Vec<u8>,
     /// Each blind-index column's bytes exactly as read, in the order the
@@ -21,7 +24,7 @@ pub struct SweepRow<C> {
     pub indexes: Vec<Vec<u8>>,
 }
 
-impl<C> Drop for SweepRow<C> {
+impl<C, R> Drop for SweepRow<C, R> {
     fn drop(&mut self) {
         self.ciphertext.zeroize();
         for bytes in &mut self.indexes {
@@ -30,14 +33,14 @@ impl<C> Drop for SweepRow<C> {
     }
 }
 
-impl<C: fmt::Debug> fmt::Debug for SweepRow<C> {
+impl<C: fmt::Debug, R> fmt::Debug for SweepRow<C, R> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("SweepRow")
             .field("cursor", &self.cursor)
             .field("ciphertext_len", &self.ciphertext.len())
             .field("indexes", &self.indexes.len())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -57,6 +60,10 @@ impl<C: fmt::Debug> fmt::Debug for SweepRow<C> {
 pub trait SweepStore {
     /// The unique, immutable, indexed cursor rows are totally ordered by.
     type Cursor: Clone + Send + Sync;
+    /// The columns each row carries for its binding arguments, such as its
+    /// scope and record ID; `()` for a [`FieldOnly`](crate::FieldOnly) field
+    /// without a record.
+    type Columns: Send + Sync;
     /// The storage backend's error type.
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -72,11 +79,15 @@ pub trait SweepStore {
     ) -> impl Future<Output = Result<(), Self::Error>> + Send;
 
     /// Loads up to `limit` rows strictly after `after` in cursor order.
+    #[expect(
+        clippy::type_complexity,
+        reason = "a batch is a plain list of rows of this store"
+    )]
     fn load_batch(
         &mut self,
         after: Option<&Self::Cursor>,
         limit: usize,
-    ) -> impl Future<Output = Result<Vec<SweepRow<Self::Cursor>>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Vec<SweepRow<Self::Cursor, Self::Columns>>, Self::Error>> + Send;
 
     /// Applies one replacement with a compare-and-swap on every read byte.
     ///
@@ -84,7 +95,7 @@ pub trait SweepStore {
     /// changed the row first.
     fn update(
         &mut self,
-        row: &SweepRow<Self::Cursor>,
+        row: &SweepRow<Self::Cursor, Self::Columns>,
         replacement: &RowWrite,
     ) -> impl Future<Output = Result<bool, Self::Error>> + Send;
 }
@@ -128,21 +139,21 @@ where
 /// surface as conflicts, which makes summed per-batch reports advisory;
 /// [`Self::verify`] remains the authoritative terminal-state check.
 #[derive(Debug)]
-pub struct Sweep<'a, F>
+pub struct Sweep<'a, F, R = ()>
 where
     F: Field,
 {
-    planner: RowPlanner<'a, F>,
+    planner: RowPlanner<'a, F, R>,
     batch_size: usize,
 }
 
-impl<'a, F> Sweep<'a, F>
+impl<'a, F, R> Sweep<'a, F, R>
 where
-    F: Field<Binding = FieldOnly>,
+    F: Field,
 {
     /// Creates a driver over a configured row planner.
     #[must_use]
-    pub const fn new(planner: RowPlanner<'a, F>) -> Self {
+    pub const fn new(planner: RowPlanner<'a, F, R>) -> Self {
         Self {
             planner,
             batch_size: 100,
@@ -173,7 +184,7 @@ where
     /// Returns a storage error, or stops at the first row that cannot be
     /// classified or rewritten so the operator can investigate; the batch is
     /// then not checkpointed, so the row lies within one batch after `after`.
-    pub async fn process_batch<S: SweepStore>(
+    pub async fn process_batch<S: SweepStore<Columns = R>>(
         &self,
         store: &mut S,
         after: Option<&S::Cursor>,
@@ -195,11 +206,11 @@ where
             let indexes: Vec<&[u8]> = row.indexes.iter().map(Vec::as_slice).collect();
             let outcome = self
                 .planner
-                .plan_row(&row.ciphertext, &indexes)
+                .plan_row(&row.columns, &row.ciphertext, &indexes)
                 .map_err(SweepError::Row)?;
 
             match outcome.write() {
-                None => report.record(RowState::Current),
+                None => report.record(outcome.state()),
                 Some(replacement) => {
                     if store
                         .update(row, replacement)
@@ -232,7 +243,7 @@ where
     ///
     /// Fails under the same conditions as [`Self::process_batch`], plus
     /// checkpoint load and save failures.
-    pub async fn run_batch<S: SweepStore>(
+    pub async fn run_batch<S: SweepStore<Columns = R>>(
         &self,
         store: &mut S,
     ) -> Result<BatchOutcome<S::Cursor>, SweepError<S::Error>> {
@@ -259,7 +270,7 @@ where
     /// Returns a storage error, or stops at the first row that cannot be
     /// classified or rewritten so the operator can investigate; the durable
     /// checkpoint still names the last fully processed batch.
-    pub async fn run<S: SweepStore>(
+    pub async fn run<S: SweepStore<Columns = R>>(
         &self,
         store: &mut S,
     ) -> Result<SweepReport, SweepError<S::Error>> {
@@ -295,7 +306,7 @@ where
     /// Returns a storage error or a configuration or environment failure, such
     /// as an index column arity mismatch or unavailable keys. Malformed rows are
     /// counted, not errors.
-    pub async fn verify_batch<S: SweepStore>(
+    pub async fn verify_batch<S: SweepStore<Columns = R>>(
         &self,
         store: &mut S,
         after: Option<&S::Cursor>,
@@ -315,7 +326,10 @@ where
 
         for row in &rows {
             let indexes: Vec<&[u8]> = row.indexes.iter().map(Vec::as_slice).collect();
-            match self.planner.classify_row(&row.ciphertext, &indexes) {
+            match self
+                .planner
+                .classify_row(&row.columns, &row.ciphertext, &indexes)
+            {
                 Ok(state) => report.record(state),
                 Err(error) if is_row_data_failure(&error) => report.malformed += 1,
                 Err(error) => return Err(SweepError::Row(error)),
@@ -352,7 +366,7 @@ where
     /// # Errors
     ///
     /// Fails under the same conditions as [`Self::verify_batch`].
-    pub async fn verify<S: SweepStore>(
+    pub async fn verify<S: SweepStore<Columns = R>>(
         &self,
         store: &mut S,
     ) -> Result<SweepReport, SweepError<S::Error>> {

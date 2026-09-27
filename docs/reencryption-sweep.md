@@ -7,9 +7,10 @@ Rotation selects keys for future writes; a later sweep converges existing
 ciphertext and indexes. The same sweep rewrites ciphertext in an older format or
 whose padding flag disagrees with the field's current policy, so it also upgrades
 format 1 values and applies a padding change. The `migrate` feature supplies
-`RowPlanner`, `Sweep` and `SweepStore` for `FieldOnly` fields without a record;
-the [manual SQLite example](../examples/reencryption_sweep.rs) demonstrates the
-same concurrency rules without the driver.
+`RowPlanner`, `Sweep` and `SweepStore`, which also reseal values after a
+[binding-shape change](#binding-shape-changes); the
+[manual SQLite example](../examples/reencryption_sweep.rs) demonstrates the same
+concurrency rules without the driver.
 
 ## Preconditions
 
@@ -141,6 +142,43 @@ without recomputation even when another component changes. Re-encryption alone
 authenticates and checks padding but does not decode through the field codec.
 These behaviors make the following separate audit necessary.
 
+## Binding-shape changes
+
+A field's binding shape (its parts, their roles and whether it binds a record) is
+persistent schema, so changing it is a migration: an explicit legacy-binding
+window, a reseal sweep, and lookups over both index shapes until the window
+closes ([ADR-0005](adr/0005-runtime-binding-is-the-core.md)).
+
+A bound field's sweep is **partitioned by key scope**, because its keys are.
+Configure one planner per key scope with
+`RowPlanner::for_key_scope(key_scope, keys, row_args)`. The key scope comes from
+the job, never from the rows; `row_args` builds each row's `RowArgs` (its
+binding and record ID) from the columns the store loads into
+`SweepRow::columns`. The store selects only that key scope's rows. A row whose
+arguments name another key scope is left alone and counted as `out_of_scope`:
+an anomaly to investigate, not a row to rewrite. Packaged stores load no
+columns, so a bound field needs an application-owned `SweepStore`.
+
+Open the window with `RowPlanner::legacy_binding::<Old>(old_keys)`, where `Old`
+is the binding the field had before, such as `FieldOnly`. Its parts take their
+values from each row's current binding by part ID, and a row whose header
+names `Old` with a record keeps the row's record. The window covers adding parts
+or a record and changing a role, not removing a part or changing its kind. Rows
+are classified by the shape fingerprint in their header: a row of the old shape is
+opened under it with `old_keys`, resealed under the current binding, and every
+index derived again, since the index binding may have changed. Rows of any
+other shape still fail with `Error::BindingMismatch`.
+
+While the window is open, readers use `migrate::probes_across::<Old, S>` for
+probes over both [index bindings](wire-format.md#index-binding) and
+`migrate::open_across::<Old, _>` to open a candidate of either shape. Close the
+window, and drop the old keys from the readers,
+only after a complete verification pass counts zero `legacy_binding` rows.
+
+To move a value to other binding values or keys under the same shape, such as a
+record moving between workspaces or data changing residency, use
+`Sealed::reseal_across`.
+
 ## Verification and retirement
 
 This is the canonical whole-store audit procedure. The
@@ -155,10 +193,11 @@ from trusted application schema, not stored metadata.
    Library pagination observes loaded rows, not a shared snapshot. If writes
    continue, repeat complete passes until clean under your storage guarantees.
 2. **Verify migration state from the beginning.** `Sweep::verify` ignores rewrite
-   progress and performs a fresh read-only pass. Require zero legacy, stale and
-   malformed rows. For `verify_batch`, start with no cursor, merge every report
-   using `SweepReport::merge`, and follow checkpoints to `None` before evaluating
-   `is_terminal()`. That method checks counts, not completion: a clean partial,
+   progress and performs a fresh read-only pass. Require zero legacy,
+   legacy-binding, out-of-scope, stale and malformed rows. For `verify_batch`,
+   start with no cursor, merge every report using `SweepReport::merge`, and
+   follow checkpoints to `None` before evaluating `is_terminal()`. That method
+   checks counts, not completion: a clean partial,
    default or rewrite report is insufficient. Malformed rows are counted;
    storage/configuration failures abort the pass. Classification can stop at a
    stale component before inspecting later columns; repair and verify again.

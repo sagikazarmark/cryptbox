@@ -15,6 +15,13 @@
 //! authenticated readability, decoded-value validity, or index consistency.
 //! Obtain those assurances with separate decryption and index recomputation.
 //!
+//! The same sweep changes a field's binding shape. [`RowPlanner::for_key_scope`]
+//! builds each row's binding arguments from its columns for one key scope, and
+//! [`RowPlanner::legacy_binding`] opens a legacy-binding window in which rows
+//! sealed with the older shape are resealed. Until verification counts none of
+//! them, readers use [`probes_across`] and [`open_across`] to find and open
+//! values of either shape.
+//!
 //! Reads are permissive; writes never are. [`MaybeEncrypted`] implements no
 //! storage `Encode`, and its only forward path is the opened value, which
 //! must be sealed again with [`Sealed::seal`]. Once verification passes, remove
@@ -42,11 +49,12 @@ mod sqlx_sqlite;
 mod sweep;
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 mod table;
+mod window;
 
 pub use legacy::{LegacyError, LegacyErrorKind, LegacyFormat};
 pub use read::MaybeEncrypted;
 pub use report::SweepReport;
-pub use row::{RowOutcome, RowPlanner, RowState, RowWrite};
+pub use row::{RowArgs, RowOutcome, RowPlanner, RowState, RowWrite};
 #[cfg(feature = "sqlx-postgres")]
 pub use sqlx_postgres::PostgresSweepStore;
 #[cfg(feature = "sqlx-sqlite")]
@@ -54,3 +62,4 @@ pub use sqlx_sqlite::SqliteSweepStore;
 pub use sweep::{BatchOutcome, Sweep, SweepError, SweepRow, SweepStore};
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 pub use table::SweepTable;
+pub use window::{open_across, probes_across};

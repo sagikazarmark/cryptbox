@@ -10,6 +10,15 @@ status: accepted
 > of another, which no binding prevents, so a lookup by ID compares the opened ID
 > with the one it asked for. The binding itself still comes from an authorized
 > source, and a record whose fields bind no record gets no check of its ID.
+>
+> Amended for migration sweeps (#103). A sweep has no request to take a binding
+> from, so it builds each row's binding from the row's columns. The key scope
+> still comes from the job's configuration: a row whose `keys` columns name
+> another key scope is reported as out of scope and left alone. The other parts
+> and the record do come from the row. A row sealed under a shape that bound
+> those parts is checked when it opens, but resealing a value from a shape that
+> did not bind them (such as `FieldOnly`) trusts the row's columns once. Sweep
+> such a change only over columns the application already trusts.
 
 Every seal and open binds the ciphertext to a runtime **binding**: the field ID,
 a declared scope (for example tenant, or org plus workspace), and optionally a
