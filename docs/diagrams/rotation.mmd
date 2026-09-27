@@ -1,9 +1,9 @@
 sequenceDiagram
     actor O as Operator
     participant A as Instance A
-    participant PA as A provider snapshot
+    participant PA as A keyring snapshot
     participant B as Instance B
-    participant PB as B provider snapshot
+    participant PB as B keyring snapshot
     participant DB as Shared storage
     participant M as Later maintenance / recovery
     Note over O,PB: Repeat independently for encryption E and index I

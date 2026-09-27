@@ -1,14 +1,14 @@
 //! Public-boundary tests for field padding policies.
 
 use cryptbox::{
-    EncryptionKey, Error, Field, FieldId, FieldOnly, KeyId, LocalEncryptionKeyring, Padding, Raw,
+    EncryptionKey, EncryptionKeyring, Error, Field, FieldId, FieldOnly, KeyId, Padding, Raw,
     Sealed, Utf8, field_id, inspect_ciphertext, key_id,
 };
 
 const KEY_ID: KeyId = key_id!("50000000-0000-4000-8000-000000000005");
 
-fn keyring() -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(EncryptionKey::new(KEY_ID, [47; 32]), []).unwrap()
+fn keyring() -> EncryptionKeyring {
+    EncryptionKeyring::new(EncryptionKey::new(KEY_ID, [47; 32]), []).unwrap()
 }
 
 const SHARED_FIELD: FieldId = field_id!("60000000-0000-4000-8000-000000000006");

@@ -76,7 +76,7 @@ impl LegacyFormat for PreviousEncryption {
 fn recover(
     bytes: Vec<u8>,
     collision: bool,
-    keys: &LocalEncryptionKeyring,
+    keys: &EncryptionKeyring,
     legacy: &PreviousEncryption,
 ) -> Result<String> {
     let stored: MaybeEncrypted<UserEmail> = if collision {
@@ -92,8 +92,8 @@ fn recover(
 
 async fn seed(
     db: &mut DbConnection,
-    keys: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    keys: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     // Disposable fixture only. These records model trusted application metadata.
     sqlx::query("CREATE TABLE migration_formats (id BIGINT PRIMARY KEY, format TEXT NOT NULL)")
@@ -120,14 +120,14 @@ async fn seed(
         .await?;
     let directory =
         env::var("CRYPTBOX_KEY_DIR").map_err(|_| "key configuration: CRYPTBOX_KEY_DIR required")?;
-    let old_keys = LocalEncryptionKeyring::new(
+    let old_keys = EncryptionKeyring::new(
         EncryptionKey::new(
             key_id!("10000000-0000-4000-8000-000000000001"),
             *load_root_key(Path::new(&directory), "encryption-1.hex")?,
         ),
         [],
     )?;
-    let old_indexes = LocalBlindIndexKeyring::new(
+    let old_indexes = BlindIndexKeyring::new(
         BlindIndexKey::new(
             index_key_id!("30000000-0000-4000-8000-000000000003"),
             *load_root_key(Path::new(&directory), "index-1.hex")?,
@@ -162,8 +162,8 @@ async fn seed(
 async fn lookup(
     db: &mut DbConnection,
     query: &str,
-    keys: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    keys: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     let mut tx = db.begin().await?;
     #[cfg(feature = "postgres")]
@@ -219,8 +219,8 @@ async fn repair(
     db: &mut DbConnection,
     id: i64,
     collision: bool,
-    keys: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    keys: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     let mut tx = db.begin().await?;
     let row = sqlx::query("SELECT u.email, u.email_lookup, f.format FROM users u LEFT JOIN migration_formats f ON f.id = u.id WHERE u.id = $1")
@@ -266,8 +266,8 @@ async fn repair(
 
 async fn close(
     db: &mut DbConnection,
-    keys: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    keys: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     // Operator prerequisite: writers/restore jobs paused and in-flight work drained.
     quarantine_gate(db).await?;
@@ -299,8 +299,8 @@ async fn close(
 pub(super) async fn command(
     db: &mut DbConnection,
     args: &[String],
-    keys: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    keys: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     match args
         .iter()

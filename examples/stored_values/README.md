@@ -18,7 +18,7 @@ The program checks a serialized round trip and demonstrates that damaged
 ciphertext can pass structural parsing but fail authentication. It leaves no files
 behind and can be rerun without setup. See [main.rs](main.rs) for the assertions.
 
-The fixed keys are public fixtures. For persistence, use [durable key/ID pairs](../../docs/integration.md#key-providers-and-key-contexts)
+The fixed keys are public fixtures. For persistence, use [durable key/ID pairs](../../docs/integration.md#keyrings-and-key-sources)
 and write ciphertext and indexes atomically.
 
 ## Follow the value through storage
@@ -44,4 +44,4 @@ serialization format. This example uses `serde_json` as the storage format;
 CryptBox's `json` codec feature is unnecessary because the plaintext codec is
 `Utf8`. Adapt `StoredUser` to hold the sealed values and optional indexes you
 need, seal before serializing, and open explicitly after deserializing. Replace
-the fixed fixture keys with your application's providers.
+the fixed fixture keys with your application's keyrings.

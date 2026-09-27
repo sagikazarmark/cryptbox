@@ -175,8 +175,8 @@ async fn put(
     connection: &mut DbConnection,
     id: i64,
     email: Option<String>,
-    encryption: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     if let Some(email) = &email {
         validate_email(email)?;
@@ -216,7 +216,7 @@ Preparation borrows and retains the plaintext source.
 <!-- BEGIN SHARED: searchable-get -->
 
 ```rust
-async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyring) -> Result<()> {
+async fn get(connection: &mut DbConnection, id: i64, keys: &EncryptionKeyring) -> Result<()> {
     let row = sqlx::query("SELECT email FROM users WHERE id = $1")
         .bind(id)
         .fetch_one(connection)
@@ -234,7 +234,7 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyri
 <!-- END SHARED: searchable-get -->
 
 `SealedEmail` aliases `Sealed<UserEmail>`. SQLx decoding checks
-structure; only `open` authenticates, and it returns the bare `String`. Explicit local providers need no
+structure; only `open` authenticates, and it returns the bare `String`. Explicit local keyrings need no
 global installation. Plaintext output and shell
 arguments are demonstration conveniences; keep real user values out of logs/history.
 
@@ -246,8 +246,8 @@ arguments are demonstration conveniences; keep real user values out of logs/hist
 async fn search(
     connection: &mut DbConnection,
     query: &str,
-    encryption: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     let probes = EmailLookup::probes_with(query, indexes)?;
     let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
@@ -290,7 +290,7 @@ reveals encoded length; field binding does not prevent same-field substitution o
 Adapt `UserEmail`, `EmailLookup`, and the `put`, `get`, and `search` functions in
 [main.rs](main.rs). Keep ciphertext and index writes atomic, and preserve complete
 candidate verification. Replace fixture key files and IDs with your application's
-providers. The sample validates ASCII email-like input; choose normalization and
+keyrings. The sample validates ASCII email-like input; choose normalization and
 validation that match your actual domain.
 
 The [manifest](Cargo.toml) shows backend, runtime, and TLS dependencies. Its
@@ -356,7 +356,7 @@ is still set but the database is unavailable.
 First review [testing and diagnostics](../../docs/testing.md)
 when adapting the application to your project.
 
-This application's providers are startup snapshots. Follow [fleet rotation](../../docs/key-rotation.md)
+This application's keyrings are startup snapshots. Follow [fleet rotation](../../docs/key-rotation.md)
 to stage readable generations on every reader before promoting writers. Promotion
 does not rewrite old rows; retain keys required by data and recoverable backups.
 The [maintenance](../../docs/reencryption-sweep.md#run-the-automated-scenario)

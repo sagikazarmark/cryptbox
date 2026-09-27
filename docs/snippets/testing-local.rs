@@ -1,9 +1,9 @@
-//! Application tests using only local providers and public storage operations.
+//! Application tests using only local keyrings and public storage operations.
 #![cfg(test)]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, FieldId, FieldOnly,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Field, FieldId, FieldOnly, Padding, Sealed, Utf8,
 };
 use zeroize::Zeroizing;
 
@@ -41,7 +41,7 @@ impl BlindIndexSpec for EmailLookup {
 #[test]
 fn independent_cases_run_concurrently() {
     // Both cases deliberately reuse the same field and generation IDs with
-    // different fixture roots. Neither case can use the other's provider.
+    // different fixture roots. Neither case can use the other's keyring.
     std::thread::scope(|scope| {
         let first = scope.spawn(|| round_trip("first@example.test", 0x11, 0x21));
         let second = scope.spawn(|| round_trip("second@example.test", 0x12, 0x22));
@@ -57,14 +57,14 @@ fn another_case_needs_no_shared_setup() -> Result<(), cryptbox::Error> {
 
 fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<(), cryptbox::Error> {
     // Public test fixtures only. Never provision durable keys this way.
-    let keys = LocalEncryptionKeyring::new(
+    let keys = EncryptionKeyring::new(
         EncryptionKey::new(
             cryptbox::key_id!("40000000-0000-4000-8000-000000000004"),
             [encryption_root; 32],
         ),
         [],
     )?;
-    let indexes = LocalBlindIndexKeyring::new(
+    let indexes = BlindIndexKeyring::new(
         BlindIndexKey::new(
             cryptbox::index_key_id!("50000000-0000-4000-8000-000000000005"),
             [index_root; 32],

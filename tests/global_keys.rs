@@ -5,9 +5,9 @@
 //! other on the shared global.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field, FieldId,
-    FieldOnly, IndexId, IndexKeyId, KeyId, Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring,
-    Padding, Sealed, Utf8, field_id, index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, Field, FieldId, FieldOnly, IndexId, IndexKeyId, KeyId, Keys, Padding,
+    Sealed, Utf8, field_id, index_id, index_key_id, key_id,
     keys::{self, AlreadyInstalled},
 };
 use zeroize::Zeroizing;
@@ -48,12 +48,12 @@ impl BlindIndexSpec for EmailLookup {
     }
 }
 
-fn keyring(id: KeyId, byte: u8) -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(EncryptionKey::new(id, [byte; 32]), []).unwrap()
+fn keyring(id: KeyId, byte: u8) -> EncryptionKeyring {
+    EncryptionKeyring::new(EncryptionKey::new(id, [byte; 32]), []).unwrap()
 }
 
-fn index_keyring(id: IndexKeyId, byte: u8) -> LocalBlindIndexKeyring {
-    LocalBlindIndexKeyring::new(BlindIndexKey::new(id, [byte; 32]), []).unwrap()
+fn index_keyring(id: IndexKeyId, byte: u8) -> BlindIndexKeyring {
+    BlindIndexKeyring::new(BlindIndexKey::new(id, [byte; 32]), []).unwrap()
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn global_keys_install_once_back_only_the_global_conveniences() {
 }
 
 #[test]
-fn keys_without_a_blind_index_provider_reject_index_operations() {
+fn keys_without_a_blind_index_keyring_reject_index_operations() {
     let keys = Keys::new(keyring(EXPLICIT_KEY_ID, 2));
     let email = "mark@example.com".to_owned();
 

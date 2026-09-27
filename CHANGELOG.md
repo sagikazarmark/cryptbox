@@ -44,7 +44,7 @@
   | `type Binding = FieldBound<Other>;` | `const ID: FieldId = Other::ID;` |
   | `binding: unbound,` | re-encrypt existing data under a field ID first |
   | `type Padding = PadToBlock<16>;` | `const PADDING: Padding = Padding::block(16);` |
-  | `type Keys = …;`, `Field::NAME` | remove; route the field in a `Router` and install it with `keys::install(Keys::new(router))` |
+  | `type Keys = …;`, `Field::NAME` | remove; pass keys to each call, or install them with `keys::install(Keys::new(keyring))` |
   | `Encrypted<String, P>`, `Encrypted::<_, P>` | `Encrypted<P>`, `Encrypted::<P>` |
   | `value.encrypt_with(&(), &keys)` | `value.encrypt_with(&keys)` |
   | `value.into()` into `Encrypted` | `Encrypted::new(value)` |
@@ -214,6 +214,31 @@
   | `needs_reencryption_with(&keys)` / `reencrypt_with(&keys)` | `needs_reseal((), &keys)` / `reseal((), &keys)` |
   | `Encrypted::<F>::new(v).encrypt()?` / `ciphertext.decrypt()?` | `Sealed::<F>::seal_global(&v)?` / `sealed.open_global()?` |
   | SQLx column `Encrypted<F, K>` | `Plain<F, K>` |
+- **Breaking:** keys are passed in, not routed (ADR-0006). `Router`, `Routing`,
+  the `EncryptionKeyProvider` and `BlindIndexKeyProvider` traits, and
+  `KeyProviderError` are removed, along with `Error::UnroutedField`,
+  `Error::DuplicateRoute`, and `Error::KeysAlreadyInstalled` (use
+  `keys::AlreadyInstalled`); `Error::KeyProviderUnavailable` is renamed
+  `Error::KeysUnavailable`. The concrete `EncryptionKeyring` and
+  `BlindIndexKeyring` (was `LocalEncryptionKeyring` and `LocalBlindIndexKeyring`)
+  hold a current key and previous keys, expose `current()`, `get(id)`, and, for
+  blind indexes, `readable()`, and reject duplicate key IDs. `Keys` pairs them
+  in the public fields `encryption` and `blind_indexes`. Operations take any
+  `EncryptionKeySource` or `BlindIndexKeySource`, which receives the field (or
+  index) and the binding's `KeyScope`; keyrings and `Keys` return themselves,
+  and `&T` and `Arc<T>` are sources too, so an application can choose keyrings by
+  field or scope in its own source. Key IDs must be generated UUIDs, never
+  shared across keyrings. `KeyContext::encryption_keys` is replaced by
+  `KeyContext::keys`, which returns `&'static Keys`. The schema manifest no
+  longer reports routes, and `Manifest` loses its lifetime and `keys` method.
+
+  | Before | Now |
+  | --- | --- |
+  | `LocalEncryptionKeyring::new(current, previous)?` | `EncryptionKeyring::new(current, previous)?` |
+  | `Router::strict().route::<Iban>(payments)?.route::<Email>(general)?` | pass `&payments` or `&general` to each call, or implement `EncryptionKeySource` |
+  | `impl EncryptionKeyProvider for MyKms { fn current_key(…); fn key(…) }` | `impl EncryptionKeySource for MyKms { fn encryption_keyring(&self, field, scope) -> Result<&EncryptionKeyring, Error> }` |
+  | `fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, Error>` | `fn keys() -> Result<&'static Keys, Error>` |
+  | `keys::install(keys)?` into `cryptbox::Error` | `keys::install(keys)?` into an error that wraps `keys::AlreadyInstalled` |
 - `Json` decodes every float to exactly the value that was encoded
   (`serde_json/float_roundtrip`). Before this, some stored floats were read back one ulp off.
 

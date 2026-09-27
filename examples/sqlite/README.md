@@ -51,7 +51,7 @@ the same ID to replace a lost file; it cannot decrypt the stored field.
 This file and fixed ID are demonstration provisioning. An application should load
 its stable ID/root pairing from its own key source and access policy; the database
 does not supply the secret. See
-[key providers and key contexts](../../docs/integration.md#key-providers-and-key-contexts)
+[keyrings and key sources](../../docs/integration.md#keyrings-and-key-sources)
 for the general design. This example uses one encryption generation only.
 
 ## 3. Write the field and exit
@@ -111,11 +111,11 @@ buffers and does not include their contents in errors.
 
 ## What crossed the storage boundary?
 
-The example seals with a local encryption key provider, binds the
+The example seals with a local encryption keyring, binds the
 `Sealed<UserEmail>` into a `BLOB`, and reads it back with
 `row.try_get("email")`. SQLx decoding checks structure; `open((), keys)`
 authenticates and decodes, returning the bare `String`. Sealing borrows the
-original plaintext, and no global provider is installed: `keys` supplies the
+original plaintext, and no global keys are installed: `keys` supplies the
 key explicitly.
 
 Field binding identifies a logical field, not a row or tenant. Preserve the field

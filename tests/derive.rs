@@ -2,14 +2,14 @@
 #![cfg(feature = "derive")]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Codec, CodecError, CodecErrorKind,
-    EncryptionKey, Field, FieldId, FieldOnly, IndexId, IndexKeyId, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Padding, Plaintext, Sealed, Utf8, field_id, index_id, index_key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
+    CodecErrorKind, EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, IndexId,
+    IndexKeyId, Padding, Plaintext, Sealed, Utf8, field_id, index_id, index_key_id,
 };
 use zeroize::Zeroizing;
 
-fn keyring() -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap()
+fn keyring() -> EncryptionKeyring {
+    EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap()
 }
 
 fn assert_codec<F: Field<Codec = C>, C>() {}
@@ -129,8 +129,8 @@ fn attributes_can_be_split_and_literal_suffixes_are_accepted() {
     assert_eq!(FixedBillingAddress::PADDING, Padding::length(64));
 }
 
-fn index_keys() -> LocalBlindIndexKeyring {
-    LocalBlindIndexKeyring::new(BlindIndexKey::new(INDEX_KEY_ID, [0x42; 32]), []).unwrap()
+fn index_keys() -> BlindIndexKeyring {
+    BlindIndexKeyring::new(BlindIndexKey::new(INDEX_KEY_ID, [0x42; 32]), []).unwrap()
 }
 
 const INDEX_KEY_ID: IndexKeyId = index_key_id!("60000000-0000-4000-8000-000000000006");

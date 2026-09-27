@@ -26,7 +26,7 @@ The ciphertext envelope carries three identifiers with different jobs:
 - **Suite ID** identifies the complete encryption construction: how keys are
   derived, bytes are encrypted, and metadata is authenticated.
 - **`KeyId`** identifies the encryption-key generation: which root key the
-  provider must supply to decrypt this value. The ID is public; key material is
+  keyring must hold to decrypt this value. The ID is public; key material is
   never stored in the envelope.
 
 Format version `2` and suite ID `1` are separate identifiers that identify

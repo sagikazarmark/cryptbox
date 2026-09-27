@@ -12,7 +12,7 @@ tests do not indicate security approval. [Documentation](README.md).
 ```mermaid
 flowchart TB
     subgraph trusted["Trusted application boundary"]
-        K["Key providers: independent encryption and index roots"]
+        K["Keyrings: independent encryption and index roots"]
         A["Application: plaintext, fields, authorization"]
         C["CryptBox: encode, encrypt, authenticate, decode"]
         K --> C
@@ -25,7 +25,7 @@ flowchart TB
 <!-- END SHARED: trust-boundary -->
 
 Confidentiality assumes keys and plaintext-bearing artifacts remain separate from
-compromised storage. Trust the application, providers, dependencies, and operating
+compromised storage. Trust the application, key sources, dependencies, and operating
 system: root keys must be cryptographically random, encryption and index roots
 independently generated, and each generation ID permanently paired with the same
 material. IDs are public metadata; generate them independently of key bytes.

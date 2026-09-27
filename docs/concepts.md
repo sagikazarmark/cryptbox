@@ -76,22 +76,23 @@ defines the exact construction.
 
 ## Keys come from the application
 
-A **key provider** supplies key generations. A generation pairs a public ID with
+A **keyring** holds key generations. A generation pairs a public ID with
 root key material; keeping that pair intact lets a value written today be decrypted
 after a restart. The root key itself is never stored in the envelope.
 
-The provider selects a **current generation** for new encryption and resolves
+A keyring holds one **current generation** for new encryption and resolves
 **readable generations** by the exact ID stored in each envelope. Selecting a new
 current generation changes future writes; existing ciphertext still needs its
 original generation. This is the foundation of key rotation.
 
-Every provider request names the field it serves, so a **router** can assign
-fields to different providers, such as a payments key hierarchy for an IBAN and a
-general one for an email.
+Operations take the keyring to use directly. Choosing which keyring protects a
+field, such as a payments key hierarchy for an IBAN and a general one for an
+email, is application code: pass the right keyring, or implement a **key source**
+that picks one by field or key scope.
 
-The quickstart passes a local provider explicitly as `&keys`, so no global
-installation is needed. For provider and key-context choices, see
-[integration design](integration.md#key-providers-and-key-contexts).
+The quickstart passes a keyring explicitly as `&keys`, so no global
+installation is needed. For keyring and key-context choices, see
+[integration design](integration.md#keyrings-and-key-sources).
 
 ## Search uses a separate representation
 
@@ -144,7 +145,7 @@ field that declares blind indexes, because it would not maintain their columns.
 - **Try it:** [encrypt your first field](first-field.md), then
   [store it durably in SQLite](../examples/sqlite/README.md).
 - **Apply it:** [integration design and trade-offs](integration.md) explains
-  persistent schema, storage boundaries, providers, and search.
+  persistent schema, storage boundaries, keys, and search.
 - **Assess it:** [security and threat model](security.md) covers protections,
   limitations, and review status.
 - **Look something up:** use the [glossary](glossary.md),

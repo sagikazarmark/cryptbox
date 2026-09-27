@@ -26,8 +26,8 @@ it handles plaintext. Log sanitized metadata, not values, tokens or key material
 
 Record the database/schema/table, ciphertext and index columns in planner order,
 cursor, field/index schema revision, fixed target encryption/index IDs, readable
-keyset revision, policy, run name and progress table. **Do not change provider
-current selections during a run.** Assign one owner to serialize batches and
+keyset revision, policy, run name and progress table. **Do not change the keyrings'
+current keys during a run.** Assign one owner to serialize batches and
 stop/join the old worker before handover.
 
 Configure `SweepTable::new(...).with_progress(progress_table, run_name)`.
@@ -164,11 +164,11 @@ from trusted application schema, not stored metadata.
    stale component before inspecting later columns; repair and verify again.
 3. **Authenticate and validate every value.** Read ciphertext and indexes together,
    parse typed `Sealed`, and call `open` with the intended binding arguments and
-   provider. Authentication, padding, codec and key-availability failures all fail
+   keyring. Authentication, padding, codec and key-availability failures all fail
    the audit. Validate decoded application constraints; account for every row.
 4. **Recompute every index.** Parse as `BlindIndex<ExpectedSpec>` and call
-   `ExpectedSpec::is_consistent_with` with the authenticated plaintext and an
-   index provider serving exactly the allowed generations; it compares
+   `ExpectedSpec::is_consistent_with` with the authenticated plaintext and a
+   blind-index keyring holding exactly the allowed generations; it compares
    **complete stored bytes**, not just IDs, under the generation the index names.
    `Ok(false)` is an inconsistent index. `Error::UnknownBlindIndexKey` means an
    unknown or disallowed generation: it also fails the check, but report it

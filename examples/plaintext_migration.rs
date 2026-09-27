@@ -3,8 +3,8 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, IndexKeyId, KeyId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Sealed, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Field, IndexKeyId, KeyId, Sealed, index_key_id, key_id,
     migrate::{MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
@@ -69,8 +69,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let current_index_key = BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x44; 32]);
 
     // One row was encrypted before a key rotation, one after it.
-    let old_keys = LocalEncryptionKeyring::new(old_key.clone(), [])?;
-    let old_index_keys = LocalBlindIndexKeyring::new(old_index_key.clone(), [])?;
+    let old_keys = EncryptionKeyring::new(old_key.clone(), [])?;
+    let old_index_keys = BlindIndexKeyring::new(old_index_key.clone(), [])?;
     insert_encrypted(
         &mut connection,
         "third@example.com",
@@ -78,8 +78,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
         &old_index_keys,
     )
     .await?;
-    let keys = LocalEncryptionKeyring::new(current_key, [old_key])?;
-    let index_keys = LocalBlindIndexKeyring::new(current_index_key, [old_index_key])?;
+    let keys = EncryptionKeyring::new(current_key, [old_key])?;
+    let index_keys = BlindIndexKeyring::new(current_index_key, [old_index_key])?;
     insert_encrypted(&mut connection, "fourth@example.com", &keys, &index_keys).await?;
 
     // The steady-state decoding path stays strict: legacy plaintext fails.
@@ -150,8 +150,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
 async fn insert_encrypted(
     connection: &mut SqliteConnection,
     email: &str,
-    keys: &LocalEncryptionKeyring,
-    index_keys: &LocalBlindIndexKeyring,
+    keys: &EncryptionKeyring,
+    index_keys: &BlindIndexKeyring,
 ) -> Result<(), Box<dyn Error>> {
     let value = email.to_owned();
     let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)?

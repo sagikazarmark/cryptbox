@@ -25,7 +25,7 @@ use crate::{Error, Field};
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, Field, FieldId, LocalEncryptionKeyring, Padding, RecordId, Sealed,
+///     EncryptionKey, Field, FieldId, EncryptionKeyring, Padding, RecordId, Sealed,
 ///     Tenant, TenantId, Utf8,
 /// };
 ///
@@ -41,7 +41,7 @@ use crate::{Error, Field};
 ///     type Indexes = ();
 /// }
 ///
-/// let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+/// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 /// let tenant = Tenant(TenantId::new(b"acme".to_vec())?);
 /// let record = RecordId::from(42_i64);
 ///
@@ -54,7 +54,7 @@ use crate::{Error, Field};
 ///
 /// ```compile_fail,E0080
 /// # use cryptbox::{
-/// #     EncryptionKey, Field, FieldId, LocalEncryptionKeyring, Padding, Sealed, Tenant, TenantId,
+/// #     EncryptionKey, Field, FieldId, EncryptionKeyring, Padding, Sealed, Tenant, TenantId,
 /// #     Utf8,
 /// # };
 /// # struct CustomerEmail;
@@ -67,7 +67,7 @@ use crate::{Error, Field};
 /// #     type Binding = Tenant;
 /// #     type Indexes = ();
 /// # }
-/// # let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+/// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 /// let tenant = Tenant(TenantId::new(b"acme".to_vec())?);
 ///
 /// let sealed = Sealed::<CustomerEmail>::seal(&"ada@example.com".into(), &tenant, &keys)?;
@@ -78,7 +78,7 @@ use crate::{Error, Field};
 ///
 /// ```compile_fail,E0080
 /// # use cryptbox::{
-/// #     EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, RecordId,
+/// #     EncryptionKey, Field, FieldId, FieldOnly, EncryptionKeyring, Padding, RecordId,
 /// #     Sealed, Utf8,
 /// # };
 /// # struct Nickname;
@@ -91,7 +91,7 @@ use crate::{Error, Field};
 /// #     type Binding = FieldOnly;
 /// #     type Indexes = ();
 /// # }
-/// # let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+/// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 /// let sealed = Sealed::<Nickname>::seal(&"ada".into(), RecordId::from(7_i64), &keys)?;
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
@@ -100,7 +100,7 @@ use crate::{Error, Field};
 ///
 /// ```compile_fail,E0277
 /// # use cryptbox::{
-/// #     EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Tenant,
+/// #     EncryptionKey, Field, FieldId, FieldOnly, EncryptionKeyring, Padding, Sealed, Tenant,
 /// #     TenantId, Utf8,
 /// # };
 /// # struct Nickname;
@@ -113,7 +113,7 @@ use crate::{Error, Field};
 /// #     type Binding = FieldOnly;
 /// #     type Indexes = ();
 /// # }
-/// # let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+/// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 /// let tenant = Tenant(TenantId::new(b"acme".to_vec())?);
 ///
 /// let sealed = Sealed::<Nickname>::seal(&"ada".into(), &tenant, &keys)?;

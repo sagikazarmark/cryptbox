@@ -1,8 +1,8 @@
 //! Prepares and safely queries a blind index across index-key rotation.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, IndexKeyId, KeyId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Sealed, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Field, IndexKeyId, KeyId, Sealed, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -35,9 +35,9 @@ struct EmailLookup;
 fn main() -> Result<(), cryptbox::Error> {
     // Encryption and blind-index roots must be generated and managed independently.
     let encryption_keys =
-        LocalEncryptionKeyring::new(EncryptionKey::new(ENCRYPTION_KEY_ID, [0x31; 32]), [])?;
+        EncryptionKeyring::new(EncryptionKey::new(ENCRYPTION_KEY_ID, [0x31; 32]), [])?;
     let old_index_key = BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x42; 32]);
-    let old_index_keys = LocalBlindIndexKeyring::new(old_index_key.clone(), [])?;
+    let old_index_keys = BlindIndexKeyring::new(old_index_key.clone(), [])?;
 
     let value = "Mark@Example.com".to_owned();
     let prepared = Sealed::<UserEmail>::prepare(&value, (), &encryption_keys)?
@@ -45,7 +45,7 @@ fn main() -> Result<(), cryptbox::Error> {
     let stored = prepared.sealed().clone();
     let stored_index = prepared.index::<EmailLookup>()?.as_bytes().to_vec();
 
-    let index_keys = LocalBlindIndexKeyring::new(
+    let index_keys = BlindIndexKeyring::new(
         BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x53; 32]),
         [old_index_key],
     )?;

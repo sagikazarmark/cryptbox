@@ -2,9 +2,9 @@
 
 // ANCHOR: custom-field
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, Codec, CodecError, CodecErrorKind,
-    EncryptionKey, EncryptionKeyProvider, Field, FieldId, FieldOnly, KeyId, KeyProviderError,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed, Secret,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
+    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId,
+    FieldOnly, KeyScope, Padding, Sealed, Secret,
 };
 use zeroize::Zeroizing;
 
@@ -80,32 +80,22 @@ impl BlindIndexSpec for HandleEquality {
 
 // An application-owned snapshot. None means loading/refresh failed, not "unknown ID".
 struct CachedEncryptionKeys {
-    snapshot: Option<LocalEncryptionKeyring>,
+    snapshot: Option<EncryptionKeyring>,
 }
 
-impl EncryptionKeyProvider for CachedEncryptionKeys {
-    fn current_key(&self, field: FieldId) -> Result<EncryptionKey, KeyProviderError> {
-        self.snapshot
-            .as_ref()
-            .ok_or(KeyProviderError::Unavailable)?
-            .current_key(field)
-    }
-
-    fn key(&self, field: FieldId, id: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
-        self.snapshot
-            .as_ref()
-            .ok_or(KeyProviderError::Unavailable)?
-            .key(field, id)
+impl EncryptionKeySource for CachedEncryptionKeys {
+    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<&EncryptionKeyring, Error> {
+        self.snapshot.as_ref().ok_or(Error::KeysUnavailable)
     }
 }
 
 fn main() -> Result<(), cryptbox::Error> {
     // Ephemeral demonstration only. Load stable key/ID pairs for durable data.
     let keys = CachedEncryptionKeys {
-        snapshot: Some(LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?),
+        snapshot: Some(EncryptionKeyring::new(EncryptionKey::generate()?, [])?),
     };
     let old_index_key = BlindIndexKey::generate()?; // Independent of encryption keys.
-    let index_writer = LocalBlindIndexKeyring::new(old_index_key.clone(), [])?;
+    let index_writer = BlindIndexKeyring::new(old_index_key.clone(), [])?;
     let value = Secret::new("Alice-7".to_owned());
     let prepared = Sealed::<Handle>::prepare(&value, (), &keys)?
         .with_index_with::<HandleEquality>(&index_writer)?;
@@ -115,7 +105,7 @@ fn main() -> Result<(), cryptbox::Error> {
     drop(prepared); // Releases the borrow, not the source plaintext.
 
     // After index-key promotion, query every readable generation, including old data.
-    let index_reader = LocalBlindIndexKeyring::new(BlindIndexKey::generate()?, [old_index_key])?;
+    let index_reader = BlindIndexKeyring::new(BlindIndexKey::generate()?, [old_index_key])?;
     let query = Secret::new("ALICE-7".to_owned());
     let probes = HandleEquality::probes_with(&query, &index_reader)?;
     assert_eq!(probes.len(), 2);
@@ -153,27 +143,25 @@ mod tests {
     }
 
     #[test]
-    fn provider_retains_history_and_distinguishes_unknown_from_unavailable()
+    fn source_retains_history_and_distinguishes_unknown_from_unavailable()
     -> Result<(), cryptbox::Error> {
         let old = EncryptionKey::generate()?;
         let current = EncryptionKey::generate()?;
         let unknown = EncryptionKey::generate()?.id();
-        let writer = LocalEncryptionKeyring::new(old.clone(), [])?;
+        let writer = EncryptionKeyring::new(old.clone(), [])?;
         let value = Secret::new("Alice-7".to_owned());
         let sealed = Sealed::<Handle>::seal(&value, (), &writer)?;
         let reader = CachedEncryptionKeys {
-            snapshot: Some(LocalEncryptionKeyring::new(current.clone(), [old.clone()])?),
+            snapshot: Some(EncryptionKeyring::new(current.clone(), [old.clone()])?),
         };
-        assert_eq!(reader.current_key(Handle::ID)?.id(), current.id());
-        assert_eq!(reader.key(Handle::ID, old.id())?.unwrap().id(), old.id());
-        assert_eq!(
-            reader.key(Handle::ID, current.id())?.unwrap().id(),
-            current.id()
-        );
-        assert!(reader.key(Handle::ID, unknown)?.is_none());
+        let snapshot = reader.encryption_keyring(Handle::ID, &KeyScope::of(&FieldOnly)?)?;
+        assert_eq!(snapshot.current().id(), current.id());
+        assert_eq!(snapshot.get(old.id()).unwrap().id(), old.id());
+        assert_eq!(snapshot.get(current.id()).unwrap().id(), current.id());
+        assert!(snapshot.get(unknown).is_none());
         assert_eq!(sealed.open((), &reader)?.expose_secret(), "Alice-7");
         let retired = CachedEncryptionKeys {
-            snapshot: Some(LocalEncryptionKeyring::new(current, [])?),
+            snapshot: Some(EncryptionKeyring::new(current, [])?),
         };
         assert_eq!(
             sealed.open((), &retired).unwrap_err(),
@@ -181,16 +169,12 @@ mod tests {
         );
         let unavailable = CachedEncryptionKeys { snapshot: None };
         assert_eq!(
-            unavailable.current_key(Handle::ID).unwrap_err(),
-            KeyProviderError::Unavailable
-        );
-        assert_eq!(
-            unavailable.key(Handle::ID, old.id()).unwrap_err(),
-            KeyProviderError::Unavailable
+            Sealed::<Handle>::seal(&value, (), &unavailable).unwrap_err(),
+            Error::KeysUnavailable
         );
         assert_eq!(
             sealed.open((), &unavailable).unwrap_err(),
-            cryptbox::Error::KeyProviderUnavailable
+            Error::KeysUnavailable
         );
         Ok(())
     }
@@ -211,7 +195,7 @@ mod tests {
         assert_eq!(format!("{normalize:?}"), "BlindIndexError");
 
         // Encoding failure is sanitized at the storage boundary too.
-        let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+        let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
         assert_eq!(
             Sealed::<Handle>::seal(&invalid, (), &keys).unwrap_err(),
             cryptbox::Error::CodecFailed(encode)
@@ -256,7 +240,7 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c custom_field::HandleEquality
             type Indexes = ();
         }
 
-        let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+        let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
         let sealed = Sealed::<PlainHandle>::seal(&"Alice-7".to_owned(), (), &keys)?;
         let secret = Secret::new(sealed.open((), &keys)?);
         assert_eq!(secret.expose_secret(), "Alice-7");

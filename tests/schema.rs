@@ -1,8 +1,7 @@
 //! Public-boundary tests for the schema manifest and unique-ID checks.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, FieldId, FieldOnly,
-    IndexId, Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw, Router, Utf8,
+    BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Raw, Utf8,
     field_id, index_id,
     schema::{Duplicate, Manifest},
 };
@@ -80,42 +79,6 @@ index 3d8b1f4e-6a2c-4e71-9f05-8c7d6b5a4e3f schema::NicknameLookup
   field: 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   bits: 24
   normalizer: trim-lowercase/1
-"
-    );
-}
-
-#[test]
-fn manifest_reports_routes_and_fallbacks_from_keys() {
-    let encryption = LocalEncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
-    let blind_indexes =
-        LocalBlindIndexKeyring::new(BlindIndexKey::generate().unwrap(), []).unwrap();
-    let keys = Keys::new(Router::strict().route::<Nickname>(encryption).unwrap())
-        .with_blind_indexes(Router::new(blind_indexes));
-
-    let manifest = Manifest::new()
-        .field::<Nickname>()
-        .field::<Avatar>()
-        .index::<NicknameLookup>()
-        .keys(&keys);
-
-    assert_eq!(
-        manifest.to_string(),
-        "\
-field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01 schema::Nickname
-  value: alloc::string::String
-  codec: utf8
-  padding: none
-  encryption key: routed
-field 9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e schema::Avatar
-  value: alloc::vec::Vec<u8>
-  codec: raw
-  padding: block(64)
-  encryption key: unrouted
-index 3d8b1f4e-6a2c-4e71-9f05-8c7d6b5a4e3f schema::NicknameLookup
-  field: 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
-  bits: 24
-  normalizer: trim-lowercase/1
-  blind-index key: fallback
 "
     );
 }

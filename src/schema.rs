@@ -2,10 +2,7 @@
 
 use std::{any::type_name, fmt};
 
-use crate::{
-    BlindIndexKeyProvider, BlindIndexSpec, Codec, EncryptionKeyProvider, Field, FieldId, IndexId,
-    Keys, Padding,
-};
+use crate::{BlindIndexSpec, Codec, Field, FieldId, IndexId, Padding};
 
 /// Lists fields and blind indexes with their persistent schema.
 ///
@@ -53,10 +50,9 @@ use crate::{
 /// "));
 /// ```
 #[derive(Debug, Default)]
-pub struct Manifest<'k> {
+pub struct Manifest {
     fields: Vec<FieldEntry>,
     indexes: Vec<IndexEntry>,
-    keys: Option<&'k Keys>,
 }
 
 #[derive(Debug)]
@@ -77,7 +73,7 @@ struct FieldEntry {
     padding: Padding,
 }
 
-impl<'k> Manifest<'k> {
+impl Manifest {
     /// Creates an empty manifest.
     #[must_use]
     pub fn new() -> Self {
@@ -109,17 +105,6 @@ impl<'k> Manifest<'k> {
             bits: I::BITS,
             normalizer: I::NORMALIZER,
         });
-        self
-    }
-
-    /// Reports how `keys` serve each field and index.
-    ///
-    /// Routes are deployment configuration, not persistent schema, so a
-    /// manifest shows them only when given keys. A test that renders them
-    /// catches a field that silently falls back to a default provider.
-    #[must_use]
-    pub fn keys(mut self, keys: &'k Keys) -> Self {
-        self.keys = Some(keys);
         self
     }
 
@@ -189,17 +174,13 @@ fn shared_ids<Id: PartialEq>(
     groups.into_iter().filter(|(_, markers)| markers.len() > 1)
 }
 
-impl fmt::Display for Manifest<'_> {
+impl fmt::Display for Manifest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         for field in &self.fields {
             writeln!(formatter, "field {} {}", field.id, field.marker)?;
             writeln!(formatter, "  value: {}", field.value)?;
             writeln!(formatter, "  codec: {}", field.codec)?;
             writeln!(formatter, "  padding: {}", field.padding)?;
-            if let Some(keys) = self.keys {
-                let route = EncryptionKeyProvider::routing(keys, field.id);
-                writeln!(formatter, "  encryption key: {route}")?;
-            }
         }
 
         for index in &self.indexes {
@@ -207,10 +188,6 @@ impl fmt::Display for Manifest<'_> {
             writeln!(formatter, "  field: {}", index.field)?;
             writeln!(formatter, "  bits: {}", index.bits)?;
             writeln!(formatter, "  normalizer: {}", index.normalizer)?;
-            if let Some(keys) = self.keys {
-                let route = BlindIndexKeyProvider::routing(keys, index.field);
-                writeln!(formatter, "  blind-index key: {route}")?;
-            }
         }
 
         for duplicate in self.duplicates() {

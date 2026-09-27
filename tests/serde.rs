@@ -3,9 +3,9 @@
 #![cfg(any(feature = "json", feature = "postcard"))]
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, FieldOnly,
-    IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed, Utf8, index_id,
-    index_key_id, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Field, FieldOnly, IndexId, Padding, Sealed, Utf8, index_id, index_key_id,
+    key_id,
 };
 #[cfg(feature = "json")]
 use serde_json::Value;
@@ -42,7 +42,7 @@ impl BlindIndexSpec for EmailExact {
 }
 
 fn blind_index() -> BlindIndex<EmailExact> {
-    let keys = LocalBlindIndexKeyring::new(
+    let keys = BlindIndexKeyring::new(
         BlindIndexKey::new(
             index_key_id!("70000000-0000-4000-8000-000000000007"),
             [41; 32],
@@ -54,15 +54,15 @@ fn blind_index() -> BlindIndex<EmailExact> {
     EmailExact::derive_with(&"mark@example.com".to_owned(), &keys).unwrap()
 }
 
-fn encryption_keys() -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(
+fn encryption_keys() -> EncryptionKeyring {
+    EncryptionKeyring::new(
         EncryptionKey::new(key_id!("20000000-0000-4000-8000-000000000002"), [7; 32]),
         [],
     )
     .unwrap()
 }
 
-fn sealed(keys: &LocalEncryptionKeyring) -> Sealed<EmailField> {
+fn sealed(keys: &EncryptionKeyring) -> Sealed<EmailField> {
     Sealed::seal(&"mark@example.com".to_owned(), (), keys).unwrap()
 }
 

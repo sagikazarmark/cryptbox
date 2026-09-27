@@ -1,9 +1,9 @@
 # Testing and diagnostics
 
-Use local providers for ordinary tests, and process isolation for the installed
+Use local keyrings for ordinary tests, and process isolation for the installed
 keys. [Documentation](README.md).
 
-## Local providers
+## Local keyrings
 
 Give each test its own encryption and blind-index keyrings. Explicit
 `Sealed::seal`, `open` and `Sealed::prepare` calls take their keys and never read
@@ -19,7 +19,7 @@ cargo test --lib -- --test-threads=2
 
 Expect two passing tests, including concurrent round trips and verified candidate
 comparison. Predictable roots and reused IDs are isolated test fixtures, never a
-[durable provisioning pattern](integration.md#key-providers-and-key-contexts).
+[durable provisioning pattern](integration.md#keyrings-and-key-sources).
 
 ## Automatic adapters
 
@@ -29,7 +29,7 @@ how to exercise the automatic path with the installed keys.
 
 An automatic SQLx column `Plain<F>` reads the installed keys; a field does not
 select its own keys. The [automatic example](snippets/testing-automatic.rs)
-installs both providers with `keys::install` once per process, so each fixture
+installs both keyrings with `keys::install` once per process, so each fixture
 runs in its own process.
 `Plain` serves only fields without blind indexes, since a column cannot write
 its index. The example seals its indexed field explicitly with `Sealed::prepare`
@@ -60,7 +60,7 @@ before installation return `Error::KeysNotInstalled`, so a test binary that
 installs must sequence every assertion that depends on installation, such as in
 one test function.
 
-An `RwLock` around individual provider calls does not isolate fixture replacement:
+An `RwLock` around individual key source calls does not isolate fixture replacement:
 keys can change between encryption and decryption or ciphertext/index preparation.
 Use separate processes, or serialize each case's entire setup/operation/cleanup
 lifetime, including background work. Separate database connections are insufficient.

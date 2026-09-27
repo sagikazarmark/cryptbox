@@ -3,9 +3,9 @@
 #![cfg(all(feature = "migrate", feature = "sqlx-sqlite"))]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field, FieldOnly,
-    IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed,
-    Utf8, field_id, index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Sealed, Utf8,
+    field_id, index_id, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable,
     },
@@ -97,10 +97,10 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
         let current_key = EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]);
         let old_index_key = BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x33; 32]);
         let current_index_key = BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x44; 32]);
-        let old_keys = LocalEncryptionKeyring::new(old_key.clone(), []).unwrap();
-        let old_index_keys = LocalBlindIndexKeyring::new(old_index_key.clone(), []).unwrap();
-        let keys = LocalEncryptionKeyring::new(current_key, [old_key]).unwrap();
-        let index_keys = LocalBlindIndexKeyring::new(current_index_key, [old_index_key]).unwrap();
+        let old_keys = EncryptionKeyring::new(old_key.clone(), []).unwrap();
+        let old_index_keys = BlindIndexKeyring::new(old_index_key.clone(), []).unwrap();
+        let keys = EncryptionKeyring::new(current_key, [old_key]).unwrap();
+        let index_keys = BlindIndexKeyring::new(current_index_key, [old_index_key]).unwrap();
 
         // One plaintext row, one foreign-ciphertext row, one stale encrypted
         // row, and one current row.

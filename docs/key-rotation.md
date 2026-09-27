@@ -49,7 +49,7 @@ This establishes material compatibility, not fleet membership or a whole-store a
 
 1. Prepare a target-encryption/baseline-index canary and retain the baseline one.
 2. Distribute the new encryption pair to all readers, keeping the old pair current.
-   Restart or refresh providers and collect readiness for both canaries.
+   Restart or refresh key sources and collect readiness for both canaries.
 3. Once every reader is ready, promote encryption writers incrementally. During
    overlap, both old and new ciphertext must decrypt and search correctly.
 4. Finish promotion on every writer before planning convergence.
@@ -78,15 +78,15 @@ all-probe candidate verification. If it cannot load the compatible keyset, keep
 compatible readers serving while repairing the rollout. Settle rollback policy
 before sweeping: old-generation writers can reintroduce dependencies behind progress.
 
-### Provider lifecycle
+### Key source lifecycle
 
-The consumer loads `LocalEncryptionKeyring` and `LocalBlindIndexKeyring` once at
+The consumer loads `EncryptionKeyring` and `BlindIndexKeyring` once at
 startup. File/environment changes do not replace a running snapshot; drain/restart
 the process. The installed keys (`keys::install`) are immutable and one-time per process.
-Restart, or have the originally installed custom provider refresh its own
-synchronized snapshot. That provider owns consistency, refresh
+Restart, or have the originally installed custom key source refresh its own
+synchronized snapshot. That key source owns consistency, refresh
 failures and readiness; synchronous CryptBox calls do not distribute secrets or
-refresh KMS state. See [provider obligations](../examples/custom_field/README.md#implementor-obligations).
+refresh KMS state. See [key source obligations](../examples/custom_field/README.md#implementor-obligations).
 
 ## Sequence and later maintenance
 
@@ -96,9 +96,9 @@ refresh KMS state. See [provider obligations](../examples/custom_field/README.md
 sequenceDiagram
     actor O as Operator
     participant A as Instance A
-    participant PA as A provider snapshot
+    participant PA as A keyring snapshot
     participant B as Instance B
-    participant PB as B provider snapshot
+    participant PB as B keyring snapshot
     participant DB as Shared storage
     participant M as Later maintenance / recovery
     Note over O,PB: Repeat independently for encryption E and index I
@@ -149,7 +149,7 @@ IDs, binding, codec, padding, normalization and precision. Keep secret material
 under separate controlled custody, not inside the manifest or database backup.
 Root bytes alone are insufficient to restore application behavior.
 
-### Remove historical online providers, retain recovery material
+### Remove historical keys from online keyrings, retain recovery material
 
 1. Prove an isolated restore using the retained historical pairs **before** changing
    online access. Use consistent backup tooling; for SQLite the consumer's
@@ -159,11 +159,11 @@ Root bytes alone are insufficient to restore application behavior.
    the full [verification and audit procedure](reencryption-sweep.md#verification-and-retirement),
    including expected row coverage. Prevent stale writers, rollback configurations
    and restores from reintroducing historical dependencies. Hold a write/restore
-   pause through final checks and provider cutover, or supply equivalent consistency.
-3. Distribute reduced online providers and drain/restart every relevant process.
+   pause through final checks and keyring cutover, or supply equivalent consistency.
+3. Distribute reduced online keyrings and drain/restart every relevant process.
    Verify current-only reads, audits and searches on the serving configuration.
    The consumer's `2-only` loads only that role's generation-2 file; ordinary `2`
-   still loads both. Verify that historical canaries fail in the reduced provider.
+   still loads both. Verify that historical canaries fail with the reduced keyring.
 4. Retain exact historical pairs separately for recovery. Removing online files
    models custody separation; it is not secure erasure. Schedule restore rehearsals.
 
@@ -226,4 +226,4 @@ cargo test --locked --test e2e --all-features sqlite_recovery
 For live PostgreSQL rotation, see the [test instructions](documentation.md#live-postgresql).
 Recovery uses
 SQLite and does not validate PostgreSQL backup tooling. The runner creates fresh
-fixtures; never start generation-1-only providers against already-promoted data.
+fixtures; never start generation-1-only keyrings against already-promoted data.

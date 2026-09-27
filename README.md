@@ -38,7 +38,7 @@ Seal and open a string with an in-memory key. For setup instructions, follow
 
 ```rust
 use cryptbox::{
-    EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+    EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, Padding, Sealed, Utf8,
 };
 
 struct UserEmail;
@@ -55,7 +55,7 @@ impl Field for UserEmail {
 
 fn main() -> Result<(), cryptbox::Error> {
     // Demo only: this key is lost when the process exits.
-    let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+    let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
     let email = "mark@example.com".to_owned();
 
     let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;

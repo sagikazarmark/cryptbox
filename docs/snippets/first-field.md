@@ -1,6 +1,6 @@
 ```rust
 use cryptbox::{
-    EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+    EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, Padding, Sealed, Utf8,
 };
 
 struct UserEmail;
@@ -17,7 +17,7 @@ impl Field for UserEmail {
 
 fn main() -> Result<(), cryptbox::Error> {
     // Ephemeral demo keys: a new key and generation ID on every run.
-    let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+    let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
     let email = "mark@example.com".to_owned();
     let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
     let opened = sealed.open((), &keys)?;

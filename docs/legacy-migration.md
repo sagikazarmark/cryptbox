@@ -119,9 +119,9 @@ Switch to blind-index-only lookup only after the [closure gates](#verification-a
 
 ## Running the sweep
 
-Configure `RowPlanner::<F>::new(encryption_provider)`, add the
+Configure `RowPlanner::<F>::new(encryption_keys)`, add the
 explicit handler with `with_legacy`, and register indexes in stored order with
-`with_index_with::<Spec>(index_provider)`. Omit `with_legacy` only for authorized
+`with_index_with::<Spec>(index_keys)`. Omit `with_legacy` only for authorized
 plaintext-only data. Recovery decodes through the field codec, seals and
 derives every registered index. The planner and `Sweep` serve `FieldOnly` fields
 without a record in this release. Stale CryptBox components are rewritten; current

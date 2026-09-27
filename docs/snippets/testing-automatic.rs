@@ -3,8 +3,8 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, FieldId, FieldOnly, Keys,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Plain, Sealed, Utf8, keys,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Field, FieldId, FieldOnly, Keys, Padding, Plain, Sealed, Utf8, keys,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -60,14 +60,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         Some("second") => ("second@example.test", 0x12, 0x22),
         _ => return Err("expected first or second fixture".into()),
     };
-    let encryption = LocalEncryptionKeyring::new(
+    let encryption = EncryptionKeyring::new(
         EncryptionKey::new(
             cryptbox::key_id!("40000000-0000-4000-8000-000000000004"),
             [encryption_root; 32],
         ),
         [],
     )?;
-    let indexes = LocalBlindIndexKeyring::new(
+    let indexes = BlindIndexKeyring::new(
         BlindIndexKey::new(
             cryptbox::index_key_id!("50000000-0000-4000-8000-000000000005"),
             [index_root; 32],

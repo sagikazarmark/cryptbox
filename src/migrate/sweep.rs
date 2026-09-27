@@ -293,9 +293,8 @@ where
     /// # Errors
     ///
     /// Returns a storage error or a configuration or environment failure, such
-    /// as an index column arity mismatch, an unavailable key provider, or a
-    /// field that a strict router does not route. Malformed rows are counted,
-    /// not errors.
+    /// as an index column arity mismatch or unavailable keys. Malformed rows are
+    /// counted, not errors.
     pub async fn verify_batch<S: SweepStore>(
         &self,
         store: &mut S,
@@ -406,12 +405,9 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::InvalidPadding
         | Error::InvalidBlindIndex
         | Error::LegacyRecoveryFailed(_) => true,
-        Error::KeyProviderUnavailable
+        Error::KeysUnavailable
         | Error::KeysNotInstalled
-        | Error::UnroutedField(_)
-        | Error::DuplicateRoute(_)
         | Error::BlindIndexKeysNotConfigured
-        | Error::KeysAlreadyInstalled
         | Error::DuplicateEncryptionKey(_)
         | Error::DuplicateBlindIndexKey(_)
         | Error::RandomnessUnavailable

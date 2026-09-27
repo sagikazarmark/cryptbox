@@ -1,8 +1,11 @@
 use std::fmt;
 
 use crate::{
-    BlindIndex, BlindIndexKeyProvider, BlindIndexSpec, Codec, EncryptionKeyProvider, Error, Field,
-    FieldOnly, Sealed, binding::domain, blind::derive_value, crypto::needs_reencryption_bound,
+    BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec, EncryptionKeySource, Error, Field,
+    FieldOnly, IndexKeyId, Sealed,
+    binding::domain,
+    blind::{current_key_id, derive_value},
+    crypto::needs_reencryption_bound,
     inspect_blind_index,
 };
 
@@ -84,12 +87,13 @@ impl RowOutcome {
     }
 }
 
-type IndexDeriver<F> =
-    fn(&<F as Field>::Value, &dyn BlindIndexKeyProvider) -> Result<Vec<u8>, Error>;
+type IndexDeriver<F> = fn(&<F as Field>::Value, &dyn BlindIndexKeySource) -> Result<Vec<u8>, Error>;
+
+type CurrentIndexKey = fn(&dyn BlindIndexKeySource) -> Result<IndexKeyId, Error>;
 
 fn derive_index_bytes<F, Spec>(
     value: &F::Value,
-    keys: &dyn BlindIndexKeyProvider,
+    keys: &dyn BlindIndexKeySource,
 ) -> Result<Vec<u8>, Error>
 where
     F: Field,
@@ -98,10 +102,16 @@ where
     derive_value::<Spec>(value, keys).map(BlindIndex::into_bytes)
 }
 
+fn current_index_key_id<Spec: BlindIndexSpec>(
+    keys: &dyn BlindIndexKeySource,
+) -> Result<IndexKeyId, Error> {
+    current_key_id::<Spec>(keys)
+}
+
 // Reads the unauthenticated header only, without copying the envelope.
 fn is_stale_envelope<F: Field<Binding = FieldOnly>>(
     ciphertext: &[u8],
-    keys: &dyn EncryptionKeyProvider,
+    keys: &dyn EncryptionKeySource,
 ) -> Result<bool, Error> {
     needs_reencryption_bound(&domain::<F, ()>(())?, F::PADDING, ciphertext, keys)
 }
@@ -111,7 +121,8 @@ where
     F: Field,
 {
     derive: IndexDeriver<F>,
-    keys: &'a dyn BlindIndexKeyProvider,
+    current_key: CurrentIndexKey,
+    keys: &'a dyn BlindIndexKeySource,
 }
 
 /// Plans the rewrite of one encrypted column and its blind-index columns.
@@ -132,7 +143,7 @@ pub struct RowPlanner<'a, F>
 where
     F: Field,
 {
-    keys: &'a dyn EncryptionKeyProvider,
+    keys: &'a dyn EncryptionKeySource,
     legacy: Option<&'a dyn LegacyFormat>,
     indexes: Vec<IndexColumn<'a, F>>,
 }
@@ -141,8 +152,8 @@ impl<'a, F> RowPlanner<'a, F>
 where
     F: Field<Binding = FieldOnly>,
 {
-    /// Creates a planner for field `F` and an encryption key provider.
-    pub fn new(keys: &'a dyn EncryptionKeyProvider) -> Self {
+    /// Creates a planner for field `F` and an encryption key source.
+    pub fn new(keys: &'a dyn EncryptionKeySource) -> Self {
         Self {
             keys,
             legacy: None,
@@ -172,7 +183,7 @@ where
     /// ```compile_fail,E0271
     /// use cryptbox::{
     ///     BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId,
-    ///     LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8, migrate::RowPlanner,
+    ///     BlindIndexKeyring, EncryptionKeyring, Padding, Utf8, migrate::RowPlanner,
     /// };
     /// use zeroize::Zeroizing;
     ///
@@ -219,19 +230,20 @@ where
     /// }
     ///
     /// fn planner<'a>(
-    ///     keys: &'a LocalEncryptionKeyring,
-    ///     index_keys: &'a LocalBlindIndexKeyring,
+    ///     keys: &'a EncryptionKeyring,
+    ///     index_keys: &'a BlindIndexKeyring,
     /// ) -> RowPlanner<'a, UserEmail> {
     ///     RowPlanner::<UserEmail>::new(keys).with_index_with::<InviteEmailLookup>(index_keys)
     /// }
     /// ```
     #[must_use]
-    pub fn with_index_with<Spec>(mut self, keys: &'a dyn BlindIndexKeyProvider) -> Self
+    pub fn with_index_with<Spec>(mut self, keys: &'a dyn BlindIndexKeySource) -> Self
     where
         Spec: BlindIndexSpec<Field = F>,
     {
         self.indexes.push(IndexColumn {
             derive: derive_index_bytes::<F, Spec>,
+            current_key: current_index_key_id::<Spec>,
             keys,
         });
 
@@ -250,8 +262,7 @@ where
     /// # Errors
     ///
     /// Returns an error for malformed envelopes or blind indexes, an index
-    /// column arity mismatch, an unavailable key provider, or a field the key
-    /// provider does not route.
+    /// column arity mismatch, or unavailable keys.
     pub fn classify_row(&self, ciphertext: &[u8], indexes: &[&[u8]]) -> Result<RowState, Error> {
         self.check_arity(indexes)?;
 
@@ -377,7 +388,7 @@ where
     F: Field,
 {
     fn is_stale(&self, bytes: &[u8]) -> Result<bool, Error> {
-        Ok(inspect_blind_index(bytes)?.index_key_id() != self.keys.current_key(F::ID)?.id())
+        Ok(inspect_blind_index(bytes)?.index_key_id() != (self.current_key)(self.keys)?)
     }
 }
 

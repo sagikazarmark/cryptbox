@@ -57,8 +57,16 @@ impl KeyScope {
         Ok(Self::keys_of(specs.zip(&values.0)))
     }
 
-    // `PARTS` is sorted, so equal scopes list their parts in the same order.
-    fn keys_of<'s>(parts: impl Iterator<Item = (&'s PartSpec, &'s PartValue<'s>)>) -> Self {
+    /// The key scope of a binding without `keys` parts.
+    pub(crate) fn empty() -> Self {
+        Self(Box::new([]))
+    }
+
+    // Parts must be sorted, as `PARTS` is, so equal scopes list their parts in
+    // the same order.
+    pub(super) fn keys_of<'s>(
+        parts: impl Iterator<Item = (&'s PartSpec, &'s PartValue<'s>)>,
+    ) -> Self {
         let keys = parts
             .filter(|(spec, _)| spec.role == PartRole::Keys)
             .map(|(spec, value)| {

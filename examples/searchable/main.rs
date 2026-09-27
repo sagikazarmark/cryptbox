@@ -3,8 +3,8 @@
 use std::{env, error::Error, path::Path};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Sealed, index_key_id, inspect_blind_index, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Field, Sealed, index_key_id, inspect_blind_index, key_id,
 };
 use sqlx::{Connection, QueryBuilder, Row};
 use zeroize::Zeroizing;
@@ -78,7 +78,7 @@ fn load_root_key(directory: &Path, name: &str) -> Result<Zeroizing<[u8; 32]>> {
     Ok(bytes)
 }
 
-fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKeyring)> {
+fn load_keyrings_from_env() -> Result<(EncryptionKeyring, BlindIndexKeyring)> {
     let directory =
         env::var("CRYPTBOX_KEY_DIR").map_err(|_| "key configuration: CRYPTBOX_KEY_DIR required")?;
     let directory = Path::new(&directory);
@@ -115,8 +115,8 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
         };
     // State 1 does not even load generation 2. Staging retains generation 1 for writes.
     let encryption = match encryption_state.as_str() {
-        "1" => LocalEncryptionKeyring::new(encryption_1()?, [])?,
-        "2-only" => LocalEncryptionKeyring::new(
+        "1" => EncryptionKeyring::new(encryption_1()?, [])?,
+        "2-only" => EncryptionKeyring::new(
             EncryptionKey::new(
                 key_id!("20000000-0000-4000-8000-000000000002"),
                 *load_root_key(directory, "encryption-2.hex")?,
@@ -135,14 +135,14 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
                     *load_root_key(directory, "encryption-3.hex")?,
                 );
                 if encryption_state == "staged-3" {
-                    LocalEncryptionKeyring::new(encryption_2, [encryption_1, encryption_3])?
+                    EncryptionKeyring::new(encryption_2, [encryption_1, encryption_3])?
                 } else {
-                    LocalEncryptionKeyring::new(encryption_3, [encryption_1, encryption_2])?
+                    EncryptionKeyring::new(encryption_3, [encryption_1, encryption_2])?
                 }
             } else if encryption_state == "staged" {
-                LocalEncryptionKeyring::new(encryption_1, [encryption_2])?
+                EncryptionKeyring::new(encryption_1, [encryption_2])?
             } else {
-                LocalEncryptionKeyring::new(encryption_2, [encryption_1])?
+                EncryptionKeyring::new(encryption_2, [encryption_1])?
             }
         }
         _ => {
@@ -152,8 +152,8 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
         }
     };
     let indexes = match index_state.as_str() {
-        "1" => LocalBlindIndexKeyring::new(index_1()?, [])?,
-        "2-only" => LocalBlindIndexKeyring::new(
+        "1" => BlindIndexKeyring::new(index_1()?, [])?,
+        "2-only" => BlindIndexKeyring::new(
             BlindIndexKey::new(
                 index_key_id!("40000000-0000-4000-8000-000000000004"),
                 *load_root_key(directory, "index-2.hex")?,
@@ -172,14 +172,14 @@ fn load_keyrings_from_env() -> Result<(LocalEncryptionKeyring, LocalBlindIndexKe
                     *load_root_key(directory, "index-3.hex")?,
                 );
                 if index_state == "staged-3" {
-                    LocalBlindIndexKeyring::new(index_2, [index_1, index_3])?
+                    BlindIndexKeyring::new(index_2, [index_1, index_3])?
                 } else {
-                    LocalBlindIndexKeyring::new(index_3, [index_1, index_2])?
+                    BlindIndexKeyring::new(index_3, [index_1, index_2])?
                 }
             } else if index_state == "staged" {
-                LocalBlindIndexKeyring::new(index_1, [index_2])?
+                BlindIndexKeyring::new(index_1, [index_2])?
             } else {
-                LocalBlindIndexKeyring::new(index_2, [index_1])?
+                BlindIndexKeyring::new(index_2, [index_1])?
             }
         }
         _ => {
@@ -197,8 +197,8 @@ const CANARY: &str = "rotation-canary@example.invalid";
 #[cfg(feature = "maintenance")]
 async fn audit_current(
     connection: &mut DbConnection,
-    encryption: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<usize> {
     // Operator holds a write/restore pause across the full audit and retirement gate.
     let mut after: Option<i64> = None;
@@ -230,8 +230,8 @@ async fn maintenance(
     connection: &mut DbConnection,
     command: &str,
     run: &str,
-    encryption: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     #[cfg(feature = "postgres")]
     use cryptbox::migrate::PostgresSweepStore as Store;
@@ -321,8 +321,8 @@ async fn maintenance(
 
 fn rotation_canary(
     path: &str,
-    encryption: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     let value = CANARY.to_owned();
     let prepared = Sealed::<UserEmail>::prepare(&value, (), encryption)?
@@ -342,8 +342,8 @@ fn rotation_canary(
 
 fn rotation_ready(
     path: &str,
-    encryption: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     let text = std::fs::read_to_string(path)?;
     let lines: Vec<_> = text.lines().collect();
@@ -368,8 +368,8 @@ async fn put(
     connection: &mut DbConnection,
     id: i64,
     email: Option<String>,
-    encryption: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     if let Some(email) = &email {
         validate_email(email)?;
@@ -397,7 +397,7 @@ async fn put(
 // ANCHOR_END: searchable-put
 
 // ANCHOR: searchable-get
-async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyring) -> Result<()> {
+async fn get(connection: &mut DbConnection, id: i64, keys: &EncryptionKeyring) -> Result<()> {
     let row = sqlx::query("SELECT email FROM users WHERE id = $1")
         .bind(id)
         .fetch_one(connection)
@@ -416,8 +416,8 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &LocalEncryptionKeyri
 async fn search(
     connection: &mut DbConnection,
     query: &str,
-    encryption: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     let probes = EmailLookup::probes_with(query, indexes)?;
     let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
@@ -448,8 +448,8 @@ async fn macro_put(
     connection: &mut DbConnection,
     id: i64,
     email: String,
-    encryption: &LocalEncryptionKeyring,
-    indexes: &LocalBlindIndexKeyring,
+    encryption: &EncryptionKeyring,
+    indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     validate_email(&email)?;
     let prepared = Sealed::<UserEmail>::prepare(&email, (), encryption)?
@@ -468,11 +468,7 @@ async fn macro_put(
 }
 
 #[cfg(feature = "macro-check")]
-async fn macro_get(
-    connection: &mut DbConnection,
-    id: i64,
-    keys: &LocalEncryptionKeyring,
-) -> Result<()> {
+async fn macro_get(connection: &mut DbConnection, id: i64, keys: &EncryptionKeyring) -> Result<()> {
     // `?` preserves SQL NULL; the alias selects CryptBox's SQLx Decode implementation.
     // ANCHOR: searchable-macro-get
     let row = sqlx::query!(

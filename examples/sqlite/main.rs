@@ -3,7 +3,7 @@
 
 use std::{error::Error, fs::File, io::Read, path::Path};
 
-use cryptbox::{EncryptionKey, Field, KeyId, LocalEncryptionKeyring, Sealed, key_id};
+use cryptbox::{EncryptionKey, EncryptionKeyring, Field, KeyId, Sealed, key_id};
 use sqlx::{Connection, Row, sqlite::SqliteConnectOptions, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     futures_executor::block_on(run(command, Path::new(database), &keys))
 }
 
-fn load_keys(path: &Path) -> Result<LocalEncryptionKeyring, Box<dyn Error>> {
+fn load_keys(path: &Path) -> Result<EncryptionKeyring, Box<dyn Error>> {
     // Read directly into an erased buffer, including on read/decode failure. Limit input
     // to 64 hex digits plus an optional LF or CRLF; never include input in errors.
     let mut input = Zeroizing::new(Vec::with_capacity(67));
@@ -61,7 +61,7 @@ fn load_keys(path: &Path) -> Result<LocalEncryptionKeyring, Box<dyn Error>> {
     }
     let mut root = Zeroizing::new([0_u8; 32]);
     hex::decode_to_slice(hex, root.as_mut()).map_err(|_| invalid)?;
-    Ok(LocalEncryptionKeyring::new(
+    Ok(EncryptionKeyring::new(
         EncryptionKey::new(ENCRYPTION_KEY_ID, *root),
         [],
     )?)
@@ -70,7 +70,7 @@ fn load_keys(path: &Path) -> Result<LocalEncryptionKeyring, Box<dyn Error>> {
 async fn run(
     command: Command,
     database: &Path,
-    keys: &LocalEncryptionKeyring,
+    keys: &EncryptionKeyring,
 ) -> Result<(), Box<dyn Error>> {
     let options = SqliteConnectOptions::new()
         .filename(database)
@@ -93,7 +93,7 @@ async fn run(
 
 async fn write(
     connection: &mut SqliteConnection,
-    keys: &LocalEncryptionKeyring,
+    keys: &EncryptionKeyring,
 ) -> Result<(), Box<dyn Error>> {
     let sealed = Sealed::<UserEmail>::seal(&DEMO_EMAIL.to_owned(), (), keys)?;
     let mut transaction = connection.begin().await?;
@@ -112,7 +112,7 @@ async fn write(
 
 async fn read(
     connection: &mut SqliteConnection,
-    keys: &LocalEncryptionKeyring,
+    keys: &EncryptionKeyring,
 ) -> Result<(), Box<dyn Error>> {
     let row = sqlx::query("SELECT email FROM users WHERE id = 1")
         .fetch_one(connection)

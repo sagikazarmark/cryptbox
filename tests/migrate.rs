@@ -8,10 +8,10 @@ use std::{
 };
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, EncryptionKeyProvider, Error,
-    Field, FieldId, FieldOnly, IndexId, IndexKeyId, KeyId, KeyProviderError,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Router, Sealed, Utf8, field_id,
-    index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
+    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId, FieldOnly,
+    IndexId, IndexKeyId, KeyId, KeyScope, Padding, Sealed, Utf8, field_id, index_id, index_key_id,
+    inspect_blind_index, inspect_ciphertext, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
@@ -23,7 +23,6 @@ const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
 const CURRENT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
 const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("30000000-0000-4000-8000-000000000003");
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("40000000-0000-4000-8000-000000000004");
-const OTHER_FIELD_ID: FieldId = field_id!("80000000-0000-4000-8000-000000000008");
 
 struct UserEmail;
 
@@ -93,43 +92,43 @@ impl BlindIndexSpec for EmailDomain {
     }
 }
 
-fn old_keys() -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(EncryptionKey::new(OLD_KEY_ID, [0x11; 32]), []).unwrap()
+fn old_keys() -> EncryptionKeyring {
+    EncryptionKeyring::new(EncryptionKey::new(OLD_KEY_ID, [0x11; 32]), []).unwrap()
 }
 
-fn rotated_keys() -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(
+fn rotated_keys() -> EncryptionKeyring {
+    EncryptionKeyring::new(
         EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]),
         [EncryptionKey::new(OLD_KEY_ID, [0x11; 32])],
     )
     .unwrap()
 }
 
-fn old_index_keys() -> LocalBlindIndexKeyring {
-    LocalBlindIndexKeyring::new(BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x33; 32]), []).unwrap()
+fn old_index_keys() -> BlindIndexKeyring {
+    BlindIndexKeyring::new(BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x33; 32]), []).unwrap()
 }
 
-fn rotated_index_keys() -> LocalBlindIndexKeyring {
-    LocalBlindIndexKeyring::new(
+fn rotated_index_keys() -> BlindIndexKeyring {
+    BlindIndexKeyring::new(
         BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x44; 32]),
         [BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x33; 32])],
     )
     .unwrap()
 }
 
-fn encrypt_email(email: &str, keys: &LocalEncryptionKeyring) -> Vec<u8> {
+fn encrypt_email(email: &str, keys: &EncryptionKeyring) -> Vec<u8> {
     Sealed::<UserEmail>::seal(&email.to_owned(), (), keys)
         .unwrap()
         .into_bytes()
 }
 
-fn derive_email_index(email: &str, index_keys: &LocalBlindIndexKeyring) -> Vec<u8> {
+fn derive_email_index(email: &str, index_keys: &BlindIndexKeyring) -> Vec<u8> {
     EmailLookup::derive_with(&email.to_owned(), index_keys)
         .unwrap()
         .into_bytes()
 }
 
-fn derive_email_domain_index(email: &str, index_keys: &LocalBlindIndexKeyring) -> Vec<u8> {
+fn derive_email_domain_index(email: &str, index_keys: &BlindIndexKeyring) -> Vec<u8> {
     EmailDomain::derive_with(&email.to_owned(), index_keys)
         .unwrap()
         .into_bytes()
@@ -182,7 +181,7 @@ fn classification_treats_bytes_without_magic_as_legacy() {
     assert!(read.is_legacy());
     assert!(read.as_sealed().is_none());
 
-    // A legacy plaintext read never touches key providers, including the
+    // A legacy plaintext read never touches key sources, including the
     // uninstalled process-global context.
     assert_eq!(read.open_global().unwrap(), "mark@example.com");
 }
@@ -841,19 +840,8 @@ fn sweep_stops_at_an_unrecoverable_legacy_row_and_resumes_after_repair() {
 
 #[test]
 fn verification_counts_foreign_ciphertext_without_recovery() {
-    struct ClassificationOnlyKeys(EncryptionKey);
-
-    impl EncryptionKeyProvider for ClassificationOnlyKeys {
-        fn current_key(&self, _: FieldId) -> Result<EncryptionKey, KeyProviderError> {
-            Ok(self.0.clone())
-        }
-
-        fn key(&self, _: FieldId, _: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
-            panic!("verification must not resolve decryption keys")
-        }
-    }
-
-    let keys = ClassificationOnlyKeys(EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]));
+    // Without the previous key, any attempt to open a stale row would fail.
+    let keys = EncryptionKeyring::new(EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]), []).unwrap();
     let index_keys = rotated_index_keys();
     let planner = RowPlanner::<UserEmail>::new(&keys)
         .with_legacy(&PanickingLegacy)
@@ -1016,41 +1004,52 @@ fn envelope_rows() -> Vec<(i64, Vec<u8>, Vec<Vec<u8>>)> {
     ]
 }
 
-fn assert_verification_aborts_as_unrouted(sweep: &Sweep<'_, UserEmail>) {
+fn assert_verification_aborts_without_keys(sweep: &Sweep<'_, UserEmail>) {
     let mut store = MemoryStore::new(envelope_rows());
 
     assert!(matches!(
         futures_executor::block_on(sweep.verify(&mut store)),
-        Err(SweepError::Row(Error::UnroutedField(field))) if field == UserEmail::ID
+        Err(SweepError::Row(Error::KeysUnavailable))
     ));
     // The batch aborts rather than returning a report that counts every row
     // as malformed.
     assert!(matches!(
         futures_executor::block_on(sweep.verify_batch(&mut store, None)),
-        Err(SweepError::Row(Error::UnroutedField(field))) if field == UserEmail::ID
+        Err(SweepError::Row(Error::KeysUnavailable))
     ));
 }
 
-#[test]
-fn verification_aborts_when_a_strict_router_has_no_encryption_route() {
-    let keys = Router::strict()
-        .route_id(OTHER_FIELD_ID, rotated_keys())
-        .unwrap();
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
+/// A key source whose keys are not loaded.
+struct UnloadedKeys;
 
-    assert_verification_aborts_as_unrouted(&Sweep::new(planner));
+impl EncryptionKeySource for UnloadedKeys {
+    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<&EncryptionKeyring, Error> {
+        Err(Error::KeysUnavailable)
+    }
+}
+
+impl BlindIndexKeySource for UnloadedKeys {
+    fn blind_index_keyring(&self, _: IndexId, _: &KeyScope) -> Result<&BlindIndexKeyring, Error> {
+        Err(Error::KeysUnavailable)
+    }
 }
 
 #[test]
-fn verification_aborts_when_a_strict_router_has_no_blind_index_route() {
-    let keys = rotated_keys();
-    let index_keys = Router::strict()
-        .route_id(OTHER_FIELD_ID, rotated_index_keys())
-        .unwrap();
+fn verification_aborts_when_encryption_keys_are_unavailable() {
+    let keys = UnloadedKeys;
+    let index_keys = rotated_index_keys();
     let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
 
-    assert_verification_aborts_as_unrouted(&Sweep::new(planner));
+    assert_verification_aborts_without_keys(&Sweep::new(planner));
+}
+
+#[test]
+fn verification_aborts_when_blind_index_keys_are_unavailable() {
+    let keys = rotated_keys();
+    let index_keys = UnloadedKeys;
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
+
+    assert_verification_aborts_without_keys(&Sweep::new(planner));
 }
 
 #[test]

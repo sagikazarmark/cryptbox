@@ -1,6 +1,6 @@
 flowchart TB
     subgraph trusted["Trusted application boundary"]
-        K["Key providers: independent encryption and index roots"]
+        K["Keyrings: independent encryption and index roots"]
         A["Application: plaintext, fields, authorization"]
         C["CryptBox: encode, encrypt, authenticate, decode"]
         K --> C

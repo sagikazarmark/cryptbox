@@ -10,13 +10,13 @@ Choose the entry point that fits your question:
 
 ## Integrate into a project
 
-- [Integration design and trade-offs](integration.md): persistent schema, storage boundaries, providers, and search.
+- [Integration design and trade-offs](integration.md): persistent schema, storage boundaries, keys, and search.
 - [SQLite example](../examples/sqlite/README.md): run and adapt durable encrypted storage with a separate-process read.
 - [Searchable storage example](../examples/searchable/README.md): atomic writes and verified equality lookup on PostgreSQL or SQLite.
 - [Automatic SQLx adapters](testing.md#automatic-adapters): a runnable example and its key-context lifetime.
 - [Stored-values example](../examples/stored_values/README.md): ciphertext and index serialization with Serde.
 - [Custom-field example](../examples/custom_field/README.md): codecs, normalization, key sources, and wrapped plaintext.
-- [Testing and diagnostics](testing.md): isolated providers and sanitized failures.
+- [Testing and diagnostics](testing.md): isolated keys and sanitized failures.
 - [Adopt existing data](legacy-migration.md): prerequisites and rollout for plaintext or previous-solution ciphertext.
 
 ## Operate

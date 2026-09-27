@@ -1,4 +1,4 @@
-use crate::{FieldId, IndexId, IndexKeyId, KeyId, SuiteId};
+use crate::{IndexId, IndexKeyId, KeyId, SuiteId};
 
 /// The non-sensitive category of a codec failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,22 +63,6 @@ impl Default for BlindIndexError {
     }
 }
 
-/// An error returned while resolving local key material.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[non_exhaustive]
-pub enum KeyProviderError {
-    /// The provider is temporarily or permanently unavailable.
-    #[error("key provider is unavailable")]
-    Unavailable,
-    /// The provider does not serve this field, such as a strict router
-    /// without a route for it.
-    #[error("no key provider is routed for field {0}")]
-    UnroutedField(FieldId),
-    /// A [`Keys`](crate::Keys) value was built without a blind-index provider.
-    #[error("no blind-index key provider is configured")]
-    BlindIndexKeysNotConfigured,
-}
-
 /// An error returned by `CryptBox` operations.
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
@@ -95,10 +79,10 @@ pub enum Error {
     /// The envelope uses an unavailable suite.
     #[error("unsupported encryption suite {0}")]
     UnsupportedSuite(SuiteId),
-    /// The envelope names a key that the provider cannot resolve.
+    /// The envelope names a key that the keyring does not hold.
     #[error("unknown encryption key {0}")]
     UnknownEncryptionKey(KeyId),
-    /// A blind index names a key that the provider cannot resolve.
+    /// A blind index names a key that the keyring does not hold.
     #[error("unknown blind-index key {0}")]
     UnknownBlindIndexKey(IndexKeyId),
     /// Ciphertext authentication failed.
@@ -119,27 +103,18 @@ pub enum Error {
     /// Normalizing a blind-index input failed.
     #[error("blind-index normalization failed")]
     BlindIndexNormalizationFailed,
-    /// A local key provider was unavailable.
-    #[error("key provider is unavailable")]
-    KeyProviderUnavailable,
+    /// A key source could not supply a keyring, such as keys that a KMS has
+    /// not loaded yet.
+    #[error("keys are unavailable")]
+    KeysUnavailable,
     /// A global convenience was used before [`keys::install`](crate::keys::install).
     #[error("keys are not installed")]
     KeysNotInstalled,
-    /// The key provider does not serve the field, such as a strict router
-    /// without a route for it.
-    #[error("no key provider is routed for field {0}")]
-    UnroutedField(FieldId),
-    /// A router was given more than one route for the same field ID.
-    #[error("duplicate route for field {0}")]
-    DuplicateRoute(FieldId),
-    /// A blind-index operation used [`Keys`](crate::Keys) built without a
-    /// blind-index provider; add one with
+    /// A blind-index operation used [`Keys`](crate::Keys) without a
+    /// blind-index keyring; add one with
     /// [`Keys::with_blind_indexes`](crate::Keys::with_blind_indexes).
-    #[error("no blind-index key provider is configured")]
+    #[error("no blind-index keyring is configured")]
     BlindIndexKeysNotConfigured,
-    /// Keys were already installed; see [`keys::AlreadyInstalled`](crate::keys::AlreadyInstalled).
-    #[error("keys are already installed")]
-    KeysAlreadyInstalled,
     /// A keyring contains the same encryption key ID more than once.
     #[error("duplicate encryption key ID {0}")]
     DuplicateEncryptionKey(KeyId),
@@ -200,24 +175,8 @@ pub enum Error {
     LegacyRecoveryFailed(#[from] crate::migrate::LegacyError),
 }
 
-impl From<KeyProviderError> for Error {
-    fn from(error: KeyProviderError) -> Self {
-        match error {
-            KeyProviderError::Unavailable => Self::KeyProviderUnavailable,
-            KeyProviderError::UnroutedField(field) => Self::UnroutedField(field),
-            KeyProviderError::BlindIndexKeysNotConfigured => Self::BlindIndexKeysNotConfigured,
-        }
-    }
-}
-
 impl From<BlindIndexError> for Error {
     fn from(_: BlindIndexError) -> Self {
         Self::BlindIndexNormalizationFailed
-    }
-}
-
-impl From<crate::keys::AlreadyInstalled> for Error {
-    fn from(_: crate::keys::AlreadyInstalled) -> Self {
-        Self::KeysAlreadyInstalled
     }
 }

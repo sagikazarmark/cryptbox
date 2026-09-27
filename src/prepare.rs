@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    BlindIndexKeyProvider, BlindIndexRef, BlindIndexSpec, Error, Field, FieldOnly, Sealed,
+    BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Field, FieldOnly, Sealed,
     blind::derive_value, keys,
 };
 
@@ -70,7 +70,7 @@ where
     /// ```compile_fail,E0271
     /// use cryptbox::{
     ///     BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId,
-    ///     LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+    ///     BlindIndexKeyring, EncryptionKeyring, Padding, Sealed, Utf8,
     /// };
     /// use zeroize::Zeroizing;
     ///
@@ -117,8 +117,8 @@ where
     /// }
     ///
     /// fn prepare(
-    ///     keys: &LocalEncryptionKeyring,
-    ///     index_keys: &LocalBlindIndexKeyring,
+    ///     keys: &EncryptionKeyring,
+    ///     index_keys: &BlindIndexKeyring,
     /// ) -> Result<(), cryptbox::Error> {
     ///     let email = "mark@example.com".to_owned();
     ///     Sealed::<UserEmail>::prepare(&email, (), keys)?
@@ -130,8 +130,11 @@ where
     /// # Errors
     ///
     /// Returns an error for duplicate index IDs, normalization failure,
-    /// invalid precision, or an unavailable provider.
-    pub fn with_index_with<Spec>(mut self, keys: &dyn BlindIndexKeyProvider) -> Result<Self, Error>
+    /// invalid precision, or unavailable keys.
+    pub fn with_index_with<Spec>(
+        mut self,
+        keys: &(impl BlindIndexKeySource + ?Sized),
+    ) -> Result<Self, Error>
     where
         Spec: BlindIndexSpec<Field = F>,
     {
@@ -156,7 +159,7 @@ where
     /// # Errors
     ///
     /// Returns [`Error::KeysNotInstalled`] before installation, or an error for
-    /// duplicate index IDs, unavailable providers, or failed index derivation.
+    /// duplicate index IDs, unavailable keys, or failed index derivation.
     pub fn with_index<Spec>(self) -> Result<Self, Error>
     where
         F: Field<Binding = FieldOnly>,

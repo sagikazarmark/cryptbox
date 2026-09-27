@@ -5,9 +5,9 @@
 use std::sync::LazyLock;
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyProvider, Error, Field, FieldOnly, IndexId, KeyContext, KeyId,
-    LocalEncryptionKeyring, Padding, Plain, Sealed, Utf8, encrypt, index_id, key_id, keys,
+    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, EncryptionKey, EncryptionKeyring,
+    Error, Field, FieldOnly, IndexId, KeyContext, KeyId, Keys, Padding, Plain, Sealed, Utf8,
+    encrypt, index_id, key_id, keys,
 };
 use sqlx::{
     Connection, Decode, Encode, Row, Sqlite, Type,
@@ -22,9 +22,9 @@ const KEY_ID: KeyId = key_id!("f0000000-0000-4000-8000-00000000000f");
 struct TestKeys;
 
 impl KeyContext for TestKeys {
-    fn encryption_keys() -> Result<&'static dyn EncryptionKeyProvider, Error> {
-        static KEYS: LazyLock<LocalEncryptionKeyring> = LazyLock::new(|| {
-            LocalEncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap()
+    fn keys() -> Result<&'static Keys, Error> {
+        static KEYS: LazyLock<Keys> = LazyLock::new(|| {
+            Keys::new(EncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap())
         });
 
         Ok(&*KEYS)
@@ -118,7 +118,7 @@ fn sqlite_encode_encrypts_plaintext_into_an_owned_blob() {
 
 #[test]
 fn sqlite_sealed_encoding_preserves_the_binary_envelope() {
-    let keys = TestKeys::encryption_keys().unwrap();
+    let keys = TestKeys::keys().unwrap();
     let bytes = encrypt(TestField::ID, TestField::PADDING, b"value", keys).unwrap();
     let ciphertext = Sealed::<TestField>::from_bytes(bytes.clone()).unwrap();
     let mut buffer = Vec::new();
@@ -157,9 +157,7 @@ fn sqlite_round_trips_sealed_values_and_opens_plain_columns() {
         assert_eq!(opened.expose_secret(), "mark@example.com");
         // The column used `TestKeys`; the global was never installed.
         assert_eq!(
-            sealed
-                .open((), TestKeys::encryption_keys().unwrap())
-                .unwrap(),
+            sealed.open((), TestKeys::keys().unwrap()).unwrap(),
             "mark@example.com"
         );
         assert_eq!(keys::installed().unwrap_err(), Error::KeysNotInstalled);
@@ -175,7 +173,7 @@ fn sqlite_binds_an_explicitly_opened_value_through_its_own_key_context() {
             .await
             .unwrap();
 
-        let explicit = TestKeys::encryption_keys().unwrap();
+        let explicit = TestKeys::keys().unwrap();
         let stored =
             Sealed::<TestField>::seal(&"mark@example.com".to_owned(), (), explicit).unwrap();
         let value = Plain::<TestField, TestKeys>::new(stored.open((), explicit).unwrap());

@@ -1,9 +1,8 @@
 //! Public-boundary tests for sealing and opening values under their runtime binding.
 
 use cryptbox::{
-    Binding, EncryptionKey, Error, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding,
-    PartKind, PartSpec, PartValue, PartValues, RecordId, Sealed, Tenant, TenantId, Utf8, key_id,
-    part_id,
+    Binding, EncryptionKey, EncryptionKeyring, Error, Field, FieldId, FieldOnly, Padding, PartKind,
+    PartSpec, PartValue, PartValues, RecordId, Sealed, Tenant, TenantId, Utf8, key_id, part_id,
 };
 
 /// An org scopes keys; a workspace is only bound.
@@ -93,8 +92,8 @@ fn first_key() -> EncryptionKey {
     EncryptionKey::new(key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"), [0x42; 32])
 }
 
-fn keys() -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(first_key(), []).unwrap()
+fn keys() -> EncryptionKeyring {
+    EncryptionKeyring::new(first_key(), []).unwrap()
 }
 
 fn scope(org: u8, workspace: &[u8]) -> OrgWorkspace {
@@ -255,7 +254,7 @@ fn reseal_rewrites_a_value_under_the_current_key() {
     assert!(!sealed.needs_reseal(args, &first).unwrap());
 
     let current = EncryptionKey::generate().unwrap();
-    let rotated = LocalEncryptionKeyring::new(current.clone(), [first_key()]).unwrap();
+    let rotated = EncryptionKeyring::new(current.clone(), [first_key()]).unwrap();
     assert!(sealed.needs_reseal(args, &rotated).unwrap());
 
     let resealed = sealed.reseal(args, &rotated).unwrap();
@@ -282,7 +281,7 @@ fn needs_reseal_reports_another_shape() {
 #[test]
 fn reseal_across_moves_a_value_to_other_binding_values_and_keys() {
     let from_keys = keys();
-    let to_keys = LocalEncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+    let to_keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
     let (from_scope, to_scope) = (scope(1, b"ws-1"), scope(1, b"ws-2"));
     let record = RecordId::from(7_i64);
     let sealed =

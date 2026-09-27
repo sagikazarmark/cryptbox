@@ -1,9 +1,9 @@
 //! Public-boundary tests for safe key construction.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexSpec, EncryptionKey, Error,
-    Field, FieldId, FieldOnly, IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding,
-    Raw, decrypt, encrypt, index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, Field, FieldId, FieldOnly, IndexId, Padding, Raw, decrypt, encrypt,
+    index_id, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -43,7 +43,7 @@ fn encryption_keys_can_be_generated_for_immediate_use() {
     let second = EncryptionKey::generate().unwrap();
     assert_ne!(first.id(), second.id());
 
-    let keys = LocalEncryptionKeyring::new(first, []).unwrap();
+    let keys = EncryptionKeyring::new(first, []).unwrap();
     let ciphertext = encrypt(TestField::ID, TestField::PADDING, b"generated key", &keys).unwrap();
 
     assert_eq!(
@@ -61,9 +61,9 @@ fn blind_index_keys_can_be_generated_for_immediate_use() {
     assert_ne!(first.id(), second.id());
 
     let expected_id = first.id();
-    let keys = LocalBlindIndexKeyring::new(first, []).unwrap();
+    let keys = BlindIndexKeyring::new(first, []).unwrap();
 
-    assert_eq!(keys.current_key(TestField::ID).unwrap().id(), expected_id);
+    assert_eq!(keys.current().id(), expected_id);
 }
 
 #[test]
@@ -77,8 +77,8 @@ fn encryption_keys_load_from_hex_and_base64() {
     let base64_key =
         EncryptionKey::from_base64(id, "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=").unwrap();
 
-    let writing_keys = LocalEncryptionKeyring::new(hex_key, []).unwrap();
-    let reading_keys = LocalEncryptionKeyring::new(base64_key, []).unwrap();
+    let writing_keys = EncryptionKeyring::new(hex_key, []).unwrap();
+    let reading_keys = EncryptionKeyring::new(base64_key, []).unwrap();
     let ciphertext = encrypt(
         TestField::ID,
         TestField::PADDING,
@@ -106,8 +106,8 @@ fn blind_index_keys_load_from_hex_and_base64() {
     let base64_key =
         BlindIndexKey::from_base64(id, "QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI=").unwrap();
 
-    let hex_keys = LocalBlindIndexKeyring::new(hex_key, []).unwrap();
-    let base64_keys = LocalBlindIndexKeyring::new(base64_key, []).unwrap();
+    let hex_keys = BlindIndexKeyring::new(hex_key, []).unwrap();
+    let base64_keys = BlindIndexKeyring::new(base64_key, []).unwrap();
 
     assert_eq!(
         ExactValue::derive_with(&b"loaded key".to_vec(), &hex_keys).unwrap(),

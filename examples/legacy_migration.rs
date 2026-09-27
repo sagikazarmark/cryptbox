@@ -7,8 +7,8 @@ use chacha20poly1305::{
     aead::{Aead, Payload},
 };
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Field, IndexKeyId, KeyId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Sealed, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Field, IndexKeyId, KeyId, Sealed, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore,
         Sweep, SweepTable,
@@ -134,10 +134,10 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let current_key = EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]);
     let old_index_key = BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x33; 32]);
     let current_index_key = BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x44; 32]);
-    let old_keys = LocalEncryptionKeyring::new(old_key.clone(), [])?;
-    let old_index_keys = LocalBlindIndexKeyring::new(old_index_key.clone(), [])?;
-    let keys = LocalEncryptionKeyring::new(current_key, [old_key])?;
-    let index_keys = LocalBlindIndexKeyring::new(current_index_key, [old_index_key])?;
+    let old_keys = EncryptionKeyring::new(old_key.clone(), [])?;
+    let old_index_keys = BlindIndexKeyring::new(old_index_key.clone(), [])?;
+    let keys = EncryptionKeyring::new(current_key, [old_key])?;
+    let index_keys = BlindIndexKeyring::new(current_index_key, [old_index_key])?;
 
     // The table starts with foreign ciphertext, a plaintext straggler, stale
     // CryptBox ciphertext, and current CryptBox ciphertext.
@@ -214,7 +214,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
 
 async fn verify_permissive_reads(
     connection: &mut SqliteConnection,
-    keys: &LocalEncryptionKeyring,
+    keys: &EncryptionKeyring,
     legacy: &PreviousEncryption,
 ) -> Result<(), Box<dyn Error>> {
     let foreign: Vec<u8> = sqlx::query_scalar("SELECT email_ciphertext FROM users WHERE id = 1")
@@ -255,8 +255,8 @@ async fn insert_raw(connection: &mut SqliteConnection, bytes: Vec<u8>) -> Result
 async fn insert_encrypted(
     connection: &mut SqliteConnection,
     email: &str,
-    keys: &LocalEncryptionKeyring,
-    index_keys: &LocalBlindIndexKeyring,
+    keys: &EncryptionKeyring,
+    index_keys: &BlindIndexKeyring,
 ) -> Result<(), Box<dyn Error>> {
     let value = email.to_owned();
     let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)?

@@ -2,9 +2,9 @@
 //! See README.md beside this source for usage and trust boundaries.
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, Sealed, index_key_id, inspect_blind_index,
-    inspect_ciphertext, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, Field, Sealed, index_key_id, inspect_blind_index, inspect_ciphertext,
+    key_id,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -42,11 +42,11 @@ struct StoredUser {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Fixed, independent roots are for this demonstration only. Load durable keys
     // securely in applications; never reuse a generation ID with different material.
-    let keys = LocalEncryptionKeyring::new(
+    let keys = EncryptionKeyring::new(
         EncryptionKey::new(key_id!("40000000-0000-4000-8000-000000000004"), [0x31; 32]),
         [],
     )?;
-    let index_keys = LocalBlindIndexKeyring::new(
+    let index_keys = BlindIndexKeyring::new(
         BlindIndexKey::new(
             index_key_id!("50000000-0000-4000-8000-000000000005"),
             [0x42; 32],

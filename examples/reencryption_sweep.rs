@@ -3,9 +3,8 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, BlindIndexSpec,
-    EncryptionKey, EncryptionKeyProvider, Field, IndexKeyId, KeyId, LocalBlindIndexKeyring,
-    LocalEncryptionKeyring, Router, Sealed, index_key_id, inspect_blind_index, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Field, IndexKeyId, KeyId, Sealed, index_key_id, inspect_blind_index, key_id,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -68,8 +67,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let current_key = EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]);
     let old_index_key = BlindIndexKey::new(OLD_INDEX_KEY_ID, [0x33; 32]);
     let current_index_key = BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x44; 32]);
-    let old_keys = LocalEncryptionKeyring::new(old_key.clone(), [])?;
-    let old_index_keys = LocalBlindIndexKeyring::new(old_index_key.clone(), [])?;
+    let old_keys = EncryptionKeyring::new(old_key.clone(), [])?;
+    let old_index_keys = BlindIndexKeyring::new(old_index_key.clone(), [])?;
 
     // Explicit zero/negative IDs are legal even with SQLite AUTOINCREMENT.
     // Neither the initial scan nor fresh verification may use zero as a sentinel.
@@ -82,12 +81,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
     }
 
     // Deploy these current-plus-historical keyrings to every writer before sweeping.
-    let rotated_keys = Router::strict()
-        .route::<UserEmail>(LocalEncryptionKeyring::new(current_key.clone(), [old_key])?)?;
-    let rotated_index_keys = Router::strict().route::<UserEmail>(LocalBlindIndexKeyring::new(
-        current_index_key.clone(),
-        [old_index_key],
-    )?)?;
+    let rotated_keys = EncryptionKeyring::new(current_key.clone(), [old_key])?;
+    let rotated_index_keys = BlindIndexKeyring::new(current_index_key.clone(), [old_index_key])?;
     insert_email(
         &mut connection,
         4,
@@ -123,10 +118,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
     // This verifies live structure/generations, not authentication or index consistency.
     // Online removal is separate from retaining recovery keys: backups and other
     // stores may still require historical keys. A clean pass does not justify destruction.
-    let current_keys =
-        Router::strict().route::<UserEmail>(LocalEncryptionKeyring::new(current_key, [])?)?;
-    let current_index_keys =
-        Router::strict().route::<UserEmail>(LocalBlindIndexKeyring::new(current_index_key, [])?)?;
+    let current_keys = EncryptionKeyring::new(current_key, [])?;
+    let current_index_keys = BlindIndexKeyring::new(current_index_key, [])?;
     assert!(verify_sweep(&mut connection, &current_keys, &current_index_keys).await?);
     assert_eq!(
         EmailLookup::probes_with("first@example.com", &current_index_keys)?.len(),
@@ -151,8 +144,8 @@ async fn insert_email(
     connection: &mut SqliteConnection,
     id: i64,
     email: &str,
-    keys: &dyn EncryptionKeyProvider,
-    index_keys: &dyn BlindIndexKeyProvider,
+    keys: &EncryptionKeyring,
+    index_keys: &BlindIndexKeyring,
 ) -> Result<(), Box<dyn Error>> {
     let value = email.to_owned();
     let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)?
@@ -170,10 +163,10 @@ async fn insert_email(
 
 async fn sweep_batch(
     connection: &mut SqliteConnection,
-    keys: &dyn EncryptionKeyProvider,
-    index_keys: &dyn BlindIndexKeyProvider,
+    keys: &EncryptionKeyring,
+    index_keys: &BlindIndexKeyring,
 ) -> Result<Option<i64>, Box<dyn Error>> {
-    let current_index_key_id = index_keys.current_key(UserEmail::ID)?.id();
+    let current_index_key_id = index_keys.current().id();
     let after_id: Option<i64> =
         sqlx::query_scalar("SELECT last_id FROM migration_progress WHERE name = ?")
             .bind(MIGRATION_NAME)
@@ -249,10 +242,10 @@ async fn sweep_batch(
 
 async fn verify_sweep(
     connection: &mut SqliteConnection,
-    keys: &dyn EncryptionKeyProvider,
-    index_keys: &dyn BlindIndexKeyProvider,
+    keys: &EncryptionKeyring,
+    index_keys: &BlindIndexKeyring,
 ) -> Result<bool, Box<dyn Error>> {
-    let current_index_key_id = index_keys.current_key(UserEmail::ID)?.id();
+    let current_index_key_id = index_keys.current().id();
     let mut after_id = None;
     let mut current = true;
     loop {

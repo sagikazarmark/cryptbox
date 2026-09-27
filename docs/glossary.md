@@ -63,27 +63,35 @@ serve only `FieldOnly` fields without a record. The global conveniences
 (`seal_global()`, `open_global()`, `with_index()`, `probes()`) and the automatic
 column read them and fail with `KeysNotInstalled` before installation; every
 other operation takes keys explicitly.
-<!-- Agent guidance: avoid “global key context” or “global providers”; the global is the installed keys. -->
+<!-- Agent guidance: avoid “global key context” or “global keyring”; the global is the installed keys. -->
 
 **Key context**:
 The key source of an automatic SQLx column, named in its type as
 `Plain<F, K>`: the installed keys (`GlobalKeys`, the default) or an
-application-owned static. It belongs to the column type, not to a field; fields
-reach providers through a router.
+application-owned static `Keys`. It belongs to the column type, not to a field.
 <!-- Agent guidance: avoid “binding context” as a synonym. -->
 
 **Key generation**:
 An immutable pairing of a generation identifier and root key material. Encryption
 and blind-index generations are separate roles with independently generated keys.
 
-**Key provider**:
-A source of current and readable key generations for one key role. Every request
-names the field it serves; a provider that serves all fields alike may ignore it.
-
 **Key scope**:
 The `keys` parts of a binding, which key custody follows (`KeyScope`). Bindings
 with equal `keys` values share a key scope whatever their other parts; a binding
 without `keys` parts has the empty key scope.
+
+**Key source**:
+What an operation takes its keys from (`EncryptionKeySource`,
+`BlindIndexKeySource`). The operation passes it the field or index and the key
+scope; a keyring and `Keys` ignore both and return themselves, and an
+application source may pick a keyring by either.
+<!-- Agent guidance: “key provider”, `Router`, and “route” are retired (ADR-0006); choosing which keyring protects a field is application code, not library routing. -->
+
+**Keyring**:
+The current key generation of one key role plus the previous generations that
+stored data still needs (`EncryptionKeyring`, `BlindIndexKeyring`); `Keys`
+pairs the two roles. Key IDs are generated UUIDs, unique within a keyring and
+never shared across keyrings, so opening with the wrong keyring fails loudly.
 
 **Migration-state verification**:
 Inspection of stored structure and generation convergence. It is distinct from
@@ -122,19 +130,10 @@ current generation and any staged or retained generations. A readable generation
 may be staged before first use.
 <!-- Agent guidance: avoid “old key”; a readable generation may be staged before first use. -->
 
-**Route**:
-The assignment of a field ID to the key provider that protects it. Routes are
-deployment configuration, not persistent schema: the envelope records the key
-ID, so a field can move to another provider that resolves the same generations.
-A strict router rejects unrouted fields; a fallback router serves them from a
-default provider and reports that it does. A provider reports its *routing* of
-a field as direct (it serves every field itself), routed, fallback, or unrouted.
-<!-- Agent guidance: avoid “falls back” for strict routers; they reject unrouted fields. `Routing` is how a field is served; a route is the assignment itself. -->
-
 **Schema manifest**:
 A reviewable listing of registered fields and blind indexes with their
 persistent schema: field ID, value type, codec ID, padding, index ID,
-precision, and normalizer name. Given keys, it also lists each field's route.
+precision, and normalizer name.
 Applications compare it with a committed snapshot in CI.
 <!-- Agent guidance: the codec ID and normalizer name are reported, never stored in ciphertext or indexes. -->
 

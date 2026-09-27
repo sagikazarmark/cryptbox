@@ -1,8 +1,8 @@
 //! Public-boundary tests for encryption, field binding, and key rotation.
 
-use cryptbox::{EncryptionKey, EncryptionKeyProvider};
+use cryptbox::EncryptionKey;
 use cryptbox::{
-    Error, Field, FieldOnly, KeyId, LocalEncryptionKeyring, Padding, Raw, Sealed, Utf8, decrypt,
+    EncryptionKeyring, Error, Field, FieldOnly, KeyId, Padding, Raw, Sealed, Utf8, decrypt,
     encrypt, field_id, inspect_ciphertext, is_ciphertext, key_id, needs_reencryption, reencrypt,
 };
 
@@ -13,8 +13,8 @@ fn key(id: KeyId, byte: u8) -> EncryptionKey {
     EncryptionKey::new(id, [byte; 32])
 }
 
-fn keyring(current_id: KeyId, current_byte: u8) -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(key(current_id, current_byte), []).unwrap()
+fn keyring(current_id: KeyId, current_byte: u8) -> EncryptionKeyring {
+    EncryptionKeyring::new(key(current_id, current_byte), []).unwrap()
 }
 
 struct EmailField;
@@ -212,7 +212,7 @@ fn decryption_resolves_only_the_key_named_by_the_envelope() {
 #[test]
 fn changing_a_key_id_to_another_readable_generation_fails_authentication() {
     let old = key(OLD_KEY_ID, 13);
-    let writing_keys = LocalEncryptionKeyring::new(old.clone(), []).unwrap();
+    let writing_keys = EncryptionKeyring::new(old.clone(), []).unwrap();
     let mut ciphertext = encrypt(
         EmailField::ID,
         Padding::NONE,
@@ -221,7 +221,7 @@ fn changing_a_key_id_to_another_readable_generation_fails_authentication() {
     )
     .unwrap();
     let current = key(CURRENT_KEY_ID, 17);
-    let rotated = LocalEncryptionKeyring::new(current, [old]).unwrap();
+    let rotated = EncryptionKeyring::new(current, [old]).unwrap();
 
     ciphertext[7..23].copy_from_slice(CURRENT_KEY_ID.as_bytes());
 
@@ -234,10 +234,10 @@ fn changing_a_key_id_to_another_readable_generation_fails_authentication() {
 #[test]
 fn rotation_preserves_reads_and_reencryption_uses_the_current_key() {
     let old = key(OLD_KEY_ID, 19);
-    let old_keys = LocalEncryptionKeyring::new(old.clone(), []).unwrap();
+    let old_keys = EncryptionKeyring::new(old.clone(), []).unwrap();
     let ciphertext = encrypt(EmailField::ID, Padding::NONE, b"rotate me", &old_keys).unwrap();
 
-    let rotated = LocalEncryptionKeyring::new(key(CURRENT_KEY_ID, 23), [old]).unwrap();
+    let rotated = EncryptionKeyring::new(key(CURRENT_KEY_ID, 23), [old]).unwrap();
     assert_eq!(
         decrypt(EmailField::ID, &ciphertext, &rotated)
             .unwrap()
@@ -314,17 +314,14 @@ fn keyrings_reject_duplicate_generation_ids() {
     let duplicate = key(CURRENT_KEY_ID, 41);
 
     assert!(matches!(
-        LocalEncryptionKeyring::new(key(CURRENT_KEY_ID, 43), [duplicate]),
+        EncryptionKeyring::new(key(CURRENT_KEY_ID, 43), [duplicate]),
         Err(Error::DuplicateEncryptionKey(id)) if id == CURRENT_KEY_ID
     ));
 }
 
 #[test]
-fn providers_return_the_configured_current_generation() {
+fn keyrings_return_the_configured_current_generation() {
     let keys = keyring(CURRENT_KEY_ID, 37);
 
-    assert_eq!(
-        keys.current_key(EmailField::ID).unwrap().id(),
-        CURRENT_KEY_ID
-    );
+    assert_eq!(keys.current().id(), CURRENT_KEY_ID);
 }

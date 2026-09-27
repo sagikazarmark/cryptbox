@@ -2,7 +2,7 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
-use crate::{Args, Codec, EncryptionKeyProvider, Error, Field, FieldOnly, Sealed};
+use crate::{Args, Codec, EncryptionKeySource, Error, Field, FieldOnly, Sealed};
 
 use super::{LegacyFormat, legacy};
 
@@ -36,7 +36,7 @@ use super::{LegacyFormat, legacy};
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, LocalEncryptionKeyring, Sealed, key_id,
+///     EncryptionKey, EncryptionKeyring, Sealed, key_id,
 ///     migrate::{LegacyError, LegacyFormat, MaybeEncrypted},
 /// };
 /// use zeroize::Zeroizing;
@@ -63,7 +63,7 @@ use super::{LegacyFormat, legacy};
 /// }
 ///
 /// // Fixed key material is for this doctest only; load production keys securely.
-/// let keys = LocalEncryptionKeyring::new(
+/// let keys = EncryptionKeyring::new(
 ///     EncryptionKey::new(
 ///         key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"),
 ///         [0x42; 32],
@@ -181,16 +181,16 @@ where
     /// Consumes the read and returns the plaintext value.
     ///
     /// Legacy bytes use identity recovery and decode through the field's
-    /// codec; an envelope is opened under `args` with the provider.
+    /// codec; an envelope is opened under `args` with `keys`.
     ///
     /// # Errors
     ///
     /// Returns an error for invalid envelopes, invalid binding values, unknown
-    /// keys, authentication failure, unavailable providers, or codec failure.
+    /// or unavailable keys, authentication failure, or codec failure.
     pub fn open(
         self,
         args: impl Args<F>,
-        keys: &dyn EncryptionKeyProvider,
+        keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<F::Value, Error> {
         match self.state {
             State::Sealed(sealed) => sealed.open(args, keys),
@@ -212,7 +212,7 @@ where
     pub fn open_legacy(
         self,
         args: impl Args<F>,
-        keys: &dyn EncryptionKeyProvider,
+        keys: &(impl EncryptionKeySource + ?Sized),
         legacy: &dyn LegacyFormat,
     ) -> Result<F::Value, Error> {
         match self.state {
@@ -229,7 +229,7 @@ where
 {
     /// Consumes the read and opens it with the [installed keys](crate::keys::installed).
     ///
-    /// Legacy bytes use identity recovery without touching the providers.
+    /// Legacy bytes use identity recovery without touching the keys.
     ///
     /// # Errors
     ///
@@ -248,7 +248,7 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error when legacy recovery, codec decoding, provider lookup,
+    /// Returns an error when legacy recovery, codec decoding, key lookup,
     /// or opening the envelope fails.
     pub fn open_global_legacy(self, legacy: &dyn LegacyFormat) -> Result<F::Value, Error> {
         match self.state {

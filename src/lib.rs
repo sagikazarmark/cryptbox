@@ -24,8 +24,10 @@
 //!   `SQLx` column, for [`FieldOnly`] fields without a record or blind indexes.
 //! - [`Plaintext`] names a value type's default codec: [`Utf8`] for `String`
 //!   and [`Raw`] for `Vec<u8>`, and the same for their [`Secret`] wrappers.
-//! - [`Router`] assigns each field to the key provider that protects it;
-//!   providers receive the [`FieldId`] of every request.
+//! - [`EncryptionKeyring`] and [`BlindIndexKeyring`] hold a current key plus
+//!   previous keys; [`Keys`] pairs them. Operations take keys directly through
+//!   [`EncryptionKeySource`] and [`BlindIndexKeySource`]; choosing which
+//!   keyring protects which field or scope is application code.
 //! - [`Prepared`] borrows a source value and derives sealed value and indexes for
 //!   an application-owned atomic write; it does not persist them.
 //! - A [`BlindIndexSpec`] binds a blind index to one field. A [`BlindIndex`] is a
@@ -38,7 +40,7 @@
 //!
 //! See the [ownership reference] for clones, temporary buffers,
 //! `Secret`, and shared key lifetimes, and the [custom-field example] for public
-//! codec, normalizer, and synchronous provider implementations.
+//! codec, normalizer, and key source implementations.
 //!
 #![doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
@@ -65,7 +67,8 @@
 //! The field names UTF-8 encoding and no padding, and binds values to its field
 //! ID alone ([`FieldOnly`]), so its binding arguments are `()`. `Sealed` contains
 //! the encrypted envelope; `open` returns the plaintext value. `&keys` supplies
-//! the provider explicitly: no global installation is needed. Before durable storage, settle the persistent schema below and load
+//! the keyring explicitly: no global installation is needed. Before durable
+//! storage, settle the persistent schema below and load
 //! stable key material and generation IDs across restarts; see the
 //! [first-field tutorial]'s durable-key next step.
 //!
@@ -146,7 +149,6 @@ pub mod keys;
 pub mod migrate;
 mod padding;
 mod prepare;
-mod router;
 pub mod schema;
 #[cfg(feature = "serde")]
 mod serde_impl;
@@ -176,16 +178,15 @@ pub use crypto::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, decrypt, encrypt, inspect_ciphertext,
     is_ciphertext, needs_reencryption, reencrypt,
 };
-pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error, KeyProviderError};
+pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use field::Field;
 pub use id::{FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, PartId, SuiteId};
 pub use key::{
-    BlindIndexKey, BlindIndexKeyProvider, EncryptionKey, EncryptionKeyProvider, GlobalKeys,
-    KeyContext, Keys, LocalBlindIndexKeyring, LocalEncryptionKeyring,
+    BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, EncryptionKey, EncryptionKeySource,
+    EncryptionKeyring, GlobalKeys, KeyContext, Keys,
 };
 pub use padding::Padding;
 pub use prepare::Prepared;
-pub use router::{Router, Routing};
 pub use value::{Plain, Sealed, Secret};
 
 // Paths that derive-generated code names; not public API.

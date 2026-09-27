@@ -6,8 +6,8 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::padding::unpad;
 use crate::{
-    BindingDomain, EncryptionKey, EncryptionKeyProvider, Error, FieldId, KeyId, Padding,
-    ShapeFingerprint, SuiteId,
+    BindingDomain, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldId, KeyId,
+    Padding, ShapeFingerprint, SuiteId,
 };
 
 const MAGIC: &[u8; 4] = b"CBX\0";
@@ -141,7 +141,7 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
     parse_envelope(bytes).map(|parsed| parsed.info)
 }
 
-/// Encrypts opaque plaintext bytes for `field` with the provider's current key.
+/// Encrypts opaque plaintext bytes for `field` with the current key of its keyring.
 ///
 /// `padding` is applied before encryption and recorded in the authenticated
 /// envelope, so [`decrypt`] removes it regardless of the policy in effect when
@@ -149,14 +149,14 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
 ///
 /// # Errors
 ///
-/// Returns an error for unavailable keys, an unrouted field, plaintext that
+/// Returns an error for unavailable keys, plaintext that
 /// does not fit fixed padding, failed OS randomness, or messages longer than
 /// the active suite's 274,877,906,880-byte limit.
 pub fn encrypt(
     field: FieldId,
     padding: Padding,
     plaintext: &[u8],
-    keys: &dyn EncryptionKeyProvider,
+    keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Vec<u8>, Error> {
     encrypt_bound(&BindingDomain::field(field), padding, plaintext, keys)
 }
@@ -166,9 +166,9 @@ pub(crate) fn encrypt_bound(
     domain: &BindingDomain,
     padding: Padding,
     plaintext: &[u8],
-    keys: &dyn EncryptionKeyProvider,
+    keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Vec<u8>, Error> {
-    let key = keys.current_key(domain.field_id())?;
+    let key = keyring(keys, domain)?.current();
     let suite = active_suite();
     let header = envelope_header(
         suite.id(),
@@ -178,14 +178,14 @@ pub(crate) fn encrypt_bound(
     );
 
     match padding.pad(plaintext)? {
-        Some(padded) => suite.seal(&header, &padded, domain, &key),
-        None => suite.seal(&header, plaintext, domain, &key),
+        Some(padded) => suite.seal(&header, &padded, domain, key),
+        None => suite.seal(&header, plaintext, domain, key),
     }
 }
 
 /// Authenticates and decrypts opaque ciphertext bytes.
 ///
-/// The provider is asked only for the exact key ID named by the envelope.
+/// The keyring is asked only for the exact key ID named by the envelope.
 /// Success authenticates the envelope under the supplied key and `field`;
 /// it does not establish freshness, row identity, or codec validity.
 /// Padding recorded by the envelope is removed. A format 1 envelope does not
@@ -194,14 +194,14 @@ pub(crate) fn encrypt_bound(
 ///
 /// # Errors
 ///
-/// Returns a structured envelope, key-provider (including an unrouted field),
+/// Returns a structured envelope, key-source,
 /// unknown-key, authentication, or padding error. A different field and
 /// modified ciphertext both report authentication failure. An envelope sealed
 /// with a scoped binding reports [`Error::BindingMismatch`].
 pub fn decrypt(
     field: FieldId,
     ciphertext: &[u8],
-    keys: &dyn EncryptionKeyProvider,
+    keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
     decrypt_with_policy(field, Padding::NONE, ciphertext, keys)
 }
@@ -211,7 +211,7 @@ pub(crate) fn decrypt_with_policy(
     field: FieldId,
     padding: Padding,
     ciphertext: &[u8],
-    keys: &dyn EncryptionKeyProvider,
+    keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
     decrypt_bound(&BindingDomain::field(field), padding, ciphertext, keys)
 }
@@ -221,18 +221,18 @@ pub(crate) fn decrypt_bound(
     domain: &BindingDomain,
     padding: Padding,
     ciphertext: &[u8],
-    keys: &dyn EncryptionKeyProvider,
+    keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
     let parsed = parse_envelope(ciphertext)?;
     check_shape(parsed.info, domain)?;
-    let key = keys
-        .key(domain.field_id(), parsed.info.key_id)?
+    let key = keyring(keys, domain)?
+        .get(parsed.info.key_id)
         .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id))?;
     let plaintext = registered_suite(parsed.info.suite_id)?.open(
         parsed.header,
         parsed.suite_payload,
         domain,
-        &key,
+        key,
     )?;
 
     // Only the authenticated flag decides unpadding; the current policy must not,
@@ -243,6 +243,14 @@ pub(crate) fn decrypt_bound(
         Some(false) => Ok(plaintext),
         None => padding.unpad(plaintext),
     }
+}
+
+// Asks the source for the keyring of the domain's field and key scope.
+fn keyring<'k>(
+    keys: &'k (impl EncryptionKeySource + ?Sized),
+    domain: &BindingDomain,
+) -> Result<&'k EncryptionKeyring, Error> {
+    keys.encryption_keyring(domain.field_id(), domain.key_scope())
 }
 
 // The expected shape always comes from the reader, never from the envelope; the
@@ -269,13 +277,13 @@ fn check_shape(info: CiphertextInfo, domain: &BindingDomain) -> Result<(), Error
 /// # Errors
 ///
 /// Returns an error for malformed or unsupported envelopes, unavailable
-/// providers, or an unrouted field. An envelope sealed with a scoped binding
+/// keys. An envelope sealed with a scoped binding
 /// reports [`Error::BindingMismatch`].
 pub fn needs_reencryption(
     field: FieldId,
     padding: Padding,
     ciphertext: &[u8],
-    keys: &dyn EncryptionKeyProvider,
+    keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<bool, Error> {
     needs_reencryption_bound(&BindingDomain::field(field), padding, ciphertext, keys)
 }
@@ -285,11 +293,11 @@ pub(crate) fn needs_reencryption_bound(
     domain: &BindingDomain,
     padding: Padding,
     ciphertext: &[u8],
-    keys: &dyn EncryptionKeyProvider,
+    keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<bool, Error> {
     let info = inspect_ciphertext(ciphertext)?;
     check_shape(info, domain)?;
-    let current = keys.current_key(domain.field_id())?;
+    let current = keyring(keys, domain)?.current();
 
     Ok(info.format_version != FORMAT_VERSION
         || info.suite_id != active_suite().id()
@@ -310,7 +318,7 @@ pub fn reencrypt(
     field: FieldId,
     padding: Padding,
     ciphertext: &[u8],
-    keys: &dyn EncryptionKeyProvider,
+    keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Vec<u8>, Error> {
     let plaintext = decrypt_with_policy(field, padding, ciphertext, keys)?;
 
@@ -625,8 +633,8 @@ mod tests {
     };
     use crate::binding::{BindingShape, PartKind, PartRole, PartSpec, PartValue};
     use crate::{
-        BindingDomain, EncryptionKey, EncryptionKeyProvider, Error, FieldId, KeyId,
-        KeyProviderError, LocalEncryptionKeyring, Padding,
+        BindingDomain, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldId,
+        KeyId, KeyScope, Padding,
     };
 
     const VECTOR_FIELD: FieldId =
@@ -653,8 +661,8 @@ mod tests {
         nonce
     }
 
-    fn keyring() -> LocalEncryptionKeyring {
-        LocalEncryptionKeyring::new(vector_key(), []).unwrap()
+    fn keyring() -> EncryptionKeyring {
+        EncryptionKeyring::new(vector_key(), []).unwrap()
     }
 
     fn scope(workspace: &[u8], record: Option<PartValue<'_>>) -> BindingDomain {
@@ -816,13 +824,13 @@ mod tests {
     fn a_changed_fingerprint_reports_binding_mismatch_before_key_lookup() {
         struct NoKeys;
 
-        impl EncryptionKeyProvider for NoKeys {
-            fn current_key(&self, _: FieldId) -> Result<EncryptionKey, KeyProviderError> {
-                Err(KeyProviderError::Unavailable)
-            }
-
-            fn key(&self, _: FieldId, _: KeyId) -> Result<Option<EncryptionKey>, KeyProviderError> {
-                Err(KeyProviderError::Unavailable)
+        impl EncryptionKeySource for NoKeys {
+            fn encryption_keyring(
+                &self,
+                _: FieldId,
+                _: &KeyScope,
+            ) -> Result<&EncryptionKeyring, Error> {
+                Err(Error::KeysUnavailable)
             }
         }
 

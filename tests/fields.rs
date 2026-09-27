@@ -1,13 +1,13 @@
 //! Public-boundary tests for field markers over application value types.
 
 use cryptbox::{
-    Codec, CodecError, CodecErrorKind, EncryptionKey, Error, Field, FieldId, FieldOnly, IndexId,
-    LocalEncryptionKeyring, Padding, Plaintext, Raw, Sealed, Secret, Utf8, field_id, index_id,
+    Codec, CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, Error, Field, FieldId,
+    FieldOnly, IndexId, Padding, Plaintext, Raw, Sealed, Secret, Utf8, field_id, index_id,
 };
 use zeroize::Zeroizing;
 
-fn keyring() -> LocalEncryptionKeyring {
-    LocalEncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap()
+fn keyring() -> EncryptionKeyring {
+    EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap()
 }
 
 /// An application value type: it says how it encodes, never where it is stored.

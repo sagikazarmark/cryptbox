@@ -20,11 +20,11 @@
 //! global conveniences return [`Error::KeysNotInstalled`]; there is no default.
 //!
 //! ```
-//! use cryptbox::{EncryptionKey, Keys, LocalEncryptionKeyring, keys};
+//! use cryptbox::{EncryptionKey, EncryptionKeyring, Keys, keys};
 //!
-//! # fn main() -> Result<(), cryptbox::Error> {
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Load durable key material here; a generated key is for demonstration only.
-//! let encryption = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+//! let encryption = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 //! keys::install(Keys::new(encryption))?;
 //! # Ok(())
 //! # }

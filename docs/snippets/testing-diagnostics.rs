@@ -1,7 +1,7 @@
 //! Application-owned diagnostics with an allowlist of observable fields.
 
 use cryptbox::{
-    EncryptionKey, Error, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+    EncryptionKey, EncryptionKeyring, Error, Field, FieldId, FieldOnly, Padding, Sealed, Utf8,
 };
 
 struct UserEmail;
@@ -24,9 +24,8 @@ fn error_category(error: &Error) -> &'static str {
     match error {
         Error::AuthenticationFailed => "authentication_failed",
         Error::UnknownEncryptionKey(_) => "unknown_encryption_key",
-        Error::KeyProviderUnavailable => "key_provider_unavailable",
+        Error::KeysUnavailable => "keys_unavailable",
         Error::KeysNotInstalled => "keys_not_installed",
-        Error::UnroutedField(_) => "unrouted_field",
         Error::NotCiphertext | Error::InvalidEnvelope => "invalid_ciphertext",
         _ => "cryptbox_error", // Error is non-exhaustive; new variants stay sanitized.
     }
@@ -34,7 +33,7 @@ fn error_category(error: &Error) -> &'static str {
 
 fn main() -> Result<(), Error> {
     // Public test key only; never use this fixture for real data.
-    let keys = LocalEncryptionKeyring::new(
+    let keys = EncryptionKeyring::new(
         EncryptionKey::new(
             cryptbox::key_id!("40000000-0000-4000-8000-000000000004"),
             [0x31; 32],

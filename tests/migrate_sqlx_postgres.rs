@@ -6,9 +6,9 @@
 use std::{future::Future, panic::AssertUnwindSafe};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field, FieldOnly,
-    IndexId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Sealed, Utf8, field_id,
-    index_id, index_key_id, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, Field, FieldOnly, IndexId, Padding, Sealed, Utf8, field_id, index_id,
+    index_key_id, key_id,
     migrate::{
         LegacyError, LegacyFormat, MaybeEncrypted, PostgresSweepStore, RowPlanner, Sweep,
         SweepReport, SweepStore, SweepTable,
@@ -61,10 +61,10 @@ impl LegacyFormat for ToyLegacy {
 }
 
 fn keyrings() -> (
-    LocalEncryptionKeyring,
-    LocalEncryptionKeyring,
-    LocalBlindIndexKeyring,
-    LocalBlindIndexKeyring,
+    EncryptionKeyring,
+    EncryptionKeyring,
+    BlindIndexKeyring,
+    BlindIndexKeyring,
 ) {
     let old = EncryptionKey::new(key_id!("10000000-0000-4000-8000-000000000001"), [0x11; 32]);
     let current = EncryptionKey::new(key_id!("20000000-0000-4000-8000-000000000002"), [0x22; 32]);
@@ -77,10 +77,10 @@ fn keyrings() -> (
         [0x44; 32],
     );
     (
-        LocalEncryptionKeyring::new(old.clone(), []).unwrap(),
-        LocalEncryptionKeyring::new(current, [old]).unwrap(),
-        LocalBlindIndexKeyring::new(old_index.clone(), []).unwrap(),
-        LocalBlindIndexKeyring::new(current_index, [old_index]).unwrap(),
+        EncryptionKeyring::new(old.clone(), []).unwrap(),
+        EncryptionKeyring::new(current, [old]).unwrap(),
+        BlindIndexKeyring::new(old_index.clone(), []).unwrap(),
+        BlindIndexKeyring::new(current_index, [old_index]).unwrap(),
     )
 }
 
@@ -142,8 +142,8 @@ async fn insert(
     connection: &mut PgConnection,
     id: i64,
     email: &str,
-    keys: &LocalEncryptionKeyring,
-    index_keys: &LocalBlindIndexKeyring,
+    keys: &EncryptionKeyring,
+    index_keys: &BlindIndexKeyring,
 ) {
     let value = email.to_owned();
     let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)
@@ -161,8 +161,8 @@ async fn insert(
 
 async fn search(
     connection: &mut PgConnection,
-    keys: &LocalEncryptionKeyring,
-    index_keys: &LocalBlindIndexKeyring,
+    keys: &EncryptionKeyring,
+    index_keys: &BlindIndexKeyring,
 ) -> (Vec<i64>, Vec<i64>) {
     let query = " ALICE@example.com ";
     let probes = EmailLookup::probes_with(query, index_keys).unwrap();
@@ -191,7 +191,7 @@ async fn search(
 
 async fn assert_readable_rows(
     connection: &mut PgConnection,
-    keys: &LocalEncryptionKeyring,
+    keys: &EncryptionKeyring,
     migrated: bool,
 ) {
     let rows = sqlx::query("SELECT id, email_ciphertext FROM users ORDER BY id")

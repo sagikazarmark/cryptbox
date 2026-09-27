@@ -1,9 +1,9 @@
 //! Provisional compatibility vectors for the experimental formats.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field, FieldOnly,
-    IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Raw,
-    Sealed, Utf8, decrypt, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Raw, Sealed,
+    Utf8, decrypt, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -14,10 +14,10 @@ const PADDED: &str = "4342580002010111111111222243338444555555555555000102030405
 const FORMAT_1_UNPADDED: &str = "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d";
 const FORMAT_1_PADDED: &str = "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6";
 
-fn keys() -> LocalEncryptionKeyring {
+fn keys() -> EncryptionKeyring {
     let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
 
-    LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap()
+    EncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap()
 }
 
 fn read<F: Field<Binding = FieldOnly>>(vector: &str) -> Result<F::Value, Error> {
@@ -138,7 +138,7 @@ impl BlindIndexSpec for VectorIndex {
 fn experimental_blind_index_vector_is_stable() {
     const VECTOR: &str = "01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d71e0";
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
-    let keys = LocalBlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
+    let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
 
     let index = VectorIndex::derive_with(&b"normalized@example.com".to_vec(), &keys).unwrap();
     let probes = VectorIndex::probes_with("normalized@example.com", &keys).unwrap();

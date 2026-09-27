@@ -2,7 +2,7 @@
 
 // ANCHOR: first-field
 use cryptbox::{
-    EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+    EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, Padding, Sealed, Utf8,
 };
 
 struct UserEmail;
@@ -19,7 +19,7 @@ impl Field for UserEmail {
 
 fn main() -> Result<(), cryptbox::Error> {
     // Ephemeral demo keys: a new key and generation ID on every run.
-    let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+    let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
     let email = "mark@example.com".to_owned();
     let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
     let opened = sealed.open((), &keys)?;
@@ -53,7 +53,7 @@ mod tests {
 
     #[test]
     fn stored_email_cannot_be_read_as_another_field() -> Result<(), cryptbox::Error> {
-        let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+        let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
         let sealed = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), (), &keys)?;
         let substituted = Sealed::<BillingEmail>::from_bytes(sealed.as_bytes().to_vec())?;
         assert!(matches!(

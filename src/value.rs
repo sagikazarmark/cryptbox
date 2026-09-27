@@ -3,7 +3,7 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Args, Codec, EncryptionKeyProvider, Error, Field, FieldOnly, GlobalKeys, KeyId, Prepared,
+    Args, Codec, EncryptionKeySource, Error, Field, FieldOnly, GlobalKeys, KeyId, Prepared,
     binding::domain,
     crypto::{decrypt_bound, encrypt_bound, needs_reencryption_bound, validated_key_id},
     keys,
@@ -28,7 +28,7 @@ use crate::{
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, Field, FieldId, FieldOnly, LocalEncryptionKeyring, Padding, Sealed, Utf8,
+///     EncryptionKey, Field, FieldId, FieldOnly, EncryptionKeyring, Padding, Sealed, Utf8,
 /// };
 ///
 /// struct UserEmail;
@@ -43,7 +43,7 @@ use crate::{
 ///     type Indexes = ();
 /// }
 ///
-/// let keys = LocalEncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+/// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 ///
 /// let sealed = Sealed::<UserEmail>::seal(&"user@example.com".into(), (), &keys)?;
 /// assert_eq!(sealed.open((), &keys)?, "user@example.com");
@@ -105,7 +105,7 @@ impl<F: Field> Sealed<F> {
     pub fn seal(
         value: &F::Value,
         args: impl Args<F>,
-        keys: &dyn EncryptionKeyProvider,
+        keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
         let plaintext = F::Codec::encode(value)?;
         let sealed = encrypt_bound(&domain(args)?, F::PADDING, &plaintext, keys)?;
@@ -127,11 +127,11 @@ impl<F: Field> Sealed<F> {
     /// values, another record, or modified bytes, and
     /// [`Error::BindingMismatch`] for a value sealed with another binding shape.
     /// Also returns an error for invalid binding values, unknown keys,
-    /// unavailable providers, invalid padding, or codec failure.
+    /// unavailable keys, invalid padding, or codec failure.
     pub fn open(
         &self,
         args: impl Args<F>,
-        keys: &dyn EncryptionKeyProvider,
+        keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<F::Value, Error> {
         let plaintext = decrypt_bound(&domain(args)?, F::PADDING, &self.bytes, keys)?;
 
@@ -150,7 +150,7 @@ impl<F: Field> Sealed<F> {
     pub fn prepare<'a>(
         value: &'a F::Value,
         args: impl Args<F>,
-        keys: &dyn EncryptionKeyProvider,
+        keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Prepared<'a, F>, Error> {
         Ok(Prepared::new(value, Self::seal(value, args, keys)?))
     }
@@ -172,11 +172,11 @@ impl<F: Field> Sealed<F> {
     /// # Errors
     ///
     /// Returns [`Error::BindingMismatch`] for a value sealed with another binding
-    /// shape, or an error for invalid binding values or an unavailable provider.
+    /// shape, or an error for invalid binding values or unavailable keys.
     pub fn needs_reseal(
         &self,
         args: impl Args<F>,
-        keys: &dyn EncryptionKeyProvider,
+        keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<bool, Error> {
         needs_reencryption_bound(&domain(args)?, F::PADDING, &self.bytes, keys)
     }
@@ -196,7 +196,7 @@ impl<F: Field> Sealed<F> {
     pub fn reseal(
         &self,
         args: impl Args<F>,
-        keys: &dyn EncryptionKeyProvider,
+        keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
         let domain = domain(args)?;
         let plaintext = decrypt_bound(&domain, F::PADDING, &self.bytes, keys)?;
@@ -218,9 +218,9 @@ impl<F: Field> Sealed<F> {
     pub fn reseal_across(
         &self,
         from: impl Args<F>,
-        from_keys: &dyn EncryptionKeyProvider,
+        from_keys: &(impl EncryptionKeySource + ?Sized),
         to: impl Args<F>,
-        to_keys: &dyn EncryptionKeyProvider,
+        to_keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
         let plaintext = decrypt_bound(&domain(from)?, F::PADDING, &self.bytes, from_keys)?;
 
@@ -494,11 +494,11 @@ where
     K: crate::KeyContext,
 {
     pub(crate) fn seal_for_column(&self) -> Result<Sealed<F>, Error> {
-        Sealed::seal(&self.value, (), K::encryption_keys()?)
+        Sealed::seal(&self.value, (), K::keys()?)
     }
 
     pub(crate) fn open_column(bytes: Vec<u8>) -> Result<Self, Error> {
-        let value = Sealed::<F>::from_bytes(bytes)?.open((), K::encryption_keys()?)?;
+        let value = Sealed::<F>::from_bytes(bytes)?.open((), K::keys()?)?;
 
         Ok(Self::from_value(value))
     }

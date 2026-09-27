@@ -4,8 +4,8 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
-    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeyProvider, Error, Field, FieldOnly,
-    IndexId, IndexKeyId,
+    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, Error,
+    Field, FieldOnly, IndexId, IndexKeyId,
     crypto::{hkdf_sha256_32, hmac_sha256},
     keys,
 };
@@ -206,11 +206,10 @@ pub trait BlindIndexSpec: Sized + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an error for normalization failure, an unavailable key provider, or
-    /// an unrouted field.
+    /// Returns an error for normalization failure, or unavailable keys.
     fn derive_with(
         value: &<Self::Field as Field>::Value,
-        keys: &dyn BlindIndexKeyProvider,
+        keys: &(impl BlindIndexKeySource + ?Sized),
     ) -> Result<BlindIndex<Self>, Error> {
         derive_value::<Self>(value, keys)
     }
@@ -227,11 +226,10 @@ pub trait BlindIndexSpec: Sized + 'static {
     ///
     /// # Errors
     ///
-    /// Returns an error for normalization failure, an unavailable key provider, or
-    /// an unrouted field.
+    /// Returns an error for normalization failure, or unavailable keys.
     fn probes_with(
         query: &Self::Query,
-        keys: &dyn BlindIndexKeyProvider,
+        keys: &(impl BlindIndexKeySource + ?Sized),
     ) -> Result<Vec<BlindIndex<Self>>, Error> {
         derive_probes::<Self>(query, keys)
     }
@@ -285,14 +283,14 @@ pub trait BlindIndexSpec: Sized + 'static {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::UnknownBlindIndexKey`] when the provider cannot resolve
+    /// Returns [`Error::UnknownBlindIndexKey`] when the keyring does not hold
     /// the generation named by `stored`, so an unverifiable index is reported
     /// distinctly from an inconsistent one. Also returns an error for
-    /// normalization failure, an unavailable key provider, or an unrouted field.
+    /// normalization failure or unavailable keys.
     fn is_consistent_with(
         value: &<Self::Field as Field>::Value,
         stored: &BlindIndex<Self>,
-        keys: &dyn BlindIndexKeyProvider,
+        keys: &(impl BlindIndexKeySource + ?Sized),
     ) -> Result<bool, Error> {
         check_consistency::<Self>(value, stored, keys)
     }
@@ -563,7 +561,7 @@ impl BlindIndexInfo {
 /// This does not authenticate the returned key ID, precision, or digest. Treat
 /// all metadata as untrusted. To check index consistency, decrypt the associated
 /// ciphertext and call [`BlindIndexSpec::is_consistent_with`] with the intended
-/// specification and a provider serving only allowed key generations; it
+/// specification and a keyring holding only allowed key generations; it
 /// recomputes and compares the complete stored representation. A match is
 /// consistency at the configured precision, not proof of provenance or freshness.
 /// [`BlindIndexSpec::verify_candidate`] only compares plaintexts; it does not perform
@@ -605,33 +603,43 @@ pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
 
 pub(crate) fn derive_value<Spec: BlindIndexSpec>(
     value: &<Spec::Field as Field>::Value,
-    keys: &dyn BlindIndexKeyProvider,
+    keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<BlindIndex<Spec>, Error> {
-    let key = keys.current_key(<Spec::Field as Field>::ID)?;
+    let domain = index_domain::<Spec>();
+    let key = keyring::<Spec>(keys, &domain)?.current();
 
-    derive_value_with_key::<Spec>(value, &key)
+    derive_value_with_key::<Spec>(value, &domain, key)
+}
+
+/// Returns the ID of the key that derives new stored indexes of `Spec`.
+#[cfg(feature = "migrate")]
+pub(crate) fn current_key_id<Spec: BlindIndexSpec>(
+    keys: &(impl BlindIndexKeySource + ?Sized),
+) -> Result<IndexKeyId, Error> {
+    Ok(keyring::<Spec>(keys, &index_domain::<Spec>())?
+        .current()
+        .id())
 }
 
 fn derive_value_with_key<Spec: BlindIndexSpec>(
     value: &<Spec::Field as Field>::Value,
+    domain: &BindingDomain,
     key: &BlindIndexKey,
 ) -> Result<BlindIndex<Spec>, Error> {
     let normalized = Spec::normalize_value(value)?;
-    let domain = BindingDomain::field(<Spec::Field as Field>::ID);
 
-    derive_normalized::<Spec>(&normalized, &domain, key)
+    derive_normalized::<Spec>(&normalized, domain, key)
 }
 
 fn derive_probes<Spec: BlindIndexSpec>(
     query: &Spec::Query,
-    keys: &dyn BlindIndexKeyProvider,
+    keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<Vec<BlindIndex<Spec>>, Error> {
     let normalized = Spec::normalize_query(query)?;
-    let field = <Spec::Field as Field>::ID;
-    let domain = BindingDomain::field(field);
+    let domain = index_domain::<Spec>();
 
-    keys.readable_keys(field)?
-        .iter()
+    keyring::<Spec>(keys, &domain)?
+        .readable()
         .map(|key| derive_normalized::<Spec>(&normalized, &domain, key))
         .collect()
 }
@@ -639,16 +647,30 @@ fn derive_probes<Spec: BlindIndexSpec>(
 fn check_consistency<Spec: BlindIndexSpec>(
     value: &<Spec::Field as Field>::Value,
     stored: &BlindIndex<Spec>,
-    keys: &dyn BlindIndexKeyProvider,
+    keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<bool, Error> {
+    let domain = index_domain::<Spec>();
     let id = stored.index_key_id();
-    let key = keys
-        .key(<Spec::Field as Field>::ID, id)?
+    let key = keyring::<Spec>(keys, &domain)?
+        .get(id)
         .ok_or(Error::UnknownBlindIndexKey(id))?;
-    let derived = derive_value_with_key::<Spec>(value, &key)?;
+    let derived = derive_value_with_key::<Spec>(value, &domain, key)?;
 
     // Both representations carry Spec::BITS, so their lengths always agree.
     Ok(derived.as_bytes().ct_eq(stored.as_bytes()).into())
+}
+
+// Blind indexes are domain-separated by their field alone.
+fn index_domain<Spec: BlindIndexSpec>() -> BindingDomain {
+    BindingDomain::field(<Spec::Field as Field>::ID)
+}
+
+// Asks the source for the keyring of the index in the domain's key scope.
+fn keyring<'k, Spec: BlindIndexSpec>(
+    keys: &'k (impl BlindIndexKeySource + ?Sized),
+    domain: &BindingDomain,
+) -> Result<&'k BlindIndexKeyring, Error> {
+    keys.blind_index_keyring(Spec::ID, domain.key_scope())
 }
 
 fn compare_normalized<Spec: BlindIndexSpec>(

@@ -527,6 +527,7 @@ pub(crate) struct BindingDomain {
     field: FieldId,
     encoded: Vec<u8>,
     fingerprint: Option<ShapeFingerprint>,
+    key_scope: KeyScope,
 }
 
 impl BindingDomain {
@@ -545,6 +546,7 @@ impl BindingDomain {
             field: id,
             encoded,
             fingerprint: None,
+            key_scope: KeyScope::empty(),
         }
     }
 
@@ -568,6 +570,7 @@ impl BindingDomain {
         // See ../docs/wire-format.md#scoped-binding.
         parts.sort_by_key(|(spec, _)| spec.id);
         let count = u16::try_from(parts.len()).map_err(|_| Error::InvalidBinding)?;
+        let key_scope = KeyScope::keys_of(parts.iter().copied());
 
         let mut encoded = Vec::new();
         encoded.push(Self::SCOPED_TAG);
@@ -586,6 +589,7 @@ impl BindingDomain {
             field: id,
             encoded,
             fingerprint: Some(shape.fingerprint()),
+            key_scope,
         })
     }
 
@@ -622,6 +626,11 @@ impl BindingDomain {
     /// The shape fingerprint a scoped header carries; `None` for a field-only binding.
     pub(crate) fn fingerprint(&self) -> Option<ShapeFingerprint> {
         self.fingerprint
+    }
+
+    /// The `keys` parts of the binding, passed to key sources.
+    pub(crate) const fn key_scope(&self) -> &KeyScope {
+        &self.key_scope
     }
 
     pub(crate) fn as_bytes(&self) -> &[u8] {

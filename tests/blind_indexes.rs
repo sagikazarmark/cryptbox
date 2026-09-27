@@ -1,9 +1,9 @@
 //! Public-boundary tests for blind indexes and prepared storage values.
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, EncryptionKey, Error, Field,
-    FieldOnly, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding,
-    Sealed, Utf8, field_id, index_id, index_key_id, inspect_blind_index, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Sealed, Utf8,
+    field_id, index_id, index_key_id, inspect_blind_index, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -80,8 +80,8 @@ fn index_key(id: IndexKeyId, byte: u8) -> BlindIndexKey {
     BlindIndexKey::new(id, [byte; 32])
 }
 
-fn index_keys() -> LocalBlindIndexKeyring {
-    LocalBlindIndexKeyring::new(index_key(CURRENT_INDEX_KEY_ID, 41), []).unwrap()
+fn index_keys() -> BlindIndexKeyring {
+    BlindIndexKeyring::new(index_key(CURRENT_INDEX_KEY_ID, 41), []).unwrap()
 }
 
 fn email(value: &str) -> String {
@@ -121,7 +121,7 @@ fn field_and_index_domains_are_cryptographically_separated() {
 #[test]
 fn query_probes_cover_current_and_historical_index_generations() {
     let old = index_key(OLD_INDEX_KEY_ID, 43);
-    let keys = LocalBlindIndexKeyring::new(index_key(CURRENT_INDEX_KEY_ID, 47), [old]).unwrap();
+    let keys = BlindIndexKeyring::new(index_key(CURRENT_INDEX_KEY_ID, 47), [old]).unwrap();
 
     let probes = EmailExact::probes_with("mark@example.com", &keys).unwrap();
 
@@ -162,7 +162,7 @@ fn candidate_hits_require_normalized_plaintext_verification() {
 #[test]
 fn prepared_values_derive_the_sealed_value_and_indexes_from_one_source() {
     let encryption_keys =
-        LocalEncryptionKeyring::new(EncryptionKey::new(ENCRYPTION_KEY_ID, [53; 32]), []).unwrap();
+        EncryptionKeyring::new(EncryptionKey::new(ENCRYPTION_KEY_ID, [53; 32]), []).unwrap();
     let index_keys = index_keys();
     let value = email("Mark@Example.com");
 
@@ -373,9 +373,9 @@ fn a_stored_index_is_consistent_with_the_value_it_was_derived_from() {
 #[test]
 fn a_stored_index_from_a_historical_generation_is_consistent_with_its_value() {
     let old = index_key(OLD_INDEX_KEY_ID, 43);
-    let before_rotation = LocalBlindIndexKeyring::new(old.clone(), []).unwrap();
+    let before_rotation = BlindIndexKeyring::new(old.clone(), []).unwrap();
     let stored = EmailExact::derive_with(&email("mark@example.com"), &before_rotation).unwrap();
-    let keys = LocalBlindIndexKeyring::new(index_key(CURRENT_INDEX_KEY_ID, 47), [old]).unwrap();
+    let keys = BlindIndexKeyring::new(index_key(CURRENT_INDEX_KEY_ID, 47), [old]).unwrap();
 
     assert!(EmailExact::is_consistent_with(&email("mark@example.com"), &stored, &keys).unwrap());
 }
@@ -390,7 +390,7 @@ fn a_stored_index_for_another_value_is_inconsistent() {
 
 #[test]
 fn a_stored_index_from_an_unknown_generation_cannot_be_checked() {
-    let retired = LocalBlindIndexKeyring::new(index_key(OLD_INDEX_KEY_ID, 43), []).unwrap();
+    let retired = BlindIndexKeyring::new(index_key(OLD_INDEX_KEY_ID, 43), []).unwrap();
     let stored = EmailExact::derive_with(&email("mark@example.com"), &retired).unwrap();
 
     assert_eq!(

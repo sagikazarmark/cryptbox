@@ -67,8 +67,7 @@ Stored bytes do not describe this schema, so check it in tests:
   migration or revert.
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered field
   (ID, value type, codec ID, padding) and index (ID, field, bits, normalizer).
-  With `.keys(&keys)`, it also lists whether each field is routed, falls back, or
-  is unrouted. Compare its `Display` output with a committed snapshot, and
+  Compare its `Display` output with a committed snapshot, and
   assert that `duplicates()` is empty. A snapshot diff needs review: for
   example, a codec ID or normalizer change needs a migration.
 - **Unique IDs.** `cryptbox::assert_unique_ids!(HomeAddress, BillingAddress)`
@@ -123,29 +122,28 @@ Try [explicit SQLite storage](../examples/sqlite/README.md), the
 [automatic-adapter example](testing.md#automatic-adapters), or
 [stored-value serialization](../examples/stored_values/README.md).
 
-## Key providers and key contexts
+## Keyrings and key sources
 
-A provider is the source of current and readable key generations. The
-**installed keys** back the process-wide forms, and a **key context** selects the
-keys of an automatic SQLx column. The field ID determines where a value belongs;
-it never supplies key material, but every provider request names the field it
-serves.
+A **keyring** holds one current key generation and the previous generations
+that stored data still needs: `EncryptionKeyring` for values and
+`BlindIndexKeyring` for blind indexes. `Keys` pairs an encryption keyring with an
+optional blind-index keyring. The **installed keys** back the process-wide forms,
+and a **key context** selects the keys of an automatic SQLx column.
 
-A provider that serves every field alike, such as the local keyrings, ignores
-the field. To protect fields with different key hierarchies, route them with
-`Router`: `Router::strict().route::<Iban>(payments)?.route::<UserEmail>(general)?`.
-A strict router rejects unrouted fields with `Error::UnroutedField` instead of
-substituting another provider's keys. `Router::new(default)` serves unrouted
-fields from `default`, and `Router::falls_back` reports which fields rely on it.
-A second route for the same field ID is rejected. Routes are deployment
-configuration: the envelope records the key ID, so a field can move to another
-provider that resolves the same generations.
+Operations take keys directly. Explicit `Sealed::seal`, `open`, `prepare`,
+`with_index_with`, and `probes_with` calls accept any **key source**
+(`EncryptionKeySource` or `BlindIndexKeySource`) and never read the installed
+keys. The library passes the source the field (or index) and the binding's key
+scope; keyrings and `Keys` ignore both and return themselves. This allows each
+test or application component to own its dependencies.
 
-Explicit `Sealed::seal`, `open`, `prepare`, `with_index_with`, and `probes_with`
-calls use the provider passed by the caller and never read the installed keys. This
-allows each test or application component to own its dependencies. `Keys`
-combines an encryption and a blind-index provider, usually two routers, into one
-value that every explicit form accepts.
+Choosing which keyring protects which field or scope is application code. Pass
+the payments keyring when sealing an IBAN and the general keyring when sealing an
+email, or implement a key source that picks one by field or key scope. Opening
+with the wrong keyring fails loudly with `Error::UnknownEncryptionKey`, as long
+as key IDs are generated UUIDs, unique within a keyring, and never shared across
+keyrings. Sealing with the wrong keyring succeeds silently, so test the choice;
+[ADR-0006](adr/0006-keys-are-passed-in.md#consequences) lists the failure modes.
 
 The process-wide forms (`Sealed::seal_global`, `open_global`, `with_index()`,
 `probes()`) are the explicit forms called with `keys::installed()`. Like the
@@ -160,11 +158,10 @@ spawned outside a scope would silently use other keys
 
 The automatic SQLx column `Plain<F, K>` takes its key source as a type,
 because SQLx decoding receives no context. The default `K`, `GlobalKeys`, reads
-the installed keys. Implement `KeyContext` over an application-owned static to
-use a second keyring or a test fixture without the global.
+the installed keys. Implement `KeyContext` over an application-owned static
+`Keys` to use a second keyring or a test fixture without the global.
 `Plain::with_key_context::<K>()` moves a value into another column type without
-resealing it. A field does not choose its
-keys: route fields to providers instead.
+resealing it. A field does not choose its keys.
 
 Teams that forbid the global can deny `keys::install` and the process-wide forms with
 Clippy's `disallowed_methods`, using
@@ -173,11 +170,12 @@ keeps the installed keys empty, so process-wide calls fail at run time; denying
 the process-wide forms also reports them at lint time. With the `migrate` feature,
 also deny `MaybeEncrypted::open_global` and `MaybeEncrypted::open_global_legacy`.
 
-Providers resolve keys synchronously. Applications load secrets from their chosen
-source and make them available locally; CryptBox does not distribute secrets or
+Key sources are synchronous. Applications load secrets from their chosen
+source and build keyrings locally; CryptBox does not distribute secrets or
 refresh remote key-management state. Startup snapshots are simple, but changing
 their source files does not refresh a running process. A custom refreshing
-provider owns synchronization, availability, and consistent generation selection.
+key source owns synchronization, availability, and consistent generation
+selection, and returns `Error::KeysUnavailable` when its keys are not loaded.
 
 For durable data, the public generation ID and root material are one immutable
 pair. Reload that exact pair after restarts and retain readable generations while
@@ -188,7 +186,7 @@ generated roots; encryption-only applications need no index roots.
 The [SQLite example](../examples/sqlite/README.md#2-provision-the-demonstration-key-once) shows
 a single durable encryption generation. The [searchable example](../examples/searchable/README.md#provision-durable-key-generations-once)
 adds independent index generations. For a custom key source, see
-[provider contracts](../examples/custom_field/README.md#implementor-obligations); for changing a
+[key source contracts](../examples/custom_field/README.md#implementor-obligations); for changing a
 serving keyset, see [key lifecycle](key-rotation.md).
 
 ## Search and atomic writes
@@ -232,14 +230,14 @@ preparation does not erase them, and decoded values have their own lifetimes.
 copies. The [ownership reference](ownership.md) defines exact behavior by type
 and buffer.
 
-Fields, value types, codecs, normalizers, and key providers are extensible. Bindings and
+Fields, value types, codecs, normalizers, and key sources are extensible. Bindings and
 padding policies are sealed to the built-in choices; a custom codec cannot add
 row or tenant authentication. The [custom-field example](../examples/custom_field/README.md)
-shows a zeroizing value, codec, normalizer, and provider working together.
+shows a zeroizing value, codec, normalizer, and key source working together.
 
 ## From design to a working application
 
-- [Testing and diagnostics](testing.md) covers provider isolation and sanitized failures.
+- [Testing and diagnostics](testing.md) covers key isolation and sanitized failures.
 - [Legacy adoption](legacy-migration.md) addresses existing plaintext or foreign
   ciphertext; review its prerequisites before enabling new encrypted writes.
 - [Security](security.md) describes the trust boundary and application responsibilities.
