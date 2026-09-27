@@ -6,8 +6,9 @@ status: accepted
 
 Every operation has an explicit form that takes keys (`encrypt_with`,
 `decrypt_with`, `prepare_with`, …) and is always available. On top of it, a
-process-wide `keys::install(router)` backs the implicit forms (`encrypt()`,
-`decrypt()`). sqlx `Decode` receives no context, so the auto-encrypting column
+process-wide `keys::install(Keys)` backs the implicit forms (`encrypt()`,
+`decrypt()`). `Keys` holds the encryption and blind-index providers, usually
+routers. sqlx `Decode` receives no context, so the auto-encrypting column
 type takes its key source as a type parameter:
 `Encrypted<F, K: KeyContext = GlobalKeys>`. A user can name their own static
 (a second keyring, a tenant, a test fixture) instead of the global. Together,
@@ -30,9 +31,9 @@ the explicit forms and `K` are the escape hatch from the global.
 
 ## Consequences
 
-- The global fails closed: `install` errors on a second call and never replaces,
-  and implicit calls return `KeysNotInstalled` rather than falling back or
-  panicking.
+- The global fails closed: a second `install` returns `AlreadyInstalled` and
+  never replaces, and implicit calls return `KeysNotInstalled` rather than
+  falling back or panicking.
 - Teams that forbid the global enforce it with clippy `disallowed_methods` on
   `keys::install` and the implicit forms. A separate `cryptbox-global` crate
   remains an option if lint enforcement proves insufficient.
