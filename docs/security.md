@@ -31,8 +31,10 @@ independently generated, and each generation ID permanently paired with the same
 material. IDs are public metadata; generate them independently of key bytes.
 Fields supply persistent schema, including their binding shape. Binding values and
 record IDs are only as trustworthy as their source: take them from verified claims
-or an authorized request, never from the stored row. Secure OS
-randomness and a compatible target are required; see [platform constraints](features.md#platforms-and-tested-configurations).
+or an authorized request, never from the stored row. The exception is a
+`Record`'s record ID, which is read from the row and checked by opening every
+field that declares `record`; a record whose fields bind none gets no check.
+Secure OS randomness and a compatible target are required; see [platform constraints](features.md#platforms-and-tested-configurations).
 
 ## Threats and unsuitable uses
 
@@ -43,6 +45,7 @@ randomness and a compatible target are required; see [platform constraints](feat
 | Copy ciphertext to another logical field | Authentication rejects a field with a different field ID. A different binding shape reports `BindingMismatch`. |
 | Copy ciphertext to another scope, such as another tenant | Authentication rejects other binding values of a field that declares them. A `FieldOnly` field has no scope. |
 | Copy ciphertext between rows of the same field | Authentication rejects another record of a field that binds one. For a field without a record, substitution within the same scope can succeed. |
+| Return a whole row in place of another | Every value in it opens, because each is bound to that row's own record ID. A `Record` opens as the record it is: when you asked for one record by ID, compare the opened ID with it. |
 | Restore an older authentic value | No replay, rollback, or freshness protection. |
 | Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency within the scope of their `keys` and `index` parts, and across bound-only parts and records; a `FieldOnly` field's indexes leak across the whole field. Access patterns remain visible. |
 | Alter indexes or omit query results | Candidate comparison rejects false matches, but cannot detect omitted matches. Search completeness is not guaranteed. |
