@@ -2,10 +2,9 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Encrypted,
-    EncryptionKey, EncryptionProfile, Field, FieldBound, GlobalKeyContext, IndexId, IndexKeyId,
-    KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, blind_index_probes,
-    derive_blind_index, field_id, index_id, index_key_id, inspect_blind_index, key_id,
-    verify_blind_index_candidate,
+    EncryptionKey, EncryptionProfile, Field, GlobalKeyContext, IndexId, IndexKeyId, KeyId,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, blind_index_probes, derive_blind_index,
+    field_id, index_id, index_key_id, inspect_blind_index, key_id, verify_blind_index_candidate,
 };
 use zeroize::Zeroizing;
 
@@ -60,18 +59,10 @@ fn index_keys() -> LocalBlindIndexKeyring {
 fn blind_indexes_are_deterministic_normalized_and_explicitly_truncated() {
     let keys = index_keys();
 
-    let first = derive_blind_index::<EmailExact, str, FieldBound<EmailField>>(
-        " Mark@Example.com ",
-        &(),
-        &keys,
-    )
-    .unwrap();
-    let second = derive_blind_index::<EmailExact, str, FieldBound<EmailField>>(
-        "mark@example.com",
-        &(),
-        &keys,
-    )
-    .unwrap();
+    let first =
+        derive_blind_index::<EmailExact, str, EmailField>(" Mark@Example.com ", &keys).unwrap();
+    let second =
+        derive_blind_index::<EmailExact, str, EmailField>("mark@example.com", &keys).unwrap();
 
     assert_eq!(first, second);
     assert_eq!(format!("{first:?}"), "BlindIndex([REDACTED])");
@@ -90,18 +81,10 @@ fn blind_indexes_are_deterministic_normalized_and_explicitly_truncated() {
 #[test]
 fn field_and_index_domains_are_cryptographically_separated() {
     let keys = index_keys();
-    let email = derive_blind_index::<EmailExact, str, FieldBound<EmailField>>(
-        "mark@example.com",
-        &(),
-        &keys,
-    )
-    .unwrap();
-    let phone = derive_blind_index::<EmailExact, str, FieldBound<PhoneField>>(
-        "mark@example.com",
-        &(),
-        &keys,
-    )
-    .unwrap();
+    let email =
+        derive_blind_index::<EmailExact, str, EmailField>("mark@example.com", &keys).unwrap();
+    let phone =
+        derive_blind_index::<EmailExact, str, PhoneField>("mark@example.com", &keys).unwrap();
 
     assert_ne!(email, phone);
 }
@@ -111,12 +94,8 @@ fn query_probes_cover_current_and_historical_index_generations() {
     let old = index_key(OLD_INDEX_KEY_ID, 43);
     let keys = LocalBlindIndexKeyring::new(index_key(CURRENT_INDEX_KEY_ID, 47), [old]).unwrap();
 
-    let probes = blind_index_probes::<EmailExact, str, FieldBound<EmailField>>(
-        "mark@example.com",
-        &(),
-        &keys,
-    )
-    .unwrap();
+    let probes =
+        blind_index_probes::<EmailExact, str, EmailField>("mark@example.com", &keys).unwrap();
 
     assert_eq!(probes.len(), 2);
     assert_eq!(
@@ -148,8 +127,13 @@ fn candidate_hits_require_normalized_plaintext_verification() {
 
 struct EmailProfile;
 
-impl EncryptionProfile<String> for EmailProfile {
-    type Binding = FieldBound<EmailField>;
+impl Field for EmailProfile {
+    const ID: cryptbox::FieldId = EmailField::ID;
+    const NAME: &'static str = EmailField::NAME;
+}
+
+impl EncryptionProfile for EmailProfile {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = cryptbox::NoPadding;
@@ -160,22 +144,19 @@ fn prepared_values_derive_ciphertext_and_indexes_from_one_source() {
     let encryption_keys =
         LocalEncryptionKeyring::new(EncryptionKey::new(ENCRYPTION_KEY_ID, [53; 32]), []).unwrap();
     let index_keys = index_keys();
-    let value = Encrypted::<_, EmailProfile>::new("Mark@Example.com".to_owned());
+    let value = Encrypted::<EmailProfile>::new("Mark@Example.com".to_owned());
 
     let prepared = value
-        .prepare_with(&(), &encryption_keys)
+        .prepare_with(&encryption_keys)
         .unwrap()
         .with_index_with::<EmailExact>(&index_keys)
         .unwrap();
 
     assert!(!prepared.ciphertext().as_bytes().is_empty());
     let prepared_index = prepared.index::<EmailExact>().unwrap();
-    let direct = derive_blind_index::<EmailExact, String, FieldBound<EmailField>>(
-        value.expose_secret(),
-        &(),
-        &index_keys,
-    )
-    .unwrap();
+    let direct =
+        derive_blind_index::<EmailExact, String, EmailField>(value.expose_secret(), &index_keys)
+            .unwrap();
     assert_eq!(prepared_index.as_bytes(), direct.as_bytes());
     assert_eq!(AsRef::<[u8]>::as_ref(&prepared_index), direct.as_bytes());
 }
@@ -200,9 +181,7 @@ fn a_blind_index_input_can_be_compound() {
     let keys = index_keys();
     let input = ("Ada Lovelace", "SW1A 1AA");
 
-    let index =
-        derive_blind_index::<NameAndPostalCode, _, FieldBound<EmailField>>(&input, &(), &keys)
-            .unwrap();
+    let index = derive_blind_index::<NameAndPostalCode, _, EmailField>(&input, &keys).unwrap();
 
     assert_eq!(inspect_blind_index(index.as_bytes()).unwrap().bits(), 128);
 }
@@ -210,12 +189,8 @@ fn a_blind_index_input_can_be_compound() {
 #[test]
 fn typed_indexes_reject_noncanonical_storage_bytes() {
     let keys = index_keys();
-    let index = derive_blind_index::<EmailExact, str, FieldBound<EmailField>>(
-        "mark@example.com",
-        &(),
-        &keys,
-    )
-    .unwrap();
+    let index =
+        derive_blind_index::<EmailExact, str, EmailField>("mark@example.com", &keys).unwrap();
     let mut bytes = index.into_bytes();
     *bytes.last_mut().unwrap() |= 1;
 
@@ -224,12 +199,9 @@ fn typed_indexes_reject_noncanonical_storage_bytes() {
 
 #[test]
 fn inspection_rejects_untrusted_out_of_range_precisions() {
-    let index = derive_blind_index::<EmailExact, str, FieldBound<EmailField>>(
-        "mark@example.com",
-        &(),
-        &index_keys(),
-    )
-    .unwrap();
+    let index =
+        derive_blind_index::<EmailExact, str, EmailField>("mark@example.com", &index_keys())
+            .unwrap();
     let mut bytes = index.into_bytes();
 
     bytes[17..19].copy_from_slice(&0_u16.to_be_bytes());
@@ -268,12 +240,8 @@ fn assert_canonical_truncation<Spec>(expected_bytes: usize)
 where
     Spec: BlindIndexMetadata + BlindIndexSpec<str>,
 {
-    let index = derive_blind_index::<Spec, str, FieldBound<EmailField>>(
-        "truncation vector",
-        &(),
-        &index_keys(),
-    )
-    .unwrap();
+    let index =
+        derive_blind_index::<Spec, str, EmailField>("truncation vector", &index_keys()).unwrap();
 
     assert_eq!(index.as_bytes().len(), 19 + expected_bytes);
 

@@ -25,14 +25,56 @@ type Cryptbox {
   test: Test! {
     Test(self.rust.container, self.postgresVersion)
   }
+
+  """
+  Shared snippets and documentation diagrams.
+  """
+  docs: Docs! {
+    Docs(self.rust.container)
+  }
+}
+
+"""
+Documentation checks shared with GitHub Actions through repository scripts.
+"""
+type Docs {
+  let container: Container!
+
+  new(container: Container!) {
+    self.container = container
+    self
+  }
+
+  """
+  Check shared documentation snippets against their canonical sources.
+  """
+  snippets: String! @check {
+    self.container
+      .withExec(["sh", "-c", "apt-get update && apt-get install -y --no-install-recommends nodejs"])
+      .withExec(["node", "scripts/doc-snippets.mjs"])
+      .combinedOutput
+  }
+
+  """
+  Re-render the canonical Mermaid diagram and compare the committed rustdoc SVG.
+  """
+  diagrams: String! @check {
+    Dagger.container
+      .from("ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.12.0@sha256:bad64c9d9ad917c8dfbe9d9e9c162b96f6615ff019b37058638d16eb27ce7783")
+      .withDirectory("/data", self.container.directory("."))
+      .withWorkdir("/data")
+      .withExec(["sh", "scripts/check-diagrams.sh"])
+      .combinedOutput
+  }
 }
 
 """
 Tests and examples from the CI workflow that the Rust module's own checks do not cover.
 
-The Rust module's `test` check compiles and runs the test targets with default features
-only, so the all-feature and documentation test runs live here, as do the examples: the
-Rust module builds them, but never runs them. The PostgreSQL round-trip needs a server,
+The Rust module's `test` check runs tests, including doctests, across the feature
+matrix configured in Cargo.toml. The explicit all-target test run and runnable
+examples live here: the Rust module builds examples, but never runs them.
+The PostgreSQL tests need a server,
 which GitHub Actions does not provide but Dagger can bind as a service.
 """
 type Test {
@@ -63,14 +105,7 @@ type Test {
   }
 
   """
-  Execute the documentation tests with every feature enabled.
-  """
-  doc: String! @check {
-    self.run(["cargo", "test", "--locked", "--doc", "--all-features"])
-  }
-
-  """
-  Execute the SQLx PostgreSQL tests against a live PostgreSQL server.
+   Execute SQLx integration and process-level E2E tests against live PostgreSQL.
   """
   postgres: String! @check {
     let server = Dagger
@@ -89,8 +124,10 @@ type Test {
       .withExec([
         "cargo", "test", "--locked",
         "--test", "sqlx_postgres",
-        "--features", "sqlx-postgres",
-        "--", "--ignored",
+        "--test", "migrate_sqlx_postgres",
+        "--test", "e2e",
+        "--no-default-features", "--features", "migrate,sqlx-postgres",
+        "--", "--include-ignored",
       ])
       .combinedOutput
   }
@@ -135,6 +172,13 @@ type Test {
   """
   sqlxSqlite: String! @check {
     self.example("sqlx_sqlite", feature: ["sqlx-sqlite"])
+  }
+
+  """
+  Run the explicit Serde stored-value example.
+  """
+  storedValues: String! @check {
+    self.example("stored_values", feature: ["serde"])
   }
 
   let example(

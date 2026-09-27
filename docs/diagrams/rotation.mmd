@@ -1,0 +1,28 @@
+sequenceDiagram
+    actor O as Operator
+    participant A as Instance A
+    participant PA as A provider snapshot
+    participant B as Instance B
+    participant PB as B provider snapshot
+    participant DB as Shared storage
+    participant M as Later maintenance / recovery
+    Note over O,PB: Repeat independently for encryption E and index I
+    O->>PA: Distribute generation 2, restart A, keep 1 current
+    A->>PA: Check baseline and target canaries
+    PA-->>A: 1 and 2 readable/probeable
+    A-->>O: Ready for this configuration revision
+    B->>DB: Continue writes with generation 1
+    O->>PB: Distribute generation 2, restart B, keep 1 current
+    B->>PB: Check baseline and target canaries
+    PB-->>B: 1 and 2 readable/probeable
+    B-->>O: Ready for this configuration revision
+    Note over O,DB: Gate: ALL participating readers ready before ANY writer promotes
+    O->>PA: Select 2 current, restart A
+    A->>DB: Write generation 2
+    B->>DB: Write generation 1, read/search both generations
+    DB-->>B: Candidates require decryption and normalized comparison
+    O->>PB: Select 2 current, restart B
+    Note over A,PB: Compatible rollback selects 1 current but retains readable 1 and 2
+    O->>M: Later, all writers promoted and rollback policy settled
+    M->>DB: Guarded sweep and separate convergence / readability / index checks
+    M-->>O: Inventory backups and stores, validate recovery before online retirement

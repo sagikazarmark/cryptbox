@@ -8,6 +8,16 @@ use crate::Error;
 /// padding for stored ciphertext requires an explicit migration. Padding
 /// parameters may change without migration because removal does not depend on
 /// the parameter that produced the padding.
+///
+/// This trait is sealed: select [`NoPadding`], [`PadToBlock`], or [`PadToLength`].
+/// Applications cannot implement another padding policy. Codecs, index normalizers,
+/// profiles, and key providers are extensible; see the [custom-profile example]
+/// and [ownership reference].
+///
+#[doc = concat!(
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub trait Padding: private::Sealed + Sized + 'static {
     /// Applies this policy to encoded plaintext.
     #[doc(hidden)]
@@ -85,6 +95,8 @@ impl<const N: usize> Padding for PadToLength<N> {
 }
 
 fn pad_to_length(plaintext: &Zeroizing<Vec<u8>>, target: usize) -> Zeroizing<Vec<u8>> {
+    // Preallocate before copying so growth cannot abandon a plaintext-bearing allocation.
+    // See ../docs/wire-format.md#key-and-buffer-lifetime.
     let mut padded = Zeroizing::new(Vec::with_capacity(target));
     padded.extend_from_slice(plaintext);
     padded.push(0x80);

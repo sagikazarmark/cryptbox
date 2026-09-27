@@ -81,6 +81,30 @@ impl std::io::Write for ZeroizingByteBuffer {
 /// A profile's codec is part of its persistent schema: ciphertext does not
 /// contain a codec identifier or codec version. Changing the emitted bytes or
 /// decode compatibility requires migrating existing data.
+///
+/// # Implementor obligations
+///
+/// This interface is extensible; [`crate::Padding`] is a sealed policy. Encode
+/// only the intended value, and decode into an owned value that does not borrow
+/// the temporary input. Returned encoding buffers must be
+/// [`Zeroizing<Vec<u8>>`]; protect intermediate plaintext allocations on
+/// success and error paths too. Wrapping a growable buffer does not erase an old
+/// allocation abandoned by reallocation. Preallocate before writing sensitive
+/// bytes, or copy into a new zeroizing allocation and wipe the old one before
+/// releasing it. Avoid third-party serializers that leave unprotected copies.
+///
+/// Discard parser/serializer errors that retain input; return only a sanitized
+/// [`CodecError`] category without logging plaintext. The decoded `T` belongs to
+/// the application: [`crate::Encrypted`] does not zeroize arbitrary `T`. A profile
+/// over [`crate::Secret<String>`] needs a codec for that exact type; [`Utf8`]
+/// implements only `Codec<String>`, not arbitrary secret wrappers.
+///
+/// See the [custom-profile example] and [ownership reference].
+///
+#[doc = concat!(
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+)]
 pub trait Codec<T>: Sized + 'static {
     /// Encodes `value` into an owned, zeroizing plaintext buffer.
     ///
@@ -95,6 +119,40 @@ pub trait Codec<T>: Sized + 'static {
     ///
     /// Returns a sanitized error when the bytes are invalid for this codec.
     fn decode(bytes: &[u8]) -> Result<T, CodecError>;
+}
+
+/// Selects the codec used by [`crate::profile!`] when a declaration omits `codec`.
+///
+/// Only `String` ([`Utf8`]) and `Vec<u8>` ([`Raw`]) have a default. These
+/// mappings are persistent schema: ciphertext does not record its codec, and a
+/// different codec can decode existing bytes into a wrong value without an
+/// error. They are therefore permanent, and this trait is sealed so neither
+/// this crate's features nor another crate can change them. Every other type,
+/// including Serde types, must name its codec explicitly.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` has no default codec",
+    label = "declare a codec for this value type",
+    note = "add a `codec` key, for example `codec: cryptbox::Json`; the codec is persistent schema"
+)]
+pub trait DefaultCodec: private::Sealed + Sized {
+    /// The codec selected for this value type.
+    type Codec: Codec<Self>;
+}
+
+impl private::Sealed for String {}
+
+impl DefaultCodec for String {
+    type Codec = Utf8;
+}
+
+impl private::Sealed for Vec<u8> {}
+
+impl DefaultCodec for Vec<u8> {
+    type Codec = Raw;
+}
+
+mod private {
+    pub trait Sealed {}
 }
 
 /// Encodes an owned byte vector without transformation.
@@ -128,6 +186,8 @@ impl Codec<String> for Utf8 {
 }
 
 /// Encodes Serde values as JSON.
+///
+/// Available with the `json` feature (which implies `serde`).
 #[cfg(feature = "json")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Json;
@@ -151,6 +211,8 @@ where
 }
 
 /// Encodes Serde values with Postcard.
+///
+/// Available with the `postcard` feature (which implies `serde`).
 #[cfg(feature = "postcard")]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Postcard;

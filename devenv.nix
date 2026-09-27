@@ -10,8 +10,11 @@
     cargo-audit
     cargo-deny
     cargo-dist
+    cargo-hack
     cargo-release
     cargo-watch
+
+    lychee
   ];
 
   languages = {

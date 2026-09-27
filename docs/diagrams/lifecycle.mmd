@@ -1,0 +1,13 @@
+flowchart TB
+    E["Encrypted&lt;T, Profile&gt;: owns plaintext"]
+    C["Ciphertext&lt;T, Profile&gt;: owns encrypted envelope"]
+    D["New Encrypted&lt;T, Profile&gt;: owns decrypted plaintext"]
+    P["Prepared: owns ciphertext and optional indexes"]
+    S["Storage: encrypted envelope and optional indexes"]
+    E -->|"encrypt_with borrows; source retained"| C
+    C -->|"decrypt_with borrows; authenticates and decodes"| D
+    E -->|"prepare_with borrows; source retained"| P
+    P -.->|"borrows plaintext source for its lifetime"| E
+    P -->|"application writes representations atomically"| S
+    C -->|"application writes bytes"| S
+    S -->|"parse structure; not authentication"| C

@@ -6,128 +6,93 @@
 //! required. Use `CryptBox` when an application owns encryption policy and key
 //! management but wants storage adapters to enforce ciphertext-at-rest.
 //!
-//! The v0.1 wire formats and built-in XChaCha20-Poly1305 suite are experimental
-//! and must not be treated as stable until the published test vectors and
-//! cryptographic review are complete.
+//! **Experimental; not production-ready.** See the [threat model] for assumptions,
+//! limitations, and outstanding review work.
+//!
+//! # Type model
+//!
+//! - [`Encrypted<Profile>`] and [`Secret<T>`] contain plaintext.
+//! - [`Ciphertext<Profile>`] contains stored encrypted bytes. Parsing checks
+//!   structure; decryption authenticates. Encryption borrows and retains the source.
+//! - [`EncryptionProfile`] declares a [`Field`] and chooses its value type, codec,
+//!   padding, and key context. Every value is bound to its field.
+//! - [`Prepared`] borrows a source value and derives ciphertext/indexes for an
+//!   application-owned atomic write; it does not persist them.
+//! - A [`BlindIndex`] is a candidate selector. Use every [`blind_index_probes`]
+//!   result, decrypt candidates, and compare normalized plaintext.
+//!
+#![doc = "<div>"]
+#![doc = include_str!("../docs/diagrams/lifecycle.svg")]
+#![doc = "</div>"]
+//!
+//! See the [ownership reference] for clones, temporary buffers,
+//! `Secret`, and shared key lifetimes, and the [custom-profile example] for public
+//! codec, normalizer, and synchronous provider implementations.
+//!
+#![doc = concat!(
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
+    "[custom-profile example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_profile/README.md",
+)]
+//!
+//! Row/tenant binding is future work. [`KeyContext`] selects providers for
+//! context-less operations; explicit-provider methods take keys separately.
+//! [`Padding`] is also sealed to built-in policies.
+//!
+//! The [documentation index] links integration and operational guides.
 //!
 //! # Quick start
 //!
-//! ```
-//! use cryptbox::{
-//!     Encrypted, EncryptionKey, EncryptionProfile, Field, FieldBound,
-//!     GlobalKeyContext, LocalEncryptionKeyring, Utf8, field_id, key_id,
-//! };
+//! **Ephemeral keys, in-memory demonstration only.** The [first-field tutorial]
+//! supplies a complete fresh-project manifest and execution instructions.
 //!
-//! struct UserEmail;
-//! impl Field for UserEmail {
-//!     const ID: cryptbox::FieldId =
-//!         field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-//!     const NAME: &'static str = "user-email";
-//! }
-//! impl EncryptionProfile<String> for UserEmail {
-//!     type Codec = Utf8;
-//!     type Binding = FieldBound<Self>;
-//!     type Keys = GlobalKeyContext;
-//!     type Padding = cryptbox::NoPadding;
-//! }
+#![doc = include_str!("../docs/snippets/first-field.md")]
 //!
-//! // Fixed key material is for this doctest only; load production keys securely.
-//! let keys = LocalEncryptionKeyring::new(
-//!     EncryptionKey::new(
-//!         key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"),
-//!         [0x42; 32],
-//!     ),
-//!     [],
-//! )?;
-//! let email = Encrypted::<_, UserEmail>::new("mark@example.com".to_owned());
-//! let ciphertext = email.encrypt_with(&(), &keys)?;
-//! assert_eq!(
-//!     ciphertext.decrypt_with(&(), &keys)?.expose_secret(),
-//!     "mark@example.com",
-//! );
-//! # Ok::<(), cryptbox::Error>(())
-//! ```
+//! The macro selects UTF-8 encoding, no padding, and the default key context, and
+//! binds ciphertext to the declared field ID. `Encrypted` contains plaintext;
+//! `Ciphertext` contains the encrypted envelope. `&keys` supplies the provider
+//! explicitly: no global installation is needed. Before durable storage,
+//! settle the persistent schema below and load stable key material and generation
+//! IDs across restarts; see the [first-field tutorial]'s durable-key next step.
 //!
-//! # Features
+#![doc = concat!(
+    "[first-field tutorial]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/first-field.md",
+)]
 //!
-//! No features are enabled by default, and all features are additive:
-//!
-//! - `json` adds the `Json` codec. Its serialized representation is part of
-//!   the persistent schema.
-//! - `migrate` adds the explicit `migrate` module for adopting `CryptBox` over
-//!   plaintext or data encrypted by a previous solution: permissive reads, a
-//!   legacy recovery handler, and a resumable sweep. Intended for a bounded
-//!   migration window only; the default decoding path stays strict.
-//! - `postcard` adds the `Postcard` codec. Its serialized representation is
-//!   part of the persistent schema.
-//! - `serde` adds explicit serialization of [`Ciphertext`] and [`BlindIndex`]
-//!   stored bytes. It never adds serialization for plaintext [`Encrypted`]
-//!   values.
-//! - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
-//! - `sqlx-sqlite` adds `SQLx` 0.8 `BLOB` storage for `SQLite`.
-//!
-//! The `SQLx` adapters automatically encrypt and decrypt [`Encrypted`] only for
-//! unit-context profiles, using [`EncryptionProfile::Keys`]. [`Ciphertext`] and
-//! blind-index storage work with explicit-context profiles. These features do
-//! not choose an async runtime or TLS implementation for the application.
-//! `CryptBox` deliberately provides no Serde implementation for [`Encrypted`],
-//! because it contains plaintext. With the `serde` feature, serialize an
-//! explicitly encrypted [`Ciphertext`] or derived [`BlindIndex`] instead. Their
-//! deserializers validate stored structure but do not establish authenticity;
-//! ciphertext is authenticated only when it is decrypted, and a blind-index
-//! candidate must still be verified against decrypted plaintext.
-//!
-//! This is a standard-library crate requiring Rust 1.85 or newer. Encryption
-//! requires a target on which `getrandom` can obtain operating-system entropy.
-//! The portable `RustCrypto` backends assume constant-time integer multiplication;
-//! targets where multiplication is variable-time, including certain 32-bit
-//! PowerPC CPUs and some non-ARM microcontrollers, are not supported for secret
-//! operations. The complete production target review is not yet finished.
+// Markdown uses the first definition: qualify the shared page's relative links for rustdoc.
+#![doc = concat!(
+    "\n[stored-value walkthrough]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/stored_values/README.md\n",
+    "[live-backend check instructions]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/documentation.md#live-postgresql\n",
+    "[task index]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/README.md\n\n",
+    include_str!("../docs/features.md"),
+)]
 //!
 //! # Persistent schema
 //!
-//! A profile's codec, presence or absence of padding, binding policy, stable
-//! field and index IDs, blind-index normalization, and retained precision are
-//! persistent schema decisions. They are not all self-described by stored
-//! bytes. Changing one requires an explicit migration for existing ciphertext
-//! or indexes. Parameters of an already-padded policy may change without a
-//! migration because padding removal is parameter-independent.
+//! Codec compatibility, padding mode, field/index IDs, normalization,
+//! and index precision are persistent schema. Stored bytes do not describe all
+//! of them; changing them requires a migration plan. See [schema rules].
+//!
+#![doc = concat!(
+    "[schema rules]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/integration.md#persistent-schema",
+)]
 //!
 //! # Workflows
 //!
-//! Complete runnable programs demonstrate [key rotation], a [re-encryption
-//! sweep], a [legacy migration], a [plaintext migration], [blind-index lookup],
-//! and [in-memory SQLite storage]. The [maintenance sweep guide] and the
-//! [legacy migration guide] cover the operational patterns, and the
-//! [wire-format guide] records the experimental envelope and index formats.
+//! See the [documentation index] for runnable examples, `SQLx` integration, key
+//! lifecycle, maintenance, and migration.
 //!
-//! [key rotation]: https://docs.rs/crate/cryptbox/latest/source/examples/key_rotation.rs
-//! [re-encryption sweep]: https://docs.rs/crate/cryptbox/latest/source/examples/reencryption_sweep.rs
-//! [legacy migration]: https://docs.rs/crate/cryptbox/latest/source/examples/legacy_migration.rs
-//! [plaintext migration]: https://docs.rs/crate/cryptbox/latest/source/examples/plaintext_migration.rs
-//! [blind-index lookup]: https://docs.rs/crate/cryptbox/latest/source/examples/blind_indexes.rs
-//! [in-memory SQLite storage]: https://docs.rs/crate/cryptbox/latest/source/examples/sqlx_sqlite.rs
-//! [maintenance sweep guide]: https://docs.rs/crate/cryptbox/latest/source/docs/reencryption-sweep.md
-//! [legacy migration guide]: https://docs.rs/crate/cryptbox/latest/source/docs/legacy-migration.md
-//! [wire-format guide]: https://docs.rs/crate/cryptbox/latest/source/docs/wire-format.md
+#![doc = concat!(
+    "[documentation index]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/README.md\n",
+    "[threat model]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/security.md",
+)]
 //!
 //! # Security boundaries
 //!
-//! Field binding prevents cross-field substitution, but not same-field
-//! cross-row substitution. Blind indexes intentionally leak equality and
-//! frequency; every hit is a candidate that must be decrypted and compared,
-//! regardless of padding. Unpadded profiles reveal the exact encoded plaintext
-//! length. A padding policy coarsens that leakage to a size bucket or hides it
-//! entirely up to a fixed length.
-//!
-//! Authenticated encryption does not prevent replay or rollback of an older
-//! valid ciphertext. Retaining historical keys keeps old ciphertext readable,
-//! so rotation is neither revocation nor crypto-shredding.
-//!
-//! `CryptBox` does not protect plaintext from a compromised application process
-//! while keys are live, or hide database query and access patterns. Treat logs,
-//! tracing data, crash dumps, swap, and other plaintext-bearing artifacts as
-//! sensitive.
+//! Encryption protects selected stored values while keys remain separate. Field
+//! binding rejects cross-field substitution, but does not bind rows or prevent
+//! replay. Sizes and access patterns remain visible; blind indexes additionally
+//! leak equality/frequency. Verify every candidate against decrypted plaintext.
+//! A compromised application can expose keys and plaintext. See the [threat model].
 //!
 //! Load root keys from a cryptographically secure secret source. Encryption and
 //! blind-index root keys must be generated independently, and a generation ID
@@ -139,6 +104,14 @@
 //! configuration.
 
 #![forbid(unsafe_code)]
+
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;
+
+#[cfg(doctest)]
+#[doc = include_str!("../docs/first-field.md")]
+pub struct FirstFieldDoctests;
 
 mod binding;
 mod blind;
@@ -160,9 +133,8 @@ mod sqlx_postgres;
 mod sqlx_sqlite;
 mod value;
 
-#[doc(hidden)]
-pub use binding::BindingDomain;
-pub use binding::{Binding, Field, FieldBound, Unbound};
+pub(crate) use binding::BindingDomain;
+pub use binding::Field;
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexMetadata, BlindIndexRef, BlindIndexSpec,
     blind_index_probes, derive_blind_index, inspect_blind_index, verify_blind_index_candidate,
@@ -171,7 +143,7 @@ pub use blind::{
 pub use codec::Json;
 #[cfg(feature = "postcard")]
 pub use codec::Postcard;
-pub use codec::{Codec, Raw, Utf8};
+pub use codec::{Codec, DefaultCodec, Raw, Utf8};
 pub use crypto::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, decrypt, encrypt, inspect_ciphertext,
     is_ciphertext, needs_reencryption, reencrypt,
@@ -185,4 +157,4 @@ pub use key::{
 pub use padding::{NoPadding, PadToBlock, PadToLength, Padding};
 pub use prepare::Prepared;
 pub use profile::EncryptionProfile;
-pub use value::{Ciphertext, Encrypted, ProfileContext, Secret};
+pub use value::{Ciphertext, Encrypted, Secret};

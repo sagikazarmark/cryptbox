@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use cryptbox::{
     BlindIndex, BlindIndexMetadata, BlindIndexRef, Ciphertext, Encrypted, EncryptionKey,
     EncryptionKeyProvider, EncryptionProfile, IndexId, KeyContext, KeyId, KeyProviderError,
-    LocalEncryptionKeyring, Unbound, Utf8, encrypt, index_id, key_id,
+    LocalEncryptionKeyring, Utf8, encrypt, index_id, key_id,
 };
 use sqlx::{
     Connection, Decode, Encode, Row, Sqlite, Type,
@@ -34,8 +34,13 @@ impl KeyContext for TestKeys {
 
 struct Profile;
 
-impl EncryptionProfile<String> for Profile {
-    type Binding = Unbound;
+impl cryptbox::Field for Profile {
+    const ID: cryptbox::FieldId = cryptbox::field_id!("4e2d8b17-6c3a-4f95-8b0e-1a7c9d3f5e26");
+    const NAME: &'static str = "sqlx-value";
+}
+
+impl EncryptionProfile for Profile {
+    type Value = String;
     type Codec = Utf8;
     type Keys = TestKeys;
     type Padding = cryptbox::NoPadding;
@@ -72,35 +77,28 @@ fn only_blob<'a>(buffer: &'a [SqliteArgumentValue<'_>]) -> &'a [u8] {
 
 #[test]
 fn encrypted_storage_types_map_to_sqlite_blob() {
-    assert_sqlx_traits::<Encrypted<String, Profile>>();
-    assert_sqlx_traits::<Ciphertext<String, Profile>>();
+    assert_sqlx_traits::<Encrypted<Profile>>();
+    assert_sqlx_traits::<Ciphertext<Profile>>();
     assert_sqlx_traits::<BlindIndex<IndexSpec>>();
 
     let blob: SqliteTypeInfo = <Vec<u8> as Type<Sqlite>>::type_info();
-    assert_eq!(
-        <Encrypted<String, Profile> as Type<Sqlite>>::type_info(),
-        blob
-    );
-    assert_eq!(
-        <Ciphertext<String, Profile> as Type<Sqlite>>::type_info(),
-        blob
-    );
+    assert_eq!(<Encrypted<Profile> as Type<Sqlite>>::type_info(), blob);
+    assert_eq!(<Ciphertext<Profile> as Type<Sqlite>>::type_info(), blob);
     assert_eq!(<BlindIndex<IndexSpec> as Type<Sqlite>>::type_info(), blob);
 }
 
 #[test]
 fn sqlite_encode_encrypts_plaintext_into_an_owned_blob() {
-    assert_sqlx_encode::<Encrypted<String, Profile>>();
-    assert_sqlx_encode::<Ciphertext<String, Profile>>();
+    assert_sqlx_encode::<Encrypted<Profile>>();
+    assert_sqlx_encode::<Ciphertext<Profile>>();
     assert_sqlx_encode::<BlindIndex<IndexSpec>>();
     assert_sqlx_encode::<BlindIndexRef<'static, IndexSpec>>();
 
-    let value = Encrypted::<_, Profile>::new("mark@example.com".to_owned());
+    let value = Encrypted::<Profile>::new("mark@example.com".to_owned());
     let mut buffer = Vec::new();
 
     let result =
-        <Encrypted<String, Profile> as Encode<'_, Sqlite>>::encode_by_ref(&value, &mut buffer)
-            .unwrap();
+        <Encrypted<Profile> as Encode<'_, Sqlite>>::encode_by_ref(&value, &mut buffer).unwrap();
 
     assert!(!result.is_null());
     assert!(only_blob(&buffer).starts_with(b"CBX\0"));
@@ -109,15 +107,13 @@ fn sqlite_encode_encrypts_plaintext_into_an_owned_blob() {
 #[test]
 fn sqlite_ciphertext_encoding_preserves_the_binary_envelope() {
     let keys = TestKeys::encryption_keys().unwrap();
-    let bytes = encrypt::<Unbound>(b"value", &(), keys).unwrap();
-    let ciphertext = Ciphertext::<String, Profile>::from_bytes(bytes.clone()).unwrap();
+    let bytes = encrypt::<Profile>(b"value", keys).unwrap();
+    let ciphertext = Ciphertext::<Profile>::from_bytes(bytes.clone()).unwrap();
     let mut buffer = Vec::new();
 
-    let result = <Ciphertext<String, Profile> as Encode<'_, Sqlite>>::encode_by_ref(
-        &ciphertext,
-        &mut buffer,
-    )
-    .unwrap();
+    let result =
+        <Ciphertext<Profile> as Encode<'_, Sqlite>>::encode_by_ref(&ciphertext, &mut buffer)
+            .unwrap();
 
     assert!(!result.is_null());
     assert_eq!(only_blob(&buffer), bytes);
@@ -132,7 +128,7 @@ fn sqlite_round_trips_ciphertext_and_decrypts_encrypted_values() {
             .await
             .unwrap();
 
-        let value = Encrypted::<_, Profile>::new("mark@example.com".to_owned());
+        let value = Encrypted::<Profile>::new("mark@example.com".to_owned());
         sqlx::query("INSERT INTO secrets (value) VALUES (?)")
             .bind(&value)
             .execute(&mut connection)
@@ -143,8 +139,8 @@ fn sqlite_round_trips_ciphertext_and_decrypts_encrypted_values() {
             .fetch_one(&mut connection)
             .await
             .unwrap();
-        let ciphertext: Ciphertext<String, Profile> = row.try_get("value").unwrap();
-        let decrypted: Encrypted<String, Profile> = row.try_get("value").unwrap();
+        let ciphertext: Ciphertext<Profile> = row.try_get("value").unwrap();
+        let decrypted: Encrypted<Profile> = row.try_get("value").unwrap();
 
         assert!(ciphertext.as_bytes().starts_with(b"CBX\0"));
         assert_eq!(decrypted.expose_secret(), "mark@example.com");

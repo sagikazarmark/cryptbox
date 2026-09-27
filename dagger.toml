@@ -14,3 +14,6 @@ version = "1.98-slim-trixie"
 
 [modules.dagger-gha]
 source = "github.com/sagikazarmark/daggerverse-beta/dagger-gha"
+
+[modules.lychee]
+source = "github.com/sagikazarmark/daggerverse-beta/lychee@34caea9a8c99fa2a4f5598a81204d7948af3abf0"

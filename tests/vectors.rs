@@ -2,33 +2,21 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, EncryptionKey,
-    EncryptionProfile, Error, Field, FieldBound, GlobalKeyContext, IndexId, IndexKeyId, KeyId,
-    LocalBlindIndexKeyring, LocalEncryptionKeyring, PadToBlock, Unbound, Utf8, decrypt,
-    derive_blind_index, field_id, index_id, index_key_id, key_id,
+    EncryptionProfile, Error, Field, GlobalKeyContext, IndexId, IndexKeyId, KeyId,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, PadToBlock, Utf8, decrypt, derive_blind_index,
+    field_id, index_id, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
-#[test]
-fn experimental_envelope_vector_decrypts() {
-    let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
-    let keys = LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap();
-    let envelope = hex::decode(
-        "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b961044c53838d7bf1c05cc81b81ae89d5",
-    )
-    .unwrap();
-
-    assert_eq!(
-        decrypt::<Unbound>(&envelope, &(), &keys)
-            .unwrap()
-            .as_slice(),
-        b"cryptbox vector"
-    );
-}
-
 struct PaddedVectorProfile;
 
-impl EncryptionProfile<String> for PaddedVectorProfile {
-    type Binding = Unbound;
+impl Field for PaddedVectorProfile {
+    const ID: cryptbox::FieldId = VectorField::ID;
+    const NAME: &'static str = VectorField::NAME;
+}
+
+impl EncryptionProfile for PaddedVectorProfile {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = PadToBlock<16>;
@@ -39,13 +27,13 @@ fn experimental_padded_envelope_vector_decrypts() {
     let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
     let keys = LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap();
     let envelope = hex::decode(
-        "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b9368a9985aacb04ff8f7b6a677d9665a9ba",
+        "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6",
     )
     .unwrap();
-    let ciphertext = Ciphertext::<String, PaddedVectorProfile>::from_bytes(envelope).unwrap();
+    let ciphertext = Ciphertext::<PaddedVectorProfile>::from_bytes(envelope).unwrap();
 
     assert_eq!(
-        ciphertext.decrypt_with(&(), &keys).unwrap().expose_secret(),
+        ciphertext.decrypt_with(&keys).unwrap().expose_secret(),
         "cryptbox vector"
     );
 }
@@ -55,13 +43,13 @@ fn unpadded_envelope_vector_is_invalid_for_a_padded_profile() {
     let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
     let keys = LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap();
     let envelope = hex::decode(
-        "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f1011121314151617c5ecf67a1ebf136378025485a1e4b961044c53838d7bf1c05cc81b81ae89d5",
+        "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d",
     )
     .unwrap();
-    let ciphertext = Ciphertext::<String, PaddedVectorProfile>::from_bytes(envelope).unwrap();
+    let ciphertext = Ciphertext::<PaddedVectorProfile>::from_bytes(envelope).unwrap();
 
     assert!(matches!(
-        ciphertext.decrypt_with(&(), &keys),
+        ciphertext.decrypt_with(&keys),
         Err(Error::InvalidPadding)
     ));
 }
@@ -74,7 +62,7 @@ impl Field for VectorField {
 }
 
 #[test]
-fn experimental_field_bound_envelope_vector_decrypts() {
+fn experimental_envelope_vector_decrypts() {
     let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
     let keys = LocalEncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap();
     let envelope = hex::decode(
@@ -83,9 +71,7 @@ fn experimental_field_bound_envelope_vector_decrypts() {
     .unwrap();
 
     assert_eq!(
-        decrypt::<FieldBound<VectorField>>(&envelope, &(), &keys)
-            .unwrap()
-            .as_slice(),
+        decrypt::<VectorField>(&envelope, &keys).unwrap().as_slice(),
         b"cryptbox vector"
     );
 }
@@ -108,12 +94,9 @@ fn experimental_blind_index_vector_is_stable() {
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = LocalBlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
 
-    let index = derive_blind_index::<VectorIndex, str, FieldBound<VectorField>>(
-        "normalized@example.com",
-        &(),
-        &keys,
-    )
-    .unwrap();
+    let index =
+        derive_blind_index::<VectorIndex, str, VectorField>("normalized@example.com", &keys)
+            .unwrap();
 
     assert_eq!(
         hex::encode(index.as_bytes()),

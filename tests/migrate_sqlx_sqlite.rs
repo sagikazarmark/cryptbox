@@ -4,9 +4,8 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexMetadata, BlindIndexSpec, Ciphertext, Encrypted,
-    EncryptionKey, EncryptionProfile, Error, Field, FieldBound, GlobalKeyContext, IndexId,
-    IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, field_id, index_id,
-    index_key_id, key_id,
+    EncryptionKey, EncryptionProfile, Error, Field, GlobalKeyContext, IndexId, IndexKeyId, KeyId,
+    LocalBlindIndexKeyring, LocalEncryptionKeyring, Utf8, field_id, index_id, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable,
     },
@@ -29,8 +28,8 @@ impl Field for UserEmail {
     const NAME: &'static str = "user-email";
 }
 
-impl EncryptionProfile<String> for UserEmail {
-    type Binding = FieldBound<Self>;
+impl EncryptionProfile for UserEmail {
+    type Value = String;
     type Codec = Utf8;
     type Keys = GlobalKeyContext;
     type Padding = cryptbox::NoPadding;
@@ -64,7 +63,7 @@ impl BlindIndexSpec<String> for EmailLookup {
 }
 
 fn assert_strict_decode(row: &SqliteRow, is_legacy: bool) {
-    let result = row.try_get::<Ciphertext<String, UserEmail>, _>("email_ciphertext");
+    let result = row.try_get::<Ciphertext<UserEmail>, _>("email_ciphertext");
     if !is_legacy {
         result.unwrap();
         return;
@@ -117,9 +116,9 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
             ("third@example.com", &old_keys, &old_index_keys),
             ("fourth@example.com", &keys, &index_keys),
         ] {
-            let value = Encrypted::<_, UserEmail>::new(email.to_owned());
+            let value = Encrypted::<UserEmail>::new(email.to_owned());
             let prepared = value
-                .prepare_with(&(), keyring)
+                .prepare_with(keyring)
                 .unwrap()
                 .with_index_with::<EmailLookup>(index_keyring)
                 .unwrap();
@@ -140,13 +139,13 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
         for row in rows {
             let id: i64 = row.try_get("id").unwrap();
             assert_strict_decode(&row, id <= 2);
-            let read: MaybeEncrypted<String, UserEmail> = row.try_get("email_ciphertext").unwrap();
+            let read: MaybeEncrypted<UserEmail> = row.try_get("email_ciphertext").unwrap();
             assert_eq!(read.is_legacy(), id <= 2);
-            read.decrypt_with_legacy(&(), &keys, &TOY_LEGACY).unwrap();
+            read.decrypt_with_legacy(&keys, &TOY_LEGACY).unwrap();
         }
 
         // Batch size one exercises pagination and per-batch checkpoints.
-        let planner = RowPlanner::<String, UserEmail>::new(&(), &keys)
+        let planner = RowPlanner::<UserEmail>::new(&keys)
             .with_legacy(&TOY_LEGACY)
             .with_index_with::<EmailLookup>(&index_keys);
         let sweep = Sweep::new(planner).with_batch_size(1);
@@ -184,8 +183,7 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
             .await
             .unwrap();
         for row in rows {
-            let ciphertext: Ciphertext<String, UserEmail> =
-                row.try_get("email_ciphertext").unwrap();
+            let ciphertext: Ciphertext<UserEmail> = row.try_get("email_ciphertext").unwrap();
             assert!(!ciphertext.needs_reencryption_with(&keys).unwrap());
         }
     });
@@ -210,7 +208,7 @@ fn permissive_decode_propagates_hard_errors() {
             .fetch_one(&mut connection)
             .await
             .unwrap();
-        let result = row.try_get::<MaybeEncrypted<String, UserEmail>, _>("bytes");
+        let result = row.try_get::<MaybeEncrypted<UserEmail>, _>("bytes");
         let error = result.unwrap_err();
         let sqlx::Error::ColumnDecode { source, .. } = error else {
             panic!("expected a column decode error");

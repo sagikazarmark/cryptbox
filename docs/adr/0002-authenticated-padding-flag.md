@@ -1,0 +1,35 @@
+---
+status: accepted
+---
+
+# Record padding in the authenticated envelope header
+
+Ciphertext format 2 records whether the AEAD plaintext is padded, as a flag in
+the envelope header. The header is already authenticated (the AAD covers
+`envelope[0..46]` today), so the flag cannot be altered. Readers remove padding
+only when the flag is set, which makes padding a writer-side policy: a field can
+enable or disable padding at any time, old values stay readable, and a
+re-encryption sweep upgrades them.
+
+Format 1 left padding out of the envelope, which made enabling padding a
+persistent-schema migration. That required two field markers sharing one ID,
+plus `retag`/`cast` helpers. It could also mis-decode silently: padded data read
+unpadded returns trailing `80 00…` (accepted by `Raw` and `Postcard`), and
+unpadded data ending in `80`/`80 00` read as padded loses those bytes. The wire
+format is marked experimental and the crate is pre-1.0, so this is the cheapest
+point to change it.
+
+## Considered Options
+
+- **Keep format 1** (padding as persistent schema): rejected for the reasons above.
+- **Always pad** (`NoPadding` appends only the `80` marker): uniform removal
+  without a header change, but it costs a byte on every value and is still a
+  breaking format change.
+
+## Consequences
+
+- `Field::PADDING` describes how new values are written; it is no longer
+  persistent schema.
+- Two markers sharing a field ID, and `retag`/`cast`, leave the API.
+- Whether and how long to keep a format 1 reader is decided when the format
+  lands.
