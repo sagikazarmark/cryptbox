@@ -31,7 +31,7 @@ where
     K: KeyContext,
 {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
-        let ciphertext = self.encrypt_with(K::encryption_keys()?)?;
+        let ciphertext = self.encrypt_for_column()?;
         buffer.extend_from_slice(ciphertext.as_bytes());
 
         Ok(IsNull::No)
@@ -49,11 +49,7 @@ where
 {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
-        let ciphertext = Ciphertext::<F>::from_bytes(bytes)?;
-
-        let value = ciphertext.decrypt_with(K::encryption_keys()?)?;
-
-        Ok(Self::from_value(value.into_secret()))
+        Ok(Self::decrypt_column(bytes)?)
     }
 }
 

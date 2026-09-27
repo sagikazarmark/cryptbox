@@ -70,7 +70,7 @@ use crate::{
 )]
 pub struct Encrypted<F: Field, K: KeyContext = GlobalKeys> {
     value: F::Value,
-    field: PhantomData<fn() -> (F, K)>,
+    marker: PhantomData<fn() -> (F, K)>,
 }
 
 impl<F: Field, K: KeyContext> Encrypted<F, K> {
@@ -85,7 +85,7 @@ impl<F: Field, K: KeyContext> Encrypted<F, K> {
     pub(crate) const fn from_value(value: F::Value) -> Self {
         Self {
             value,
-            field: PhantomData,
+            marker: PhantomData,
         }
     }
 
@@ -238,6 +238,18 @@ impl<F: Field> Encrypted<F> {
     }
 }
 
+// The automatic SQLx columns encrypt and decrypt with their key source `K`.
+#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
+impl<F: Field, K: KeyContext> Encrypted<F, K> {
+    pub(crate) fn encrypt_for_column(&self) -> Result<Ciphertext<F>, Error> {
+        self.encrypt_with(K::encryption_keys()?)
+    }
+
+    pub(crate) fn decrypt_column(bytes: Vec<u8>) -> Result<Self, Error> {
+        Ciphertext::<F>::from_bytes(bytes)?.decrypt_into(K::encryption_keys()?)
+    }
+}
+
 impl<F: Field> Ciphertext<F> {
     /// Authenticates, decrypts, and decodes this value with an injected provider.
     ///
@@ -252,6 +264,13 @@ impl<F: Field> Ciphertext<F> {
     /// Returns an error for invalid envelopes, unknown keys, authentication
     /// failure, unavailable providers, invalid padding, or codec failure.
     pub fn decrypt_with(&self, keys: &dyn EncryptionKeyProvider) -> Result<Encrypted<F>, Error> {
+        self.decrypt_into(keys)
+    }
+
+    fn decrypt_into<K: KeyContext>(
+        &self,
+        keys: &dyn EncryptionKeyProvider,
+    ) -> Result<Encrypted<F, K>, Error> {
         let plaintext = decrypt(F::ID, &self.bytes, keys)?;
         let plaintext = F::PADDING.unpad(plaintext)?;
         let value = F::Codec::decode(&plaintext)?;
