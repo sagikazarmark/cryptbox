@@ -244,7 +244,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// Decrypt and authenticate the candidate ciphertext before calling this.
     /// This receives no stored index or keys: it rejects false plaintext
     /// matches but does not authenticate index metadata or establish
-    /// index/ciphertext consistency.
+    /// index/ciphertext consistency; use [`Self::is_consistent_with`] for that.
     ///
     /// Equal-length normalized values are compared in constant time. A normalized
     /// length mismatch returns early, so callers must treat normalized lengths as
@@ -258,6 +258,30 @@ pub trait BlindIndexSpec: Sized + 'static {
         candidate: &<Self::Field as Field>::Value,
     ) -> Result<bool, Error> {
         compare_normalized::<Self>(query, candidate)
+    }
+
+    /// Checks a stored index against the value it should have been derived from.
+    ///
+    /// Decrypt and authenticate the associated ciphertext before calling this.
+    /// This resolves exactly the index-key generation that `stored` names,
+    /// re-derives from `value` with [`Self::normalize_value`], and compares the
+    /// complete stored representation in constant time. It works alike for
+    /// exact, computed, and composite indexes, whether `stored` uses the
+    /// current or a historical generation. A match is consistency at the
+    /// configured precision, not proof of provenance or freshness.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnknownBlindIndexKey`] when the provider cannot resolve
+    /// the generation named by `stored`, so an unverifiable index is reported
+    /// distinctly from an inconsistent one. Also returns an error for
+    /// normalization failure, an unavailable key provider, or an unrouted field.
+    fn is_consistent_with(
+        value: &<Self::Field as Field>::Value,
+        stored: &BlindIndex<Self>,
+        keys: &dyn BlindIndexKeyProvider,
+    ) -> Result<bool, Error> {
+        check_consistency::<Self>(value, stored, keys)
     }
 }
 
@@ -327,6 +351,14 @@ impl<Spec> BlindIndex<Spec> {
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
         &self.bytes
+    }
+
+    /// Returns the unauthenticated index-key generation named by validated bytes.
+    pub(crate) fn index_key_id(&self) -> IndexKeyId {
+        let mut id = [0_u8; 16];
+        id.copy_from_slice(&self.bytes[1..17]);
+
+        IndexKeyId::from_bytes(id)
     }
 
     /// Consumes the wrapper and returns its stored representation.
@@ -436,8 +468,9 @@ impl BlindIndexInfo {
 ///
 /// This does not authenticate the returned key ID, precision, or digest. Treat
 /// all metadata as untrusted. To check index consistency, decrypt the associated
-/// ciphertext, recompute with the intended specification, field, and an allowed
-/// key generation, and compare the complete stored representation. A match is
+/// ciphertext and call [`BlindIndexSpec::is_consistent_with`] with the intended
+/// specification and a provider serving only allowed key generations; it
+/// recomputes and compares the complete stored representation. A match is
 /// consistency at the configured precision, not proof of provenance or freshness.
 /// [`BlindIndexSpec::verify_candidate`] only compares plaintexts; it does not perform
 /// this recomputation or authenticate stored index metadata.
@@ -480,11 +513,19 @@ pub(crate) fn derive_value<Spec: BlindIndexSpec>(
     value: &<Spec::Field as Field>::Value,
     keys: &dyn BlindIndexKeyProvider,
 ) -> Result<BlindIndex<Spec>, Error> {
-    let normalized = Spec::normalize_value(value)?;
-    let field = <Spec::Field as Field>::ID;
-    let key = keys.current_key(field)?;
+    let key = keys.current_key(<Spec::Field as Field>::ID)?;
 
-    derive_normalized::<Spec>(&normalized, &BindingDomain::field(field), &key)
+    derive_value_with_key::<Spec>(value, &key)
+}
+
+fn derive_value_with_key<Spec: BlindIndexSpec>(
+    value: &<Spec::Field as Field>::Value,
+    key: &BlindIndexKey,
+) -> Result<BlindIndex<Spec>, Error> {
+    let normalized = Spec::normalize_value(value)?;
+    let domain = BindingDomain::field(<Spec::Field as Field>::ID);
+
+    derive_normalized::<Spec>(&normalized, &domain, key)
 }
 
 fn derive_probes<Spec: BlindIndexSpec>(
@@ -499,6 +540,21 @@ fn derive_probes<Spec: BlindIndexSpec>(
         .iter()
         .map(|key| derive_normalized::<Spec>(&normalized, &domain, key))
         .collect()
+}
+
+fn check_consistency<Spec: BlindIndexSpec>(
+    value: &<Spec::Field as Field>::Value,
+    stored: &BlindIndex<Spec>,
+    keys: &dyn BlindIndexKeyProvider,
+) -> Result<bool, Error> {
+    let id = stored.index_key_id();
+    let key = keys
+        .key(<Spec::Field as Field>::ID, id)?
+        .ok_or(Error::UnknownBlindIndexKey(id))?;
+    let derived = derive_value_with_key::<Spec>(value, &key)?;
+
+    // Both representations carry Spec::BITS, so their lengths always agree.
+    Ok(derived.as_bytes().ct_eq(stored.as_bytes()).into())
 }
 
 fn compare_normalized<Spec: BlindIndexSpec>(

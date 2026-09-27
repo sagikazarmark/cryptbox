@@ -70,6 +70,12 @@
   error. A spec previously used with several fields becomes one spec per field,
   or a spec generic over its field. Stored blind indexes are unchanged for the
   same field, index ID, precision, and normalization.
+- Add the provided method `BlindIndexSpec::is_consistent_with(value, stored, keys)`,
+  which checks a stored index against its decrypted value under the generation
+  the index names, using the spec's own `normalize_value`, so audits check
+  current and historical, exact, computed, and composite indexes alike. It
+  returns `Ok(false)` for an inconsistent index and
+  `Error::UnknownBlindIndexKey` for a generation the provider cannot resolve.
 
 - **Breaking:** key providers receive the field they serve.
   `EncryptionKeyProvider::current_key(field)` and `key(field, id)`, and the

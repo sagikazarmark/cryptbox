@@ -165,14 +165,14 @@ from trusted application schema, not stored metadata.
    parse typed `Ciphertext`, and call `decrypt_with` with the intended context and
    provider. Authentication, padding, codec and key-availability failures all fail
    the audit. Validate decoded application constraints; account for every row.
-4. **Recompute every index.** Parse as `BlindIndex<ExpectedSpec>`. After convergence,
-   use `ExpectedSpec::derive_with` on authenticated plaintext with the current
-   index provider; compare **complete stored bytes**, not just IDs.
-   To audit a mixed-generation store, use `ExpectedSpec::probes_with` with the
-   query that corresponds to that plaintext (for a computed index, such as an
-   email domain, the computed part) for every allowed readable generation and
-   require a complete-byte match.
-   Unknown/disallowed generations fail the check.
+4. **Recompute every index.** Parse as `BlindIndex<ExpectedSpec>` and call
+   `ExpectedSpec::is_consistent_with` with the authenticated plaintext and an
+   index provider serving exactly the allowed generations; it compares
+   **complete stored bytes**, not just IDs, under the generation the index names.
+   `Ok(false)` is an inconsistent index. `Error::UnknownBlindIndexKey` means an
+   unknown or disallowed generation: it also fails the check, but report it
+   distinctly as unverifiable. After convergence, also require that the stored
+   bytes equal `ExpectedSpec::derive_with` under the current generation.
 5. **Resolve failures and reconcile coverage.** Record sanitized row/run metadata
    and compare coverage with the inventory and expected searches. Repair only
    from authoritative values with atomic full-tuple CAS, then repeat the complete

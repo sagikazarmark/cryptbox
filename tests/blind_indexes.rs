@@ -1,9 +1,9 @@
 //! Public-boundary tests for blind indexes and prepared storage values.
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Field,
-    IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding, Utf8,
-    field_id, index_id, index_key_id, inspect_blind_index, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexSpec, Encrypted, EncryptionKey, Error,
+    Field, IndexId, IndexKeyId, KeyId, LocalBlindIndexKeyring, LocalEncryptionKeyring, Padding,
+    Utf8, field_id, index_id, index_key_id, inspect_blind_index, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -352,4 +352,71 @@ fn truncation_is_canonical_at_supported_bit_boundaries() {
     assert_canonical_truncation::<ThirteenBits>(2);
     assert_canonical_truncation::<TwoHundredFiftyFiveBits>(32);
     assert_canonical_truncation::<TwoHundredFiftySixBits>(32);
+}
+
+#[test]
+fn a_stored_index_is_consistent_with_the_value_it_was_derived_from() {
+    let keys = index_keys();
+    let stored = EmailExact::derive_with(&email("mark@example.com"), &keys).unwrap();
+
+    assert!(EmailExact::is_consistent_with(&email(" Mark@Example.com "), &stored, &keys).unwrap());
+}
+
+#[test]
+fn a_stored_index_from_a_historical_generation_is_consistent_with_its_value() {
+    let old = index_key(OLD_INDEX_KEY_ID, 43);
+    let before_rotation = LocalBlindIndexKeyring::new(old.clone(), []).unwrap();
+    let stored = EmailExact::derive_with(&email("mark@example.com"), &before_rotation).unwrap();
+    let keys = LocalBlindIndexKeyring::new(index_key(CURRENT_INDEX_KEY_ID, 47), [old]).unwrap();
+
+    assert!(EmailExact::is_consistent_with(&email("mark@example.com"), &stored, &keys).unwrap());
+}
+
+#[test]
+fn a_stored_index_for_another_value_is_inconsistent() {
+    let keys = index_keys();
+    let stored = EmailExact::derive_with(&email("other@example.com"), &keys).unwrap();
+
+    assert!(!EmailExact::is_consistent_with(&email("mark@example.com"), &stored, &keys).unwrap());
+}
+
+#[test]
+fn a_stored_index_from_an_unknown_generation_cannot_be_checked() {
+    let retired = LocalBlindIndexKeyring::new(index_key(OLD_INDEX_KEY_ID, 43), []).unwrap();
+    let stored = EmailExact::derive_with(&email("mark@example.com"), &retired).unwrap();
+
+    assert_eq!(
+        EmailExact::is_consistent_with(&email("mark@example.com"), &stored, &index_keys())
+            .unwrap_err(),
+        Error::UnknownBlindIndexKey(OLD_INDEX_KEY_ID)
+    );
+}
+
+#[test]
+fn a_computed_index_is_consistent_with_any_value_sharing_the_computed_part() {
+    let keys = index_keys();
+    let stored = EmailDomain::derive_with(&email("mark@Example.com"), &keys).unwrap();
+
+    assert!(EmailDomain::is_consistent_with(&email("ada@example.com"), &stored, &keys).unwrap());
+    assert!(!EmailDomain::is_consistent_with(&email("mark@example.org"), &stored, &keys).unwrap());
+}
+
+#[test]
+fn a_composite_index_is_consistent_only_when_every_part_matches() {
+    let keys = index_keys();
+    let person = |name: &str, postal_code: &str| Person {
+        name: name.to_owned(),
+        postal_code: postal_code.to_owned(),
+    };
+    let stored =
+        NameAndPostalCode::derive_with(&person("Ada Lovelace", "SW1A 1AA"), &keys).unwrap();
+
+    assert!(
+        NameAndPostalCode::is_consistent_with(&person("ada lovelace", "SW1A 1AA"), &stored, &keys)
+            .unwrap()
+    );
+    assert!(
+        !NameAndPostalCode::is_consistent_with(&person("Ada Lovelace", "EC1A 1BB"), &stored, &keys)
+            .unwrap()
+    );
 }
