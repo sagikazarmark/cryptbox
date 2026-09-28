@@ -348,6 +348,10 @@
   `Postcard::encode` are unaffected, but stored plaintext that carries extra
   bytes, such as padding read as unpadded, no longer decodes.
 
+- Fix the AEAD cipher leaving a copy of each derived encryption key in memory
+  after sealing or opening: `chacha20poly1305` now zeroizes its key and
+  ChaCha20 state on drop.
+
 - Add task-oriented adoption guidance, document authority and version distinctions,
   shared feature/platform reference, and reproducible documentation link checks.
 

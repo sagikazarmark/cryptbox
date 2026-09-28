@@ -58,9 +58,10 @@ directly into `Secret<String>`.
 
 ## Temporary buffers and erasure limits
 
-The crypto implementation enables HMAC, SHA-256, and Poly1305 zeroization,
-immediately erases the HKDF extract output, and retains derived keys and returned
-MACs in zeroizing buffers. Dependency- and compiler-generated copies remain part
+The crypto implementation enables HMAC, SHA-256, ChaCha20-Poly1305, and Poly1305
+zeroization, immediately erases the HKDF extract output, and retains derived keys
+and returned MACs in zeroizing buffers. The AEAD erases its own copy of the
+derived key on drop. Dependency- and compiler-generated copies remain part
 of the outstanding review boundary.
 
 `Zeroizing<Vec<u8>>` wipes its current allocation, not allocations previously

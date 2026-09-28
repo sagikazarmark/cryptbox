@@ -36,7 +36,8 @@ sqlx-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 [dependencies]
 base64 = { version = "0.23.1", default-features = false }
 bytes = { version = "1.10.1", default-features = false, optional = true }
-chacha20poly1305 = { version = "0.11.0", features = ["alloc"], default-features = false }
+# Erase the derived key the AEAD copies, and its ChaCha20 state, on drop.
+chacha20poly1305 = { version = "0.11.0", features = ["alloc", "zeroize"], default-features = false }
 # Lockstep: generated code names this exact version's public items.
 cryptbox-derive = { version = "=0.5.0", path = "cryptbox-derive", optional = true }
 getrandom = "0.4.3"
