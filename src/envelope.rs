@@ -20,6 +20,10 @@ const FORMAT_1_VERSION: u8 = 1;
 const FORMAT_1_HEADER_LEN: usize = 22;
 const FLAG_PADDED: u8 = 0x01;
 const FLAG_SCOPED: u8 = 0x02;
+// Byte offsets in the layout table: ../docs/wire-format.md#envelope.
+const FORMAT_VERSION_OFFSET: usize = 4;
+const SUITE_ID_OFFSET: usize = 5;
+const FLAGS_OFFSET: usize = 6;
 
 // Labels, including NULs, are persistent domain separators, not display strings.
 // See ../docs/wire-format.md#encryption-recipe.
@@ -164,7 +168,16 @@ pub fn is_ciphertext(bytes: &[u8]) -> bool {
 ///
 /// Returns a structured error when the envelope is malformed or unsupported.
 pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
-    parse_envelope(bytes).map(|parsed| parsed.info)
+    parse_supported(bytes).map(|(_, envelope)| envelope.info)
+}
+
+/// Parses an envelope whose suite is supported and whose payload fits that suite.
+fn parse_supported(bytes: &[u8]) -> Result<(Suite, ParsedEnvelope<'_>), Error> {
+    let envelope = parse_envelope(bytes)?;
+    let suite = Suite::from_id(envelope.info.suite_id)?;
+    suite.validate_payload(envelope.suite_payload)?;
+
+    Ok((suite, envelope))
 }
 
 /// Encrypts opaque plaintext bytes for `field` with the current key of its keyring.
@@ -240,13 +253,13 @@ pub(crate) fn decrypt_bound(
     ciphertext: &[u8],
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
-    let parsed = parse_envelope(ciphertext)?;
+    let (suite, parsed) = parse_supported(ciphertext)?;
     check_shape(parsed.info, domain)?;
     let key = keyring(keys, domain)?
         .get(parsed.info.key_id)
         .cloned()
         .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id))?;
-    let plaintext = Suite::from_id(parsed.info.suite_id)?.open(&parsed, domain.as_bytes(), &key)?;
+    let plaintext = suite.open(&parsed, domain.as_bytes(), &key)?;
 
     // Only the authenticated flag decides unpadding; the current policy must not,
     // or policy changes would silently misread stored values.
@@ -308,7 +321,8 @@ pub(crate) fn needs_reencryption_bound(
     ciphertext: &[u8],
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<bool, Error> {
-    let info = inspect_ciphertext(ciphertext)?;
+    let (_, envelope) = parse_supported(ciphertext)?;
+    let info = envelope.info;
     check_shape(info, domain)?;
     let current = keyring(keys, domain)?.current().clone();
 
@@ -358,7 +372,7 @@ fn seal_with_nonce(
 /// Returns the key ID of an envelope that already passed structural validation.
 // Offsets follow the layout table: ../docs/wire-format.md#envelope.
 pub(crate) fn validated_key_id(bytes: &[u8]) -> KeyId {
-    let offset = if bytes[4] == FORMAT_1_VERSION { 6 } else { 7 };
+    let offset = key_id_offset(bytes[FORMAT_VERSION_OFFSET]);
     let mut key_id = [0_u8; 16];
     key_id.copy_from_slice(&bytes[offset..offset + 16]);
 
@@ -376,10 +390,10 @@ fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> {
     }
 
     // Offsets follow the layout table: ../docs/wire-format.md#envelope.
-    let format_version = bytes[4];
-    let (key_offset, flags) = match format_version {
-        FORMAT_VERSION => (7, bytes[6]),
-        FORMAT_1_VERSION => (6, 0),
+    let format_version = bytes[FORMAT_VERSION_OFFSET];
+    let flags = match format_version {
+        FORMAT_VERSION => bytes[FLAGS_OFFSET],
+        FORMAT_1_VERSION => 0,
         _ => return Err(Error::UnsupportedFormatVersion(format_version)),
     };
 
@@ -397,11 +411,11 @@ fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> {
         return Err(Error::InvalidEnvelope);
     }
 
-    let suite_id = SuiteId::new(bytes[5]);
-    Suite::from_id(suite_id)?.validate_payload(&bytes[header_len..])?;
+    let suite_id = SuiteId::new(bytes[SUITE_ID_OFFSET]);
 
     let padded = (format_version == FORMAT_VERSION).then_some(flags & FLAG_PADDED != 0);
     let mut key_id = [0_u8; 16];
+    let key_offset = key_id_offset(format_version);
     key_id.copy_from_slice(&bytes[key_offset..key_offset + 16]);
     let shape_fingerprint = (flags & FLAG_SCOPED != 0).then(|| {
         let mut fingerprint = [0_u8; FINGERPRINT_LEN];
@@ -421,6 +435,37 @@ fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> {
         header: &bytes[..header_len],
         suite_payload: &bytes[header_len..],
     })
+}
+
+fn envelope_header(
+    suite_id: SuiteId,
+    padded: bool,
+    key_id: KeyId,
+    fingerprint: Option<ShapeFingerprint>,
+) -> Vec<u8> {
+    let mut flags = if padded { FLAG_PADDED } else { 0 };
+    if fingerprint.is_some() {
+        flags |= FLAG_SCOPED;
+    }
+
+    let mut header = Vec::with_capacity(SCOPED_HEADER_LEN);
+    header.extend_from_slice(MAGIC);
+    header.extend_from_slice(&[FORMAT_VERSION, suite_id.get(), flags]);
+    header.extend_from_slice(key_id.as_bytes());
+    if let Some(fingerprint) = fingerprint {
+        header.extend_from_slice(fingerprint.as_bytes());
+    }
+
+    header
+}
+
+// Format 1 has no flags byte, so its key ID starts one byte earlier.
+const fn key_id_offset(format_version: u8) -> usize {
+    if format_version == FORMAT_1_VERSION {
+        FLAGS_OFFSET
+    } else {
+        FLAGS_OFFSET + 1
+    }
 }
 
 fn derive_encryption_key(
@@ -525,11 +570,11 @@ mod xchacha20_poly1305 {
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
-        let (header, payload) = (envelope.header, envelope.suite_payload);
-        validate_payload(payload)?;
-
-        let (nonce, ciphertext) = payload.split_at(NONCE_LEN);
-        let nonce: &[u8; NONCE_LEN] = nonce.try_into().map_err(|_| Error::InvalidEnvelope)?;
+        let header = envelope.header;
+        let (nonce, ciphertext) = envelope
+            .suite_payload
+            .split_first_chunk::<NONCE_LEN>()
+            .ok_or(Error::InvalidEnvelope)?;
         let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
         prefix.extend_from_slice(header);
         prefix.extend_from_slice(nonce);
@@ -544,28 +589,6 @@ mod xchacha20_poly1305 {
 
         Ok(crypto::open(&operational_key, nonce, &aad, ciphertext)?)
     }
-}
-
-fn envelope_header(
-    suite_id: SuiteId,
-    padded: bool,
-    key_id: KeyId,
-    fingerprint: Option<ShapeFingerprint>,
-) -> Vec<u8> {
-    let mut flags = if padded { FLAG_PADDED } else { 0 };
-    if fingerprint.is_some() {
-        flags |= FLAG_SCOPED;
-    }
-
-    let mut header = Vec::with_capacity(SCOPED_HEADER_LEN);
-    header.extend_from_slice(MAGIC);
-    header.extend_from_slice(&[FORMAT_VERSION, suite_id.get(), flags]);
-    header.extend_from_slice(key_id.as_bytes());
-    if let Some(fingerprint) = fingerprint {
-        header.extend_from_slice(fingerprint.as_bytes());
-    }
-
-    header
 }
 
 #[cfg(test)]
