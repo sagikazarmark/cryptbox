@@ -105,10 +105,11 @@ pub(crate) fn open(
     Ok(plaintext)
 }
 
-/// Derives 32 bytes with HKDF-SHA-256 under the crate's fixed salt.
+/// Derives 32 bytes with HKDF-SHA-256 under the crate's fixed salt, with the
+/// concatenation of `info` as its info.
 pub(crate) fn hkdf_sha256_32(
     input_key_material: &[u8],
-    info: &[u8],
+    info: &[&[u8]],
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
     hkdf_sha256_32_with_salt(input_key_material, HKDF_SALT, info)
 }
@@ -116,7 +117,7 @@ pub(crate) fn hkdf_sha256_32(
 fn hkdf_sha256_32_with_salt(
     input_key_material: &[u8],
     salt: &[u8],
-    info: &[u8],
+    info: &[&[u8]],
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
     let (mut pseudo_random_key, hkdf) = Hkdf::<Sha256>::extract(Some(salt), input_key_material);
     // HKDF retains keyed expansion state, so the separately returned PRK is no longer needed.
@@ -124,7 +125,7 @@ fn hkdf_sha256_32_with_salt(
     pseudo_random_key.as_mut_slice().zeroize();
     let mut output = Zeroizing::new([0_u8; 32]);
 
-    hkdf.expand(info, &mut output[..])
+    hkdf.expand_multi_info(info, &mut output[..])
         .map_err(|_| Error::Internal)?;
 
     Ok(output)
@@ -155,7 +156,7 @@ mod tests {
         let salt = hex::decode("000102030405060708090a0b0c").unwrap();
         let info = hex::decode("f0f1f2f3f4f5f6f7f8f9").unwrap();
 
-        let output = hkdf_sha256_32_with_salt(&input_key_material, &salt, &info).unwrap();
+        let output = hkdf_sha256_32_with_salt(&input_key_material, &salt, &[&info]).unwrap();
 
         assert_eq!(
             hex::encode(output.as_slice()),

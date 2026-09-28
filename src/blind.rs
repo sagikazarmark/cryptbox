@@ -753,11 +753,7 @@ fn derive_normalized<Spec: BlindIndexSpec>(
     context.extend_from_slice(domain.as_bytes());
     context.extend_from_slice(Spec::ID.as_bytes());
 
-    let mut info = Vec::with_capacity(INDEX_KEY_LABEL.len() + context.len());
-    info.extend_from_slice(INDEX_KEY_LABEL);
-    info.extend_from_slice(&context);
-
-    let index_key = hkdf_sha256_32(key.bytes(), &info)?;
+    let index_key = hkdf_sha256_32(key.bytes(), &[INDEX_KEY_LABEL, &context])?;
     let normalized_len = u64::try_from(normalized.len()).map_err(|_| Error::InvalidBlindIndex)?;
     let normalized_len = normalized_len.to_be_bytes();
 

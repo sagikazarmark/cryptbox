@@ -84,14 +84,17 @@ fn derive_encryption_key(
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
     // Preserve this canonical order: changing it makes stored ciphertext unreadable.
     // See ../../docs/wire-format.md#encryption-recipe.
-    let mut info = Vec::with_capacity(ENCRYPTION_KEY_LABEL.len() + 18 + binding.len());
-    info.extend_from_slice(ENCRYPTION_KEY_LABEL);
-    info.push(format_version);
-    info.push(suite_id.get());
-    info.extend_from_slice(root.id().as_bytes());
-    info.extend_from_slice(binding);
+    let key = crypto::hkdf_sha256_32(
+        root.bytes(),
+        &[
+            ENCRYPTION_KEY_LABEL,
+            &[format_version, suite_id.get()],
+            root.id().as_bytes(),
+            binding,
+        ],
+    )?;
 
-    Ok(crypto::hkdf_sha256_32(root.bytes(), &info)?)
+    Ok(key)
 }
 
 fn envelope_aad(prefix: &[u8], binding: &[u8]) -> Vec<u8> {
