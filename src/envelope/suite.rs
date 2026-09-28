@@ -154,21 +154,22 @@ mod xchacha20_poly1305 {
     ) -> Result<Vec<u8>, Error> {
         let suite = EXPERIMENTAL_XCHACHA20_POLY1305;
         let header = envelope_header(suite, plaintext.is_padded(), key.id(), fingerprint);
-        let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
-        prefix.extend_from_slice(&header);
-        prefix.extend_from_slice(&nonce);
-
-        let operational_key = derive_encryption_key(key, binding, FORMAT_VERSION, suite)?;
-        let aad = envelope_aad(&prefix, binding);
-        let sealed = crypto::seal(&operational_key, &nonce, &aad, plaintext.bytes())?;
-
-        let capacity = prefix
-            .len()
-            .checked_add(sealed.len())
+        let capacity = (header.len() + NONCE_LEN + TAG_LEN)
+            .checked_add(plaintext.bytes().len())
             .ok_or(Error::MessageTooLong)?;
         let mut envelope = Vec::with_capacity(capacity);
-        envelope.extend_from_slice(&prefix);
-        envelope.extend_from_slice(&sealed);
+        envelope.extend_from_slice(&header);
+        envelope.extend_from_slice(&nonce);
+
+        let operational_key = derive_encryption_key(key, binding, FORMAT_VERSION, suite)?;
+        let aad = envelope_aad(&envelope, binding);
+        crypto::seal_into(
+            &operational_key,
+            &nonce,
+            &aad,
+            plaintext.bytes(),
+            &mut envelope,
+        )?;
 
         Ok(envelope)
     }
@@ -178,14 +179,15 @@ mod xchacha20_poly1305 {
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
-        let header = envelope.header;
-        let (nonce, ciphertext) = envelope
-            .suite_payload
-            .split_first_chunk::<NONCE_LEN>()
+        // The AAD covers the stored header and nonce exactly as they were read.
+        let prefix_len = envelope.header.len() + NONCE_LEN;
+        let (prefix, ciphertext) = envelope
+            .bytes
+            .split_at_checked(prefix_len)
             .ok_or(Error::InvalidEnvelope)?;
-        let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
-        prefix.extend_from_slice(header);
-        prefix.extend_from_slice(nonce);
+        let nonce = prefix
+            .last_chunk::<NONCE_LEN>()
+            .ok_or(Error::InvalidEnvelope)?;
 
         let operational_key = derive_encryption_key(
             key,
@@ -193,7 +195,7 @@ mod xchacha20_poly1305 {
             envelope.info.format_version(),
             EXPERIMENTAL_XCHACHA20_POLY1305,
         )?;
-        let aad = envelope_aad(&prefix, binding);
+        let aad = envelope_aad(prefix, binding);
 
         Ok(crypto::open(&operational_key, nonce, &aad, ciphertext)?)
     }

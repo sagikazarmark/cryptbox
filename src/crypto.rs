@@ -4,7 +4,8 @@
 //! primitive, and every way one can fail, is reviewable in one place. Callers
 //! own the recipes: which labels, key material, and AAD go in.
 
-use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce, aead::AeadInOut};
+use chacha20poly1305::aead::{AeadInOut, inout::InOutBuf};
+use chacha20poly1305::{KeyInit, Tag, XChaCha20Poly1305, XNonce};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -50,39 +51,54 @@ pub(crate) fn check_message_len(len: usize) -> Result<(), Error> {
     Ok(())
 }
 
-/// Encrypts `plaintext` and returns the ciphertext followed by its tag.
-pub(crate) fn seal(
+/// Encrypts `plaintext` and appends the ciphertext and its tag to `out`.
+///
+/// The AEAD reads `plaintext` and writes ciphertext straight into `out`, so no
+/// working copy of the plaintext is made.
+pub(crate) fn seal_into(
     key: &[u8; 32],
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     plaintext: &[u8],
-) -> Result<Vec<u8>, Error> {
+    out: &mut Vec<u8>,
+) -> Result<(), Error> {
     check_message_len(plaintext.len())?;
 
     let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| Error::Internal)?;
-    // The working copy can still contain plaintext if sealing fails; erase on every exit.
-    // See ../docs/wire-format.md#key-and-buffer-lifetime.
-    let mut sealed = Zeroizing::new(plaintext.to_vec());
-    cipher
-        .encrypt_in_place(&XNonce::from(*nonce), aad, &mut *sealed)
+    let start = out.len();
+    let end = start
+        .checked_add(plaintext.len())
+        .ok_or(Error::MessageTooLong)?;
+    out.resize(end, 0);
+    let buffer = InOutBuf::new(plaintext, &mut out[start..]).map_err(|_| Error::Internal)?;
+    let tag = cipher
+        .encrypt_inout_detached(&XNonce::from(*nonce), aad, buffer)
         .map_err(|_| Error::Internal)?;
+    out.extend_from_slice(&tag);
 
-    Ok(std::mem::take(&mut *sealed))
+    Ok(())
 }
 
-/// Authenticates and decrypts `ciphertext`, which ends with its tag.
+/// Authenticates `ciphertext`, which ends with its tag, and returns the plaintext.
+///
+/// The AEAD verifies the tag before it writes any plaintext, so a failure
+/// returns no bytes.
 pub(crate) fn open(
     key: &[u8; 32],
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     ciphertext: &[u8],
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
+    let (ciphertext, tag) = ciphertext
+        .split_last_chunk::<TAG_LEN>()
+        .ok_or(Error::AuthenticationFailed)?;
     let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| Error::Internal)?;
-    // Never return unauthenticated bytes, even if the AEAD mutates before failing.
-    // Zeroizing also covers that error path: ../docs/wire-format.md#key-and-buffer-lifetime.
-    let mut plaintext = Zeroizing::new(ciphertext.to_vec());
+    // Plaintext is only ever written here; erase it on drop.
+    // See ../docs/wire-format.md#key-and-buffer-lifetime.
+    let mut plaintext = Zeroizing::new(vec![0_u8; ciphertext.len()]);
+    let buffer = InOutBuf::new(ciphertext, &mut plaintext[..]).map_err(|_| Error::Internal)?;
     cipher
-        .decrypt_in_place(&XNonce::from(*nonce), aad, &mut *plaintext)
+        .decrypt_inout_detached(&XNonce::from(*nonce), aad, buffer, &Tag::from(*tag))
         .map_err(|_| Error::AuthenticationFailed)?;
 
     Ok(plaintext)
@@ -130,7 +146,7 @@ pub(crate) fn hmac_sha256(key: &[u8], input: &[&[u8]]) -> Result<Zeroizing<[u8; 
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, NONCE_LEN, check_message_len, hkdf_sha256_32_with_salt, open, seal};
+    use super::{Error, NONCE_LEN, check_message_len, hkdf_sha256_32_with_salt, open, seal_into};
 
     #[test]
     fn hkdf_matches_rfc_5869_case_one() {
@@ -160,7 +176,8 @@ mod tests {
     fn open_rejects_a_changed_aad() {
         let key = [0x11; 32];
         let nonce = [0x22; NONCE_LEN];
-        let sealed = seal(&key, &nonce, b"aad", b"secret").unwrap();
+        let mut sealed = Vec::new();
+        seal_into(&key, &nonce, b"aad", b"secret", &mut sealed).unwrap();
 
         assert_eq!(
             open(&key, &nonce, b"aad", &sealed).unwrap().as_slice(),

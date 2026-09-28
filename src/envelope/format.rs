@@ -69,6 +69,8 @@ impl CiphertextInfo {
 
 pub(super) struct ParsedEnvelope<'a> {
     pub(super) info: CiphertextInfo,
+    // The whole envelope: the header followed by the suite payload.
+    pub(super) bytes: &'a [u8],
     pub(super) header: &'a [u8],
     pub(super) suite_payload: &'a [u8],
 }
@@ -137,6 +139,7 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
     });
 
     Ok(ParsedEnvelope {
+        bytes,
         info: CiphertextInfo {
             format_version,
             suite_id,
