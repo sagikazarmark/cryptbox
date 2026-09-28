@@ -619,7 +619,12 @@ impl fmt::Debug for ShapeFingerprint {
     }
 }
 
-/// Canonical binding bytes passed to the cryptographic core.
+/// A binding resolved for the cryptographic core, or its blind-index restriction.
+///
+/// The encoded bytes are the domain separator that encryption mixes into key
+/// derivation and AAD, and that a blind index mixes into its MAC input. The
+/// field and key scope select the keyring; the shape fingerprint, set only for
+/// a scoped binding, is recorded in the envelope and checked by readers.
 #[derive(Clone, Debug)]
 pub(crate) struct BindingDomain {
     field: FieldId,
