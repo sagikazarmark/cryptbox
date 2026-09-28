@@ -450,6 +450,21 @@ fn validate_plaintext_len(len: usize) -> Result<(), Error> {
 }
 
 impl XChaCha20Poly1305Suite {
+    // Seal and open must derive the same key and AAD from the same inputs.
+    fn cipher(
+        &self,
+        key: &EncryptionKey,
+        binding: &[u8],
+        format_version: u8,
+        prefix: &[u8],
+    ) -> Result<(XChaCha20Poly1305, Vec<u8>), Error> {
+        let operational_key = derive_encryption_key(key, binding, format_version, self.id())?;
+        let cipher =
+            XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
+
+        Ok((cipher, envelope_aad(prefix, binding)))
+    }
+
     fn seal_with_nonce(
         &self,
         padded: bool,
@@ -467,10 +482,7 @@ impl XChaCha20Poly1305Suite {
         prefix.extend_from_slice(&header);
         prefix.extend_from_slice(&nonce);
 
-        let operational_key = derive_encryption_key(key, binding, FORMAT_VERSION, self.id())?;
-        let cipher =
-            XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
-        let aad = envelope_aad(&prefix, binding);
+        let (cipher, aad) = self.cipher(key, binding, FORMAT_VERSION, &prefix)?;
         // The working copy can still contain plaintext if sealing fails; erase on every exit.
         // See ../docs/wire-format.md#key-and-buffer-lifetime.
         let mut sealed = Zeroizing::new(plaintext.to_vec());
@@ -539,10 +551,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         prefix.extend_from_slice(header);
         prefix.extend_from_slice(nonce);
 
-        let operational_key = derive_encryption_key(key, binding, header[4], self.id())?;
-        let cipher =
-            XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
-        let aad = envelope_aad(&prefix, binding);
+        let (cipher, aad) = self.cipher(key, binding, header[4], &prefix)?;
         // Never return unauthenticated bytes, even if the AEAD mutates before failing.
         // Zeroizing also covers that error path: ../docs/wire-format.md#key-and-buffer-lifetime.
         let mut plaintext = Zeroizing::new(payload[NONCE_LEN..].to_vec());
