@@ -3,9 +3,9 @@
 
 use cryptbox::{
     Binding, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, IndexId,
-    IndexKeyId, IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues,
-    Plaintext, RecordId, Sealed, Utf8, field_id, index_id, index_key_id, part_id,
+    CodecErrorKind, EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, FromIndexValues,
+    IndexId, IndexKeyId, IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue,
+    PartValues, Plaintext, RecordId, Sealed, Utf8, field_id, index_id, index_key_id, part_id,
 };
 use zeroize::Zeroizing;
 
@@ -527,7 +527,7 @@ fn a_derived_blind_index_is_scoped_by_the_generated_index_args() {
 }
 
 /// Every part scopes blind indexes, so a query passes the binding itself.
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Binding)]
 struct Org {
     #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
     id: [u8; 16],
@@ -551,6 +551,58 @@ fn derived_index_args_default_to_the_binding_or_unit() {
     assert_eq!(
         KeyScope::of_index::<Sequence>(&()).unwrap(),
         KeyScope::of(&Sequence { number: 1 }).unwrap()
+    );
+}
+
+#[test]
+fn derived_bindings_build_their_index_args_from_part_values() {
+    let search = OrgProjectSearch {
+        org: b"acme".to_vec(),
+        project: 7,
+    };
+    let org = Org { id: [0x42; 16] };
+
+    assert_eq!(
+        OrgProject::from_index_values(OrgProject::index_values(&search).as_slice()),
+        Ok(search),
+        "generated index args"
+    );
+    assert_eq!(
+        Org::from_index_values(Org::index_values(&org).as_slice()),
+        Ok(org),
+        "the binding itself"
+    );
+    assert_eq!(Sequence::from_index_values(&[]), Ok(()), "unit");
+}
+
+#[test]
+fn derived_bindings_reject_index_values_that_do_not_fit() {
+    let cases: [(&str, &[PartValue<'_>]); 3] = [
+        ("missing part", &[PartValue::Bytes(b"acme")]),
+        (
+            "extra part",
+            &[
+                PartValue::Bytes(b"acme"),
+                PartValue::I64(7),
+                PartValue::I64(8),
+            ],
+        ),
+        (
+            "wrong kind",
+            &[PartValue::I64(7), PartValue::Bytes(b"acme")],
+        ),
+    ];
+
+    for (case, values) in cases {
+        assert_eq!(
+            OrgProject::from_index_values(values),
+            Err(cryptbox::Error::InvalidBinding),
+            "{case}"
+        );
+    }
+    assert_eq!(
+        Sequence::from_index_values(&[PartValue::I64(1)]),
+        Err(cryptbox::Error::InvalidBinding)
     );
 }
 
@@ -587,6 +639,10 @@ impl PartType for OrgId {
     fn part_value(&self) -> PartValue<'_> {
         PartValue::Uuid(self.0)
     }
+
+    fn from_part_value(value: PartValue<'_>) -> Result<Self, cryptbox::Error> {
+        <[u8; 16]>::from_part_value(value).map(Self)
+    }
 }
 
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
@@ -616,6 +672,10 @@ impl PartType for Mislabeled {
 
     fn part_value(&self) -> PartValue<'_> {
         PartValue::I64(self.0)
+    }
+
+    fn from_part_value(value: PartValue<'_>) -> Result<Self, cryptbox::Error> {
+        i64::from_part_value(value).map(Self)
     }
 }
 

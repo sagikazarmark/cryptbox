@@ -169,6 +169,11 @@ pub enum Error {
         /// The number of blind-index columns the row supplied.
         actual: usize,
     },
+    /// A Restate object key is not the canonical encoding of a binding's index
+    /// arguments; see [`restate::ObjectKey`](crate::restate::ObjectKey).
+    #[cfg(feature = "restate")]
+    #[error("object key is not a canonical encoding of the binding's index arguments")]
+    InvalidObjectKey,
     /// A previous encryption format could not recover the stored value.
     #[cfg(feature = "migrate")]
     #[error("legacy recovery failed: {0}")]

@@ -183,6 +183,40 @@ pub trait Binding: Clone + Hash + Eq + Send + Sync + 'static {
     fn index_values(args: &Self::IndexArgs) -> PartValues<'_>;
 }
 
+/// A [`Binding`] whose index arguments can be built back from their part values.
+///
+/// This is the inverse of [`Binding::index_values`]: given one value for each
+/// [`keys`](PartRole::Keys) and [`index`](PartRole::Index) part, in
+/// [`PARTS`](Binding::PARTS) order, it returns the
+/// [`IndexArgs`](Binding::IndexArgs) that supply them. An adapter that carries
+/// index arguments as text, such as a Restate object key, parses the values
+/// and builds the arguments through it. `#[derive(Binding)]` implements it; a
+/// hand-written binding can read each value with
+/// [`PartType::from_part_value`].
+///
+/// ```
+/// use cryptbox::{Error, FromIndexValues, PartType, PartValue, Tenant, TenantId};
+///
+/// let acme = Tenant(TenantId::new("acme")?);
+///
+/// assert_eq!(Tenant::from_index_values(&[PartValue::Bytes(b"acme")])?, acme);
+/// assert_eq!(Tenant::from_index_values(&[]), Err(Error::InvalidBinding));
+/// # Ok::<(), cryptbox::Error>(())
+/// ```
+pub trait FromIndexValues: Binding {
+    /// Builds the index arguments from one value per `keys` and `index` part,
+    /// in `PARTS` order.
+    ///
+    /// Building then reading back with [`Binding::index_values`] must return
+    /// the same values.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidBinding`] for a missing or extra value, or a value
+    /// its part's type cannot hold, such as one of another kind.
+    fn from_index_values(values: &[PartValue<'_>]) -> Result<Self::IndexArgs, Error>;
+}
+
 // Rejects shapes whose bytes or fingerprint would depend on declaration order,
 // or that could not be encoded. Panics become build errors in `const` context.
 pub(crate) const fn check_parts(parts: &[PartSpec]) {
@@ -202,7 +236,7 @@ pub(crate) const fn check_parts(parts: &[PartSpec]) {
 
 /// Checks that `values` holds exactly one value per spec, in order, of the
 /// spec's kind, and that no `keys` value is empty.
-fn check_values<'s>(
+pub(crate) fn check_values<'s>(
     specs: impl IntoIterator<Item = &'s PartSpec>,
     values: &[PartValue<'_>],
 ) -> Result<(), Error> {
@@ -364,7 +398,7 @@ pub enum PartValue<'a> {
 }
 
 impl PartValue<'_> {
-    fn kind(&self) -> PartKind {
+    pub(crate) fn kind(&self) -> PartKind {
         match self {
             Self::Uuid(_) => PartKind::Uuid,
             Self::I64(_) => PartKind::I64,
@@ -397,11 +431,17 @@ impl PartValue<'_> {
 #[derive(Clone, Debug, Default)]
 pub struct PartValues<'a>(Vec<PartValue<'a>>);
 
-impl PartValues<'_> {
+impl<'a> PartValues<'a> {
     /// Returns no values, for a binding without parts.
     #[must_use]
     pub const fn new() -> Self {
         Self(Vec::new())
+    }
+
+    /// Returns the values, in declared order.
+    #[must_use]
+    pub fn as_slice(&self) -> &[PartValue<'a>] {
+        &self.0
     }
 }
 

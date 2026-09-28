@@ -57,6 +57,49 @@ impl KeyScope {
         Ok(Self::keys_of(specs.zip(&values.0)))
     }
 
+    /// Returns the key scope of the given `keys` part values of binding `B`, one
+    /// per `keys` part in [`PARTS`](Binding::PARTS) order.
+    ///
+    /// It equals the key scope of every binding of `B` with the same `keys`
+    /// values. Use it where only the key scope is known, such as when shredding
+    /// one org's data.
+    ///
+    /// ```
+    /// use cryptbox::{KeyScope, PartValue, Tenant, TenantId};
+    ///
+    /// let acme = Tenant(TenantId::new("acme")?);
+    ///
+    /// assert_eq!(KeyScope::of_keys::<Tenant>(&[PartValue::Bytes(b"acme")])?, KeyScope::of(&acme)?);
+    /// # Ok::<(), cryptbox::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidBinding`] when the values do not match the
+    /// binding's `keys` parts: a missing or extra value, a value of the wrong
+    /// kind, or an empty value.
+    pub fn of_keys<B: Binding>(values: &[PartValue<'_>]) -> Result<Self, Error> {
+        const { check_parts(B::PARTS) };
+
+        let specs = B::PARTS.iter().filter(|spec| spec.role == PartRole::Keys);
+        check_values(specs.clone(), values)?;
+
+        Ok(Self::keys_of(specs.zip(values)))
+    }
+
+    /// The `keys` parts and their values, in `PARTS` order.
+    #[cfg(feature = "restate")]
+    pub(crate) fn parts(&self) -> impl Iterator<Item = (PartId, PartValue<'_>)> {
+        self.0.iter().map(|(id, value)| {
+            let value = match value {
+                ScopeValue::Uuid(uuid) => PartValue::Uuid(*uuid),
+                ScopeValue::I64(value) => PartValue::I64(*value),
+                ScopeValue::Bytes(bytes) => PartValue::Bytes(bytes),
+            };
+            (*id, value)
+        })
+    }
+
     /// The key scope of a binding without `keys` parts.
     pub(crate) fn empty() -> Self {
         Self(Box::new([]))

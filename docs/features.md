@@ -21,6 +21,11 @@ No features are enabled by default, and all features are additive:
   window only; the default decoding path stays strict.
 - `postcard` adds the `Postcard` codec. Its serialized representation is part of
   the persistent schema. It implies `serde`; values need Serde traits.
+- `restate` adds the `restate` module for [Restate](https://restate.dev) handlers:
+  journal codecs for `Sealed` and `BlindIndex`, sealing inside `ctx.run` so replay
+  finds the same bytes, error classification, and `ObjectKey`, a strict Virtual
+  Object key for a binding's index arguments. It uses `restate-sdk` 0.12 and
+  implies `serde`. See the [Restate guide].
 - `serde` adds explicit serialization of `Sealed` and `BlindIndex` stored
   bytes. It never adds serialization for plaintext `Plain` values.
 - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
@@ -42,7 +47,7 @@ derives likewise require a direct `serde` dependency with `derive`; enabling
 
 Feature-gated availability: the derive macros require `derive`; `Json` requires
 `json`; `Postcard` requires `postcard`; `migrate` and its core types require
-`migrate`.
+`migrate`; the `restate` module requires `restate`.
 `migrate::PostgresSweepStore` additionally requires `sqlx-postgres`,
 `migrate::SqliteSweepStore` requires `sqlx-sqlite`, and `migrate::SweepTable`
 requires either backend. Stored-value Serde implementations require `serde`;
@@ -62,9 +67,10 @@ checking stored-index consistency requires separate recomputation. See the
 ## Platforms and tested configurations
 
 This is a standard-library crate requiring Rust **1.85 or newer** (edition 2024),
-not a `no_std` crate. Encryption and random key/identifier generation require a
-target on which `getrandom` 0.4 can obtain secure operating-system entropy;
-entropy failure is returned as an error. Consult its
+not a `no_std` crate. The `restate` feature needs Rust 1.90, as `restate-sdk`
+does. Encryption and random key/identifier generation require a target on which
+`getrandom` 0.4 can obtain secure operating-system entropy; entropy failure is
+returned as an error. Consult its
 [target support](https://docs.rs/getrandom/0.4.3/getrandom/#supported-targets)
 before cross-compiling. A bare browser `wasm32-unknown-unknown` build does not
 gain an entropy backend from `CryptBox` features. Do not infer browser, embedded,
@@ -75,12 +81,14 @@ targets where multiplication is variable-time, including certain 32-bit PowerPC
 CPUs and some non-ARM microcontrollers, are not supported for secret operations.
 The complete production target review is not yet finished.
 
-The repository CI checks Rust 1.85 with locked all-target/all-feature compilation
-on Ubuntu, and stable Rust with all-feature tests, independent `SQLx` feature
-compilation (each backend with and without `migrate`), and default/all-feature
-rustdoc. Dagger uses the configured Rust Linux container, runs examples, and
-supplies PostgreSQL to execute the live round-trip and packaged-sweep tests,
-including the otherwise ignored cases. See the
+The repository CI checks Rust 1.85 with locked all-target compilation of every
+feature except `restate` on Ubuntu, and stable Rust with all-feature tests,
+independent `SQLx` feature compilation (each backend with and without
+`migrate`), and default/all-feature rustdoc. Dagger uses the configured Rust
+Linux container, runs examples, and supplies PostgreSQL to execute the live
+round-trip and packaged-sweep tests, including the otherwise ignored cases. It
+also runs the Restate adapter's end-to-end test against a real
+`restate-server`. See the
 [live-backend check instructions].
 These are tested configurations, not a reviewed target allowlist; no macOS,
 Windows, browser, or embedded CI matrix is claimed.
@@ -92,3 +100,4 @@ or consult the [API reference](https://docs.rs/cryptbox/latest/cryptbox/).
 [stored-value walkthrough]: ../examples/stored_values/README.md
 [live-backend check instructions]: documentation.md#live-postgresql
 [task index]: README.md
+[Restate guide]: restate.md

@@ -83,7 +83,8 @@
 #![doc = concat!(
     "\n[stored-value walkthrough]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/stored_values/README.md\n",
     "[live-backend check instructions]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/documentation.md#live-postgresql\n",
-    "[task index]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/README.md\n\n",
+    "[task index]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/README.md\n",
+    "[Restate guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/restate.md\n\n",
     include_str!("../docs/features.md"),
 )]
 //!
@@ -153,6 +154,8 @@ pub mod migrate;
 mod padding;
 mod prepare;
 mod record;
+#[cfg(feature = "restate")]
+pub mod restate;
 pub mod schema;
 #[cfg(feature = "serde")]
 mod serde_impl;
@@ -165,8 +168,8 @@ mod value;
 
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    Args, Binding, FieldOnly, InRecord, KeyScope, PartKind, PartRole, PartSpec, PartType,
-    PartValue, PartValues, RecordId, ShapeFingerprint, Tenant, TenantId,
+    Args, Binding, FieldOnly, FromIndexValues, InRecord, KeyScope, PartKind, PartRole, PartSpec,
+    PartType, PartValue, PartValues, RecordId, ShapeFingerprint, Tenant, TenantId,
 };
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexList, inspect_blind_index,

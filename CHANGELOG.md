@@ -302,6 +302,26 @@
   | `planner.plan_row(&ciphertext, &indexes)` | `planner.plan_row(&(), &ciphertext, &indexes)` |
   | `impl SweepStore for S { type Cursor = i64; … }` | add `type Columns = ();` |
   | `SweepRow { cursor, ciphertext, indexes }` | `SweepRow { cursor, columns: (), ciphertext, indexes }` |
+- **Breaking:** `PartType` gains `from_part_value`, which reads a value back
+  from the part value it binds. Add it to an application's own part types, for
+  example `<[u8; 16]>::from_part_value(value).map(Self)` for a UUID newtype.
+  Add `FromIndexValues`, which builds a binding's index arguments back from
+  their part values: `#[derive(Binding)]` implements it, and so do `FieldOnly`
+  and `Tenant`. Add `PartValues::as_slice`, and `KeyScope::of_keys::<B>(values)`,
+  the key scope of `keys` part values alone.
+- Add the `restate` feature for Restate handlers (`restate-sdk` 0.12, Rust
+  1.90). `Sealed` and `BlindIndex` implement Restate's `Serialize`,
+  `Deserialize`, and `PayloadMetadata` as `application/octet-stream` without a
+  schema; the codec never encrypts, because replay compares journaled bytes.
+  `restate::seal`, `restate::seal_with`, `restate::seal_record`, and
+  `restate::seal_record_with` seal inside `ctx.run`, fetching inside the same
+  `run` for the `_with` forms, so plaintext is never a `run` result.
+  `restate::handler_error` makes data and request faults terminal and
+  environment faults retryable. `restate::ObjectKey<B>` encodes a binding's
+  index arguments as a strict, canonical Virtual Object key, keys parts first,
+  parses it back (`Error::InvalidObjectKey` otherwise), and gives a key
+  scope's prefix for admin queries. See `docs/restate.md` for what the journal
+  exposes and the org-shredding runbook.
 - Add `Prepared::into_sealed` and `BlindIndexRef::to_blind_index`, which take
   owned values out of a preparation.
 - `Json` decodes every float to exactly the value that was encoded

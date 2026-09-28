@@ -1,10 +1,13 @@
 use super::{PartKind, PartValue, TenantId};
+use crate::Error;
 
 /// A type a binding part can hold, with its fixed [`PartKind`].
 ///
-/// `#[derive(Binding)]` reads each part's kind and value through this trait. A
-/// hand-written [`Binding`](super::Binding) can use it too, or name the kinds and
-/// values directly.
+/// `#[derive(Binding)]` reads each part's kind and value through this trait,
+/// and builds index arguments back from part values with
+/// [`from_part_value`](Self::from_part_value). A hand-written
+/// [`Binding`](super::Binding) can use it too, or name the kinds and values
+/// directly.
 ///
 /// | Type | Kind |
 /// | --- | --- |
@@ -18,7 +21,7 @@ use super::{PartKind, PartValue, TenantId};
 /// whatever the type: there is no text kind, so encode text as bytes.
 ///
 /// ```
-/// use cryptbox::{PartKind, PartType, PartValue};
+/// use cryptbox::{Error, PartKind, PartType, PartValue};
 ///
 /// /// An org ID, bound as a UUID part.
 /// #[derive(Clone, Copy, Hash, PartialEq, Eq)]
@@ -29,6 +32,10 @@ use super::{PartKind, PartValue, TenantId};
 ///
 ///     fn part_value(&self) -> PartValue<'_> {
 ///         PartValue::Uuid(self.0)
+///     }
+///
+///     fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
+///         <[u8; 16]>::from_part_value(value).map(Self)
 ///     }
 /// }
 /// ```
@@ -47,8 +54,19 @@ pub trait PartType {
     /// Returns the value to bind, of kind [`KIND`](Self::KIND).
     ///
     /// A value of another kind fails every seal and open with
-    /// [`Error::InvalidBinding`](crate::Error::InvalidBinding).
+    /// [`Error::InvalidBinding`].
     fn part_value(&self) -> PartValue<'_>;
+
+    /// Reads a value back from the part value it binds: the inverse of
+    /// [`part_value`](Self::part_value).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidBinding`] for a value of another kind, or one
+    /// the type cannot hold, such as an empty [`TenantId`].
+    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error>
+    where
+        Self: Sized;
 }
 
 impl PartType for [u8; 16] {
@@ -56,6 +74,13 @@ impl PartType for [u8; 16] {
 
     fn part_value(&self) -> PartValue<'_> {
         PartValue::Uuid(*self)
+    }
+
+    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
+        match value {
+            PartValue::Uuid(uuid) => Ok(uuid),
+            _ => Err(Error::InvalidBinding),
+        }
     }
 }
 
@@ -66,6 +91,10 @@ impl PartType for uuid::Uuid {
     fn part_value(&self) -> PartValue<'_> {
         PartValue::Uuid(*self.as_bytes())
     }
+
+    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
+        <[u8; 16]>::from_part_value(value).map(Self::from_bytes)
+    }
 }
 
 impl PartType for i64 {
@@ -73,6 +102,13 @@ impl PartType for i64 {
 
     fn part_value(&self) -> PartValue<'_> {
         PartValue::I64(*self)
+    }
+
+    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
+        match value {
+            PartValue::I64(value) => Ok(value),
+            _ => Err(Error::InvalidBinding),
+        }
     }
 }
 
@@ -82,6 +118,13 @@ impl PartType for Vec<u8> {
     fn part_value(&self) -> PartValue<'_> {
         PartValue::Bytes(self)
     }
+
+    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
+        match value {
+            PartValue::Bytes(bytes) => Ok(bytes.to_vec()),
+            _ => Err(Error::InvalidBinding),
+        }
+    }
 }
 
 impl PartType for Box<[u8]> {
@@ -90,6 +133,10 @@ impl PartType for Box<[u8]> {
     fn part_value(&self) -> PartValue<'_> {
         PartValue::Bytes(self)
     }
+
+    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
+        Vec::from_part_value(value).map(Vec::into_boxed_slice)
+    }
 }
 
 impl PartType for TenantId {
@@ -97,5 +144,9 @@ impl PartType for TenantId {
 
     fn part_value(&self) -> PartValue<'_> {
         PartValue::Bytes(self.as_bytes())
+    }
+
+    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
+        Vec::from_part_value(value).and_then(Self::new)
     }
 }

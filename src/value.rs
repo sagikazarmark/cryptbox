@@ -111,7 +111,7 @@ impl<F: Field> Sealed<F> {
         Self::seal_in(value, &domain(args)?, keys)
     }
 
-    fn seal_in(
+    pub(crate) fn seal_in(
         value: &F::Value,
         domain: &BindingDomain,
         keys: &(impl EncryptionKeySource + ?Sized),

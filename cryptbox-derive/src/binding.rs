@@ -109,6 +109,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
+    let from_index_values = from_index_values(&krate, &index_args_type, &index_args, &parts);
+
     Ok(quote! {
         #index_args_item
 
@@ -123,6 +125,11 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
                 }
 
                 #index_values
+            }
+
+            #[automatically_derived]
+            impl #krate::FromIndexValues for #name {
+                #from_index_values
             }
         };
     })
@@ -333,6 +340,50 @@ fn index_args_struct(
         )]
         #vis struct #name {
             #(#fields),*
+        }
+    }
+}
+
+/// The body of `FromIndexValues`: one value per `keys` and `index` part, in
+/// sorted `parts` order, read back into the index arguments.
+fn from_index_values(
+    krate: &syn::Path,
+    index_args_type: &TokenStream,
+    index_args: &IndexArgs<'_>,
+    parts: &[Part<'_>],
+) -> TokenStream {
+    // Mixed-site hygiene keeps the parameter and bindings from capturing the user's names.
+    let values = Ident::new("values", Span::mixed_site());
+    let invalid = quote!(::core::result::Result::Err(#krate::Error::InvalidBinding));
+    let (patterns, fields): (Vec<_>, Vec<_>) = parts
+        .iter()
+        .filter(|part| part.role.scopes_index())
+        .enumerate()
+        .map(|(position, part)| {
+            let value = Ident::new(&format!("value{position}"), Span::mixed_site());
+            let ty = &part.field.ty;
+            let ident = part.ident;
+            let field = quote_spanned! {ty.span()=>
+                #ident: <#ty as #krate::PartType>::from_part_value(*#value)?
+            };
+            (value, field)
+        })
+        .unzip();
+    let args = match index_args {
+        IndexArgs::Unit => quote!(()),
+        IndexArgs::Binding | IndexArgs::Generated(_) => {
+            quote!(#index_args_type { #(#fields),* })
+        }
+    };
+
+    quote! {
+        fn from_index_values(
+            #values: &[#krate::PartValue<'_>],
+        ) -> ::core::result::Result<#index_args_type, #krate::Error> {
+            match #values {
+                [#(#patterns),*] => ::core::result::Result::Ok(#args),
+                _ => #invalid,
+            }
         }
     }
 }

@@ -1,8 +1,8 @@
 //! Public-boundary tests for declared binding scopes and their key scopes.
 
 use cryptbox::{
-    Binding, Error, FieldOnly, KeyScope, PartKind, PartSpec, PartValue, PartValues, Tenant,
-    TenantId, part_id,
+    Binding, Error, FieldOnly, FromIndexValues, KeyScope, PartKind, PartSpec, PartType, PartValue,
+    PartValues, Tenant, TenantId, part_id,
 };
 
 /// An org scopes keys, a project scopes blind indexes, and a workspace is only bound.
@@ -229,6 +229,106 @@ fn key_scope_of_index_rejects_invalid_values() {
     for (case, values) in cases {
         assert_eq!(
             KeyScope::of_index::<Supplied>(&values),
+            Err(Error::InvalidBinding),
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn part_types_read_back_the_values_they_bind() {
+    let uuid = [7; 16];
+    let tenant = TenantId::new("acme").unwrap();
+
+    assert_eq!(<[u8; 16]>::from_part_value(uuid.part_value()), Ok(uuid));
+    assert_eq!(i64::from_part_value((-9_i64).part_value()), Ok(-9));
+    assert_eq!(
+        Vec::<u8>::from_part_value(b"acme".to_vec().part_value()),
+        Ok(b"acme".to_vec())
+    );
+    assert_eq!(
+        Box::<[u8]>::from_part_value(PartValue::Bytes(b"acme")),
+        Ok(Box::from(&b"acme"[..]))
+    );
+    assert_eq!(TenantId::from_part_value(tenant.part_value()), Ok(tenant));
+}
+
+#[test]
+fn part_types_reject_values_of_another_kind() {
+    assert_eq!(
+        <[u8; 16]>::from_part_value(PartValue::I64(1)),
+        Err(Error::InvalidBinding)
+    );
+    assert_eq!(
+        i64::from_part_value(PartValue::Bytes(b"1")),
+        Err(Error::InvalidBinding)
+    );
+    assert_eq!(
+        Vec::<u8>::from_part_value(PartValue::Uuid([1; 16])),
+        Err(Error::InvalidBinding)
+    );
+    assert_eq!(
+        TenantId::from_part_value(PartValue::Bytes(b"")),
+        Err(Error::InvalidBinding),
+        "a tenant ID is never empty"
+    );
+}
+
+#[test]
+fn presets_build_their_index_args_from_part_values() {
+    let acme = Tenant(TenantId::new("acme").unwrap());
+
+    assert_eq!(FieldOnly::from_index_values(&[]), Ok(()));
+    assert_eq!(
+        Tenant::from_index_values(Tenant::index_values(&acme).as_slice()),
+        Ok(acme)
+    );
+}
+
+#[test]
+fn presets_reject_index_values_that_do_not_fit() {
+    assert_eq!(
+        FieldOnly::from_index_values(&[PartValue::I64(1)]),
+        Err(Error::InvalidBinding)
+    );
+    assert_eq!(Tenant::from_index_values(&[]), Err(Error::InvalidBinding));
+    assert_eq!(
+        Tenant::from_index_values(&[PartValue::Bytes(b"acme"), PartValue::Bytes(b"globex")]),
+        Err(Error::InvalidBinding)
+    );
+    assert_eq!(
+        Tenant::from_index_values(&[PartValue::Uuid([1; 16])]),
+        Err(Error::InvalidBinding)
+    );
+}
+
+#[test]
+fn key_scope_of_keys_matches_the_binding() {
+    assert_eq!(
+        KeyScope::of_keys::<OrgProject>(&[PartValue::Bytes(b"acme")]),
+        Ok(key_scope(b"acme", 1, 1))
+    );
+    assert_eq!(
+        KeyScope::of_keys::<FieldOnly>(&[]),
+        KeyScope::of(&FieldOnly)
+    );
+}
+
+#[test]
+fn key_scope_of_keys_rejects_invalid_values() {
+    let cases: [(&str, &[PartValue<'_>]); 4] = [
+        ("missing part", &[]),
+        (
+            "index part supplied",
+            &[PartValue::Bytes(b"acme"), PartValue::I64(1)],
+        ),
+        ("wrong kind", &[PartValue::I64(1)]),
+        ("empty keys value", &[PartValue::Bytes(b"")]),
+    ];
+
+    for (case, values) in cases {
+        assert_eq!(
+            KeyScope::of_keys::<OrgProject>(values),
             Err(Error::InvalidBinding),
             "{case}"
         );

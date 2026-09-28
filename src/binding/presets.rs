@@ -1,6 +1,6 @@
 use std::fmt;
 
-use super::{Binding, PartKind, PartSpec, PartValue, PartValues};
+use super::{Binding, FromIndexValues, PartKind, PartSpec, PartType, PartValue, PartValues};
 use crate::Error;
 
 /// A binding with no parts: values are bound to their field ID only.
@@ -21,6 +21,15 @@ impl Binding for FieldOnly {
 
     fn index_values((): &()) -> PartValues<'_> {
         PartValues::new()
+    }
+}
+
+impl FromIndexValues for FieldOnly {
+    fn from_index_values(values: &[PartValue<'_>]) -> Result<(), Error> {
+        match values {
+            [] => Ok(()),
+            _ => Err(Error::InvalidBinding),
+        }
     }
 }
 
@@ -49,6 +58,15 @@ impl Binding for Tenant {
 
     fn index_values(args: &Self) -> PartValues<'_> {
         PartValues::from([PartValue::Bytes(args.0.as_bytes())])
+    }
+}
+
+impl FromIndexValues for Tenant {
+    fn from_index_values(values: &[PartValue<'_>]) -> Result<Self, Error> {
+        match values {
+            [tenant] => TenantId::from_part_value(*tenant).map(Self),
+            _ => Err(Error::InvalidBinding),
+        }
     }
 }
 

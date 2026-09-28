@@ -21,5 +21,16 @@ const _: () = {
             ::cryptbox::PartValues::new()
         }
     }
+    #[automatically_derived]
+    impl ::cryptbox::FromIndexValues for Revision {
+        fn from_index_values(
+            values: &[::cryptbox::PartValue<'_>],
+        ) -> ::core::result::Result<(), ::cryptbox::Error> {
+            match values {
+                [] => ::core::result::Result::Ok(()),
+                _ => ::core::result::Result::Err(::cryptbox::Error::InvalidBinding),
+            }
+        }
+    }
 };
 fn main() {}

@@ -1,0 +1,17 @@
+[package]
+name = "cryptbox-restate-e2e"
+version = "0.0.0"
+edition = "2024"
+# The harness needs Rust 1.92 and Unix; the library's own MSRV is unaffected.
+rust-version = "1.92"
+publish = false
+
+[dependencies]
+cryptbox = { path = "../..", features = ["derive", "restate"] }
+restate-sdk = "0.12.1"
+
+[dev-dependencies]
+serde = { version = "1.0.219", features = ["derive"] }
+restate-e2e-harness = "0.3.0"
+serde_json = "1.0.140"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

@@ -98,5 +98,23 @@ const _: () = {
             ])
         }
     }
+    #[automatically_derived]
+    impl ::cryptbox::FromIndexValues for OrgWorkspace {
+        fn from_index_values(
+            values: &[::cryptbox::PartValue<'_>],
+        ) -> ::core::result::Result<OrgSearch, ::cryptbox::Error> {
+            match values {
+                [value0, value1] => {
+                    ::core::result::Result::Ok(OrgSearch {
+                        org: <[u8; 16] as ::cryptbox::PartType>::from_part_value(
+                            *value0,
+                        )?,
+                        region: <i64 as ::cryptbox::PartType>::from_part_value(*value1)?,
+                    })
+                }
+                _ => ::core::result::Result::Err(::cryptbox::Error::InvalidBinding),
+            }
+        }
+    }
 };
 fn main() {}

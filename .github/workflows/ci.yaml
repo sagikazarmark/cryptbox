@@ -100,5 +100,6 @@ jobs:
       - name: Install Rust 1.85
         run: rustup toolchain install 1.85.0 --profile minimal
 
+      # `restate` needs Rust 1.90, as restate-sdk 0.12 does; every other feature is checked.
       - name: Check minimum Rust version
-        run: cargo +1.85.0 check --locked --all-targets --all-features
+        run: cargo +1.85.0 check --locked --all-targets --features derive,json,migrate,postcard,serde,sqlx-postgres,sqlx-sqlite,uuid

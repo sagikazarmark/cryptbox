@@ -122,6 +122,14 @@ The application-defined conversion that gives equivalent values the same bytes
 for blind-index derivation and candidate comparison. It is persistent schema;
 the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 
+**Object key**:
+The canonical text form of a binding's index arguments that keys a Restate
+Virtual Object (`restate::ObjectKey`): the `keys` parts, then the `index`
+parts, each spelled exactly one way. Every object key of a key scope starts
+with that scope's prefix. It is plaintext to Restate, and it names a scope
+only as far as its caller was authorized for it.
+<!-- Agent guidance: “object key” is Restate's term for the key of a Virtual Object; do not call it a “key” alone, which reads as key material. -->
+
 **Plain value**:
 A plaintext value of a field held by the automatic SQLx column (`Plain<F, K>`),
 which seals it on encode and opens it on decode. A column decoder sees neither a

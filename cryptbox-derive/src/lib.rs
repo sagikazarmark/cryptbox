@@ -349,8 +349,10 @@ pub fn derive_plaintext(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// expands to exactly the manual impl and the named struct. The real expansion
-/// spells the derived traits as absolute paths:
+/// expands to exactly the manual impls and the named struct. The real expansion
+/// spells the derived traits as absolute paths. `FromIndexValues` builds the
+/// index arguments back from their part values, for adapters that carry
+/// index arguments as text:
 ///
 /// ```
 /// # #[derive(Clone, Hash, PartialEq, Eq)]
@@ -392,6 +394,20 @@ pub fn derive_plaintext(input: TokenStream) -> TokenStream {
 ///             ::cryptbox::PartValues::from([
 ///                 <[u8; 16] as ::cryptbox::PartType>::part_value(&args.org),
 ///             ])
+///         }
+///     }
+///
+///     #[automatically_derived]
+///     impl ::cryptbox::FromIndexValues for OrgWorkspace {
+///         fn from_index_values(
+///             values: &[::cryptbox::PartValue<'_>],
+///         ) -> Result<OrgSearch, ::cryptbox::Error> {
+///             match values {
+///                 [value0] => Ok(OrgSearch {
+///                     org: <[u8; 16] as ::cryptbox::PartType>::from_part_value(*value0)?,
+///                 }),
+///                 _ => Err(::cryptbox::Error::InvalidBinding),
+///             }
 ///         }
 ///     }
 /// };
