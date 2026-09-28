@@ -111,8 +111,7 @@ trait EncryptionSuite: Sync {
 
     fn open(
         &self,
-        header: &[u8],
-        payload: &[u8],
+        envelope: &ParsedEnvelope<'_>,
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error>;
@@ -222,12 +221,8 @@ pub(crate) fn decrypt_bound(
         .get(parsed.info.key_id)
         .cloned()
         .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id))?;
-    let plaintext = registered_suite(parsed.info.suite_id)?.open(
-        parsed.header,
-        parsed.suite_payload,
-        domain.as_bytes(),
-        &key,
-    )?;
+    let plaintext =
+        registered_suite(parsed.info.suite_id)?.open(&parsed, domain.as_bytes(), &key)?;
 
     // Only the authenticated flag decides unpadding; the current policy must not,
     // or policy changes would silently misread stored values.
@@ -534,11 +529,11 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
 
     fn open(
         &self,
-        header: &[u8],
-        payload: &[u8],
+        envelope: &ParsedEnvelope<'_>,
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
+        let (header, payload) = (envelope.header, envelope.suite_payload);
         self.validate_payload(payload)?;
 
         let nonce: &XNonce = payload[..NONCE_LEN]
@@ -548,7 +543,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         prefix.extend_from_slice(header);
         prefix.extend_from_slice(nonce);
 
-        let (cipher, aad) = self.cipher(key, binding, header[4], &prefix)?;
+        let (cipher, aad) = self.cipher(key, binding, envelope.info.format_version, &prefix)?;
         // Never return unauthenticated bytes, even if the AEAD mutates before failing.
         // Zeroizing also covers that error path: ../docs/wire-format.md#key-and-buffer-lifetime.
         let mut plaintext = Zeroizing::new(payload[NONCE_LEN..].to_vec());
