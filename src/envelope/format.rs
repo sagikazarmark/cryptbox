@@ -2,21 +2,25 @@ use crate::{Error, KeyId, ShapeFingerprint, SuiteId};
 
 const MAGIC: &[u8; 4] = b"CBX\0";
 pub(super) const FORMAT_VERSION: u8 = 2;
-const HEADER_LEN: usize = 23;
-// A scoped binding extends the header with its shape fingerprint.
-// See ../../docs/wire-format.md#shape-fingerprint.
-const SCOPED_HEADER_LEN: usize = HEADER_LEN + FINGERPRINT_LEN;
-const FINGERPRINT_LEN: usize = 8;
 // Format 1 did not record padding; it stays readable until stored data is swept.
 // See ../../docs/wire-format.md#format-1.
 const FORMAT_1_VERSION: u8 = 1;
-const FORMAT_1_HEADER_LEN: usize = 22;
 const FLAG_PADDED: u8 = 0x01;
 const FLAG_SCOPED: u8 = 0x02;
-// Byte offsets in the layout table: ../../docs/wire-format.md#envelope.
-const FORMAT_VERSION_OFFSET: usize = 4;
-const SUITE_ID_OFFSET: usize = 5;
-const FLAGS_OFFSET: usize = 6;
+
+// The layout table: ../../docs/wire-format.md#envelope. A header is the magic,
+// then one byte each of version, suite ID, and flags, then the key ID; format 1
+// has no flags byte.
+const KEY_ID_LEN: usize = 16;
+const FINGERPRINT_LEN: usize = 8;
+const FORMAT_VERSION_OFFSET: usize = MAGIC.len();
+const SUITE_ID_OFFSET: usize = FORMAT_VERSION_OFFSET + 1;
+const FLAGS_OFFSET: usize = SUITE_ID_OFFSET + 1;
+const HEADER_LEN: usize = FLAGS_OFFSET + 1 + KEY_ID_LEN;
+const FORMAT_1_HEADER_LEN: usize = FLAGS_OFFSET + KEY_ID_LEN;
+// A scoped binding extends the header with its shape fingerprint.
+// See ../../docs/wire-format.md#shape-fingerprint.
+const SCOPED_HEADER_LEN: usize = HEADER_LEN + FINGERPRINT_LEN;
 
 /// Structurally parsed, unauthenticated ciphertext metadata.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -86,11 +90,7 @@ pub fn is_ciphertext(bytes: &[u8]) -> bool {
 /// Returns the key ID of an envelope that already passed structural validation.
 // Offsets follow the layout table: ../../docs/wire-format.md#envelope.
 pub(crate) fn validated_key_id(bytes: &[u8]) -> KeyId {
-    let offset = key_id_offset(bytes[FORMAT_VERSION_OFFSET]);
-    let mut key_id = [0_u8; 16];
-    key_id.copy_from_slice(&bytes[offset..offset + 16]);
-
-    KeyId::from_bytes(key_id)
+    KeyId::from_bytes(field(bytes, key_id_offset(bytes[FORMAT_VERSION_OFFSET])))
 }
 
 pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> {
@@ -128,15 +128,9 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
     let suite_id = SuiteId::new(bytes[SUITE_ID_OFFSET]);
 
     let padded = (format_version == FORMAT_VERSION).then_some(flags & FLAG_PADDED != 0);
-    let mut key_id = [0_u8; 16];
-    let key_offset = key_id_offset(format_version);
-    key_id.copy_from_slice(&bytes[key_offset..key_offset + 16]);
-    let shape_fingerprint = (flags & FLAG_SCOPED != 0).then(|| {
-        let mut fingerprint = [0_u8; FINGERPRINT_LEN];
-        fingerprint.copy_from_slice(&bytes[HEADER_LEN..SCOPED_HEADER_LEN]);
-
-        ShapeFingerprint::from_bytes(fingerprint)
-    });
+    let key_id = KeyId::from_bytes(field(bytes, key_id_offset(format_version)));
+    let shape_fingerprint =
+        (flags & FLAG_SCOPED != 0).then(|| ShapeFingerprint::from_bytes(field(bytes, HEADER_LEN)));
 
     Ok(ParsedEnvelope {
         bytes,
@@ -144,7 +138,7 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
             format_version,
             suite_id,
             padded,
-            key_id: KeyId::from_bytes(key_id),
+            key_id,
             shape_fingerprint,
         },
         header: &bytes[..header_len],
@@ -172,6 +166,14 @@ pub(super) fn envelope_header(
     }
 
     header
+}
+
+// Copies the fixed-size field at `offset` of a header whose length is already checked.
+fn field<const N: usize>(bytes: &[u8], offset: usize) -> [u8; N] {
+    let mut field = [0_u8; N];
+    field.copy_from_slice(&bytes[offset..offset + N]);
+
+    field
 }
 
 // Format 1 has no flags byte, so its key ID starts one byte earlier.
