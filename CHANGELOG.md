@@ -357,6 +357,12 @@
   274,877,906,879 bytes, the most its AEAD implementation accepts, and rejects
   envelopes implying a longer message with `MessageTooLong`.
 
+- `uuid` is now a required dependency: identifiers parse and format through it,
+  and the ID macros (`field_id!` and the others) check their literal with
+  `uuid::uuid!`, so they also accept the simple, braced, and URN forms. Parsing
+  with `FromStr` still accepts only the hyphenated form. The `uuid` feature still
+  gates `uuid::Uuid` binding parts and record IDs.
+
 - Add task-oriented adoption guidance, document authority and version distinctions,
   shared feature/platform reference, and reproducible documentation link checks.
 

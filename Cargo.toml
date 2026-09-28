@@ -29,7 +29,7 @@ postcard = ["dep:postcard", "serde"]
 restate = ["dep:bytes", "dep:restate-sdk", "dep:serde_json", "serde"]
 serde = ["dep:serde"]
 # `uuid::Uuid` binding parts and record IDs.
-uuid = ["dep:uuid"]
+uuid = []
 sqlx-postgres = ["dep:sqlx", "sqlx/postgres"]
 sqlx-sqlite = ["dep:sqlx", "sqlx/sqlite"]
 
@@ -56,7 +56,8 @@ sha2 = { version = "0.11.0", features = ["zeroize"] }
 sqlx = { version = "0.8.6", default-features = false, optional = true }
 subtle = "2.6.1"
 thiserror = "2.0.12"
-uuid = { version = "1.18.1", default-features = false, optional = true }
+# Also parses and formats identifiers, and checks ID literals at compile time.
+uuid = { version = "1.18.1", default-features = false }
 zeroize = { version = "1.8.1", features = ["alloc"], default-features = false }
 
 [dev-dependencies]

@@ -27,23 +27,11 @@ macro_rules! identifier {
             pub const fn as_bytes(&self) -> &[u8; 16] {
                 &self.0
             }
-
-            /// Parses a UUID literal and can be evaluated at compile time.
-            ///
-            /// # Panics
-            ///
-            /// Panics during constant evaluation when `value` is not a
-            /// hyphenated UUID string.
-            #[doc(hidden)]
-            #[must_use]
-            pub const fn from_uuid_literal(value: &str) -> Self {
-                Self(parse_uuid_literal(value))
-            }
         }
 
         impl fmt::Display for $name {
             fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                write_uuid(formatter, &self.0)
+                fmt::Display::fmt(&uuid::Uuid::from_bytes(self.0).hyphenated(), formatter)
             }
         }
 
@@ -160,94 +148,24 @@ impl fmt::Display for InvalidIdentifier {
 
 impl std::error::Error for InvalidIdentifier {}
 
-const fn parse_uuid_literal(value: &str) -> [u8; 16] {
-    let input = value.as_bytes();
-
-    assert!(input.len() == 36, "identifier must be a hyphenated UUID");
-
-    let mut output = [0_u8; 16];
-    let mut input_index = 0;
-    let mut output_index = 0;
-
-    while input_index < 36 {
-        if input_index == 8 || input_index == 13 || input_index == 18 || input_index == 23 {
-            assert!(input[input_index] == b'-', "identifier has invalid hyphens");
-            input_index += 1;
-        } else {
-            let high = hex_nibble(input[input_index]);
-            let low = hex_nibble(input[input_index + 1]);
-            output[output_index] = (high << 4) | low;
-            input_index += 2;
-            output_index += 1;
-        }
-    }
-
-    output
-}
-
-const fn hex_nibble(value: u8) -> u8 {
-    match value {
-        b'0'..=b'9' => value - b'0',
-        b'a'..=b'f' => value - b'a' + 10,
-        b'A'..=b'F' => value - b'A' + 10,
-        _ => panic!("identifier contains non-hexadecimal characters"),
-    }
-}
-
+// Accepts only the hyphenated form: `try_parse` also takes simple, braced, and URN
+// forms, which all differ from it in length.
 fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
-    let input = value.as_bytes();
-
-    if input.len() != 36 {
+    if value.len() != 36 {
         return Err(InvalidIdentifier);
     }
 
-    let mut output = [0_u8; 16];
-    let mut input_index = 0;
-    let mut output_index = 0;
-
-    while input_index < input.len() {
-        if matches!(input_index, 8 | 13 | 18 | 23) {
-            if input[input_index] != b'-' {
-                return Err(InvalidIdentifier);
-            }
-            input_index += 1;
-        } else {
-            let high = parse_hex_nibble(input[input_index])?;
-            let low = parse_hex_nibble(input[input_index + 1])?;
-            output[output_index] = (high << 4) | low;
-            input_index += 2;
-            output_index += 1;
-        }
-    }
-
-    Ok(output)
-}
-
-fn parse_hex_nibble(value: u8) -> Result<u8, InvalidIdentifier> {
-    match value {
-        b'0'..=b'9' => Ok(value - b'0'),
-        b'a'..=b'f' => Ok(value - b'a' + 10),
-        b'A'..=b'F' => Ok(value - b'A' + 10),
-        _ => Err(InvalidIdentifier),
-    }
-}
-
-fn write_uuid(formatter: &mut fmt::Formatter<'_>, bytes: &[u8; 16]) -> fmt::Result {
-    for (index, byte) in bytes.iter().enumerate() {
-        if matches!(index, 4 | 6 | 8 | 10) {
-            formatter.write_str("-")?;
-        }
-        write!(formatter, "{byte:02x}")?;
-    }
-
-    Ok(())
+    uuid::Uuid::try_parse(value)
+        .map(uuid::Uuid::into_bytes)
+        .map_err(|_| InvalidIdentifier)
 }
 
 /// Creates a [`FieldId`](crate::FieldId) from a UUID literal.
 #[macro_export]
 macro_rules! field_id {
     ($value:literal) => {{
-        const ID: $crate::FieldId = $crate::FieldId::from_uuid_literal($value);
+        const ID: $crate::FieldId =
+            $crate::FieldId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
         ID
     }};
 }
@@ -256,7 +174,8 @@ macro_rules! field_id {
 #[macro_export]
 macro_rules! key_id {
     ($value:literal) => {{
-        const ID: $crate::KeyId = $crate::KeyId::from_uuid_literal($value);
+        const ID: $crate::KeyId =
+            $crate::KeyId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
         ID
     }};
 }
@@ -265,7 +184,8 @@ macro_rules! key_id {
 #[macro_export]
 macro_rules! index_id {
     ($value:literal) => {{
-        const ID: $crate::IndexId = $crate::IndexId::from_uuid_literal($value);
+        const ID: $crate::IndexId =
+            $crate::IndexId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
         ID
     }};
 }
@@ -274,7 +194,8 @@ macro_rules! index_id {
 #[macro_export]
 macro_rules! index_key_id {
     ($value:literal) => {{
-        const ID: $crate::IndexKeyId = $crate::IndexKeyId::from_uuid_literal($value);
+        const ID: $crate::IndexKeyId =
+            $crate::IndexKeyId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
         ID
     }};
 }
@@ -283,7 +204,45 @@ macro_rules! index_key_id {
 #[macro_export]
 macro_rules! part_id {
     ($value:literal) => {{
-        const ID: $crate::PartId = $crate::PartId::from_uuid_literal($value);
+        const ID: $crate::PartId =
+            $crate::PartId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
         ID
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FieldId, InvalidIdentifier};
+
+    const HYPHENATED: &str = "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64";
+
+    #[test]
+    fn parses_and_displays_the_hyphenated_form() {
+        let id: FieldId = HYPHENATED.parse().unwrap();
+
+        assert_eq!(id, crate::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64"));
+        assert_eq!(
+            id,
+            FieldId::from_u128(0x0b6f_3c2a_8e41_4d57_a9c3_5e1f_2d7b_8a64)
+        );
+        assert_eq!(id.to_string(), HYPHENATED);
+        assert_eq!(
+            "0B6F3C2A-8E41-4D57-A9C3-5E1F2D7B8A64".parse::<FieldId>(),
+            Ok(id)
+        );
+    }
+
+    #[test]
+    fn rejects_every_other_form() {
+        for input in [
+            "0b6f3c2a8e414d57a9c35e1f2d7b8a64",
+            "{0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64}",
+            "urn:uuid:0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64",
+            "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a6z",
+            "0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64",
+            "",
+        ] {
+            assert_eq!(input.parse::<FieldId>(), Err(InvalidIdentifier), "{input}");
+        }
+    }
 }

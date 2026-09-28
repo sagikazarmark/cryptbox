@@ -234,6 +234,7 @@ pub use value::{Plain, Sealed, Secret};
 // Paths that derive-generated code names; not public API.
 #[doc(hidden)]
 pub mod __private {
+    pub use uuid;
     pub use zeroize::Zeroizing;
 
     pub use crate::schema::{has_duplicate, writes_declared_indexes};

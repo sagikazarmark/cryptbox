@@ -213,11 +213,10 @@ mod tests {
     use crate::crypto::NONCE_LEN;
     use crate::{
         BindingDomain, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldId,
-        KeyId, KeyScope, Padding,
+        KeyScope, Padding,
     };
 
-    const VECTOR_FIELD: FieldId =
-        FieldId::from_uuid_literal("12345678-1234-4234-8234-1234567890ab");
+    const VECTOR_FIELD: FieldId = crate::field_id!("12345678-1234-4234-8234-1234567890ab");
 
     const TENANT: PartSpec = PartSpec::new([0x11; 16], PartKind::Uuid, PartRole::Keys);
     const WORKSPACE: PartSpec = PartSpec::new([0x22; 16], PartKind::Bytes, PartRole::Bound);
@@ -225,7 +224,7 @@ mod tests {
 
     fn vector_key() -> EncryptionKey {
         EncryptionKey::new(
-            KeyId::from_uuid_literal("11111111-2222-4333-8444-555555555555"),
+            crate::key_id!("11111111-2222-4333-8444-555555555555"),
             [0x11; 32],
         )
     }
@@ -450,7 +449,7 @@ mod tests {
     #[test]
     fn experimental_padded_format_2_vector_is_stable() {
         let key = EncryptionKey::new(
-            KeyId::from_uuid_literal("11111111-2222-4333-8444-555555555555"),
+            crate::key_id!("11111111-2222-4333-8444-555555555555"),
             [0x11; 32],
         );
         let mut nonce = [0_u8; NONCE_LEN];
@@ -477,7 +476,7 @@ mod tests {
     #[test]
     fn experimental_format_2_vector_is_stable() {
         let key = EncryptionKey::new(
-            KeyId::from_uuid_literal("11111111-2222-4333-8444-555555555555"),
+            crate::key_id!("11111111-2222-4333-8444-555555555555"),
             [0x11; 32],
         );
         let mut nonce = [0_u8; NONCE_LEN];
