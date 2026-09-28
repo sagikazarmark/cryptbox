@@ -103,7 +103,7 @@ trait EncryptionSuite: Sync {
         &self,
         header: &[u8],
         plaintext: &[u8],
-        domain: &BindingDomain,
+        binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error>;
 
@@ -111,7 +111,7 @@ trait EncryptionSuite: Sync {
         &self,
         header: &[u8],
         payload: &[u8],
-        domain: &BindingDomain,
+        binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error>;
 }
@@ -178,8 +178,8 @@ pub(crate) fn encrypt_bound(
     );
 
     match padding.pad(plaintext)? {
-        Some(padded) => suite.seal(&header, &padded, domain, &key),
-        None => suite.seal(&header, plaintext, domain, &key),
+        Some(padded) => suite.seal(&header, &padded, domain.as_bytes(), &key),
+        None => suite.seal(&header, plaintext, domain.as_bytes(), &key),
     }
 }
 
@@ -232,7 +232,7 @@ pub(crate) fn decrypt_bound(
     let plaintext = registered_suite(parsed.info.suite_id)?.open(
         parsed.header,
         parsed.suite_payload,
-        domain,
+        domain.as_bytes(),
         &key,
     )?;
 
@@ -341,7 +341,7 @@ fn seal_with_nonce(
         domain.fingerprint(),
     );
 
-    XCHACHA20_POLY1305_SUITE.seal_with_nonce(&header, plaintext, domain, key, nonce)
+    XCHACHA20_POLY1305_SUITE.seal_with_nonce(&header, plaintext, domain.as_bytes(), key, nonce)
 }
 
 /// Returns the key ID of an envelope that already passed structural validation.
@@ -414,30 +414,29 @@ fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> {
 
 fn derive_encryption_key(
     root: &EncryptionKey,
-    domain: &BindingDomain,
+    binding: &[u8],
     format_version: u8,
     suite_id: SuiteId,
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
     // Preserve this canonical order: changing it makes stored ciphertext unreadable.
     // See ../docs/wire-format.md#encryption-recipe.
-    let mut info = Vec::with_capacity(ENCRYPTION_KEY_LABEL.len() + 18 + domain.as_bytes().len());
+    let mut info = Vec::with_capacity(ENCRYPTION_KEY_LABEL.len() + 18 + binding.len());
     info.extend_from_slice(ENCRYPTION_KEY_LABEL);
     info.push(format_version);
     info.push(suite_id.get());
     info.extend_from_slice(root.id().as_bytes());
-    info.extend_from_slice(domain.as_bytes());
+    info.extend_from_slice(binding);
 
     hkdf_sha256_32(root.bytes(), &info)
 }
 
-fn envelope_aad(prefix: &[u8], domain: &BindingDomain) -> Vec<u8> {
+fn envelope_aad(prefix: &[u8], binding: &[u8]) -> Vec<u8> {
     // Authenticate the exact stored prefix together with the caller's expected binding.
     // The envelope must not choose its own binding: ../docs/wire-format.md#encryption-recipe.
-    let mut aad =
-        Vec::with_capacity(ENVELOPE_AAD_LABEL.len() + prefix.len() + domain.as_bytes().len());
+    let mut aad = Vec::with_capacity(ENVELOPE_AAD_LABEL.len() + prefix.len() + binding.len());
     aad.extend_from_slice(ENVELOPE_AAD_LABEL);
     aad.extend_from_slice(prefix);
-    aad.extend_from_slice(domain.as_bytes());
+    aad.extend_from_slice(binding);
 
     aad
 }
@@ -457,7 +456,7 @@ impl XChaCha20Poly1305Suite {
         &self,
         header: &[u8],
         plaintext: &[u8],
-        domain: &BindingDomain,
+        binding: &[u8],
         key: &EncryptionKey,
         nonce: [u8; NONCE_LEN],
     ) -> Result<Vec<u8>, Error> {
@@ -468,10 +467,10 @@ impl XChaCha20Poly1305Suite {
         prefix.extend_from_slice(header);
         prefix.extend_from_slice(&nonce);
 
-        let operational_key = derive_encryption_key(key, domain, header[4], self.id())?;
+        let operational_key = derive_encryption_key(key, binding, header[4], self.id())?;
         let cipher =
             XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
-        let aad = envelope_aad(&prefix, domain);
+        let aad = envelope_aad(&prefix, binding);
         // The working copy can still contain plaintext if sealing fails; erase on every exit.
         // See ../docs/wire-format.md#key-and-buffer-lifetime.
         let mut sealed = Zeroizing::new(plaintext.to_vec());
@@ -512,7 +511,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         &self,
         header: &[u8],
         plaintext: &[u8],
-        domain: &BindingDomain,
+        binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
         // Fresh OS randomness avoids caller-managed nonce reuse; failure must stop encryption.
@@ -520,14 +519,14 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         let mut nonce = [0_u8; NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(|_| Error::RandomnessUnavailable)?;
 
-        self.seal_with_nonce(header, plaintext, domain, key, nonce)
+        self.seal_with_nonce(header, plaintext, binding, key, nonce)
     }
 
     fn open(
         &self,
         header: &[u8],
         payload: &[u8],
-        domain: &BindingDomain,
+        binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
         self.validate_payload(payload)?;
@@ -539,10 +538,10 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         prefix.extend_from_slice(header);
         prefix.extend_from_slice(nonce);
 
-        let operational_key = derive_encryption_key(key, domain, header[4], self.id())?;
+        let operational_key = derive_encryption_key(key, binding, header[4], self.id())?;
         let cipher =
             XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
-        let aad = envelope_aad(&prefix, domain);
+        let aad = envelope_aad(&prefix, binding);
         // Never return unauthenticated bytes, even if the AEAD mutates before failing.
         // Zeroizing also covers that error path: ../docs/wire-format.md#key-and-buffer-lifetime.
         let mut plaintext = Zeroizing::new(payload[NONCE_LEN..].to_vec());
