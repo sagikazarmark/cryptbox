@@ -352,6 +352,11 @@
   after sealing or opening: `chacha20poly1305` now zeroizes its key and
   ChaCha20 state on drop.
 
+- Fix encrypting a message of exactly 274,877,906,880 bytes failing with
+  `Error::Internal` instead of `MessageTooLong`. Suite 1 now limits messages to
+  274,877,906,879 bytes, the most its AEAD implementation accepts, and rejects
+  envelopes implying a longer message with `MessageTooLong`.
+
 - Add task-oriented adoption guidance, document authority and version distinctions,
   shared feature/platform reference, and reproducible documentation link checks.
 

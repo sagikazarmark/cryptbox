@@ -12,7 +12,9 @@ use zeroize::{Zeroize, Zeroizing};
 
 pub(crate) const NONCE_LEN: usize = 24;
 pub(crate) const TAG_LEN: usize = 16;
-const MAX_MESSAGE_LEN: u64 = 274_877_906_880;
+// One byte below RFC 8439's `(2^32 - 1) * 64`: chacha20poly1305 rejects a message of
+// exactly that length, which would otherwise surface as Error::Internal.
+const MAX_MESSAGE_LEN: u64 = 274_877_906_879;
 
 // Labels, including NULs, are persistent domain separators, not display strings.
 // See ../docs/wire-format.md#encryption-recipe.
@@ -128,7 +130,7 @@ pub(crate) fn hmac_sha256(key: &[u8], input: &[&[u8]]) -> Result<Zeroizing<[u8; 
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, NONCE_LEN, hkdf_sha256_32_with_salt, open, seal};
+    use super::{Error, NONCE_LEN, check_message_len, hkdf_sha256_32_with_salt, open, seal};
 
     #[test]
     fn hkdf_matches_rfc_5869_case_one() {
@@ -141,6 +143,16 @@ mod tests {
         assert_eq!(
             hex::encode(output.as_slice()),
             "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf"
+        );
+    }
+
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn message_len_limit_matches_the_aead() {
+        assert_eq!(check_message_len(274_877_906_879), Ok(()));
+        assert_eq!(
+            check_message_len(274_877_906_880),
+            Err(Error::MessageTooLong)
         );
     }
 

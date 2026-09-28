@@ -43,7 +43,7 @@ fn parse_supported(bytes: &[u8]) -> Result<(Suite, ParsedEnvelope<'_>), Error> {
 ///
 /// Returns an error for unavailable keys, plaintext that
 /// does not fit fixed padding, failed OS randomness, or messages longer than
-/// the active suite's 274,877,906,880-byte limit.
+/// the active suite's 274,877,906,879-byte limit.
 pub fn encrypt(
     field: FieldId,
     padding: Padding,

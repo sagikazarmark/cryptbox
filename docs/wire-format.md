@@ -372,9 +372,10 @@ Padding boundary examples (ASCII input, one encoded byte per character):
 | `Padding::length(16)` | 15 | 1 | 16 | 79 | Largest fitting input |
 | `Padding::length(16)` | 16 | — | — | — | `PaddingOverflow`: marker cannot fit |
 
-Suite 1 enforces RFC 8439's functional maximum `P <= 274,877,906,880`
-(`(2^32 - 1) * 64`) on encryption and rejects parsed/decrypted payloads implying
-a larger `P`, with `MessageTooLong`. Padding/envelope size arithmetic is checked;
+Suite 1 limits `P` to `274,877,906,879` bytes, one byte below RFC 8439's functional
+maximum `(2^32 - 1) * 64`, which the reference implementation's AEAD rejects. It
+enforces the limit on encryption and rejects parsed/decrypted payloads implying a
+larger `P`, with `MessageTooLong`. Padding/envelope size arithmetic is checked;
 fixed padding rejects `E >= N` with `PaddingOverflow`. This is an algorithmic
 ceiling, not a recommended field size. Applications must choose smaller limits
 appropriate to their workloads; see
