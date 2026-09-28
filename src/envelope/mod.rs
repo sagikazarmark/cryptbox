@@ -1,163 +1,16 @@
+mod format;
+mod suite;
+
 use zeroize::Zeroizing;
 
-use crate::crypto;
-use crate::padding::{AeadPlaintext, unpad};
-use crate::{
-    BindingDomain, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldId, KeyId,
-    Padding, ShapeFingerprint, SuiteId,
-};
+use crate::padding::unpad;
+use crate::{BindingDomain, EncryptionKeySource, EncryptionKeyring, Error, FieldId, Padding};
 
-const MAGIC: &[u8; 4] = b"CBX\0";
-const FORMAT_VERSION: u8 = 2;
-const HEADER_LEN: usize = 23;
-// A scoped binding extends the header with its shape fingerprint.
-// See ../docs/wire-format.md#shape-fingerprint.
-const SCOPED_HEADER_LEN: usize = HEADER_LEN + FINGERPRINT_LEN;
-const FINGERPRINT_LEN: usize = 8;
-// Format 1 did not record padding; it stays readable until stored data is swept.
-// See ../docs/wire-format.md#format-1.
-const FORMAT_1_VERSION: u8 = 1;
-const FORMAT_1_HEADER_LEN: usize = 22;
-const FLAG_PADDED: u8 = 0x01;
-const FLAG_SCOPED: u8 = 0x02;
-// Byte offsets in the layout table: ../docs/wire-format.md#envelope.
-const FORMAT_VERSION_OFFSET: usize = 4;
-const SUITE_ID_OFFSET: usize = 5;
-const FLAGS_OFFSET: usize = 6;
-
-// Labels, including NULs, are persistent domain separators, not display strings.
-// See ../docs/wire-format.md#encryption-recipe.
-const ENCRYPTION_KEY_LABEL: &[u8] = b"cryptbox/encryption-key/v1\0";
-const ENVELOPE_AAD_LABEL: &[u8] = b"cryptbox/envelope-aad/v1\0";
-
-/// The provisional suite ID for HKDF-SHA-256 plus XChaCha20-Poly1305.
-///
-/// This construction and its wire format are experimental pending focused
-/// cryptographic review and independently verified test vectors.
-pub const EXPERIMENTAL_XCHACHA20_POLY1305: SuiteId = SuiteId::new(1);
-
-/// Structurally parsed, unauthenticated ciphertext metadata.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CiphertextInfo {
-    format_version: u8,
-    suite_id: SuiteId,
-    padded: Option<bool>,
-    key_id: KeyId,
-    shape_fingerprint: Option<ShapeFingerprint>,
-}
-
-impl CiphertextInfo {
-    /// Returns the envelope format version.
-    #[must_use]
-    pub const fn format_version(self) -> u8 {
-        self.format_version
-    }
-
-    /// Returns the complete cipher-suite identifier.
-    #[must_use]
-    pub const fn suite_id(self) -> SuiteId {
-        self.suite_id
-    }
-
-    /// Returns whether the envelope records a padded payload.
-    ///
-    /// Format 1 envelopes do not record padding and return `None`; the field's
-    /// padding policy describes them.
-    #[must_use]
-    pub const fn padded(self) -> Option<bool> {
-        self.padded
-    }
-
-    /// Returns the encryption-key generation named by the envelope.
-    #[must_use]
-    pub const fn key_id(self) -> KeyId {
-        self.key_id
-    }
-
-    /// Returns the shape fingerprint of a scoped binding.
-    ///
-    /// Field-only and format 1 envelopes carry none and return `None`. The
-    /// fingerprint is diagnostic: a reader compares it with its own field's
-    /// shape, so it can count values written with an older shape.
-    #[must_use]
-    pub const fn shape_fingerprint(self) -> Option<ShapeFingerprint> {
-        self.shape_fingerprint
-    }
-}
-
-struct ParsedEnvelope<'a> {
-    info: CiphertextInfo,
-    header: &'a [u8],
-    suite_payload: &'a [u8],
-}
-
-/// The encryption suites this library reads and writes.
-///
-/// The set is closed: suites are built in and applications cannot add one. A
-/// new variant fails to compile until every dispatch below handles it.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Suite {
-    XChaCha20Poly1305,
-}
-
-impl Suite {
-    /// The suite new values are sealed with.
-    const ACTIVE: Self = Self::XChaCha20Poly1305;
-
-    fn from_id(id: SuiteId) -> Result<Self, Error> {
-        match id {
-            EXPERIMENTAL_XCHACHA20_POLY1305 => Ok(Self::XChaCha20Poly1305),
-            _ => Err(Error::UnsupportedSuite(id)),
-        }
-    }
-
-    const fn id(self) -> SuiteId {
-        match self {
-            Self::XChaCha20Poly1305 => EXPERIMENTAL_XCHACHA20_POLY1305,
-        }
-    }
-
-    fn validate_payload(self, payload: &[u8]) -> Result<(), Error> {
-        match self {
-            Self::XChaCha20Poly1305 => xchacha20_poly1305::validate_payload(payload),
-        }
-    }
-
-    // Builds the header from its own suite ID and the key's ID, so neither can
-    // disagree with the key it seals under.
-    fn seal(
-        self,
-        plaintext: &AeadPlaintext<'_>,
-        fingerprint: Option<ShapeFingerprint>,
-        binding: &[u8],
-        key: &EncryptionKey,
-    ) -> Result<Vec<u8>, Error> {
-        match self {
-            Self::XChaCha20Poly1305 => {
-                xchacha20_poly1305::seal(plaintext, fingerprint, binding, key)
-            }
-        }
-    }
-
-    fn open(
-        self,
-        envelope: &ParsedEnvelope<'_>,
-        binding: &[u8],
-        key: &EncryptionKey,
-    ) -> Result<Zeroizing<Vec<u8>>, Error> {
-        match self {
-            Self::XChaCha20Poly1305 => xchacha20_poly1305::open(envelope, binding, key),
-        }
-    }
-}
-
-/// Returns whether `bytes` begin with `CryptBox` ciphertext magic.
-///
-/// This is a migration aid, not validation or authentication.
-#[must_use]
-pub fn is_ciphertext(bytes: &[u8]) -> bool {
-    bytes.starts_with(MAGIC)
-}
+pub(crate) use format::validated_key_id;
+pub use format::{CiphertextInfo, is_ciphertext};
+use format::{FORMAT_VERSION, ParsedEnvelope, parse_envelope};
+pub use suite::EXPERIMENTAL_XCHACHA20_POLY1305;
+use suite::Suite;
 
 /// Parses supported envelope metadata without authenticating it.
 ///
@@ -174,7 +27,7 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
 /// Parses an envelope whose suite is supported and whose payload fits that suite.
 fn parse_supported(bytes: &[u8]) -> Result<(Suite, ParsedEnvelope<'_>), Error> {
     let envelope = parse_envelope(bytes)?;
-    let suite = Suite::from_id(envelope.info.suite_id)?;
+    let suite = Suite::from_id(envelope.info.suite_id())?;
     suite.validate_payload(envelope.suite_payload)?;
 
     Ok((suite, envelope))
@@ -256,15 +109,15 @@ pub(crate) fn decrypt_bound(
     let (suite, parsed) = parse_supported(ciphertext)?;
     check_shape(parsed.info, domain)?;
     let key = keyring(keys, domain)?
-        .get(parsed.info.key_id)
+        .get(parsed.info.key_id())
         .cloned()
-        .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id))?;
+        .ok_or(Error::UnknownEncryptionKey(parsed.info.key_id()))?;
     let plaintext = suite.open(&parsed, domain.as_bytes(), &key)?;
 
     // Only the authenticated flag decides unpadding; the current policy must not,
     // or policy changes would silently misread stored values.
-    // See ../docs/adr/0002-authenticated-padding-flag.md.
-    match parsed.info.padded {
+    // See ../../docs/adr/0002-authenticated-padding-flag.md.
+    match parsed.info.padded() {
         Some(true) => unpad(plaintext),
         Some(false) => Ok(plaintext),
         None => padding.unpad(plaintext),
@@ -281,9 +134,9 @@ fn keyring(
 
 // The expected shape always comes from the reader, never from the envelope; the
 // fingerprint only names the mismatch before any key or AEAD work.
-// See ../docs/wire-format.md#reader-rules.
+// See ../../docs/wire-format.md#reader-rules.
 fn check_shape(info: CiphertextInfo, domain: &BindingDomain) -> Result<(), Error> {
-    if info.shape_fingerprint != domain.fingerprint() {
+    if info.shape_fingerprint() != domain.fingerprint() {
         return Err(Error::BindingMismatch);
     }
 
@@ -326,10 +179,10 @@ pub(crate) fn needs_reencryption_bound(
     check_shape(info, domain)?;
     let current = keyring(keys, domain)?.current().clone();
 
-    Ok(info.format_version != FORMAT_VERSION
-        || info.suite_id != Suite::ACTIVE.id()
-        || info.key_id != current.id()
-        || info.padded != Some(padding.is_padded()))
+    Ok(info.format_version() != FORMAT_VERSION
+        || info.suite_id() != Suite::ACTIVE.id()
+        || info.key_id() != current.id()
+        || info.padded() != Some(padding.is_padded()))
 }
 
 /// Decrypts an envelope and encrypts it as `field` currently writes it.
@@ -353,247 +206,9 @@ pub fn reencrypt(
 }
 
 #[cfg(test)]
-fn seal_with_nonce(
-    plaintext: &[u8],
-    padding: Padding,
-    domain: &BindingDomain,
-    key: &EncryptionKey,
-    nonce: [u8; crypto::NONCE_LEN],
-) -> Result<Vec<u8>, Error> {
-    xchacha20_poly1305::seal_with_nonce(
-        &padding.pad(plaintext)?,
-        domain.fingerprint(),
-        domain.as_bytes(),
-        key,
-        nonce,
-    )
-}
-
-/// Returns the key ID of an envelope that already passed structural validation.
-// Offsets follow the layout table: ../docs/wire-format.md#envelope.
-pub(crate) fn validated_key_id(bytes: &[u8]) -> KeyId {
-    let offset = key_id_offset(bytes[FORMAT_VERSION_OFFSET]);
-    let mut key_id = [0_u8; 16];
-    key_id.copy_from_slice(&bytes[offset..offset + 16]);
-
-    KeyId::from_bytes(key_id)
-}
-
-fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> {
-    if !is_ciphertext(bytes) {
-        return Err(Error::NotCiphertext);
-    }
-
-    // Too short for any format's header: malformed, whatever byte 4 claims.
-    if bytes.len() < FORMAT_1_HEADER_LEN {
-        return Err(Error::InvalidEnvelope);
-    }
-
-    // Offsets follow the layout table: ../docs/wire-format.md#envelope.
-    let format_version = bytes[FORMAT_VERSION_OFFSET];
-    let flags = match format_version {
-        FORMAT_VERSION => bytes[FLAGS_OFFSET],
-        FORMAT_1_VERSION => 0,
-        _ => return Err(Error::UnsupportedFormatVersion(format_version)),
-    };
-
-    // Reject reserved bits so a flag this reader does not know is never ignored.
-    if flags & !(FLAG_PADDED | FLAG_SCOPED) != 0 {
-        return Err(Error::InvalidEnvelope);
-    }
-
-    let header_len = match format_version {
-        FORMAT_1_VERSION => FORMAT_1_HEADER_LEN,
-        _ if flags & FLAG_SCOPED != 0 => SCOPED_HEADER_LEN,
-        _ => HEADER_LEN,
-    };
-    if bytes.len() < header_len {
-        return Err(Error::InvalidEnvelope);
-    }
-
-    let suite_id = SuiteId::new(bytes[SUITE_ID_OFFSET]);
-
-    let padded = (format_version == FORMAT_VERSION).then_some(flags & FLAG_PADDED != 0);
-    let mut key_id = [0_u8; 16];
-    let key_offset = key_id_offset(format_version);
-    key_id.copy_from_slice(&bytes[key_offset..key_offset + 16]);
-    let shape_fingerprint = (flags & FLAG_SCOPED != 0).then(|| {
-        let mut fingerprint = [0_u8; FINGERPRINT_LEN];
-        fingerprint.copy_from_slice(&bytes[HEADER_LEN..SCOPED_HEADER_LEN]);
-
-        ShapeFingerprint::from_bytes(fingerprint)
-    });
-
-    Ok(ParsedEnvelope {
-        info: CiphertextInfo {
-            format_version,
-            suite_id,
-            padded,
-            key_id: KeyId::from_bytes(key_id),
-            shape_fingerprint,
-        },
-        header: &bytes[..header_len],
-        suite_payload: &bytes[header_len..],
-    })
-}
-
-fn envelope_header(
-    suite_id: SuiteId,
-    padded: bool,
-    key_id: KeyId,
-    fingerprint: Option<ShapeFingerprint>,
-) -> Vec<u8> {
-    let mut flags = if padded { FLAG_PADDED } else { 0 };
-    if fingerprint.is_some() {
-        flags |= FLAG_SCOPED;
-    }
-
-    let mut header = Vec::with_capacity(SCOPED_HEADER_LEN);
-    header.extend_from_slice(MAGIC);
-    header.extend_from_slice(&[FORMAT_VERSION, suite_id.get(), flags]);
-    header.extend_from_slice(key_id.as_bytes());
-    if let Some(fingerprint) = fingerprint {
-        header.extend_from_slice(fingerprint.as_bytes());
-    }
-
-    header
-}
-
-// Format 1 has no flags byte, so its key ID starts one byte earlier.
-const fn key_id_offset(format_version: u8) -> usize {
-    if format_version == FORMAT_1_VERSION {
-        FLAGS_OFFSET
-    } else {
-        FLAGS_OFFSET + 1
-    }
-}
-
-fn derive_encryption_key(
-    root: &EncryptionKey,
-    binding: &[u8],
-    format_version: u8,
-    suite_id: SuiteId,
-) -> Result<Zeroizing<[u8; 32]>, Error> {
-    // Preserve this canonical order: changing it makes stored ciphertext unreadable.
-    // See ../docs/wire-format.md#encryption-recipe.
-    let mut info = Vec::with_capacity(ENCRYPTION_KEY_LABEL.len() + 18 + binding.len());
-    info.extend_from_slice(ENCRYPTION_KEY_LABEL);
-    info.push(format_version);
-    info.push(suite_id.get());
-    info.extend_from_slice(root.id().as_bytes());
-    info.extend_from_slice(binding);
-
-    Ok(crypto::hkdf_sha256_32(root.bytes(), &info)?)
-}
-
-fn envelope_aad(prefix: &[u8], binding: &[u8]) -> Vec<u8> {
-    // Authenticate the exact stored prefix together with the caller's expected binding.
-    // The envelope must not choose its own binding: ../docs/wire-format.md#encryption-recipe.
-    let mut aad = Vec::with_capacity(ENVELOPE_AAD_LABEL.len() + prefix.len() + binding.len());
-    aad.extend_from_slice(ENVELOPE_AAD_LABEL);
-    aad.extend_from_slice(prefix);
-    aad.extend_from_slice(binding);
-
-    aad
-}
-
-/// Suite 1: HKDF-SHA-256 and XChaCha20-Poly1305 over the format 2 envelope.
-// See ../docs/wire-format.md#encryption-suite-1.
-mod xchacha20_poly1305 {
-    use zeroize::Zeroizing;
-
-    use super::{
-        EXPERIMENTAL_XCHACHA20_POLY1305, FORMAT_VERSION, ParsedEnvelope, derive_encryption_key,
-        envelope_aad, envelope_header,
-    };
-    use crate::crypto::{self, NONCE_LEN, TAG_LEN};
-    use crate::padding::AeadPlaintext;
-    use crate::{EncryptionKey, Error, ShapeFingerprint};
-
-    pub(super) fn validate_payload(payload: &[u8]) -> Result<(), Error> {
-        let minimum_len = NONCE_LEN
-            .checked_add(TAG_LEN)
-            .ok_or(Error::InvalidEnvelope)?;
-
-        if payload.len() < minimum_len {
-            return Err(Error::InvalidEnvelope);
-        }
-
-        Ok(crypto::check_message_len(payload.len() - minimum_len)?)
-    }
-
-    pub(super) fn seal(
-        plaintext: &AeadPlaintext<'_>,
-        fingerprint: Option<ShapeFingerprint>,
-        binding: &[u8],
-        key: &EncryptionKey,
-    ) -> Result<Vec<u8>, Error> {
-        seal_with_nonce(
-            plaintext,
-            fingerprint,
-            binding,
-            key,
-            crypto::random_nonce()?,
-        )
-    }
-
-    pub(super) fn seal_with_nonce(
-        plaintext: &AeadPlaintext<'_>,
-        fingerprint: Option<ShapeFingerprint>,
-        binding: &[u8],
-        key: &EncryptionKey,
-        nonce: [u8; NONCE_LEN],
-    ) -> Result<Vec<u8>, Error> {
-        let suite = EXPERIMENTAL_XCHACHA20_POLY1305;
-        let header = envelope_header(suite, plaintext.is_padded(), key.id(), fingerprint);
-        let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
-        prefix.extend_from_slice(&header);
-        prefix.extend_from_slice(&nonce);
-
-        let operational_key = derive_encryption_key(key, binding, FORMAT_VERSION, suite)?;
-        let aad = envelope_aad(&prefix, binding);
-        let sealed = crypto::seal(&operational_key, &nonce, &aad, plaintext.bytes())?;
-
-        let capacity = prefix
-            .len()
-            .checked_add(sealed.len())
-            .ok_or(Error::MessageTooLong)?;
-        let mut envelope = Vec::with_capacity(capacity);
-        envelope.extend_from_slice(&prefix);
-        envelope.extend_from_slice(&sealed);
-
-        Ok(envelope)
-    }
-
-    pub(super) fn open(
-        envelope: &ParsedEnvelope<'_>,
-        binding: &[u8],
-        key: &EncryptionKey,
-    ) -> Result<Zeroizing<Vec<u8>>, Error> {
-        let header = envelope.header;
-        let (nonce, ciphertext) = envelope
-            .suite_payload
-            .split_first_chunk::<NONCE_LEN>()
-            .ok_or(Error::InvalidEnvelope)?;
-        let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
-        prefix.extend_from_slice(header);
-        prefix.extend_from_slice(nonce);
-
-        let operational_key = derive_encryption_key(
-            key,
-            binding,
-            envelope.info.format_version,
-            EXPERIMENTAL_XCHACHA20_POLY1305,
-        )?;
-        let aad = envelope_aad(&prefix, binding);
-
-        Ok(crypto::open(&operational_key, nonce, &aad, ciphertext)?)
-    }
-}
-
-#[cfg(test)]
 mod tests {
-    use super::{decrypt_bound, encrypt_bound, inspect_ciphertext, seal_with_nonce};
+    use super::suite::seal_with_nonce;
+    use super::{decrypt_bound, encrypt_bound, inspect_ciphertext};
     use crate::binding::{BindingShape, PartKind, PartRole, PartSpec, PartValue};
     use crate::crypto::NONCE_LEN;
     use crate::{
