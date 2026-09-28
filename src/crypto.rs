@@ -4,7 +4,7 @@ use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
 
-use crate::padding::unpad;
+use crate::padding::{AeadPlaintext, unpad};
 use crate::{
     BindingDomain, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldId, KeyId,
     Padding, ShapeFingerprint, SuiteId,
@@ -103,9 +103,8 @@ trait EncryptionSuite: Sync {
     // disagree with the key it seals under.
     fn seal(
         &self,
-        padded: bool,
+        plaintext: &AeadPlaintext<'_>,
         shape_fingerprint: Option<ShapeFingerprint>,
-        plaintext: &[u8],
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error>;
@@ -172,13 +171,9 @@ pub(crate) fn encrypt_bound(
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Vec<u8>, Error> {
     let key = keyring(keys, domain)?.current().clone();
-    let suite = active_suite();
-    let fingerprint = domain.fingerprint();
+    let plaintext = padding.pad(plaintext)?;
 
-    match padding.pad(plaintext)? {
-        Some(padded) => suite.seal(true, fingerprint, &padded, domain.as_bytes(), &key),
-        None => suite.seal(false, fingerprint, plaintext, domain.as_bytes(), &key),
-    }
+    active_suite().seal(&plaintext, domain.fingerprint(), domain.as_bytes(), &key)
 }
 
 /// Authenticates and decrypts opaque ciphertext bytes.
@@ -327,15 +322,14 @@ pub fn reencrypt(
 #[cfg(test)]
 fn seal_with_nonce(
     plaintext: &[u8],
-    padded: bool,
+    padding: Padding,
     domain: &BindingDomain,
     key: &EncryptionKey,
     nonce: [u8; NONCE_LEN],
 ) -> Result<Vec<u8>, Error> {
     XCHACHA20_POLY1305_SUITE.seal_with_nonce(
-        padded,
+        &padding.pad(plaintext)?,
         domain.fingerprint(),
-        plaintext,
         domain.as_bytes(),
         key,
         nonce,
@@ -467,16 +461,20 @@ impl XChaCha20Poly1305Suite {
 
     fn seal_with_nonce(
         &self,
-        padded: bool,
+        plaintext: &AeadPlaintext<'_>,
         shape_fingerprint: Option<ShapeFingerprint>,
-        plaintext: &[u8],
         binding: &[u8],
         key: &EncryptionKey,
         nonce: [u8; NONCE_LEN],
     ) -> Result<Vec<u8>, Error> {
-        validate_plaintext_len(plaintext.len())?;
+        validate_plaintext_len(plaintext.bytes().len())?;
 
-        let header = envelope_header(self.id(), padded, key.id(), shape_fingerprint);
+        let header = envelope_header(
+            self.id(),
+            plaintext.is_padded(),
+            key.id(),
+            shape_fingerprint,
+        );
         let nonce = XNonce::from(nonce);
         let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
         prefix.extend_from_slice(&header);
@@ -485,7 +483,7 @@ impl XChaCha20Poly1305Suite {
         let (cipher, aad) = self.cipher(key, binding, FORMAT_VERSION, &prefix)?;
         // The working copy can still contain plaintext if sealing fails; erase on every exit.
         // See ../docs/wire-format.md#key-and-buffer-lifetime.
-        let mut sealed = Zeroizing::new(plaintext.to_vec());
+        let mut sealed = Zeroizing::new(plaintext.bytes().to_vec());
         cipher
             .encrypt_in_place(&nonce, &aad, &mut *sealed)
             .map_err(|_| Error::Internal)?;
@@ -521,9 +519,8 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
 
     fn seal(
         &self,
-        padded: bool,
+        plaintext: &AeadPlaintext<'_>,
         shape_fingerprint: Option<ShapeFingerprint>,
-        plaintext: &[u8],
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
@@ -532,7 +529,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         let mut nonce = [0_u8; NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(|_| Error::RandomnessUnavailable)?;
 
-        self.seal_with_nonce(padded, shape_fingerprint, plaintext, binding, key, nonce)
+        self.seal_with_nonce(plaintext, shape_fingerprint, binding, key, nonce)
     }
 
     fn open(
@@ -690,7 +687,7 @@ mod tests {
         let domain = scope(b"ws-1", None);
         let envelope = seal_with_nonce(
             b"cryptbox vector",
-            false,
+            Padding::NONE,
             &domain,
             &vector_key(),
             vector_nonce(),
@@ -715,7 +712,7 @@ mod tests {
         let domain = scope(b"ws-1", Some(PartValue::I64(7)));
         let envelope = seal_with_nonce(
             b"cryptbox vector",
-            false,
+            Padding::NONE,
             &domain,
             &vector_key(),
             vector_nonce(),
@@ -905,8 +902,8 @@ mod tests {
         }
 
         let envelope = seal_with_nonce(
-            b"cryptbox vector\x80",
-            true,
+            b"cryptbox vector",
+            Padding::block(16),
             &BindingDomain::field(VECTOR_FIELD),
             &key,
             nonce,
@@ -933,7 +930,7 @@ mod tests {
 
         let envelope = seal_with_nonce(
             b"cryptbox vector",
-            false,
+            Padding::NONE,
             &BindingDomain::field(VECTOR_FIELD),
             &key,
             nonce,
