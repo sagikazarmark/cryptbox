@@ -4,15 +4,16 @@
 //! primitive, and every way one can fail, is reviewable in one place. Callers
 //! own the recipes: which labels, key material, and AAD go in.
 
-use chacha20poly1305::aead::{AeadInOut, inout::InOutBuf};
+use chacha20poly1305::aead::array::typenum::Unsigned;
+use chacha20poly1305::aead::{AeadCore, AeadInOut, inout::InOutBuf};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
 
-pub(crate) const NONCE_LEN: usize = 24;
-pub(crate) const TAG_LEN: usize = 16;
+pub(crate) const NONCE_LEN: usize = <XChaCha20Poly1305 as AeadCore>::NonceSize::USIZE;
+pub(crate) const TAG_LEN: usize = <XChaCha20Poly1305 as AeadCore>::TagSize::USIZE;
 // One byte below RFC 8439's `(2^32 - 1) * 64`: chacha20poly1305 rejects a message of
 // exactly that length, which would otherwise surface as Error::Internal.
 const MAX_MESSAGE_LEN: u64 = 274_877_906_879;
