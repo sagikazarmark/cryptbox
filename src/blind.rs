@@ -11,8 +11,13 @@ use crate::{
 };
 
 const INDEX_FORMAT_VERSION: u8 = 1;
-const INDEX_HEADER_LEN: usize = 19;
 const MAX_INDEX_BITS: usize = 256;
+// The stored layout: ../docs/wire-format.md#stored-layout. The version byte, the
+// index key ID, then the retained bit count as a big-endian u16.
+const INDEX_KEY_ID_OFFSET: usize = 1;
+const INDEX_KEY_ID_LEN: usize = 16;
+const INDEX_BITS_OFFSET: usize = INDEX_KEY_ID_OFFSET + INDEX_KEY_ID_LEN;
+const INDEX_HEADER_LEN: usize = INDEX_BITS_OFFSET + 2;
 // NUL-terminated labels separate key and value roles: ../docs/wire-format.md#blind-index-recipe.
 const INDEX_KEY_LABEL: &[u8] = b"cryptbox/blind-index-key/v1\0";
 const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
@@ -473,10 +478,7 @@ impl<Spec> BlindIndex<Spec> {
 
     /// Returns the unauthenticated index-key generation named by validated bytes.
     pub(crate) fn index_key_id(&self) -> IndexKeyId {
-        let mut id = [0_u8; 16];
-        id.copy_from_slice(&self.bytes[1..17]);
-
-        IndexKeyId::from_bytes(id)
+        stored_key_id(&self.bytes)
     }
 
     /// Consumes the wrapper and returns its stored representation.
@@ -607,7 +609,10 @@ pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
         return Err(Error::InvalidBlindIndex);
     }
 
-    let bits = usize::from(u16::from_be_bytes([bytes[17], bytes[18]]));
+    let bits = usize::from(u16::from_be_bytes([
+        bytes[INDEX_BITS_OFFSET],
+        bytes[INDEX_BITS_OFFSET + 1],
+    ]));
     validate_bits(bits)?;
     let digest_len = bits.div_ceil(8);
 
@@ -615,20 +620,14 @@ pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
         return Err(Error::InvalidBlindIndex);
     }
 
-    if bits % 8 != 0 {
-        let unused_bits = 8 - (bits % 8);
-        let unused_mask = (1_u8 << unused_bits) - 1;
-        if bytes.last().copied().ok_or(Error::InvalidBlindIndex)? & unused_mask != 0 {
-            return Err(Error::InvalidBlindIndex);
-        }
+    // Noncanonical: the unused low bits of the final byte must be zero.
+    if bytes.last().copied().ok_or(Error::InvalidBlindIndex)? & !final_byte_mask(bits) != 0 {
+        return Err(Error::InvalidBlindIndex);
     }
-
-    let mut key_id = [0_u8; 16];
-    key_id.copy_from_slice(&bytes[1..17]);
 
     Ok(BlindIndexInfo {
         format_version: INDEX_FORMAT_VERSION,
-        index_key_id: IndexKeyId::from_bytes(key_id),
+        index_key_id: stored_key_id(bytes),
         bits,
     })
 }
@@ -741,10 +740,7 @@ fn derive_normalized<Spec: BlindIndexSpec>(
 ) -> Result<BlindIndex<Spec>, Error> {
     assert_valid_bits::<Spec>();
     let bits = Spec::BITS;
-    let mut header = [0_u8; INDEX_HEADER_LEN];
-    header[0] = INDEX_FORMAT_VERSION;
-    header[1..17].copy_from_slice(key.id().as_bytes());
-    header[17..19].copy_from_slice(&bits.to_be_bytes());
+    let header = index_header(key.id(), bits);
 
     // Both HKDF and HMAC commit to this canonical order; changing it breaks stored lookups.
     // See ../docs/wire-format.md#blind-index-recipe.
@@ -762,21 +758,9 @@ fn derive_normalized<Spec: BlindIndexSpec>(
         &[INDEX_VALUE_LABEL, &context, &normalized_len, normalized],
     )?;
 
-    let digest_len = usize::from(bits).div_ceil(8);
-    let mut stored = Vec::with_capacity(INDEX_HEADER_LEN + digest_len);
-    stored.extend_from_slice(&header);
-    stored.extend_from_slice(&digest[..digest_len]);
-
-    if bits % 8 != 0 {
-        // One encoding per retained bit string; unused bits must not leak extra precision.
-        // Parsing enforces the same rule: ../docs/wire-format.md#blind-index-recipe.
-        let retained_bits = bits % 8;
-        let mask = u8::MAX << (8 - retained_bits);
-        let final_byte = stored.last_mut().ok_or(Error::InvalidBlindIndex)?;
-        *final_byte &= mask;
-    }
-
-    Ok(BlindIndex::from_validated_bytes(stored))
+    Ok(BlindIndex::from_validated_bytes(encode_index(
+        &header, &digest, bits,
+    )))
 }
 
 const fn valid_bits(bits: usize) -> bool {
@@ -789,4 +773,48 @@ fn validate_bits(bits: usize) -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+/// Builds the stored header naming `key_id` and `bits`.
+fn index_header(key_id: IndexKeyId, bits: u16) -> [u8; INDEX_HEADER_LEN] {
+    let mut header = [0_u8; INDEX_HEADER_LEN];
+    header[0] = INDEX_FORMAT_VERSION;
+    header[INDEX_KEY_ID_OFFSET..INDEX_BITS_OFFSET].copy_from_slice(key_id.as_bytes());
+    header[INDEX_BITS_OFFSET..].copy_from_slice(&bits.to_be_bytes());
+
+    header
+}
+
+/// Appends the canonical truncation of `digest` to `header`: its first `bits`
+/// bits, with the unused low bits of the final byte cleared.
+fn encode_index(header: &[u8; INDEX_HEADER_LEN], digest: &[u8; 32], bits: u16) -> Vec<u8> {
+    let bits = usize::from(bits);
+    let digest_len = bits.div_ceil(8);
+    let mut stored = Vec::with_capacity(INDEX_HEADER_LEN + digest_len);
+    stored.extend_from_slice(header);
+    stored.extend_from_slice(&digest[..digest_len]);
+
+    // One encoding per retained bit string; unused bits must not leak extra precision.
+    // Parsing enforces the same rule: ../docs/wire-format.md#blind-index-recipe.
+    if let Some(final_byte) = stored.last_mut() {
+        *final_byte &= final_byte_mask(bits);
+    }
+
+    stored
+}
+
+// The bits a `bits`-bit index keeps in its final digest byte; the rest are zero.
+const fn final_byte_mask(bits: usize) -> u8 {
+    match bits % 8 {
+        0 => u8::MAX,
+        retained => u8::MAX << (8 - retained),
+    }
+}
+
+// Reads the index key ID of a representation whose length is already checked.
+fn stored_key_id(bytes: &[u8]) -> IndexKeyId {
+    let mut key_id = [0_u8; INDEX_KEY_ID_LEN];
+    key_id.copy_from_slice(&bytes[INDEX_KEY_ID_OFFSET..INDEX_BITS_OFFSET]);
+
+    IndexKeyId::from_bytes(key_id)
 }
