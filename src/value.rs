@@ -6,7 +6,7 @@ use crate::{
     Args, BindingDomain, Codec, EncryptionKeySource, Error, Field, FieldOnly, GlobalKeys, KeyId,
     Prepared,
     binding::{domain, domains},
-    crypto::{decrypt_bound, encrypt_bound, needs_reencryption_bound, validated_key_id},
+    envelope::{decrypt_bound, encrypt_bound, needs_reencryption_bound, validated_key_id},
     keys,
 };
 
