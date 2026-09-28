@@ -338,6 +338,20 @@
 - Add task-oriented adoption guidance, document authority and version distinctions,
   shared feature/platform reference, and reproducible documentation link checks.
 
+- Document runtime binding, passed-in keys, and shredding. The quick start is
+  two tiers: a `FieldOnly` field with one keyring, then a tenant- and
+  record-bound field with one keyring per tenant, backed by the new
+  `tenant_field` example. Three guides are new: `docs/bindings.md` (part roles,
+  authorized binding values, record IDs, moving a record, shape migrations),
+  `docs/choosing-keyrings.md` (the failure modes that are silent at write time,
+  key-ID rules, recording and testing custody, refreshing a key source), and
+  `docs/shredding.md` (prerequisites, in-memory caches, backups, verification).
+  The `[choosing keyrings]` links in the key API, integration guide, and
+  custom-field example now point at the guide instead of ADR-0006. Every example
+  and documentation snippet uses its own generated IDs, so no UUID stands for
+  two different things, and the tutorial explains generating them with
+  `uuidgen`.
+
 ## 0.5.0
 
 The following entries were shipped by 0.5.0 but retained an `Unreleased` heading

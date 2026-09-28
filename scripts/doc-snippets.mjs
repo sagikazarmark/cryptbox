@@ -13,8 +13,10 @@ const anchored = (path, name) => {
   return example.split(start)[1].split(end)[0].trimEnd();
 };
 const firstField = anchored('examples/first_field.rs', 'first-field');
+const tenantField = anchored('examples/tenant_field.rs', 'tenant-field');
 const sources = {
   'first-field': ['rust', firstField],
+  'tenant-field': ['rust', tenantField],
   'first-field-manifest': ['toml', read('docs/snippets/first-field.toml')],
   lifecycle: ['mermaid', read('docs/diagrams/lifecycle.mmd')],
   ...Object.fromEntries([
@@ -54,9 +56,14 @@ for (const [page, expected] of Object.entries(pages)) {
   if (write) writeFileSync(page, after);
   else if (before !== after) throw new Error(`${page}: run node scripts/doc-snippets.mjs --write`);
 }
-// rustdoc includes the exact same snippet, including its runnable main function.
-const rustdoc = `\`\`\`rust\n${firstField}\n\`\`\`\n`;
-if (write) writeFileSync('docs/snippets/first-field.md', rustdoc);
-else if (readFileSync('docs/snippets/first-field.md', 'utf8') !== rustdoc) {
-  throw new Error('rustdoc snippet is stale: run node scripts/doc-snippets.mjs --write');
+// rustdoc includes the exact same snippets, including their runnable main functions.
+for (const [path, source] of [
+  ['docs/snippets/first-field.md', firstField],
+  ['docs/snippets/tenant-field.md', tenantField],
+]) {
+  const rustdoc = `\`\`\`rust\n${source}\n\`\`\`\n`;
+  if (write) writeFileSync(path, rustdoc);
+  else if (readFileSync(path, 'utf8') !== rustdoc) {
+    throw new Error(`${path} is stale: run node scripts/doc-snippets.mjs --write`);
+  }
 }

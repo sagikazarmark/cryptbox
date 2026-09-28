@@ -53,6 +53,11 @@ same choices are not repeated at each call site. A field declares:
   whether it is also bound to its record. `FieldOnly` binds a value to its field
   ID alone.
 
+A binding's parts have roles: a `keys` part scopes key custody and blind
+indexes and is the unit you can shred, an `index` part scopes blind indexes only,
+and any other part is bound only. [Bind values to a scope](bindings.md) covers
+choosing them.
+
 The value type is your application's own type: it says how it encodes, never
 where it is stored. One `Address` type can back both a `HomeAddress` and a
 `BillingAddress` field, each with its own field ID. A value type can name a
@@ -94,7 +99,8 @@ that picks one by field or key scope.
 
 The quickstart passes a keyring explicitly as `&keys`, so no global
 installation is needed. For keyring and key-context choices, see
-[integration design](integration.md#keyrings-and-key-sources).
+[integration design](integration.md#keyrings-and-key-sources); for the mistakes
+that choice can make silently, [choosing keyrings](choosing-keyrings.md).
 
 ## Search uses a separate representation
 
@@ -148,6 +154,8 @@ field that declares blind indexes, because it would not maintain their columns.
   [store it durably in SQLite](../examples/sqlite/README.md).
 - **Apply it:** [integration design and trade-offs](integration.md) explains
   persistent schema, storage boundaries, keys, and search.
+- **Scope it:** [bind values to a scope](bindings.md) adds a tenant or org, and
+  [choosing keyrings](choosing-keyrings.md) decides whose keys protect it.
 - **Assess it:** [security and threat model](security.md) covers protections,
   limitations, and review status.
 - **Look something up:** use the [glossary](glossary.md),

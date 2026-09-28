@@ -123,9 +123,22 @@ Configure `RowPlanner::<F>::new(encryption_keys)`, add the
 explicit handler with `with_legacy`, and register indexes in stored order with
 `with_index_with::<Spec>(index_keys)`. Omit `with_legacy` only for authorized
 plaintext-only data. Recovery decodes through the field codec, seals and
-derives every registered index. The planner and `Sweep` serve `FieldOnly` fields
-without a record in this release. Stale CryptBox components are rewritten; current
+derives every registered index. Stale CryptBox components are rewritten; current
 ones are retained under the [sweep rules](reencryption-sweep.md#sweep-loop).
+
+`RowPlanner::new` serves a [`FieldOnly`](bindings.md) field without a record. A
+bound field uses `RowPlanner::for_key_scope(key_scope, keys, row_args)`, one
+planner per key scope, because its keys are scoped too. The key scope comes from
+the job's configuration, never from the rows: a row whose `keys` columns name
+another scope is counted out of scope and left alone. The remaining binding
+values and the record do come from the row's own columns, so a migration trusts
+those columns once, in exchange for having no request to authorize them against.
+Migrate only over columns the application already trusts, and establish their
+provenance with the same evidence this guide requires for legacy bytes. The
+packaged stores load no columns, so a bound field needs an application-owned
+`SweepStore`. See
+[binding-shape changes](reencryption-sweep.md#binding-shape-changes) and
+[bound values come from an authorized source](bindings.md#bound-values-come-from-an-authorized-source).
 
 The packaged planner repairs missing indexes on **legacy** bytes by deriving them,
 but rejects empty/malformed indexes on existing CryptBox ciphertext. It also

@@ -12,7 +12,7 @@ use zeroize::Zeroizing;
 struct Nickname;
 
 impl Field for Nickname {
-    const ID: FieldId = cryptbox::field_id!("60000000-0000-4000-8000-000000000006");
+    const ID: FieldId = cryptbox::field_id!("431cf5b3-5547-4716-a9f8-cfd67749947a");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -38,7 +38,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Field = UserEmail;
-    const ID: cryptbox::IndexId = cryptbox::index_id!("80000000-0000-4000-8000-000000000008");
+    const ID: cryptbox::IndexId = cryptbox::index_id!("ea0ffec1-651a-4d6b-bb01-d53a58006dfd");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
     type Query = str;
@@ -62,14 +62,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
     let encryption = EncryptionKeyring::new(
         EncryptionKey::new(
-            cryptbox::key_id!("40000000-0000-4000-8000-000000000004"),
+            cryptbox::key_id!("417323bd-b7c0-41fa-a7da-17305a83fadf"),
             [encryption_root; 32],
         ),
         [],
     )?;
     let indexes = BlindIndexKeyring::new(
         BlindIndexKey::new(
-            cryptbox::index_key_id!("50000000-0000-4000-8000-000000000005"),
+            cryptbox::index_key_id!("64c6ad65-0d9d-497d-ab02-4fba13caaff7"),
             [index_root; 32],
         ),
         [],

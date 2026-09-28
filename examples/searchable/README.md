@@ -54,10 +54,10 @@ are ignored by Git. The loader pairs the independent roots with demonstration ID
 
 | File | Generation ID |
 | --- | --- |
-| `encryption-1.hex` | `10000000-0000-4000-8000-000000000001` |
-| `encryption-2.hex` | `20000000-0000-4000-8000-000000000002` |
-| `index-1.hex` | `30000000-0000-4000-8000-000000000003` |
-| `index-2.hex` | `40000000-0000-4000-8000-000000000004` |
+| `encryption-1.hex` | `a20b59cd-809b-4ff1-9776-4f4199687287` |
+| `encryption-2.hex` | `34d4431d-cec6-453c-9a62-bec73c872420` |
+| `index-1.hex` | `830040f0-0c49-4ab2-87e6-cb2184981776` |
+| `index-2.hex` | `bcce33bf-947f-42a5-9a83-0fd3d4c3050f` |
 
 In an application, provision unique IDs with your secure secret source and retain
 each immutable **ID/material pair** across restarts and recovery. Never reuse

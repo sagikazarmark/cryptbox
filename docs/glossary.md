@@ -44,6 +44,13 @@ Structurally valid ciphertext has not necessarily been authenticated.
 **Current generation**:
 The generation selected for new encryption or new stored blind indexes.
 
+**Custody**:
+Which keyring's root material protects a field's values in a key scope. It is an
+application decision that the library neither records nor checks: sealing under
+the wrong keyring succeeds. Record it per field and key scope, and test it; see
+[choosing keyrings](choosing-keyrings.md).
+<!-- Agent guidance: custody is about whose keys, not about access control or storage location. Sealing with the wrong keyring is a silent write-time error, not an authentication failure. -->
+
 **Field**:
 A marker type that declares one logical encrypted field: its field ID, value
 type, codec, padding, binding scope, whether it binds a record, and its blind

@@ -23,7 +23,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Field = UserEmail;
-    const ID: cryptbox::IndexId = cryptbox::index_id!("80000000-0000-4000-8000-000000000008");
+    const ID: cryptbox::IndexId = cryptbox::index_id!("558e7d43-9926-498c-962a-19959dddbfc8");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
     type Query = str;
@@ -59,14 +59,14 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
     // Public test fixtures only. Never provision durable keys this way.
     let keys = EncryptionKeyring::new(
         EncryptionKey::new(
-            cryptbox::key_id!("40000000-0000-4000-8000-000000000004"),
+            cryptbox::key_id!("7552c7db-c3e5-40c4-bd8e-b3e98c4fadbc"),
             [encryption_root; 32],
         ),
         [],
     )?;
     let indexes = BlindIndexKeyring::new(
         BlindIndexKey::new(
-            cryptbox::index_key_id!("50000000-0000-4000-8000-000000000005"),
+            cryptbox::index_key_id!("7b8cd681-6f38-4182-9e81-b5f161402496"),
             [index_root; 32],
         ),
         [],

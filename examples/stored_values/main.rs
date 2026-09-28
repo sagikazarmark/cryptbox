@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 #[derive(Field)]
-#[cryptbox(id = "70000000-0000-4000-8000-000000000007", value = String)]
+#[cryptbox(id = "181642fe-59de-4fe3-9576-cb1cb66116ef", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -23,7 +23,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 
 #[derive(BlindIndexSpec)]
 #[cryptbox(
-    id = "80000000-0000-4000-8000-000000000008",
+    id = "2ce82e31-6001-4b05-b4e2-8fc262997209",
     field = UserEmail,
     // Demonstration precision; choose precision and normalization for your domain.
     bits = 128,
@@ -43,12 +43,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Fixed, independent roots are for this demonstration only. Load durable keys
     // securely in applications; never reuse a generation ID with different material.
     let keys = EncryptionKeyring::new(
-        EncryptionKey::new(key_id!("40000000-0000-4000-8000-000000000004"), [0x31; 32]),
+        EncryptionKey::new(key_id!("36ade21a-f637-4b61-9fae-f8d2a8efc70d"), [0x31; 32]),
         [],
     )?;
     let index_keys = BlindIndexKeyring::new(
         BlindIndexKey::new(
-            index_key_id!("50000000-0000-4000-8000-000000000005"),
+            index_key_id!("0b8390e9-6e64-438b-8a7f-12c91da19f25"),
             [0x42; 32],
         ),
         [],

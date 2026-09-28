@@ -17,15 +17,15 @@ use cryptbox::{
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
-const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
-const CURRENT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
-const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("30000000-0000-4000-8000-000000000003");
-const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("40000000-0000-4000-8000-000000000004");
+const OLD_KEY_ID: KeyId = key_id!("61bda42d-5b31-4ce6-ae7d-eea209cf7a73");
+const CURRENT_KEY_ID: KeyId = key_id!("ff801f06-c17c-4733-ad93-54856372c23e");
+const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("cc93397d-47a5-430a-b9df-6e37d4172f44");
+const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("1eb06990-d693-4f81-9c36-2df0393051f8");
 const LEGACY_HEADER: &[u8] = b"legacy-xchacha-v1\0";
 const LEGACY_NONCE_LEN: usize = 24;
 
 #[derive(Field)]
-#[cryptbox(id = "50000000-0000-4000-8000-000000000005", value = String)]
+#[cryptbox(id = "d743409b-f5db-4e3f-a3a2-7f897845f00c", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -37,7 +37,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 
 #[derive(BlindIndexSpec)]
 #[cryptbox(
-    id = "60000000-0000-4000-8000-000000000006",
+    id = "5524ca6c-ec5d-4027-8e8f-b9c73911b304",
     field = UserEmail,
     bits = 128,
     query = str,

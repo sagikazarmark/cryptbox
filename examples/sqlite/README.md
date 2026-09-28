@@ -42,7 +42,7 @@ permissions; shell noclobber (`set -C`) refuses to overwrite an existing file.
 Provision once, then reuse the file for every run. Keep it out of version control.
 
 The example pairs this root with the fixed demonstration generation ID
-`40000000-0000-4000-8000-000000000004` in `ENCRYPTION_KEY_ID`. A **key generation**
+`d2cde2dd-2294-4d2e-a7fa-beb7304a533e` in `ENCRYPTION_KEY_ID`. A **key generation**
 is the immutable pairing of that ID and root material: preserve both across
 restarts and retain them for as long as the database or its backups need them.
 The ID is public metadata, not the secret. Do not generate another root under

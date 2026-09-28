@@ -122,14 +122,14 @@ async fn seed(
         env::var("CRYPTBOX_KEY_DIR").map_err(|_| "key configuration: CRYPTBOX_KEY_DIR required")?;
     let old_keys = EncryptionKeyring::new(
         EncryptionKey::new(
-            key_id!("10000000-0000-4000-8000-000000000001"),
+            key_id!("a20b59cd-809b-4ff1-9776-4f4199687287"),
             *load_root_key(Path::new(&directory), "encryption-1.hex")?,
         ),
         [],
     )?;
     let old_indexes = BlindIndexKeyring::new(
         BlindIndexKey::new(
-            index_key_id!("30000000-0000-4000-8000-000000000003"),
+            index_key_id!("830040f0-0c49-4ab2-87e6-cb2184981776"),
             *load_root_key(Path::new(&directory), "index-1.hex")?,
         ),
         [],

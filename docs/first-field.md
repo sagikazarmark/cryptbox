@@ -93,12 +93,23 @@ Expect `Field-bound round trip succeeded.` and exit status 0.
   a `String` value with the `Utf8` codec and no padding.
 - `()` is the binding argument: `Binding = FieldOnly` with no record binds the
   value to its field ID alone. A field can declare a binding such as a tenant, and
-  a record, and then every call must pass their values.
+  a record, and then every call must pass their values; see
+  [bind values to a scope](bindings.md).
 - `&keys` supplies keys explicitly, so these calls need no global installation.
 - A field-only value is bound to a logical field, not a row or tenant, so it does
   not stop same-field substitution between rows, or replay. `Padding::NONE` reveals encoded length.
 
 See [how CryptBox works](concepts.md) for the complete picture.
+
+The field ID above is a generated UUID. Generate your own, and never copy one
+from these pages:
+
+```sh
+uuidgen
+```
+
+See [ID hygiene](bindings.md#id-hygiene) for the rules that apply to every field,
+index, and binding part ID.
 
 ## Next: use durable storage
 
@@ -110,6 +121,23 @@ In your own project, preserve the same key ID/material pairs and the field's
 [persistent schema](integration.md#persistent-schema). Missing keys must not be
 silently replaced. The [integration explanation](integration.md) covers these
 choices before you commit data to storage.
+
+## Then: bind values to a tenant
+
+`UserEmail` binds its values to a field ID alone. When values belong to separate
+tenants, orgs, or residencies, the field declares a binding instead, every call
+passes its values, and each scope can have its own keyring:
+
+```sh
+cargo run --locked --example tenant_field
+```
+
+Expect `Tenant-bound round trip succeeded.` Then read
+[bind values to a scope](bindings.md) for part roles and where bound values must
+come from, and [choosing keyrings](choosing-keyrings.md) for whose keys protect
+each scope.
+
+## Other directions
 
 If you need lookup, the [searchable storage example](../examples/searchable/README.md) adds
 independently keyed blind indexes. If the project already has plaintext or

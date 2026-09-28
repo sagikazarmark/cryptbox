@@ -11,6 +11,8 @@ Choose the entry point that fits your question:
 ## Integrate into a project
 
 - [Integration design and trade-offs](integration.md): persistent schema, storage boundaries, keys, and search.
+- [Bind values to a scope](bindings.md): part roles, authorized binding values, record IDs, and moving a record, with a runnable [tenant example](../examples/tenant_field.rs).
+- [Choosing keyrings](choosing-keyrings.md): custody, key-ID rules, the silent failure modes, and testing the choice.
 - [SQLite example](../examples/sqlite/README.md): run and adapt durable encrypted storage with a separate-process read.
 - [Searchable storage example](../examples/searchable/README.md): atomic writes and verified equality lookup on PostgreSQL or SQLite.
 - [Automatic SQLx adapters](testing.md#automatic-adapters): a runnable example and its key-context lifetime.
@@ -23,6 +25,7 @@ Choose the entry point that fits your question:
 ## Operate
 
 - [Key lifecycle](key-rotation.md): stage, promote, roll back, retire, and recover.
+- [Shred a scope](shredding.md): prerequisites, caches, backups, and what destroying a scope's keys leaves behind.
 - [Maintenance sweeps](reencryption-sweep.md): rewrite and verify existing storage.
 - [Retirement and recovery](key-rotation.md#retirement-and-recovery): backup dependencies, isolated restores, and online key removal.
 - [Close a legacy migration](legacy-migration.md#verification-and-closing-the-window): verify converted data and return to strict reads.

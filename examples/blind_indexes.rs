@@ -6,12 +6,12 @@ use cryptbox::{
 };
 use zeroize::Zeroizing;
 
-const ENCRYPTION_KEY_ID: KeyId = key_id!("40000000-0000-4000-8000-000000000004");
-const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("50000000-0000-4000-8000-000000000005");
-const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("60000000-0000-4000-8000-000000000006");
+const ENCRYPTION_KEY_ID: KeyId = key_id!("d0238a8e-7352-4b0b-a089-1fa767e28c35");
+const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("92ba353d-4a5b-419c-be7b-577ec21a8336");
+const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("1ca61eba-f5d2-4b37-86db-cdc2b8204d88");
 
 #[derive(Field)]
-#[cryptbox(id = "70000000-0000-4000-8000-000000000007", value = String)]
+#[cryptbox(id = "283e5ff6-40ba-45e9-b55f-20ce5cee88c4", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -23,7 +23,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 
 #[derive(BlindIndexSpec)]
 #[cryptbox(
-    id = "80000000-0000-4000-8000-000000000008",
+    id = "84651307-589f-4df2-a4b0-f8eaf9e52d3d",
     field = UserEmail,
     bits = 128,
     query = str,

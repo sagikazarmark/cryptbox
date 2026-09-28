@@ -2,15 +2,15 @@
 
 use cryptbox::{EncryptionKey, EncryptionKeyring, Field, KeyId, Plaintext, Sealed, key_id};
 
-const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
-const CURRENT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
+const OLD_KEY_ID: KeyId = key_id!("2a26018a-d8ef-4942-9519-da7e35bcafbf");
+const CURRENT_KEY_ID: KeyId = key_id!("e5d53b60-9e45-4ef9-9198-9bc88ac7409e");
 
 /// An application value type, stored with exactly the bytes of its inner `String`.
 #[derive(Debug, PartialEq, Plaintext)]
 struct Email(String);
 
 #[derive(Field)]
-#[cryptbox(id = "30000000-0000-4000-8000-000000000003", value = Email)]
+#[cryptbox(id = "9758e010-b78a-43e6-9686-0b0f6790d8eb", value = Email)]
 struct UserEmail;
 
 fn main() -> Result<(), cryptbox::Error> {

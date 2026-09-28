@@ -8,7 +8,7 @@ use sqlx::{Connection, Row, sqlite::SqliteConnectOptions, sqlite::SqliteConnecti
 use zeroize::Zeroizing;
 
 // Demo generation ID: preserve this ID AND the independently provisioned root on restart.
-const ENCRYPTION_KEY_ID: KeyId = key_id!("40000000-0000-4000-8000-000000000004");
+const ENCRYPTION_KEY_ID: KeyId = key_id!("d2cde2dd-2294-4d2e-a7fa-beb7304a533e");
 const DEMO_EMAIL: &str = "mark@example.com";
 
 enum Command {

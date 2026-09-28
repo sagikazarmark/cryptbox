@@ -62,6 +62,8 @@
 //!
 //! # Quick start
 //!
+//! ## One field, one keyring
+//!
 //! **Ephemeral keys, in-memory demonstration only.** The [first-field tutorial]
 //! supplies a complete fresh-project manifest and execution instructions.
 //!
@@ -75,8 +77,35 @@
 //! stable key material and generation IDs across restarts; see the
 //! [first-field tutorial]'s durable-key next step.
 //!
+//! For a `FieldOnly` field without a record or blind indexes, [`Plain<F, K>`](Plain)
+//! is the automatic `SQLx` column: it seals on encode and opens on decode with the
+//! keys of `K`, the keys [`keys::install`] made available by default, so ordinary
+//! database conversion needs no explicit call. Everything bound is sealed
+//! explicitly, because a column decoder sees neither the row nor its scope.
+//!
+//! ## Then bind values to a scope
+//!
+//! When values of different tenants must not be interchangeable, or their keys
+//! must differ, the field declares a [`Binding`] and every call passes its
+//! values. Here one keyring serves each tenant, so one tenant's data can be
+//! shredded on its own:
+//!
+#![doc = include_str!("../docs/snippets/tenant-field.md")]
+//!
+//! The field declares `Binding = Tenant` and `RECORD = true`, so each call
+//! passes `(&tenant, record)`; a missing or extra record fails the build. Bound
+//! values come from an authorized source, such as the request's verified claims,
+//! never from the stored row. The library passes the key source the field and the
+//! binding's [`KeyScope`], and choosing which keyring protects which scope is
+//! application code: sealing with the wrong one succeeds silently, while opening
+//! with it fails loudly. See the [binding guide], [choosing keyrings], and the
+//! [shredding runbook].
+//!
 #![doc = concat!(
-    "[first-field tutorial]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/first-field.md",
+    "[first-field tutorial]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/first-field.md\n",
+    "[binding guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/bindings.md\n",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md\n",
+    "[shredding runbook]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/shredding.md",
 )]
 //!
 // Markdown uses the first definition: qualify the shared page's relative links for rustdoc.
@@ -90,9 +119,11 @@
 //!
 //! # Persistent schema
 //!
-//! Codec compatibility, field/index IDs, normalization, and index precision
-//! are persistent schema. Stored bytes do not describe them; changing them
-//! requires a migration plan. Padding is not schema: the envelope records it
+//! Codec compatibility, field/index/part IDs, the binding shape (part kinds and
+//! roles, and whether the field binds a record), normalization, and index
+//! precision are persistent schema. Stored bytes do not describe them, beyond a
+//! diagnostic fingerprint of the binding shape; changing them requires a
+//! migration plan. Padding is not schema: the envelope records it
 //! (except in format 1, which is read with the current policy).
 //! Guard them in CI with [`testing::assert_encoding`] fixtures, a
 //! [`schema::Manifest`] snapshot, and [`assert_unique_ids!`]; see [schema rules].

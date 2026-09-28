@@ -251,7 +251,7 @@ fn initialize_key_material<Id>(
 #[doc = concat!(
     "[key-rotation example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/key_rotation.rs\n",
     "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs\n",
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0006-keys-are-passed-in.md#consequences",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
 )]
 #[derive(Clone)]
 pub struct EncryptionKeyring(Arc<Ring<KeyId, EncryptionKey>>);
@@ -310,7 +310,7 @@ impl fmt::Debug for EncryptionKeyring {
 #[doc = concat!(
     "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/blind_indexes.rs\n",
     "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs\n",
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0006-keys-are-passed-in.md#consequences",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
 )]
 #[derive(Clone)]
 pub struct BlindIndexKeyring(Arc<Ring<IndexKeyId, BlindIndexKey>>);
@@ -414,7 +414,7 @@ impl<Id: fmt::Debug, Key: fmt::Debug> Ring<Id, Key> {
 /// [choosing keyrings].
 ///
 #[doc = concat!(
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0006-keys-are-passed-in.md#consequences",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
 )]
 ///
 /// # Examples
@@ -471,7 +471,7 @@ impl Keys {
 /// snapshot, or a cache of per-scope keyrings.
 ///
 #[doc = concat!(
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0006-keys-are-passed-in.md#consequences",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
 )]
 pub trait EncryptionKeySource: Send + Sync {
     /// Returns the keyring that protects `field` in `scope`.
@@ -494,7 +494,7 @@ pub trait EncryptionKeySource: Send + Sync {
 /// [choosing keyrings].
 ///
 #[doc = concat!(
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0006-keys-are-passed-in.md#consequences",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
 )]
 pub trait BlindIndexKeySource: Send + Sync {
     /// Returns the keyring that protects `index` in `scope`.

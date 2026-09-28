@@ -160,9 +160,12 @@ Beyond the journal:
 
 ## Runbook: shredding an org
 
-The shred unit is the finest `keys` part whose root keys are stored
-independently. For a binding whose `org` part is its only `keys` part,
-destroying the org's root keys makes every value sealed under them unreadable,
+These are the Restate-specific steps of
+[shredding a scope](shredding.md), whose prerequisites, cache and backup
+guidance, and verification apply here too.
+
+For a binding whose `org` part is its only [`keys`](shredding.md#prerequisites)
+part, destroying the org's root keys makes every value sealed under them unreadable,
 including those in Restate's journals and state. Restate still holds the
 plaintext around them: ingress input, object keys, and anything the handlers
 did not seal. And an invocation that replays after its keys are gone retries

@@ -10,13 +10,13 @@ use cryptbox::{
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
-const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
-const CURRENT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
-const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("30000000-0000-4000-8000-000000000003");
-const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("40000000-0000-4000-8000-000000000004");
+const OLD_KEY_ID: KeyId = key_id!("3e6cec61-5b67-4cb8-91b9-5430362c8e30");
+const CURRENT_KEY_ID: KeyId = key_id!("a35c87a8-9779-48c9-b03d-03972a92bc45");
+const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("0e53698f-f685-44a7-8a2a-925559b303b4");
+const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("d36ea642-619a-4d37-b3d2-1b54298c31b8");
 
 #[derive(Field)]
-#[cryptbox(id = "50000000-0000-4000-8000-000000000005", value = String)]
+#[cryptbox(id = "fb3669ca-fb43-4111-b8c1-306459fe4222", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -28,7 +28,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 
 #[derive(BlindIndexSpec)]
 #[cryptbox(
-    id = "60000000-0000-4000-8000-000000000006",
+    id = "3b209afe-0a9e-4da7-8f23-13ebd5831149",
     field = UserEmail,
     bits = 128,
     query = str,

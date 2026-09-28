@@ -130,6 +130,11 @@ that stored data still needs: `EncryptionKeyring` for values and
 optional blind-index keyring. The **installed keys** back the process-wide forms,
 and a **key context** selects the keys of an automatic SQLx column.
 
+Which keyring protects which field and scope is the decision with the most
+silent failure modes; [choosing keyrings](choosing-keyrings.md) covers it in
+full, and [shredding a scope](shredding.md) covers what destroying one scope's
+keys does.
+
 Operations take keys directly. Explicit `Sealed::seal`, `open`, `prepare`,
 `with_index_with`, and `probes_with` calls accept any **key source**
 (`EncryptionKeySource` or `BlindIndexKeySource`) and never read the installed
@@ -142,8 +147,9 @@ the payments keyring when sealing an IBAN and the general keyring when sealing a
 email, or implement a key source that picks one by field or key scope. Opening
 with the wrong keyring fails loudly with `Error::UnknownEncryptionKey`, as long
 as key IDs are generated UUIDs, unique within a keyring, and never shared across
-keyrings. Sealing with the wrong keyring succeeds silently, so test the choice;
-[ADR-0006](adr/0006-keys-are-passed-in.md#consequences) lists the failure modes.
+keyrings. Sealing with the wrong keyring succeeds silently, so test the choice:
+[choosing keyrings](choosing-keyrings.md) lists the failure modes, the key-ID
+rules, and how to record and test custody.
 
 The process-wide forms (`Sealed::seal_global`, `open_global`, `with_index()`,
 `probes()`) are the explicit forms called with `keys::installed()`. Like the
@@ -209,8 +215,13 @@ updates need whatever conflict policy the application normally uses. Automatic
 sealing of one column would not maintain another column, so `Plain<F>` rejects a
 field that declares blind indexes.
 
-Blind indexes are derived per field in this release: they do not yet mix in a
-field's binding, so equal values in different tenants share index bytes.
+A blind index is domain-separated by its field ID and by the
+[index binding](wire-format.md#index-binding): the values of the binding's `keys`
+and `index` parts. Equal values in different key scopes therefore have different
+index bytes, and a query supplies those values as its index arguments. Bound-only
+parts and the record do not participate, because a query cannot know them, so
+equal values in two workspaces of one org do share index bytes. Choose part roles
+with that in mind; see [bindings](bindings.md#choose-a-role-for-each-part).
 
 Search availability also depends on retaining all readable index-key generations.
 An application can decrypt a row successfully yet omit it from lookup if the
@@ -230,13 +241,19 @@ preparation does not erase them, and decoded values have their own lifetimes.
 copies. The [ownership reference](ownership.md) defines exact behavior by type
 and buffer.
 
-Fields, value types, codecs, normalizers, and key sources are extensible. Bindings and
-padding policies are sealed to the built-in choices; a custom codec cannot add
-row or tenant authentication. The [custom-field example](../examples/custom_field/README.md)
+Fields, value types, codecs, normalizers, bindings, and key sources are
+extensible; padding policies are a closed set of built-in const policies. A
+codec or normalizer cannot add scope or record authentication: that comes from
+the field's [binding](bindings.md). The
+[custom-field example](../examples/custom_field/README.md)
 shows a zeroizing value, codec, normalizer, and key source working together.
 
 ## From design to a working application
 
+- [Bindings](bindings.md) covers declaring a scope, part roles, record IDs, and
+  where each bound value must come from.
+- [Choosing keyrings](choosing-keyrings.md) covers custody, key-ID rules, and
+  testing which keyring seals which field.
 - [Testing and diagnostics](testing.md) covers key isolation and sanitized failures.
 - [Legacy adoption](legacy-migration.md) addresses existing plaintext or foreign
   ciphertext; review its prerequisites before enabling new encrypted writes.

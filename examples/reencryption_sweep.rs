@@ -9,16 +9,16 @@ use cryptbox::{
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
-const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
-const CURRENT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
-const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("30000000-0000-4000-8000-000000000003");
-const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("40000000-0000-4000-8000-000000000004");
+const OLD_KEY_ID: KeyId = key_id!("d00b19c3-628a-4ad2-9540-8029c023b8bd");
+const CURRENT_KEY_ID: KeyId = key_id!("1877d82a-74b3-4463-95ff-a170379f46fd");
+const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("d8814ab5-4a84-4be7-9328-e81d4654edb5");
+const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("4ca42c63-8507-4525-abf0-6a70ddbec308");
 const BATCH_SIZE: i64 = 2;
 // This name identifies one fixed target pair and attempt, never every rotation.
 const MIGRATION_NAME: &str = "users-email-e2-i2-attempt-1";
 
 #[derive(Field)]
-#[cryptbox(id = "50000000-0000-4000-8000-000000000005", value = String)]
+#[cryptbox(id = "14b44964-cb41-4716-ab47-af19c86929a0", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -30,7 +30,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 
 #[derive(BlindIndexSpec)]
 #[cryptbox(
-    id = "60000000-0000-4000-8000-000000000006",
+    id = "0892ee51-dc3e-4863-9668-55cbf96f735c",
     field = UserEmail,
     bits = 128,
     query = str,

@@ -39,7 +39,7 @@ fn normalize_email(input: &str) -> std::result::Result<Zeroizing<Vec<u8>>, Blind
 
 #[derive(BlindIndexSpec)]
 #[cryptbox(
-    id = "80000000-0000-4000-8000-000000000008",
+    id = "a80824bc-f281-49ee-a2ed-0b6d213d44ce",
     field = UserEmail,
     bits = 128,
     query = str,
@@ -85,13 +85,13 @@ fn load_keyrings_from_env() -> Result<(EncryptionKeyring, BlindIndexKeyring)> {
     // These IDs are immutable companions of the provisioned files; never reassign them.
     let encryption_1 = || -> Result<EncryptionKey> {
         Ok(EncryptionKey::new(
-            key_id!("10000000-0000-4000-8000-000000000001"),
+            key_id!("a20b59cd-809b-4ff1-9776-4f4199687287"),
             *load_root_key(directory, "encryption-1.hex")?,
         ))
     };
     let index_1 = || -> Result<BlindIndexKey> {
         Ok(BlindIndexKey::new(
-            index_key_id!("30000000-0000-4000-8000-000000000003"),
+            index_key_id!("830040f0-0c49-4ab2-87e6-cb2184981776"),
             *load_root_key(directory, "index-1.hex")?,
         ))
     };
@@ -118,7 +118,7 @@ fn load_keyrings_from_env() -> Result<(EncryptionKeyring, BlindIndexKeyring)> {
         "1" => EncryptionKeyring::new(encryption_1()?, [])?,
         "2-only" => EncryptionKeyring::new(
             EncryptionKey::new(
-                key_id!("20000000-0000-4000-8000-000000000002"),
+                key_id!("34d4431d-cec6-453c-9a62-bec73c872420"),
                 *load_root_key(directory, "encryption-2.hex")?,
             ),
             [],
@@ -126,12 +126,12 @@ fn load_keyrings_from_env() -> Result<(EncryptionKeyring, BlindIndexKeyring)> {
         "staged" | "2" | "staged-3" | "3" => {
             let encryption_1 = encryption_1()?;
             let encryption_2 = EncryptionKey::new(
-                key_id!("20000000-0000-4000-8000-000000000002"),
+                key_id!("34d4431d-cec6-453c-9a62-bec73c872420"),
                 *load_root_key(directory, "encryption-2.hex")?,
             );
             if matches!(encryption_state.as_str(), "staged-3" | "3") {
                 let encryption_3 = EncryptionKey::new(
-                    key_id!("70000000-0000-4000-8000-000000000007"),
+                    key_id!("d80e4e43-9173-4dbd-95ce-e880ff054689"),
                     *load_root_key(directory, "encryption-3.hex")?,
                 );
                 if encryption_state == "staged-3" {
@@ -155,7 +155,7 @@ fn load_keyrings_from_env() -> Result<(EncryptionKeyring, BlindIndexKeyring)> {
         "1" => BlindIndexKeyring::new(index_1()?, [])?,
         "2-only" => BlindIndexKeyring::new(
             BlindIndexKey::new(
-                index_key_id!("40000000-0000-4000-8000-000000000004"),
+                index_key_id!("bcce33bf-947f-42a5-9a83-0fd3d4c3050f"),
                 *load_root_key(directory, "index-2.hex")?,
             ),
             [],
@@ -163,12 +163,12 @@ fn load_keyrings_from_env() -> Result<(EncryptionKeyring, BlindIndexKeyring)> {
         "staged" | "2" | "staged-3" | "3" => {
             let index_1 = index_1()?;
             let index_2 = BlindIndexKey::new(
-                index_key_id!("40000000-0000-4000-8000-000000000004"),
+                index_key_id!("bcce33bf-947f-42a5-9a83-0fd3d4c3050f"),
                 *load_root_key(directory, "index-2.hex")?,
             );
             if matches!(index_state.as_str(), "staged-3" | "3") {
                 let index_3 = BlindIndexKey::new(
-                    index_key_id!("90000000-0000-4000-8000-000000000009"),
+                    index_key_id!("9acf5222-d606-4d7b-b16f-0277cc947c40"),
                     *load_root_key(directory, "index-3.hex")?,
                 );
                 if index_state == "staged-3" {

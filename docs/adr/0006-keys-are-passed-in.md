@@ -4,6 +4,14 @@ status: accepted
 
 # Keys are passed in; choosing which keys is application code
 
+> Amended for the documentation mitigations (#96). The guide is
+> [`docs/choosing-keyrings.md`](../choosing-keyrings.md) and the destruction
+> procedure is [`docs/shredding.md`](../shredding.md). `Manifest::custody` and
+> `testing::assert_sealed_under` are not built yet (#89), so those two guide
+> sections document the equivalent practice: a committed custody table beside the
+> manifest snapshot, and `Sealed::key_id` plus cross-scope `UnknownEncryptionKey`
+> assertions. Retarget them when #89 lands.
+>
 > Amended when implemented (#100). The provider traits are removed entirely, not
 > reduced to `current_key()` / `key(id)`: the keyrings are the only key types.
 > A source returns its keyring by value, and cloning a keyring shares its keys.
@@ -61,11 +69,12 @@ time**:
 Mitigations, required in v1:
 
 - A "choosing keyrings" guide that states these failure modes and warns about
-  shredding.
+  shredding. **Done:** [`docs/choosing-keyrings.md`](../choosing-keyrings.md) and
+  [`docs/shredding.md`](../shredding.md).
 - `testing::assert_sealed_under::<F>(&sealed, &keyring)`, so applications can
-  unit-test their routing.
+  unit-test which keyring seals a field (#89).
 - `Manifest::custody::<F>("…")` declarative labels, so reviewers and auditors see
-  custody.
+  custody (#89).
 - `Error` is `#[non_exhaustive]`. `KeyScope`, the `keys` role, and KMS
   encryption-context helpers that take a `KeyScope` all exist in v1.
 - Per-scope shredding should not be relied on in production until an owner

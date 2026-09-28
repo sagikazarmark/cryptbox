@@ -87,6 +87,9 @@ missing_crate_level_docs = "deny"
 name = "first_field"
 
 [[example]]
+name = "tenant_field"
+
+[[example]]
 name = "blind_indexes"
 required-features = ["derive"]
 

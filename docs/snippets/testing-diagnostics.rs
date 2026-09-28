@@ -35,7 +35,7 @@ fn main() -> Result<(), Error> {
     // Public test key only; never use this fixture for real data.
     let keys = EncryptionKeyring::new(
         EncryptionKey::new(
-            cryptbox::key_id!("40000000-0000-4000-8000-000000000004"),
+            cryptbox::key_id!("0aff3b14-38c9-4c8e-a0ef-6f06b11c42ac"),
             [0x31; 32],
         ),
         [],
