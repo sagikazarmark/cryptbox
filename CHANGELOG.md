@@ -348,6 +348,21 @@
   `Postcard::encode` are unaffected, but stored plaintext that carries extra
   bytes, such as padding read as unpadded, no longer decodes.
 
+- Fix the AEAD cipher leaving a copy of each derived encryption key in memory
+  after sealing or opening: `chacha20poly1305` now zeroizes its key and
+  ChaCha20 state on drop.
+
+- Fix encrypting a message of exactly 274,877,906,880 bytes failing with
+  `Error::Internal` instead of `MessageTooLong`. Suite 1 now limits messages to
+  274,877,906,879 bytes, the most its AEAD implementation accepts, and rejects
+  envelopes implying a longer message with `MessageTooLong`.
+
+- `uuid` is now a required dependency: identifiers parse and format through it,
+  and the ID macros (`field_id!` and the others) check their literal with
+  `uuid::uuid!`, so they also accept the simple, braced, and URN forms. Parsing
+  with `FromStr` still accepts only the hyphenated form. The `uuid` feature still
+  gates `uuid::Uuid` binding parts and record IDs.
+
 - Add task-oriented adoption guidance, document authority and version distinctions,
   shared feature/platform reference, and reproducible documentation link checks.
 

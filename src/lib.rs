@@ -175,6 +175,7 @@ mod binding;
 mod blind;
 mod codec;
 mod crypto;
+mod envelope;
 mod error;
 mod field;
 mod id;
@@ -200,7 +201,7 @@ mod value;
 pub(crate) use binding::BindingDomain;
 pub use binding::{
     Args, Binding, FieldOnly, FromIndexValues, InRecord, KeyScope, PartKind, PartRole, PartSpec,
-    PartType, PartValue, PartValues, RecordId, ShapeFingerprint, Tenant, TenantId,
+    PartType, PartValue, PartValues, RecordId, Tenant, TenantId,
 };
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexList, inspect_blind_index,
@@ -212,13 +213,15 @@ pub use codec::Postcard;
 pub use codec::{Codec, Plaintext, Raw, Utf8};
 #[cfg(feature = "derive")]
 pub use cryptbox_derive::{Binding, BlindIndexSpec, Field, Plaintext, Record};
-pub use crypto::{
+pub use envelope::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, decrypt, encrypt, inspect_ciphertext,
     is_ciphertext, needs_reencryption, reencrypt,
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use field::Field;
-pub use id::{FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, PartId, SuiteId};
+pub use id::{
+    FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, PartId, ShapeFingerprint, SuiteId,
+};
 pub use key::{
     BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, EncryptionKey, EncryptionKeySource,
     EncryptionKeyring, GlobalKeys, KeyContext, Keys,
@@ -231,6 +234,7 @@ pub use value::{Plain, Sealed, Secret};
 // Paths that derive-generated code names; not public API.
 #[doc(hidden)]
 pub mod __private {
+    pub use uuid;
     pub use zeroize::Zeroizing;
 
     pub use crate::schema::{has_duplicate, writes_declared_indexes};

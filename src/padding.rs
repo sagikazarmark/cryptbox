@@ -83,11 +83,11 @@ impl Padding {
 
     /// Applies this policy to encoded plaintext.
     ///
-    /// Returns `None` when the policy stores plaintext unchanged, so the caller
-    /// can encrypt its own buffer without a copy.
-    pub(crate) fn pad(self, plaintext: &[u8]) -> Result<Option<Zeroizing<Vec<u8>>>, Error> {
+    /// Without padding the result borrows `plaintext`, so it is encrypted
+    /// without a copy.
+    pub(crate) fn pad(self, plaintext: &[u8]) -> Result<AeadPlaintext<'_>, Error> {
         match self.0 {
-            Policy::None => Ok(None),
+            Policy::None => Ok(AeadPlaintext::Unpadded(plaintext)),
             Policy::Block(size) => {
                 let length_with_marker = plaintext
                     .len()
@@ -96,14 +96,14 @@ impl Padding {
                 let blocks = length_with_marker.div_ceil(size);
                 let target = blocks.checked_mul(size).ok_or(Error::MessageTooLong)?;
 
-                Ok(Some(pad_to_length(plaintext, target)))
+                Ok(AeadPlaintext::Padded(pad_to_length(plaintext, target)))
             }
             Policy::Length(length) => {
                 if plaintext.len() >= length {
                     return Err(Error::PaddingOverflow);
                 }
 
-                Ok(Some(pad_to_length(plaintext, length)))
+                Ok(AeadPlaintext::Padded(pad_to_length(plaintext, length)))
             }
         }
     }
@@ -117,6 +117,28 @@ impl Padding {
         } else {
             Ok(plaintext)
         }
+    }
+}
+
+/// Encoded plaintext as the AEAD seals it: the codec's bytes, or those bytes padded.
+///
+/// The envelope's padded flag comes from the variant, so it cannot disagree
+/// with the bytes.
+pub(crate) enum AeadPlaintext<'a> {
+    Unpadded(&'a [u8]),
+    Padded(Zeroizing<Vec<u8>>),
+}
+
+impl AeadPlaintext<'_> {
+    pub(crate) fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Unpadded(bytes) => bytes,
+            Self::Padded(bytes) => bytes,
+        }
+    }
+
+    pub(crate) const fn is_padded(&self) -> bool {
+        matches!(self, Self::Padded(_))
     }
 }
 
@@ -158,13 +180,22 @@ pub(crate) fn unpad(mut plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u
 mod tests {
     use zeroize::Zeroizing;
 
-    use super::Padding;
+    use super::{AeadPlaintext, Padding};
     use crate::Error;
+
+    fn padded(plaintext: AeadPlaintext<'_>) -> Zeroizing<Vec<u8>> {
+        match plaintext {
+            AeadPlaintext::Padded(bytes) => bytes,
+            AeadPlaintext::Unpadded(_) => panic!("expected padded plaintext"),
+        }
+    }
 
     #[test]
     fn no_padding_preserves_plaintext() {
         let plaintext = Zeroizing::new(b"exact bytes".to_vec());
-        assert_eq!(Padding::NONE.pad(&plaintext).unwrap(), None);
+        let unpadded = Padding::NONE.pad(&plaintext).unwrap();
+        assert!(!unpadded.is_padded());
+        assert_eq!(unpadded.bytes(), b"exact bytes");
         assert_eq!(
             Padding::NONE.unpad(plaintext).unwrap().as_slice(),
             b"exact bytes"
@@ -178,14 +209,14 @@ mod tests {
 
     #[test]
     fn block_padding_matches_iso_7816_4_bytes() {
-        let padded = Padding::block(8).pad(b"abc").unwrap().unwrap();
+        let padded = padded(Padding::block(8).pad(b"abc").unwrap());
 
         assert_eq!(padded.as_slice(), b"abc\x80\0\0\0\0");
     }
 
     #[test]
     fn fixed_length_padding_matches_iso_7816_4_bytes() {
-        let padded = Padding::length(6).pad(b"abc").unwrap().unwrap();
+        let padded = padded(Padding::length(6).pad(b"abc").unwrap());
 
         assert_eq!(padded.as_slice(), b"abc\x80\0\0");
     }
@@ -194,7 +225,7 @@ mod tests {
     fn block_padding_always_adds_a_marker_and_round_trips() {
         for length in 0..=33 {
             let plaintext = vec![b'x'; length];
-            let padded = Padding::block(16).pad(&plaintext).unwrap().unwrap();
+            let padded = padded(Padding::block(16).pad(&plaintext).unwrap());
 
             assert_eq!(padded.len(), (length / 16 + 1) * 16);
             assert_eq!(
@@ -208,7 +239,7 @@ mod tests {
     fn fixed_length_padding_fills_the_target_and_rejects_overflow() {
         for length in 0..32 {
             let plaintext = vec![b'x'; length];
-            let padded = Padding::length(32).pad(&plaintext).unwrap().unwrap();
+            let padded = padded(Padding::length(32).pad(&plaintext).unwrap());
 
             assert_eq!(padded.len(), 32);
             assert_eq!(
@@ -217,15 +248,15 @@ mod tests {
             );
         }
 
-        assert_eq!(
+        assert!(matches!(
             Padding::length(32).pad(&[b'x'; 32]),
             Err(Error::PaddingOverflow)
-        );
+        ));
     }
 
     #[test]
     fn padded_plaintext_can_be_unpadded_with_different_parameters() {
-        let padded = Padding::block(16).pad(b"portable").unwrap().unwrap();
+        let padded = padded(Padding::block(16).pad(b"portable").unwrap());
 
         assert_eq!(
             Padding::block(64).unpad(padded.clone()).unwrap().as_slice(),

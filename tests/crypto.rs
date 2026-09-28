@@ -296,6 +296,7 @@ fn malformed_and_unknown_envelopes_fail_strictly() {
     let ciphertext = encrypt(EmailField::ID, Padding::NONE, b"value", &keys).unwrap();
     let mut truncated = ciphertext;
     truncated.truncate(30);
+    assert_eq!(inspect_ciphertext(&truncated), Err(Error::InvalidEnvelope));
     assert_eq!(
         decrypt(EmailField::ID, &truncated, &keys),
         Err(Error::InvalidEnvelope)
@@ -303,6 +304,10 @@ fn malformed_and_unknown_envelopes_fail_strictly() {
 
     let mut unsupported = encrypt(EmailField::ID, Padding::NONE, b"value", &keys).unwrap();
     unsupported[5] = 0xff;
+    assert_eq!(
+        inspect_ciphertext(&unsupported),
+        Err(Error::UnsupportedSuite(cryptbox::SuiteId::new(0xff)))
+    );
     assert_eq!(
         decrypt(EmailField::ID, &unsupported, &keys),
         Err(Error::UnsupportedSuite(cryptbox::SuiteId::new(0xff)))

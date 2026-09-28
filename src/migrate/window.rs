@@ -3,7 +3,7 @@ use crate::{
     EncryptionKeySource, Error, Field, Sealed,
     binding::{shape_fingerprint, with_domain},
     blind::{IndexArgs, probes_in},
-    crypto::decrypt_bound,
+    envelope::decrypt_bound,
     inspect_ciphertext,
 };
 

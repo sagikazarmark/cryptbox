@@ -1,8 +1,8 @@
-use std::{fmt, hash::Hash};
+use std::hash::Hash;
 
 use sha2::{Digest, Sha256};
 
-use crate::{Error, FieldId, PartId};
+use crate::{Error, FieldId, PartId, ShapeFingerprint};
 
 mod args;
 mod part;
@@ -570,56 +570,16 @@ impl<'a> BindingShape<'a> {
         let mut fingerprint = [0_u8; 8];
         fingerprint.copy_from_slice(&digest[..8]);
 
-        ShapeFingerprint(fingerprint)
+        ShapeFingerprint::from_bytes(fingerprint)
     }
 }
 
-/// A 64-bit fingerprint of a binding's shape: its part IDs, kinds, and roles,
-/// and whether it binds a record.
+/// A binding resolved for the cryptographic core, or its blind-index restriction.
 ///
-/// A scoped ciphertext header carries the fingerprint of the shape it was
-/// sealed with. It is diagnostic only: a reader always takes the expected shape
-/// from its own field, and reports [`Error::BindingMismatch`] when the stored
-/// fingerprint disagrees. See the [wire format].
-///
-#[doc = concat!(
-    "[wire format]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#shape-fingerprint",
-)]
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub struct ShapeFingerprint([u8; 8]);
-
-impl ShapeFingerprint {
-    /// Creates a fingerprint from its stored 8-byte representation.
-    #[must_use]
-    pub const fn from_bytes(bytes: [u8; 8]) -> Self {
-        Self(bytes)
-    }
-
-    /// Returns the stored 8-byte representation.
-    #[must_use]
-    pub const fn as_bytes(&self) -> &[u8; 8] {
-        &self.0
-    }
-}
-
-impl fmt::Display for ShapeFingerprint {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0
-            .iter()
-            .try_for_each(|byte| write!(formatter, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for ShapeFingerprint {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_tuple("ShapeFingerprint")
-            .field(&format_args!("{self}"))
-            .finish()
-    }
-}
-
-/// Canonical binding bytes passed to the cryptographic core.
+/// The encoded bytes are the domain separator that encryption mixes into key
+/// derivation and AAD, and that a blind index mixes into its MAC input. The
+/// field and key scope select the keyring; the shape fingerprint, set only for
+/// a scoped binding, is recorded in the envelope and checked by readers.
 #[derive(Clone, Debug)]
 pub(crate) struct BindingDomain {
     field: FieldId,

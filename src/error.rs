@@ -1,4 +1,4 @@
-use crate::{IndexId, IndexKeyId, KeyId, SuiteId};
+use crate::{IndexId, IndexKeyId, KeyId, SuiteId, crypto};
 
 /// The non-sensitive category of a codec failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -183,5 +183,16 @@ pub enum Error {
 impl From<BlindIndexError> for Error {
     fn from(_: BlindIndexError) -> Self {
         Self::BlindIndexNormalizationFailed
+    }
+}
+
+impl From<crypto::Error> for Error {
+    fn from(error: crypto::Error) -> Self {
+        match error {
+            crypto::Error::Internal => Self::Internal,
+            crypto::Error::MessageTooLong => Self::MessageTooLong,
+            crypto::Error::AuthenticationFailed => Self::AuthenticationFailed,
+            crypto::Error::RandomnessUnavailable => Self::RandomnessUnavailable,
+        }
     }
 }
