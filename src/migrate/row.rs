@@ -4,8 +4,8 @@ use zeroize::Zeroizing;
 
 use crate::{
     Binding, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, Field, FieldOnly, IndexKeyId, KeyScope, RecordId,
-    binding::{ShapeFingerprint, shape_fingerprint},
+    EncryptionKeySource, Error, Field, FieldOnly, IndexKeyId, KeyScope, RecordId, ShapeFingerprint,
+    binding::shape_fingerprint,
     blind::{current_key_id, derive_value},
     crypto::{decrypt_bound, encrypt_bound, needs_reencryption_bound},
     inspect_blind_index, inspect_ciphertext,

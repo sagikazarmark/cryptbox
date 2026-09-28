@@ -200,7 +200,7 @@ mod value;
 pub(crate) use binding::BindingDomain;
 pub use binding::{
     Args, Binding, FieldOnly, FromIndexValues, InRecord, KeyScope, PartKind, PartRole, PartSpec,
-    PartType, PartValue, PartValues, RecordId, ShapeFingerprint, Tenant, TenantId,
+    PartType, PartValue, PartValues, RecordId, Tenant, TenantId,
 };
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexList, inspect_blind_index,
@@ -218,7 +218,9 @@ pub use crypto::{
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use field::Field;
-pub use id::{FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, PartId, SuiteId};
+pub use id::{
+    FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, PartId, ShapeFingerprint, SuiteId,
+};
 pub use key::{
     BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, EncryptionKey, EncryptionKeySource,
     EncryptionKeyring, GlobalKeys, KeyContext, Keys,

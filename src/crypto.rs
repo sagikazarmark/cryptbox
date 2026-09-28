@@ -104,7 +104,7 @@ trait EncryptionSuite: Sync {
     fn seal(
         &self,
         plaintext: &AeadPlaintext<'_>,
-        shape_fingerprint: Option<ShapeFingerprint>,
+        fingerprint: Option<ShapeFingerprint>,
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error>;
@@ -454,19 +454,14 @@ impl XChaCha20Poly1305Suite {
     fn seal_with_nonce(
         &self,
         plaintext: &AeadPlaintext<'_>,
-        shape_fingerprint: Option<ShapeFingerprint>,
+        fingerprint: Option<ShapeFingerprint>,
         binding: &[u8],
         key: &EncryptionKey,
         nonce: [u8; NONCE_LEN],
     ) -> Result<Vec<u8>, Error> {
         validate_plaintext_len(plaintext.bytes().len())?;
 
-        let header = envelope_header(
-            self.id(),
-            plaintext.is_padded(),
-            key.id(),
-            shape_fingerprint,
-        );
+        let header = envelope_header(self.id(), plaintext.is_padded(), key.id(), fingerprint);
         let nonce = XNonce::from(nonce);
         let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
         prefix.extend_from_slice(&header);
@@ -513,7 +508,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
     fn seal(
         &self,
         plaintext: &AeadPlaintext<'_>,
-        shape_fingerprint: Option<ShapeFingerprint>,
+        fingerprint: Option<ShapeFingerprint>,
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
@@ -522,7 +517,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         let mut nonce = [0_u8; NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(|_| Error::RandomnessUnavailable)?;
 
-        self.seal_with_nonce(plaintext, shape_fingerprint, binding, key, nonce)
+        self.seal_with_nonce(plaintext, fingerprint, binding, key, nonce)
     }
 
     fn open(
@@ -570,10 +565,10 @@ fn envelope_header(
     suite_id: SuiteId,
     padded: bool,
     key_id: KeyId,
-    shape_fingerprint: Option<ShapeFingerprint>,
+    fingerprint: Option<ShapeFingerprint>,
 ) -> Vec<u8> {
     let mut flags = if padded { FLAG_PADDED } else { 0 };
-    if shape_fingerprint.is_some() {
+    if fingerprint.is_some() {
         flags |= FLAG_SCOPED;
     }
 
@@ -581,7 +576,7 @@ fn envelope_header(
     header.extend_from_slice(MAGIC);
     header.extend_from_slice(&[FORMAT_VERSION, suite_id.get(), flags]);
     header.extend_from_slice(key_id.as_bytes());
-    if let Some(fingerprint) = shape_fingerprint {
+    if let Some(fingerprint) = fingerprint {
         header.extend_from_slice(fingerprint.as_bytes());
     }
 
