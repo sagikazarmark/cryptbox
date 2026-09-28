@@ -24,9 +24,12 @@ use crate::{
 /// - `binding`: the [shape fingerprint](crate::ShapeFingerprint) its scoped
 ///   headers carry, or `field-only`, followed by each part's ID, kind, and role
 ///   in part-ID order;
-/// - `shred unit`: the [`keys`](crate::PartRole::Keys) parts whose root keys
-///   can be destroyed on their own, joined by `+`, or `keyring` when there are
-///   none and only the whole keyring can be;
+/// - `shred unit`: the finest unit that destroying root keys can shred, if the
+///   application stores root keys per [key scope](crate::KeyScope): the
+///   [`keys`](crate::PartRole::Keys) parts, joined by `+`, or `keyring` when
+///   there are none and only the whole keyring can be. The library cannot see
+///   how keys are stored, so a coarser choice, such as one keyring for every
+///   tenant, shreds only that coarser unit; say so in the custody label;
 /// - `custody`: the label given with [`Self::custody`], if any.
 ///
 /// Each index lists its index ID, field ID, bits, and normalizer name.
@@ -279,7 +282,7 @@ impl fmt::Display for Manifest {
             if let Some(custody) = &field.custody {
                 write!(formatter, "  custody: ")?;
                 for character in custody.chars() {
-                    if character.is_control() {
+                    if character.is_control() || matches!(character, '\u{2028}' | '\u{2029}') {
                         write!(formatter, "{}", character.escape_debug())?;
                     } else {
                         write!(formatter, "{character}")?;

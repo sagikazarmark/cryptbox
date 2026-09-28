@@ -198,7 +198,11 @@ only.
 **Shred unit**:
 The finest `keys` part whose root keys are stored independently. Destroying
 those root keys makes every value sealed under them unreadable; bound-only and
-`index` parts are never shredded on their own.
+`index` parts are never shredded on their own. The schema manifest reports the
+finest possible unit, the key scope (all `keys` parts, or the whole keyring
+when there are none), since only the application knows how its root keys are
+stored.
+<!-- Agent guidance: the manifest's shred unit assumes root keys per key scope; a coarser application choice belongs in the field's custody label. -->
 
 **Suite**:
 A complete encryption construction identified by a suite ID, specifying key

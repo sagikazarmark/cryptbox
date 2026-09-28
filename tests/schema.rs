@@ -139,12 +139,12 @@ field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
 
 #[test]
 fn a_custody_label_stays_on_one_line() {
-    let manifest = Manifest::new().custody::<Nickname>("org's \"general\"\nKMS");
+    let manifest = Manifest::new().custody::<Nickname>("org's \"general\"\nKMS\u{2028}EU");
 
     assert!(
         manifest
             .to_string()
-            .ends_with("  custody: org's \"general\"\\nKMS\n")
+            .ends_with("  custody: org's \"general\"\\nKMS\\u{2028}EU\n")
     );
 }
 

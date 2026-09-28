@@ -207,7 +207,7 @@ fn a_custom_source_chooses_keyrings_by_field() {
 }
 
 #[test]
-fn a_routing_test_accepts_values_sealed_under_the_expected_keyring() {
+fn a_keyring_test_accepts_values_sealed_under_the_expected_keyring() {
     let previous = EncryptionKey::new(PREVIOUS_KEY_ID, [3; 32]);
     let payments = keyring(PAYMENTS_KEY_ID, 2);
     let keys = ByField {
@@ -228,8 +228,8 @@ fn a_routing_test_accepts_values_sealed_under_the_expected_keyring() {
     expected = "field 50000000-0000-4000-8000-000000000005 is sealed under key \
                 10000000-0000-4000-8000-000000000001, which the keyring does not hold"
 )]
-fn a_routing_test_fails_for_a_value_sealed_under_another_keyring() {
-    // Misrouted: the IBAN goes to the general keyring.
+fn a_keyring_test_fails_for_a_value_sealed_under_another_keyring() {
+    // The wrong choice: the IBAN goes to the general keyring.
     let keys = ByField {
         general: keyring(GENERAL_KEY_ID, 1),
         payments: keyring(PAYMENTS_KEY_ID, 2),
