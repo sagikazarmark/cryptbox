@@ -174,10 +174,13 @@ its field declares; `#[derive(Record)]` rejects a record that omits one.
 
 **Schema manifest**:
 A reviewable listing of registered fields and blind indexes with their
-persistent schema: field ID, value type, codec ID, padding, index ID,
-precision, and normalizer name.
+persistent schema: field ID, codec ID, padding, record flag, binding shape
+(fingerprint, parts, kinds, and roles), shred unit, index ID, precision, and
+normalizer name. It names IDs, never Rust types, so its output is the same on
+every toolchain. A field may carry a custody label, a declarative note of which
+keys the application passes for it.
 Applications compare it with a committed snapshot in CI.
-<!-- Agent guidance: the codec ID and normalizer name are reported, never stored in ciphertext or indexes. -->
+<!-- Agent guidance: the codec ID and normalizer name are reported, never stored in ciphertext or indexes. A custody label is documentation, not routing: choosing keyrings stays application code (ADR-0006), and `testing::assert_sealed_under` is how an application tests that choice. -->
 
 **Scope**:
 The declared parts of a binding, such as a tenant, or an org plus a workspace

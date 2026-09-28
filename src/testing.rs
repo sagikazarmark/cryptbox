@@ -1,6 +1,7 @@
-//! Test helpers that pin persistent schema to committed fixtures.
+//! Test helpers that pin persistent schema to committed fixtures and check
+//! which keyring protects a value.
 
-use crate::{Codec, Field};
+use crate::{Codec, EncryptionKeyring, Field, Sealed};
 
 /// Asserts that field `F` encodes `value` as exactly the hex bytes in `expected`,
 /// and decodes those bytes back to a value that encodes identically.
@@ -62,5 +63,78 @@ pub fn assert_encoding<F: Field>(value: &F::Value, expected: &str) {
         "decoding changed: expected {}, got {}",
         hex::encode(&expected),
         hex::encode(reencoded.as_slice()),
+    );
+}
+
+/// Asserts that `sealed` names a key that `keyring` holds, current or previous.
+///
+/// Choosing which keyring protects a field or scope is application code, and a
+/// wrong choice fails silently at write time: the value seals and opens with the
+/// wrong keys, and survives destroying the right ones. Seal a value through the
+/// application's own key source and assert the keyring it should have chosen.
+/// See [choosing keyrings].
+///
+/// Key IDs are unique within a keyring and never shared across keyrings, so the
+/// envelope's key ID names the keyring. The check reads that ID without opening
+/// the value.
+///
+#[doc = concat!(
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0006-keys-are-passed-in.md#consequences",
+)]
+///
+/// # Examples
+///
+/// ```
+/// use cryptbox::{
+///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId, FieldOnly,
+///     KeyScope, Padding, Sealed, Utf8, testing::assert_sealed_under,
+/// };
+///
+/// struct Iban;
+///
+/// impl Field for Iban {
+///     const ID: FieldId = cryptbox::field_id!("50000000-0000-4000-8000-000000000005");
+///     const PADDING: Padding = Padding::NONE;
+///     const RECORD: bool = false;
+///     type Value = String;
+///     type Codec = Utf8;
+///     type Binding = FieldOnly;
+///     type Indexes = ();
+/// }
+///
+/// /// Keeps payment fields under their own keyring.
+/// struct AppKeys {
+///     general: EncryptionKeyring,
+///     payments: EncryptionKeyring,
+/// }
+///
+/// impl EncryptionKeySource for AppKeys {
+///     fn encryption_keyring(&self, field: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+///         Ok(if field == Iban::ID { self.payments.clone() } else { self.general.clone() })
+///     }
+/// }
+///
+/// let keys = AppKeys {
+///     general: EncryptionKeyring::new(EncryptionKey::generate()?, [])?,
+///     payments: EncryptionKeyring::new(EncryptionKey::generate()?, [])?,
+/// };
+///
+/// let iban = Sealed::<Iban>::seal(&"DE89370400440532013000".to_owned(), (), &keys)?;
+///
+/// assert_sealed_under::<Iban>(&iban, &keys.payments);
+/// # Ok::<(), cryptbox::Error>(())
+/// ```
+///
+/// # Panics
+///
+/// Panics when `keyring` does not hold the key that `sealed` names. The message
+/// includes the field ID and the key ID, never the value.
+#[track_caller]
+pub fn assert_sealed_under<F: Field>(sealed: &Sealed<F>, keyring: &EncryptionKeyring) {
+    let key = sealed.key_id();
+    assert!(
+        keyring.get(key).is_some(),
+        "field {} is sealed under key {key}, which the keyring does not hold",
+        F::ID,
     );
 }

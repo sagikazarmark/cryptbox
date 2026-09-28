@@ -66,10 +66,14 @@ Stored bytes do not describe this schema, so check it in tests:
   derives and attributes. A failure means stored values would change; plan a
   migration or revert.
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered field
-  (ID, value type, codec ID, padding) and index (ID, field, bits, normalizer).
-  Compare its `Display` output with a committed snapshot, and
+  (ID, codec ID, padding, whether it binds a record, the binding's shape
+  fingerprint and parts with their kinds and roles, and the shred unit) and
+  index (ID, field, bits, normalizer). `Manifest::custody::<F>("…")` adds a
+  custody label to a field, such as `"payments KMS, one key per org"`, so
+  reviewers and auditors see which keys the application passes for it.
+  Compare the `Display` output with a committed snapshot, and
   assert that `duplicates()` is empty. A snapshot diff needs review: for
-  example, a codec ID or normalizer change needs a migration.
+  example, a codec ID, normalizer, or binding change needs a migration.
 - **Unique IDs.** `cryptbox::assert_unique_ids!(HomeAddress, BillingAddress)`
   fails compilation when listed fields share a field ID, and
   `assert_unique_ids!(indexes: EmailLookup, EmailDomain)` does the same for
@@ -78,10 +82,16 @@ Stored bytes do not describe this schema, so check it in tests:
 The [custom-field example](../examples/custom_field/main.rs)'s
 `stored_bytes_and_schema_match_their_committed_fixtures` test runs the golden-bytes
 and manifest checks.
-The manifest names markers and value types with `std::any::type_name`. Its
-output includes module paths, including private ones such as
-`cryptbox::value::Secret`, and Rust does not guarantee it across compiler
-versions. Review such a diff, then update the snapshot.
+The manifest names IDs, never Rust types, so its output is the same on every
+toolchain and does not change when a marker is renamed or moved.
+
+A custody label is declarative: the library cannot see which keyring an
+application chooses. Test the choice itself with
+`cryptbox::testing::assert_sealed_under::<F>(&sealed, &keyring)`, which fails
+when a value sealed through the application's key source names a key that the
+expected keyring does not hold. A value sealed under the wrong keyring
+otherwise seals and opens without error, and outlives the destruction of the
+keys that should have protected it.
 
 Padding is not persistent schema. The envelope records, under authentication,
 whether its payload is padded, and readers remove padding only when that flag is

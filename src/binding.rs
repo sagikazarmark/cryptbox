@@ -276,7 +276,6 @@ fn project<'v>(
 
 /// The shape fingerprint of binding `B`, with or without a record, as a scoped
 /// header carries it; `None` for a field-only binding.
-#[cfg(feature = "migrate")]
 pub(crate) fn shape_fingerprint<B: Binding>(record: bool) -> Option<ShapeFingerprint> {
     (record || !B::PARTS.is_empty()).then(|| BindingShape::new(B::PARTS, record).fingerprint())
 }

@@ -245,11 +245,13 @@ mod tests {
         assert_eq!(
             manifest.to_string(),
             "\
-field dcaa3c69-1767-49a1-8476-36555eaf54bf custom_field::Handle
-  value: cryptbox::value::Secret<alloc::string::String>
+field dcaa3c69-1767-49a1-8476-36555eaf54bf
   codec: handle/1
   padding: none
-index 6c0e20d5-cb30-4b84-8dd1-995f872b417c custom_field::HandleEquality
+  record: no
+  binding: field-only
+  shred unit: keyring
+index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
   field: dcaa3c69-1767-49a1-8476-36555eaf54bf
   bits: 128
   normalizer: handle-lowercase/1

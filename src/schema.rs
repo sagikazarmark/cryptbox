@@ -1,53 +1,73 @@
 //! A reviewable listing of persistent schema for CI snapshot tests.
 
-use std::{any::type_name, fmt};
+use std::{
+    any::{TypeId, type_name},
+    fmt,
+};
 
-use crate::{BlindIndexSpec, Codec, Field, FieldId, IndexId, Padding};
+use crate::{
+    Binding, BlindIndexSpec, Codec, Field, FieldId, IndexId, Padding, PartKind, PartRole, PartSpec,
+    ShapeFingerprint, binding::shape_fingerprint,
+};
 
 /// Lists fields and blind indexes with their persistent schema.
 ///
 /// Register every field and index explicitly, render the manifest with
 /// [`Display`](fmt::Display), and compare the result with a committed
-/// snapshot in a test. A change to a field's ID, value type, codec ID, or
-/// padding, or to an index's ID, field, bits, or normalizer, then shows up as a
+/// snapshot in a test. A change to persistent schema then shows up as a
 /// snapshot diff for review. Assert that [`Self::duplicates`] is empty as well.
 ///
-/// Markers and value types are named by [`std::any::type_name`]. Its output
-/// includes module paths and may change between compiler versions; review
-/// such a diff and update the snapshot.
+/// Each field lists:
+///
+/// - its field ID, codec ID, and padding;
+/// - `record`: whether it binds a record;
+/// - `binding`: the [shape fingerprint](crate::ShapeFingerprint) its scoped
+///   headers carry, or `field-only`, followed by each part's ID, kind, and role
+///   in part-ID order;
+/// - `shred unit`: the [`keys`](crate::PartRole::Keys) parts whose root keys
+///   can be destroyed on their own, joined by `+`, or `keyring` when there are
+///   none and only the whole keyring can be;
+/// - `custody`: the label given with [`Self::custody`], if any.
+///
+/// Each index lists its index ID, field ID, bits, and normalizer name.
+///
+/// The output names IDs, never Rust types, so it is the same on every
+/// toolchain and survives renaming or moving a marker. The value type is not
+/// listed: the codec ID stands for its stored bytes, and golden-bytes fixtures
+/// ([`assert_encoding`](crate::testing::assert_encoding)) pin them.
 ///
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Utf8, schema::Manifest};
+/// use cryptbox::{Field, FieldId, Padding, Tenant, Utf8, schema::Manifest};
 ///
 /// struct Nickname;
 ///
 /// impl Field for Nickname {
 ///     const ID: FieldId = cryptbox::field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 ///     const PADDING: Padding = Padding::block(16);
-///     const RECORD: bool = false;
+///     const RECORD: bool = true;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Binding = Tenant;
 ///     type Indexes = ();
 /// }
 ///
-/// let manifest = Manifest::new().field::<Nickname>();
+/// let manifest = Manifest::new()
+///     .field::<Nickname>()
+///     .custody::<Nickname>("general KMS, one key per tenant");
 ///
 /// assert!(manifest.duplicates().is_empty());
-///
-/// // field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01 my_app::Nickname
-/// //   value: alloc::string::String
-/// //   codec: utf8
-/// //   padding: block(16)
-/// let snapshot = manifest.to_string();
-/// assert!(snapshot.starts_with("field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01 "));
-/// assert!(snapshot.ends_with("::Nickname
-///   value: alloc::string::String
+/// assert_eq!(manifest.to_string(), "\
+/// field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
 ///   codec: utf8
 ///   padding: block(16)
-/// "));
+///   record: yes
+///   binding: d15ae034a90d7270
+///     part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
+///   shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
+///   custody: general KMS, one key per tenant
+/// ");
 /// ```
 #[derive(Debug, Default)]
 pub struct Manifest {
@@ -57,8 +77,9 @@ pub struct Manifest {
 
 #[derive(Debug)]
 struct IndexEntry {
+    marker: TypeId,
+    name: &'static str,
     id: IndexId,
-    marker: &'static str,
     field: FieldId,
     bits: u16,
     normalizer: &'static str,
@@ -66,11 +87,15 @@ struct IndexEntry {
 
 #[derive(Debug)]
 struct FieldEntry {
+    marker: TypeId,
+    name: &'static str,
     id: FieldId,
-    marker: &'static str,
-    value: &'static str,
     codec: &'static str,
     padding: Padding,
+    record: bool,
+    parts: &'static [PartSpec],
+    fingerprint: Option<ShapeFingerprint>,
+    custody: Option<String>,
 }
 
 impl Manifest {
@@ -81,30 +106,70 @@ impl Manifest {
     }
 
     /// Registers field `F`.
+    ///
+    /// Registering it again changes nothing.
     #[must_use]
     pub fn field<F: Field>(mut self) -> Self {
-        self.fields.push(FieldEntry {
-            id: F::ID,
-            marker: type_name::<F>(),
-            value: type_name::<F::Value>(),
-            codec: <F::Codec as Codec<F::Value>>::ID,
-            padding: F::PADDING,
-        });
+        self.field_entry::<F>();
         self
+    }
+
+    /// Labels which keys protect field `F`, registering it if needed.
+    ///
+    /// The library cannot see which keyring an application passes for a field,
+    /// so the manifest records custody declaratively: the label appears in the
+    /// snapshot for reviewers and auditors, and a later label replaces an
+    /// earlier one. Name the key custody, such as `"payments KMS, per org"`,
+    /// never key material. Line breaks are escaped to keep the label on one
+    /// line. Test that the application passes those keys with
+    /// [`assert_sealed_under`](crate::testing::assert_sealed_under).
+    #[must_use]
+    pub fn custody<F: Field>(mut self, label: impl Into<String>) -> Self {
+        self.field_entry::<F>().custody = Some(label.into());
+        self
+    }
+
+    fn field_entry<F: Field>(&mut self) -> &mut FieldEntry {
+        let marker = TypeId::of::<F>();
+        let position = self
+            .fields
+            .iter()
+            .position(|field| field.marker == marker)
+            .unwrap_or_else(|| {
+                self.fields.push(FieldEntry {
+                    marker,
+                    name: type_name::<F>(),
+                    id: F::ID,
+                    codec: <F::Codec as Codec<F::Value>>::ID,
+                    padding: F::PADDING,
+                    record: F::RECORD,
+                    parts: <F::Binding as Binding>::PARTS,
+                    fingerprint: shape_fingerprint::<F::Binding>(F::RECORD),
+                    custody: None,
+                });
+                self.fields.len() - 1
+            });
+
+        &mut self.fields[position]
     }
 
     /// Registers blind index `I`.
     ///
-    /// Register its field separately with [`Self::field`].
+    /// Register its field separately with [`Self::field`]. Registering it again
+    /// changes nothing.
     #[must_use]
     pub fn index<I: BlindIndexSpec>(mut self) -> Self {
-        self.indexes.push(IndexEntry {
-            id: I::ID,
-            marker: type_name::<I>(),
-            field: <I::Field as Field>::ID,
-            bits: I::BITS,
-            normalizer: I::NORMALIZER,
-        });
+        let marker = TypeId::of::<I>();
+        if self.indexes.iter().all(|index| index.marker != marker) {
+            self.indexes.push(IndexEntry {
+                marker,
+                name: type_name::<I>(),
+                id: I::ID,
+                field: <I::Field as Field>::ID,
+                bits: I::BITS,
+                normalizer: I::NORMALIZER,
+            });
+        }
         self
     }
 
@@ -112,12 +177,14 @@ impl Manifest {
     ///
     /// Markers that share a field ID are one logical field and can read each
     /// other's ciphertext. That is occasionally deliberate, but usually a copied
-    /// ID, so assert that this is empty in a test.
+    /// ID, so assert that this is empty in a test. Each duplicate names the
+    /// markers by [`std::any::type_name`] to help find the copy; the manifest's
+    /// own output lists only the ID.
     #[must_use]
     pub fn duplicates(&self) -> Vec<Duplicate> {
-        let fields = shared_ids(self.fields.iter().map(|field| (field.id, field.marker)))
+        let fields = shared_ids(self.fields.iter().map(|field| (field.id, field.name)))
             .map(|(id, markers)| Duplicate::Field { id, markers });
-        let indexes = shared_ids(self.indexes.iter().map(|index| (index.id, index.marker)))
+        let indexes = shared_ids(self.indexes.iter().map(|index| (index.id, index.name)))
             .map(|(id, markers)| Duplicate::Index { id, markers });
 
         fields.chain(indexes).collect()
@@ -157,7 +224,7 @@ impl fmt::Display for Duplicate {
     }
 }
 
-/// Groups distinct markers by ID, in order of first appearance, keeping only shared IDs.
+/// Groups marker names by ID, in order of first appearance, keeping only shared IDs.
 fn shared_ids<Id: PartialEq>(
     entries: impl Iterator<Item = (Id, &'static str)>,
 ) -> impl Iterator<Item = (Id, Vec<&'static str>)> {
@@ -165,8 +232,7 @@ fn shared_ids<Id: PartialEq>(
 
     for (id, marker) in entries {
         match groups.iter_mut().find(|(group, _)| *group == id) {
-            Some((_, markers)) if !markers.contains(&marker) => markers.push(marker),
-            Some(_) => {}
+            Some((_, markers)) => markers.push(marker),
             None => groups.push((id, vec![marker])),
         }
     }
@@ -177,24 +243,89 @@ fn shared_ids<Id: PartialEq>(
 impl fmt::Display for Manifest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         for field in &self.fields {
-            writeln!(formatter, "field {} {}", field.id, field.marker)?;
-            writeln!(formatter, "  value: {}", field.value)?;
+            writeln!(formatter, "field {}", field.id)?;
             writeln!(formatter, "  codec: {}", field.codec)?;
             writeln!(formatter, "  padding: {}", field.padding)?;
+            writeln!(formatter, "  record: {}", yes_no(field.record))?;
+            match field.fingerprint {
+                Some(fingerprint) => writeln!(formatter, "  binding: {fingerprint}")?,
+                None => writeln!(formatter, "  binding: field-only")?,
+            }
+            for part in field.parts {
+                writeln!(
+                    formatter,
+                    "    part {} {} {}",
+                    part.id(),
+                    kind_name(part.kind()),
+                    role_name(part.role()),
+                )?;
+            }
+            write!(formatter, "  shred unit: ")?;
+            let mut keys = field
+                .parts
+                .iter()
+                .filter(|part| part.role() == PartRole::Keys);
+            match keys.next() {
+                // Without `keys` parts, only the whole keyring can be destroyed.
+                None => writeln!(formatter, "keyring")?,
+                Some(first) => {
+                    write!(formatter, "{}", first.id())?;
+                    for part in keys {
+                        write!(formatter, " + {}", part.id())?;
+                    }
+                    writeln!(formatter)?;
+                }
+            }
+            if let Some(custody) = &field.custody {
+                write!(formatter, "  custody: ")?;
+                for character in custody.chars() {
+                    if character.is_control() {
+                        write!(formatter, "{}", character.escape_debug())?;
+                    } else {
+                        write!(formatter, "{character}")?;
+                    }
+                }
+                writeln!(formatter)?;
+            }
         }
 
         for index in &self.indexes {
-            writeln!(formatter, "index {} {}", index.id, index.marker)?;
+            writeln!(formatter, "index {}", index.id)?;
             writeln!(formatter, "  field: {}", index.field)?;
             writeln!(formatter, "  bits: {}", index.bits)?;
             writeln!(formatter, "  normalizer: {}", index.normalizer)?;
         }
 
+        // Type names are not stable across compilers, so the snapshot names IDs only.
         for duplicate in self.duplicates() {
-            writeln!(formatter, "{duplicate}")?;
+            match duplicate {
+                Duplicate::Field { id, .. } => writeln!(formatter, "duplicate field ID {id}")?,
+                Duplicate::Index { id, .. } => writeln!(formatter, "duplicate index ID {id}")?,
+            }
         }
 
         Ok(())
+    }
+}
+
+// Manifest spellings are snapshot text: keep them stable.
+const fn yes_no(flag: bool) -> &'static str {
+    if flag { "yes" } else { "no" }
+}
+
+const fn kind_name(kind: PartKind) -> &'static str {
+    match kind {
+        PartKind::Uuid => "uuid",
+        PartKind::I64 => "i64",
+        PartKind::Bytes => "bytes",
+    }
+}
+
+const fn role_name(role: PartRole) -> &'static str {
+    match role {
+        PartRole::Keys => "keys",
+        PartRole::Index => "index",
+        PartRole::Bound => "bound",
     }
 }
 

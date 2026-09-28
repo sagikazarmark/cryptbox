@@ -72,6 +72,12 @@ compiles and deploys silently. Pin the schema with golden-bytes fixtures
 (`testing::assert_encoding`), a `schema::Manifest` snapshot, and
 `assert_unique_ids!`. See [guarding the schema in CI](integration.md#guarding-the-schema-in-ci).
 
+Choosing which keyring protects a field or scope is application code, and a
+wrong choice seals and opens without error. Seal a value through the
+application's key source and check it with
+`testing::assert_sealed_under::<F>(&sealed, &expected_keyring)`, which fails
+when the value names a key that the keyring does not hold.
+
 ## Diagnostics
 
 Allowlist the stable `Field::ID`, a caller-owned static label, operation and sanitized

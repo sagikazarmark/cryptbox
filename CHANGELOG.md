@@ -322,6 +322,19 @@
   parses it back (`Error::InvalidObjectKey` otherwise), and gives a key
   scope's prefix for admin queries. See `docs/restate.md` for what the journal
   exposes and the org-shredding runbook.
+- **Breaking:** the schema manifest shows bindings and custody instead of Rust
+  types. Each field lists whether it binds a record, its binding's shape
+  fingerprint (or `field-only`), each part's ID, kind, and role, and its shred
+  unit: its `keys` parts, or `keyring` when it has none. The marker and value
+  type names, which `std::any::type_name` did not keep stable across
+  compilers, are removed, so snapshots are the same on every toolchain; update
+  committed snapshots once. Duplicate lines name only the ID;
+  `Manifest::duplicates` still names the markers. Registering a field or index
+  again changes nothing. Add `Manifest::custody::<F>("…")`, a declarative
+  custody label shown with the field, and
+  `testing::assert_sealed_under::<F>(&sealed, &keyring)`, which fails when a
+  value names a key that the keyring does not hold, so applications can test
+  which keyring their key source chooses.
 - Add `Prepared::into_sealed` and `BlindIndexRef::to_blind_index`, which take
   owned values out of a preparation.
 - `Json` decodes every float to exactly the value that was encoded

@@ -9,7 +9,7 @@ use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId, FieldOnly,
     IndexId, IndexKeyId, KeyId, KeyScope, Keys, Padding, Raw, Sealed, Tenant, TenantId, field_id,
-    index_id, index_key_id, inspect_blind_index, key_id,
+    index_id, index_key_id, inspect_blind_index, key_id, testing::assert_sealed_under,
 };
 use zeroize::Zeroizing;
 
@@ -204,6 +204,40 @@ fn a_custom_source_chooses_keyrings_by_field() {
         iban.open((), &keys.general),
         Err(Error::UnknownEncryptionKey(PAYMENTS_KEY_ID))
     );
+}
+
+#[test]
+fn a_routing_test_accepts_values_sealed_under_the_expected_keyring() {
+    let previous = EncryptionKey::new(PREVIOUS_KEY_ID, [3; 32]);
+    let payments = keyring(PAYMENTS_KEY_ID, 2);
+    let keys = ByField {
+        general: keyring(GENERAL_KEY_ID, 1),
+        payments: EncryptionKeyring::new(previous.clone(), []).unwrap(),
+    };
+    let rotated = EncryptionKeyring::new(payments.current().clone(), [previous]).unwrap();
+
+    let iban = Sealed::<Iban>::seal(&b"DE89370400440532013000".to_vec(), (), &keys).unwrap();
+
+    assert_sealed_under::<Iban>(&iban, &keys.payments);
+    // A previous key of the keyring still counts.
+    assert_sealed_under::<Iban>(&iban, &rotated);
+}
+
+#[test]
+#[should_panic(
+    expected = "field 50000000-0000-4000-8000-000000000005 is sealed under key \
+                10000000-0000-4000-8000-000000000001, which the keyring does not hold"
+)]
+fn a_routing_test_fails_for_a_value_sealed_under_another_keyring() {
+    // Misrouted: the IBAN goes to the general keyring.
+    let keys = ByField {
+        general: keyring(GENERAL_KEY_ID, 1),
+        payments: keyring(PAYMENTS_KEY_ID, 2),
+    };
+    let iban =
+        Sealed::<Iban>::seal(&b"DE89370400440532013000".to_vec(), (), &keys.general).unwrap();
+
+    assert_sealed_under::<Iban>(&iban, &keys.payments);
 }
 
 /// An application source that keeps one keyring per tenant.
