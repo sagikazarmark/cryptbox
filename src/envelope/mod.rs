@@ -222,6 +222,8 @@ mod tests {
     const WORKSPACE: PartSpec = PartSpec::new([0x22; 16], PartKind::Bytes, PartRole::Bound);
     const SCOPE: [PartSpec; 2] = [TENANT, WORKSPACE];
 
+    // Fixed inputs make the known-answer vectors in docs/wire-format.md reproducible.
+    // Sealing outside tests always draws its nonce from `crypto::random_nonce`.
     fn vector_key() -> EncryptionKey {
         EncryptionKey::new(
             crate::key_id!("11111111-2222-4333-8444-555555555555"),
@@ -448,22 +450,12 @@ mod tests {
 
     #[test]
     fn experimental_padded_format_2_vector_is_stable() {
-        let key = EncryptionKey::new(
-            crate::key_id!("11111111-2222-4333-8444-555555555555"),
-            [0x11; 32],
-        );
-        let mut nonce = [0_u8; NONCE_LEN];
-
-        for (value, byte) in nonce.iter_mut().zip(0_u8..) {
-            *value = byte;
-        }
-
         let envelope = seal_with_nonce(
             b"cryptbox vector",
             Padding::block(16),
             &BindingDomain::field(VECTOR_FIELD),
-            &key,
-            nonce,
+            &vector_key(),
+            vector_nonce(),
         )
         .unwrap();
 
@@ -475,22 +467,12 @@ mod tests {
 
     #[test]
     fn experimental_format_2_vector_is_stable() {
-        let key = EncryptionKey::new(
-            crate::key_id!("11111111-2222-4333-8444-555555555555"),
-            [0x11; 32],
-        );
-        let mut nonce = [0_u8; NONCE_LEN];
-
-        for (value, byte) in nonce.iter_mut().zip(0_u8..) {
-            *value = byte;
-        }
-
         let envelope = seal_with_nonce(
             b"cryptbox vector",
             Padding::NONE,
             &BindingDomain::field(VECTOR_FIELD),
-            &key,
-            nonce,
+            &vector_key(),
+            vector_nonce(),
         )
         .unwrap();
 
