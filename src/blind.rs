@@ -739,28 +739,42 @@ fn derive_normalized<Spec: BlindIndexSpec>(
     key: &BlindIndexKey,
 ) -> Result<BlindIndex<Spec>, Error> {
     assert_valid_bits::<Spec>();
-    let bits = Spec::BITS;
+    let stored = derive_index(normalized, domain.as_bytes(), Spec::ID, Spec::BITS, key)?;
+
+    Ok(BlindIndex::from_validated_bytes(stored))
+}
+
+/// Derives the stored index of `normalized` under `binding`, the encoded index
+/// binding, for the index `index_id` at `bits` of precision.
+fn derive_index(
+    normalized: &[u8],
+    binding: &[u8],
+    index_id: IndexId,
+    bits: u16,
+    key: &BlindIndexKey,
+) -> Result<Vec<u8>, Error> {
     let header = index_header(key.id(), bits);
-
-    // Both HKDF and HMAC commit to this canonical order; changing it breaks stored lookups.
-    // See ../docs/wire-format.md#blind-index-recipe.
-    let mut context = Vec::with_capacity(header.len() + domain.as_bytes().len() + 16);
-    context.extend_from_slice(&header);
-    context.extend_from_slice(domain.as_bytes());
-    context.extend_from_slice(Spec::ID.as_bytes());
-
-    let index_key = hkdf_sha256_32(key.bytes(), &[INDEX_KEY_LABEL, &context])?;
     let normalized_len = u64::try_from(normalized.len()).map_err(|_| Error::InvalidBlindIndex)?;
-    let normalized_len = normalized_len.to_be_bytes();
 
+    // HKDF and HMAC both commit to context = header || binding || index_id, in this
+    // order; changing it breaks stored lookups. See ../docs/wire-format.md#blind-index-recipe.
+    let index_key = hkdf_sha256_32(
+        key.bytes(),
+        &[INDEX_KEY_LABEL, &header, binding, index_id.as_bytes()],
+    )?;
     let digest = hmac_sha256(
         &index_key[..],
-        &[INDEX_VALUE_LABEL, &context, &normalized_len, normalized],
+        &[
+            INDEX_VALUE_LABEL,
+            &header,
+            binding,
+            index_id.as_bytes(),
+            &normalized_len.to_be_bytes(),
+            normalized,
+        ],
     )?;
 
-    Ok(BlindIndex::from_validated_bytes(encode_index(
-        &header, &digest, bits,
-    )))
+    Ok(encode_index(&header, &digest, bits))
 }
 
 const fn valid_bits(bits: usize) -> bool {
