@@ -99,9 +99,12 @@ trait EncryptionSuite: Sync {
 
     fn validate_payload(&self, payload: &[u8]) -> Result<(), Error>;
 
+    // Builds the header from its own suite ID and the key's ID, so neither can
+    // disagree with the key it seals under.
     fn seal(
         &self,
-        header: &[u8],
+        padded: bool,
+        shape_fingerprint: Option<ShapeFingerprint>,
         plaintext: &[u8],
         binding: &[u8],
         key: &EncryptionKey,
@@ -170,16 +173,11 @@ pub(crate) fn encrypt_bound(
 ) -> Result<Vec<u8>, Error> {
     let key = keyring(keys, domain)?.current().clone();
     let suite = active_suite();
-    let header = envelope_header(
-        suite.id(),
-        padding.is_padded(),
-        key.id(),
-        domain.fingerprint(),
-    );
+    let fingerprint = domain.fingerprint();
 
     match padding.pad(plaintext)? {
-        Some(padded) => suite.seal(&header, &padded, domain.as_bytes(), &key),
-        None => suite.seal(&header, plaintext, domain.as_bytes(), &key),
+        Some(padded) => suite.seal(true, fingerprint, &padded, domain.as_bytes(), &key),
+        None => suite.seal(false, fingerprint, plaintext, domain.as_bytes(), &key),
     }
 }
 
@@ -334,14 +332,14 @@ fn seal_with_nonce(
     key: &EncryptionKey,
     nonce: [u8; NONCE_LEN],
 ) -> Result<Vec<u8>, Error> {
-    let header = envelope_header(
-        EXPERIMENTAL_XCHACHA20_POLY1305,
+    XCHACHA20_POLY1305_SUITE.seal_with_nonce(
         padded,
-        key.id(),
         domain.fingerprint(),
-    );
-
-    XCHACHA20_POLY1305_SUITE.seal_with_nonce(&header, plaintext, domain.as_bytes(), key, nonce)
+        plaintext,
+        domain.as_bytes(),
+        key,
+        nonce,
+    )
 }
 
 /// Returns the key ID of an envelope that already passed structural validation.
@@ -454,7 +452,8 @@ fn validate_plaintext_len(len: usize) -> Result<(), Error> {
 impl XChaCha20Poly1305Suite {
     fn seal_with_nonce(
         &self,
-        header: &[u8],
+        padded: bool,
+        shape_fingerprint: Option<ShapeFingerprint>,
         plaintext: &[u8],
         binding: &[u8],
         key: &EncryptionKey,
@@ -462,12 +461,13 @@ impl XChaCha20Poly1305Suite {
     ) -> Result<Vec<u8>, Error> {
         validate_plaintext_len(plaintext.len())?;
 
+        let header = envelope_header(self.id(), padded, key.id(), shape_fingerprint);
         let nonce = XNonce::from(nonce);
         let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
-        prefix.extend_from_slice(header);
+        prefix.extend_from_slice(&header);
         prefix.extend_from_slice(&nonce);
 
-        let operational_key = derive_encryption_key(key, binding, header[4], self.id())?;
+        let operational_key = derive_encryption_key(key, binding, FORMAT_VERSION, self.id())?;
         let cipher =
             XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
         let aad = envelope_aad(&prefix, binding);
@@ -509,7 +509,8 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
 
     fn seal(
         &self,
-        header: &[u8],
+        padded: bool,
+        shape_fingerprint: Option<ShapeFingerprint>,
         plaintext: &[u8],
         binding: &[u8],
         key: &EncryptionKey,
@@ -519,7 +520,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         let mut nonce = [0_u8; NONCE_LEN];
         getrandom::fill(&mut nonce).map_err(|_| Error::RandomnessUnavailable)?;
 
-        self.seal_with_nonce(header, plaintext, binding, key, nonce)
+        self.seal_with_nonce(padded, shape_fingerprint, plaintext, binding, key, nonce)
     }
 
     fn open(
