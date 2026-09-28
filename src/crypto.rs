@@ -5,7 +5,7 @@
 //! own the recipes: which labels, key material, and AAD go in.
 
 use chacha20poly1305::aead::{AeadInOut, inout::InOutBuf};
-use chacha20poly1305::{KeyInit, Tag, XChaCha20Poly1305, XNonce};
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -64,7 +64,7 @@ pub(crate) fn seal_into(
 ) -> Result<(), Error> {
     check_message_len(plaintext.len())?;
 
-    let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| Error::Internal)?;
+    let cipher = XChaCha20Poly1305::new(key.into());
     let start = out.len();
     let end = start
         .checked_add(plaintext.len())
@@ -72,7 +72,7 @@ pub(crate) fn seal_into(
     out.resize(end, 0);
     let buffer = InOutBuf::new(plaintext, &mut out[start..]).map_err(|_| Error::Internal)?;
     let tag = cipher
-        .encrypt_inout_detached(&XNonce::from(*nonce), aad, buffer)
+        .encrypt_inout_detached(nonce.into(), aad, buffer)
         .map_err(|_| Error::Internal)?;
     out.extend_from_slice(&tag);
 
@@ -92,13 +92,13 @@ pub(crate) fn open(
     let (ciphertext, tag) = ciphertext
         .split_last_chunk::<TAG_LEN>()
         .ok_or(Error::AuthenticationFailed)?;
-    let cipher = XChaCha20Poly1305::new_from_slice(key).map_err(|_| Error::Internal)?;
+    let cipher = XChaCha20Poly1305::new(key.into());
     // Plaintext is only ever written here; erase it on drop.
     // See ../docs/wire-format.md#key-and-buffer-lifetime.
     let mut plaintext = Zeroizing::new(vec![0_u8; ciphertext.len()]);
     let buffer = InOutBuf::new(ciphertext, &mut plaintext[..]).map_err(|_| Error::Internal)?;
     cipher
-        .decrypt_inout_detached(&XNonce::from(*nonce), aad, buffer, &Tag::from(*tag))
+        .decrypt_inout_detached(nonce.into(), aad, buffer, tag.into())
         .map_err(|_| Error::AuthenticationFailed)?;
 
     Ok(plaintext)
