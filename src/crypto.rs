@@ -439,19 +439,16 @@ fn validate_plaintext_len(len: usize) -> Result<(), Error> {
 }
 
 impl XChaCha20Poly1305Suite {
-    // Seal and open must derive the same key and AAD from the same inputs.
+    // Seal and open must derive the same key from the same inputs.
     fn cipher(
         &self,
         key: &EncryptionKey,
         binding: &[u8],
         format_version: u8,
-        prefix: &[u8],
-    ) -> Result<(XChaCha20Poly1305, Vec<u8>), Error> {
+    ) -> Result<XChaCha20Poly1305, Error> {
         let operational_key = derive_encryption_key(key, binding, format_version, self.id())?;
-        let cipher =
-            XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)?;
 
-        Ok((cipher, envelope_aad(prefix, binding)))
+        XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)
     }
 
     fn seal_with_nonce(
@@ -475,7 +472,8 @@ impl XChaCha20Poly1305Suite {
         prefix.extend_from_slice(&header);
         prefix.extend_from_slice(&nonce);
 
-        let (cipher, aad) = self.cipher(key, binding, FORMAT_VERSION, &prefix)?;
+        let cipher = self.cipher(key, binding, FORMAT_VERSION)?;
+        let aad = envelope_aad(&prefix, binding);
         // The working copy can still contain plaintext if sealing fails; erase on every exit.
         // See ../docs/wire-format.md#key-and-buffer-lifetime.
         let mut sealed = Zeroizing::new(plaintext.bytes().to_vec());
@@ -543,7 +541,8 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         prefix.extend_from_slice(header);
         prefix.extend_from_slice(nonce);
 
-        let (cipher, aad) = self.cipher(key, binding, envelope.info.format_version, &prefix)?;
+        let cipher = self.cipher(key, binding, envelope.info.format_version)?;
+        let aad = envelope_aad(&prefix, binding);
         // Never return unauthenticated bytes, even if the AEAD mutates before failing.
         // Zeroizing also covers that error path: ../docs/wire-format.md#key-and-buffer-lifetime.
         let mut plaintext = Zeroizing::new(payload[NONCE_LEN..].to_vec());
