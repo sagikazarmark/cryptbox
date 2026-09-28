@@ -185,3 +185,14 @@ impl From<BlindIndexError> for Error {
         Self::BlindIndexNormalizationFailed
     }
 }
+
+impl From<crate::crypto::Error> for Error {
+    fn from(error: crate::crypto::Error) -> Self {
+        match error {
+            crate::crypto::Error::Internal => Self::Internal,
+            crate::crypto::Error::MessageTooLong => Self::MessageTooLong,
+            crate::crypto::Error::AuthenticationFailed => Self::AuthenticationFailed,
+            crate::crypto::Error::RandomnessUnavailable => Self::RandomnessUnavailable,
+        }
+    }
+}

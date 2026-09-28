@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 use crate::{
     Binding, BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring,
     Error, Field, FieldOnly, IndexId, IndexKeyId,
-    envelope::{hkdf_sha256_32, hmac_sha256},
+    crypto::{hkdf_sha256_32, hmac_sha256},
     keys,
 };
 

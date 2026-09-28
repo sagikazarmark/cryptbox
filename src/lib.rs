@@ -174,6 +174,7 @@ pub struct FirstFieldDoctests;
 mod binding;
 mod blind;
 mod codec;
+mod crypto;
 mod envelope;
 mod error;
 mod field;

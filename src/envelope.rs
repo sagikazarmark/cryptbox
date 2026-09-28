@@ -1,9 +1,6 @@
-use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce, aead::AeadInOut};
-use hkdf::Hkdf;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
+use crate::crypto::{self, NONCE_LEN, TAG_LEN};
 use crate::padding::{AeadPlaintext, unpad};
 use crate::{
     BindingDomain, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldId, KeyId,
@@ -23,13 +20,9 @@ const FORMAT_1_VERSION: u8 = 1;
 const FORMAT_1_HEADER_LEN: usize = 22;
 const FLAG_PADDED: u8 = 0x01;
 const FLAG_SCOPED: u8 = 0x02;
-const NONCE_LEN: usize = 24;
-const TAG_LEN: usize = 16;
-const MAX_PLAINTEXT_LEN: u64 = 274_877_906_880;
 
 // Labels, including NULs, are persistent domain separators, not display strings.
 // See ../docs/wire-format.md#encryption-recipe.
-const HKDF_SALT: &[u8] = b"cryptbox/hkdf-sha256/v1\0";
 const ENCRYPTION_KEY_LABEL: &[u8] = b"cryptbox/encryption-key/v1\0";
 const ENVELOPE_AAD_LABEL: &[u8] = b"cryptbox/envelope-aad/v1\0";
 
@@ -414,7 +407,7 @@ fn derive_encryption_key(
     info.extend_from_slice(root.id().as_bytes());
     info.extend_from_slice(binding);
 
-    hkdf_sha256_32(root.bytes(), &info)
+    Ok(crypto::hkdf_sha256_32(root.bytes(), &info)?)
 }
 
 fn envelope_aad(prefix: &[u8], binding: &[u8]) -> Vec<u8> {
@@ -428,29 +421,7 @@ fn envelope_aad(prefix: &[u8], binding: &[u8]) -> Vec<u8> {
     aad
 }
 
-fn validate_plaintext_len(len: usize) -> Result<(), Error> {
-    let len = u64::try_from(len).map_err(|_| Error::MessageTooLong)?;
-
-    if len > MAX_PLAINTEXT_LEN {
-        return Err(Error::MessageTooLong);
-    }
-
-    Ok(())
-}
-
 impl XChaCha20Poly1305Suite {
-    // Seal and open must derive the same key from the same inputs.
-    fn cipher(
-        &self,
-        key: &EncryptionKey,
-        binding: &[u8],
-        format_version: u8,
-    ) -> Result<XChaCha20Poly1305, Error> {
-        let operational_key = derive_encryption_key(key, binding, format_version, self.id())?;
-
-        XChaCha20Poly1305::new_from_slice(&operational_key[..]).map_err(|_| Error::Internal)
-    }
-
     fn seal_with_nonce(
         &self,
         plaintext: &AeadPlaintext<'_>,
@@ -459,22 +430,14 @@ impl XChaCha20Poly1305Suite {
         key: &EncryptionKey,
         nonce: [u8; NONCE_LEN],
     ) -> Result<Vec<u8>, Error> {
-        validate_plaintext_len(plaintext.bytes().len())?;
-
         let header = envelope_header(self.id(), plaintext.is_padded(), key.id(), fingerprint);
-        let nonce = XNonce::from(nonce);
         let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
         prefix.extend_from_slice(&header);
         prefix.extend_from_slice(&nonce);
 
-        let cipher = self.cipher(key, binding, FORMAT_VERSION)?;
+        let operational_key = derive_encryption_key(key, binding, FORMAT_VERSION, self.id())?;
         let aad = envelope_aad(&prefix, binding);
-        // The working copy can still contain plaintext if sealing fails; erase on every exit.
-        // See ../docs/wire-format.md#key-and-buffer-lifetime.
-        let mut sealed = Zeroizing::new(plaintext.bytes().to_vec());
-        cipher
-            .encrypt_in_place(&nonce, &aad, &mut *sealed)
-            .map_err(|_| Error::Internal)?;
+        let sealed = crypto::seal(&operational_key, &nonce, &aad, plaintext.bytes())?;
 
         let capacity = prefix
             .len()
@@ -502,7 +465,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
             return Err(Error::InvalidEnvelope);
         }
 
-        validate_plaintext_len(payload.len() - minimum_len)
+        Ok(crypto::check_message_len(payload.len() - minimum_len)?)
     }
 
     fn seal(
@@ -512,10 +475,7 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
-        // Fresh OS randomness avoids caller-managed nonce reuse; failure must stop encryption.
-        // See ../docs/wire-format.md#encryption-recipe.
-        let mut nonce = [0_u8; NONCE_LEN];
-        getrandom::fill(&mut nonce).map_err(|_| Error::RandomnessUnavailable)?;
+        let nonce = crypto::random_nonce()?;
 
         self.seal_with_nonce(plaintext, fingerprint, binding, key, nonce)
     }
@@ -529,23 +489,17 @@ impl EncryptionSuite for XChaCha20Poly1305Suite {
         let (header, payload) = (envelope.header, envelope.suite_payload);
         self.validate_payload(payload)?;
 
-        let nonce: &XNonce = payload[..NONCE_LEN]
-            .try_into()
-            .map_err(|_| Error::InvalidEnvelope)?;
+        let (nonce, ciphertext) = payload.split_at(NONCE_LEN);
+        let nonce: &[u8; NONCE_LEN] = nonce.try_into().map_err(|_| Error::InvalidEnvelope)?;
         let mut prefix = Vec::with_capacity(header.len() + NONCE_LEN);
         prefix.extend_from_slice(header);
         prefix.extend_from_slice(nonce);
 
-        let cipher = self.cipher(key, binding, envelope.info.format_version)?;
+        let operational_key =
+            derive_encryption_key(key, binding, envelope.info.format_version, self.id())?;
         let aad = envelope_aad(&prefix, binding);
-        // Never return unauthenticated bytes, even if the AEAD mutates before failing.
-        // Zeroizing also covers that error path: ../docs/wire-format.md#key-and-buffer-lifetime.
-        let mut plaintext = Zeroizing::new(payload[NONCE_LEN..].to_vec());
-        cipher
-            .decrypt_in_place(nonce, &aad, &mut *plaintext)
-            .map_err(|_| Error::AuthenticationFailed)?;
 
-        Ok(plaintext)
+        Ok(crypto::open(&operational_key, nonce, &aad, ciphertext)?)
     }
 }
 
@@ -583,51 +537,11 @@ fn envelope_header(
     header
 }
 
-pub(crate) fn hkdf_sha256_32(
-    input_key_material: &[u8],
-    info: &[u8],
-) -> Result<Zeroizing<[u8; 32]>, Error> {
-    hkdf_sha256_32_with_salt(input_key_material, HKDF_SALT, info)
-}
-
-fn hkdf_sha256_32_with_salt(
-    input_key_material: &[u8],
-    salt: &[u8],
-    info: &[u8],
-) -> Result<Zeroizing<[u8; 32]>, Error> {
-    let (mut pseudo_random_key, hkdf) = Hkdf::<Sha256>::extract(Some(salt), input_key_material);
-    // HKDF retains keyed expansion state, so the separately returned PRK is no longer needed.
-    // Keep outputs zeroizing too: ../docs/wire-format.md#key-and-buffer-lifetime.
-    pseudo_random_key.as_mut_slice().zeroize();
-    let mut output = Zeroizing::new([0_u8; 32]);
-
-    hkdf.expand(info, &mut output[..])
-        .map_err(|_| Error::Internal)?;
-
-    Ok(output)
-}
-
-pub(crate) fn hmac_sha256(key: &[u8], input: &[&[u8]]) -> Result<Zeroizing<[u8; 32]>, Error> {
-    let mut hmac = Hmac::<Sha256>::new_from_slice(key).map_err(|_| Error::Internal)?;
-
-    for component in input {
-        hmac.update(component);
-    }
-
-    let digest = hmac.finalize();
-    let mut output = Zeroizing::new([0_u8; 32]);
-    output.copy_from_slice(digest.as_bytes());
-
-    Ok(output)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        NONCE_LEN, decrypt_bound, encrypt_bound, hkdf_sha256_32_with_salt, inspect_ciphertext,
-        seal_with_nonce,
-    };
+    use super::{decrypt_bound, encrypt_bound, inspect_ciphertext, seal_with_nonce};
     use crate::binding::{BindingShape, PartKind, PartRole, PartSpec, PartValue};
+    use crate::crypto::NONCE_LEN;
     use crate::{
         BindingDomain, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldId,
         KeyId, KeyScope, Padding,
@@ -861,20 +775,6 @@ mod tests {
         assert_eq!(
             decrypt_bound(&reader, Padding::NONE, &envelope, &keyring()).unwrap_err(),
             Error::AuthenticationFailed
-        );
-    }
-
-    #[test]
-    fn hkdf_matches_rfc_5869_case_one() {
-        let input_key_material = [0x0b; 22];
-        let salt = hex::decode("000102030405060708090a0b0c").unwrap();
-        let info = hex::decode("f0f1f2f3f4f5f6f7f8f9").unwrap();
-
-        let output = hkdf_sha256_32_with_salt(&input_key_material, &salt, &info).unwrap();
-
-        assert_eq!(
-            hex::encode(output.as_slice()),
-            "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf"
         );
     }
 
