@@ -116,7 +116,7 @@ pub(crate) fn decrypt_bound(
 
     // Only the authenticated flag decides unpadding; the current policy must not,
     // or policy changes would silently misread stored values.
-    // See ../../docs/adr/0002-authenticated-padding-flag.md.
+    // See ../docs/adr/0002-authenticated-padding-flag.md.
     match parsed.info.padded() {
         Some(true) => unpad(plaintext),
         Some(false) => Ok(plaintext),
@@ -134,7 +134,7 @@ fn keyring(
 
 // The expected shape always comes from the reader, never from the envelope; the
 // fingerprint only names the mismatch before any key or AEAD work.
-// See ../../docs/wire-format.md#reader-rules.
+// See ../docs/wire-format.md#reader-rules.
 fn check_shape(info: CiphertextInfo, domain: &BindingDomain) -> Result<(), Error> {
     if info.shape_fingerprint() != domain.fingerprint() {
         return Err(Error::BindingMismatch);
