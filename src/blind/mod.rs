@@ -5,17 +5,15 @@ use zeroize::Zeroizing;
 
 use crate::{
     Binding, BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring,
-    Error, Field, FieldOnly, IndexId, IndexKeyId,
-    crypto::{hkdf_sha256_32, hmac_sha256},
-    keys,
+    Error, Field, FieldOnly, IndexId, IndexKeyId, keys,
 };
 
-const INDEX_FORMAT_VERSION: u8 = 1;
-const INDEX_HEADER_LEN: usize = 19;
-const MAX_INDEX_BITS: usize = 256;
-// NUL-terminated labels separate key and value roles: ../docs/wire-format.md#blind-index-recipe.
-const INDEX_KEY_LABEL: &[u8] = b"cryptbox/blind-index-key/v1\0";
-const INDEX_VALUE_LABEL: &[u8] = b"cryptbox/blind-index-value/v1\0";
+mod format;
+mod recipe;
+
+pub use format::{BlindIndexInfo, inspect_blind_index};
+use format::{stored_key_id, valid_bits};
+use recipe::derive_index;
 
 /// The query-time arguments of `Spec`: its field binding's `keys` and `index` part values.
 pub(crate) type IndexArgs<Spec> =
@@ -449,7 +447,7 @@ impl<Spec: BlindIndexSpec> BlindIndex<Spec> {
         let bytes = bytes.into();
         let info = inspect_blind_index(&bytes)?;
 
-        if info.bits != usize::from(Spec::BITS) {
+        if info.bits() != usize::from(Spec::BITS) {
             return Err(Error::InvalidBlindIndex);
         }
 
@@ -473,10 +471,7 @@ impl<Spec> BlindIndex<Spec> {
 
     /// Returns the unauthenticated index-key generation named by validated bytes.
     pub(crate) fn index_key_id(&self) -> IndexKeyId {
-        let mut id = [0_u8; 16];
-        id.copy_from_slice(&self.bytes[1..17]);
-
-        IndexKeyId::from_bytes(id)
+        stored_key_id(&self.bytes)
     }
 
     /// Consumes the wrapper and returns its stored representation.
@@ -558,79 +553,6 @@ impl<Spec> fmt::Debug for BlindIndexRef<'_, Spec> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("BlindIndexRef([REDACTED])")
     }
-}
-
-/// Structurally parsed, unauthenticated metadata from a stored blind-index value.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BlindIndexInfo {
-    format_version: u8,
-    index_key_id: IndexKeyId,
-    bits: usize,
-}
-
-impl BlindIndexInfo {
-    /// Returns the stored representation's format version.
-    #[must_use]
-    pub const fn format_version(self) -> u8 {
-        self.format_version
-    }
-
-    /// Returns the unauthenticated index-key generation named by the value.
-    #[must_use]
-    pub const fn index_key_id(self) -> IndexKeyId {
-        self.index_key_id
-    }
-
-    /// Returns the intentionally retained digest precision.
-    #[must_use]
-    pub const fn bits(self) -> usize {
-        self.bits
-    }
-}
-
-/// Parses and structurally validates a stored blind-index representation.
-///
-/// This does not authenticate the returned key ID, precision, or digest. Treat
-/// all metadata as untrusted. To check index consistency, decrypt the associated
-/// ciphertext and call [`BlindIndexSpec::is_consistent_with`] with the intended
-/// specification and a keyring holding only allowed key generations; it
-/// recomputes and compares the complete stored representation. A match is
-/// consistency at the configured precision, not proof of provenance or freshness.
-/// [`BlindIndexSpec::verify_candidate`] only compares plaintexts; it does not perform
-/// this recomputation or authenticate stored index metadata.
-///
-/// # Errors
-///
-/// Returns [`Error::InvalidBlindIndex`] for malformed or noncanonical bytes.
-pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
-    if bytes.len() < INDEX_HEADER_LEN || bytes[0] != INDEX_FORMAT_VERSION {
-        return Err(Error::InvalidBlindIndex);
-    }
-
-    let bits = usize::from(u16::from_be_bytes([bytes[17], bytes[18]]));
-    validate_bits(bits)?;
-    let digest_len = bits.div_ceil(8);
-
-    if bytes.len() != INDEX_HEADER_LEN + digest_len {
-        return Err(Error::InvalidBlindIndex);
-    }
-
-    if bits % 8 != 0 {
-        let unused_bits = 8 - (bits % 8);
-        let unused_mask = (1_u8 << unused_bits) - 1;
-        if bytes.last().copied().ok_or(Error::InvalidBlindIndex)? & unused_mask != 0 {
-            return Err(Error::InvalidBlindIndex);
-        }
-    }
-
-    let mut key_id = [0_u8; 16];
-    key_id.copy_from_slice(&bytes[1..17]);
-
-    Ok(BlindIndexInfo {
-        format_version: INDEX_FORMAT_VERSION,
-        index_key_id: IndexKeyId::from_bytes(key_id),
-        bits,
-    })
 }
 
 /// Derives the current stored index of `Spec` in `domain`, an index domain of
@@ -740,53 +662,7 @@ fn derive_normalized<Spec: BlindIndexSpec>(
     key: &BlindIndexKey,
 ) -> Result<BlindIndex<Spec>, Error> {
     assert_valid_bits::<Spec>();
-    let bits = Spec::BITS;
-    let mut header = [0_u8; INDEX_HEADER_LEN];
-    header[0] = INDEX_FORMAT_VERSION;
-    header[1..17].copy_from_slice(key.id().as_bytes());
-    header[17..19].copy_from_slice(&bits.to_be_bytes());
-
-    // Both HKDF and HMAC commit to this canonical order; changing it breaks stored lookups.
-    // See ../docs/wire-format.md#blind-index-recipe.
-    let mut context = Vec::with_capacity(header.len() + domain.as_bytes().len() + 16);
-    context.extend_from_slice(&header);
-    context.extend_from_slice(domain.as_bytes());
-    context.extend_from_slice(Spec::ID.as_bytes());
-
-    let index_key = hkdf_sha256_32(key.bytes(), &[INDEX_KEY_LABEL, &context])?;
-    let normalized_len = u64::try_from(normalized.len()).map_err(|_| Error::InvalidBlindIndex)?;
-    let normalized_len = normalized_len.to_be_bytes();
-
-    let digest = hmac_sha256(
-        &index_key[..],
-        &[INDEX_VALUE_LABEL, &context, &normalized_len, normalized],
-    )?;
-
-    let digest_len = usize::from(bits).div_ceil(8);
-    let mut stored = Vec::with_capacity(INDEX_HEADER_LEN + digest_len);
-    stored.extend_from_slice(&header);
-    stored.extend_from_slice(&digest[..digest_len]);
-
-    if bits % 8 != 0 {
-        // One encoding per retained bit string; unused bits must not leak extra precision.
-        // Parsing enforces the same rule: ../docs/wire-format.md#blind-index-recipe.
-        let retained_bits = bits % 8;
-        let mask = u8::MAX << (8 - retained_bits);
-        let final_byte = stored.last_mut().ok_or(Error::InvalidBlindIndex)?;
-        *final_byte &= mask;
-    }
+    let stored = derive_index(normalized, domain.as_bytes(), Spec::ID, Spec::BITS, key)?;
 
     Ok(BlindIndex::from_validated_bytes(stored))
-}
-
-const fn valid_bits(bits: usize) -> bool {
-    bits > 0 && bits <= MAX_INDEX_BITS
-}
-
-fn validate_bits(bits: usize) -> Result<(), Error> {
-    if !valid_bits(bits) {
-        return Err(Error::InvalidBlindIndex);
-    }
-
-    Ok(())
 }
