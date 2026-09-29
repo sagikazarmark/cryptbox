@@ -137,13 +137,13 @@ impl CheckedEnvelope<'_> {
 mod tests {
     use zeroize::Zeroizing;
 
+    use super::suite::NONCE_LEN;
     use super::suite::seal_with_nonce;
     use super::{EnvelopeBinding, check, inspect_ciphertext, seal};
-    use crate::crypto::NONCE_LEN;
     use crate::{EncryptionKey, EncryptionKeyring, Error, Padding, ShapeFingerprint};
 
     // Fixed inputs make the known-answer vectors in docs/wire-format.md reproducible.
-    // Sealing outside tests always draws its nonce from `crypto::random_nonce`.
+    // Sealing outside tests always draws a fresh nonce from `crypto::random_bytes`.
     fn vector_key() -> EncryptionKey {
         EncryptionKey::new(
             crate::key_id!("11111111-2222-4333-8444-555555555555"),

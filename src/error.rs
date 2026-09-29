@@ -188,8 +188,6 @@ impl From<crypto::Error> for Error {
     fn from(error: crypto::Error) -> Self {
         match error {
             crypto::Error::Internal => Self::Internal,
-            crypto::Error::MessageTooLong => Self::MessageTooLong,
-            crypto::Error::AuthenticationFailed => Self::AuthenticationFailed,
             crypto::Error::RandomnessUnavailable => Self::RandomnessUnavailable,
         }
     }
