@@ -21,7 +21,7 @@ use crate::{
 ///
 /// - its field ID, codec ID, and padding;
 /// - `record`: whether it binds a record;
-/// - `binding`: the [binding fingerprint](crate::CiphertextInfo::binding_fingerprint),
+/// - `binding`: the [binding fingerprint](crate::CiphertextInfo::context_fingerprint),
 ///   in hex, that its headers carry, followed by each part's ID, kind, and role in part-ID
 ///   order;
 /// - `shred unit`: the finest unit that destroying root keys can shred, if the

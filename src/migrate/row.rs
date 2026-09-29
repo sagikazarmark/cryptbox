@@ -420,7 +420,7 @@ where
         match inspect_ciphertext(ciphertext) {
             Ok(info)
                 if self
-                    .legacy_declaration(&binding, info.binding_fingerprint())
+                    .legacy_declaration(&binding, info.context_fingerprint())
                     .is_some() =>
             {
                 return Ok(RowState::LegacyBinding);
@@ -471,7 +471,7 @@ where
 
         match inspect_ciphertext(ciphertext) {
             Ok(info) => {
-                if let Some(legacy) = self.legacy_declaration(&binding, info.binding_fingerprint())
+                if let Some(legacy) = self.legacy_declaration(&binding, info.context_fingerprint())
                 {
                     return self.plan_legacy_binding_row(legacy, &args, &binding, ciphertext);
                 }

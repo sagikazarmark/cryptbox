@@ -167,7 +167,7 @@ fn field_only_envelopes_carry_the_empty_declaration_fingerprint() {
         hex::encode(
             inspect_ciphertext(&ciphertext)
                 .unwrap()
-                .binding_fingerprint()
+                .context_fingerprint()
         ),
         "5d86321261d64380"
     );

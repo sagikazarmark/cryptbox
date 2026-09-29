@@ -14,21 +14,22 @@ use crate::{EncryptionKey, Error};
 const ENCRYPTION_KEY_LABEL: &[u8] = b"cryptbox/encryption-key/v1\0";
 const ENVELOPE_AAD_LABEL: &[u8] = b"cryptbox/envelope-aad/v1\0";
 
-/// The binding an envelope is sealed under, as the envelope sees it.
+/// What an envelope binds a value to: opaque bytes and their fingerprint.
 ///
-/// The bytes are mixed into key derivation and the AAD and never stored; the
-/// fingerprint is stored in the header and compared on open. The envelope does
-/// not interpret either: the layer above encodes them.
+/// Key derivation and the AAD both take the bytes, which are never stored; the
+/// header stores the fingerprint, and opening compares it before any key
+/// lookup. The envelope interprets neither: the layer above encodes them, and
+/// for a sealed value they are its binding's encoding and fingerprint.
 ///
-/// The header is stored in plaintext, so the fingerprint must depend only on
-/// what kind of binding this is, never on its values.
+/// The header is stored in plaintext, so the fingerprint must name only what
+/// kind of context this is, never the values in its bytes.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct EnvelopeBinding<'a> {
+pub(crate) struct Context<'a> {
     bytes: &'a [u8],
     fingerprint: [u8; 8],
 }
 
-impl<'a> EnvelopeBinding<'a> {
+impl<'a> Context<'a> {
     pub(crate) const fn new(bytes: &'a [u8], fingerprint: [u8; 8]) -> Self {
         Self { bytes, fingerprint }
     }
@@ -56,17 +57,17 @@ pub(super) trait Suite {
     /// The header is built from [`Self::ID`] and the key's ID, so neither can
     /// disagree with the key it seals under.
     fn seal(
-        binding: EnvelopeBinding<'_>,
+        context: Context<'_>,
         plaintext: &AeadPlaintext<'_>,
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error>;
 
-    /// Authenticates `envelope` under `binding` and `key` and returns its payload.
+    /// Authenticates `envelope` under `context` and `key` and returns its payload.
     ///
-    /// The envelope has already matched `binding`'s fingerprint; only the bytes
+    /// The envelope has already matched `context`'s fingerprint; only the bytes
     /// are used here.
     fn open(
-        binding: EnvelopeBinding<'_>,
+        context: Context<'_>,
         envelope: &ParsedEnvelope<'_>,
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error>;
@@ -106,30 +107,30 @@ impl SupportedSuite {
 
     pub(super) fn seal(
         self,
-        binding: EnvelopeBinding<'_>,
+        context: Context<'_>,
         plaintext: &AeadPlaintext<'_>,
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
         match self {
-            Self::XChaCha20Poly1305 => XChaCha20Poly1305::seal(binding, plaintext, key),
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::seal(context, plaintext, key),
         }
     }
 
     pub(super) fn open(
         self,
-        binding: EnvelopeBinding<'_>,
+        context: Context<'_>,
         envelope: &ParsedEnvelope<'_>,
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
         match self {
-            Self::XChaCha20Poly1305 => XChaCha20Poly1305::open(binding, envelope, key),
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::open(context, envelope, key),
         }
     }
 }
 
 fn derive_encryption_key(
     root: &EncryptionKey,
-    binding: &[u8],
+    context: &[u8],
     format_version: u8,
     suite_id: SuiteId,
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
@@ -141,20 +142,20 @@ fn derive_encryption_key(
             ENCRYPTION_KEY_LABEL,
             &[format_version, suite_id.get()],
             root.id().as_bytes(),
-            binding,
+            context,
         ],
     )?;
 
     Ok(key)
 }
 
-fn envelope_aad(prefix: &[u8], binding: &[u8]) -> Vec<u8> {
-    // Authenticate the exact stored prefix together with the caller's expected binding.
-    // The envelope must not choose its own binding: ../../docs/wire-format.md#encryption-recipe.
-    let mut aad = Vec::with_capacity(ENVELOPE_AAD_LABEL.len() + prefix.len() + binding.len());
+fn envelope_aad(prefix: &[u8], context: &[u8]) -> Vec<u8> {
+    // Authenticate the exact stored prefix together with the caller's expected context.
+    // The envelope must not choose its own context: ../../docs/wire-format.md#encryption-recipe.
+    let mut aad = Vec::with_capacity(ENVELOPE_AAD_LABEL.len() + prefix.len() + context.len());
     aad.extend_from_slice(ENVELOPE_AAD_LABEL);
     aad.extend_from_slice(prefix);
-    aad.extend_from_slice(binding);
+    aad.extend_from_slice(context);
 
     aad
 }

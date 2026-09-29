@@ -9,7 +9,7 @@ row or tenant. The binding's *declaration* (its parts and whether it binds a rec
 persistent schema, declared by the field; its values are supplied at each call as
 the field's binding arguments (`Args`). Opening under other values fails
 authentication; opening under another declaration reports a binding mismatch.
-<!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “key scope” is only the `keys` parts. Avoid “context” for any of them. -->
+<!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “key scope” is only the `keys` parts. Avoid “context” for any of them: it names only the envelope's input (see Context), and a user-authored context was rejected in ADR-0005. -->
 
 **Binding arguments**:
 The binding values of one seal or open, typed by the field (`Args<F>`): `()` for
@@ -49,6 +49,14 @@ normalized plaintext comparison before acceptance as a match.
 The encrypted bytes of a value: the envelope that a sealed value wraps.
 Structurally valid ciphertext has not necessarily been authenticated.
 <!-- Agent guidance: in the typed API, say “sealed value” (`Sealed<F>`); “ciphertext” is the byte-level envelope. Avoid “encrypted value” for plaintext-bearing types. -->
+
+**Context**:
+What an envelope binds a value to: bytes that key derivation and the AAD both
+take, which are never stored, and a context fingerprint that the header
+stores. The envelope interprets neither. For a sealed value, the context is
+its binding's encoding and binding fingerprint;
+`CiphertextInfo::context_fingerprint` reports the stored fingerprint.
+<!-- Agent guidance: “context” is the envelope-level term only. For what a value is bound to, say “binding”; applications never write context bytes. -->
 
 **Current generation**:
 The generation selected for new encryption or new stored blind indexes.

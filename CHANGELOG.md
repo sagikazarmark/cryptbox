@@ -191,7 +191,7 @@
   fingerprint after the `KeyId`, in a fixed 31-byte header, so `W = P + 71`. A
   field-only binding is the empty declaration, with no parts and no record, and
   carries that declaration's fingerprint.
-  `CiphertextInfo::binding_fingerprint` reports it as a `[u8; 8]`, not an
+  `CiphertextInfo::context_fingerprint` reports it as a `[u8; 8]`, not an
   `Option`, and the `ShapeFingerprint` type is removed. Reading an envelope
   sealed with a different binding declaration fails with the new
   `Error::BindingMismatch` before any key lookup. The new

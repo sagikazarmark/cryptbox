@@ -7,7 +7,7 @@
 
 use zeroize::Zeroizing;
 
-use crate::envelope::{self, EnvelopeBinding};
+use crate::envelope::{self, Context};
 use crate::{BindingDomain, EncryptionKeySource, EncryptionKeyring, Error, Padding};
 
 /// Asks `keys` for the keyring of `domain`'s field and key scope.
@@ -18,8 +18,8 @@ pub(crate) fn keyring(
     keys.encryption_keyring(domain.field_id(), domain.key_scope())
 }
 
-fn envelope_binding(domain: &BindingDomain) -> EnvelopeBinding<'_> {
-    EnvelopeBinding::new(domain.as_bytes(), domain.fingerprint())
+fn envelope_context(domain: &BindingDomain) -> Context<'_> {
+    Context::new(domain.as_bytes(), domain.fingerprint())
 }
 
 /// Pads and seals `plaintext` under `domain` with the current key of its keyring.
@@ -30,7 +30,7 @@ pub(crate) fn seal(
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Vec<u8>, Error> {
     envelope::seal(
-        envelope_binding(domain),
+        envelope_context(domain),
         padding,
         plaintext,
         &keyring(domain, keys)?,
@@ -46,7 +46,7 @@ pub(crate) fn open(
     ciphertext: &[u8],
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
-    let checked = envelope::check(envelope_binding(domain), ciphertext)?;
+    let checked = envelope::check(envelope_context(domain), ciphertext)?;
 
     checked.open(&keyring(domain, keys)?)
 }
@@ -59,7 +59,7 @@ pub(crate) fn needs_reseal(
     ciphertext: &[u8],
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<bool, Error> {
-    let checked = envelope::check(envelope_binding(domain), ciphertext)?;
+    let checked = envelope::check(envelope_context(domain), ciphertext)?;
 
     Ok(checked.needs_reseal(padding, &keyring(domain, keys)?))
 }

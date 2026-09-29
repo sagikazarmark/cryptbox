@@ -10,8 +10,8 @@ use chacha20poly1305::{KeyInit, XChaCha20Poly1305 as Cipher};
 use zeroize::Zeroizing;
 
 use super::{
-    EnvelopeBinding, FORMAT_VERSION, ParsedEnvelope, Suite, SuiteId, derive_encryption_key,
-    envelope_aad, envelope_header,
+    Context, FORMAT_VERSION, ParsedEnvelope, Suite, SuiteId, derive_encryption_key, envelope_aad,
+    envelope_header,
 };
 use crate::crypto;
 use crate::padding::AeadPlaintext;
@@ -48,7 +48,7 @@ impl Suite for XChaCha20Poly1305 {
     }
 
     fn seal(
-        binding: EnvelopeBinding<'_>,
+        context: Context<'_>,
         plaintext: &AeadPlaintext<'_>,
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
@@ -56,11 +56,11 @@ impl Suite for XChaCha20Poly1305 {
         // See ../../../docs/wire-format.md#encryption-recipe.
         let nonce = crypto::random_bytes()?;
 
-        Self::seal_with_nonce(binding, plaintext, key, nonce)
+        Self::seal_with_nonce(context, plaintext, key, nonce)
     }
 
     fn open(
-        binding: EnvelopeBinding<'_>,
+        context: Context<'_>,
         envelope: &ParsedEnvelope<'_>,
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
@@ -75,8 +75,8 @@ impl Suite for XChaCha20Poly1305 {
             .ok_or(Error::InvalidEnvelope)?;
 
         let operational_key =
-            derive_encryption_key(key, binding.bytes, envelope.info.format_version(), Self::ID)?;
-        let aad = envelope_aad(prefix, binding.bytes);
+            derive_encryption_key(key, context.bytes, envelope.info.format_version(), Self::ID)?;
+        let aad = envelope_aad(prefix, context.bytes);
 
         decrypt(&operational_key, nonce, &aad, ciphertext)
     }
@@ -86,13 +86,13 @@ impl XChaCha20Poly1305 {
     /// Seals with `nonce` instead of a fresh random one; [`Suite::seal`] and
     /// the known-answer tests call this.
     pub(in crate::envelope) fn seal_with_nonce(
-        binding: EnvelopeBinding<'_>,
+        context: Context<'_>,
         plaintext: &AeadPlaintext<'_>,
         key: &EncryptionKey,
         nonce: [u8; NONCE_LEN],
     ) -> Result<Vec<u8>, Error> {
         let suite = Self::ID;
-        let header = envelope_header(suite, plaintext.is_padded(), key.id(), binding.fingerprint);
+        let header = envelope_header(suite, plaintext.is_padded(), key.id(), context.fingerprint);
         let capacity = (header.len() + NONCE_LEN + TAG_LEN)
             .checked_add(plaintext.bytes().len())
             .ok_or(Error::MessageTooLong)?;
@@ -100,8 +100,8 @@ impl XChaCha20Poly1305 {
         envelope.extend_from_slice(&header);
         envelope.extend_from_slice(&nonce);
 
-        let operational_key = derive_encryption_key(key, binding.bytes, FORMAT_VERSION, suite)?;
-        let aad = envelope_aad(&envelope, binding.bytes);
+        let operational_key = derive_encryption_key(key, context.bytes, FORMAT_VERSION, suite)?;
+        let aad = envelope_aad(&envelope, context.bytes);
         encrypt_into(
             &operational_key,
             &nonce,

@@ -193,11 +193,20 @@ Codec identity and version are also absent: the application schema must supply
 them to interpret the plaintext after authentication. Whether the payload is
 padded is recorded in the envelope flags; padding parameters are not.
 
+### Context
+
+An envelope binds its value to a **context**: bytes that key derivation and the
+AAD both take, which are never stored, and an 8-byte **context fingerprint**
+that the header stores. The envelope interprets neither, so a reader always
+supplies the context it expects. For a sealed value, the context bytes are its
+[binding](#binding)'s encoding and the context fingerprint is its
+[binding fingerprint](#binding-fingerprint).
+
 ### Envelope
 
 Ciphertext format 2 starts with a fixed 31-byte header containing the magic
 bytes, format version, suite ID, flags, `KeyId`, and the
-[binding fingerprint](#binding-fingerprint) of the binding. The suite determines the
+[context fingerprint](#context). The suite determines the
 remaining layout. For suite 1, the nonce extends that header to a 55-byte
 prefix:
 
@@ -208,7 +217,7 @@ offset  size  field
 5       1     suite ID = 01
 6       1     flags
 7       16    KeyId
-23      8     binding fingerprint
+23      8     context fingerprint
 31      24    XChaCha20 nonce
 55      N     ciphertext
 55+N    16    Poly1305 tag
@@ -247,20 +256,20 @@ key_info = key_info_label
         || format_version
         || suite_id
         || key_id
-        || binding
+        || context
 
-aad = aad_label || prefix || binding
+aad = aad_label || prefix || context
 ```
 
-`prefix` is the whole suite prefix, including the binding fingerprint:
+`prefix` is the whole suite prefix, including the context fingerprint:
 `envelope[0..55]`.
 
 ### Encryption recipe
 
 Inputs are an independent 32-byte encryption root, its immutable 16-byte
-`KeyId`, the expected field binding, and AEAD plaintext bytes (encoded and
+`KeyId`, the expected context, and AEAD plaintext bytes (encoded and
 optionally padded as below), and whether it is padded. Use the encoding
-conventions and binding bytes above, with `format_version = 02` and
+conventions and context above, with `format_version = 02` and
 `suite_id = 01`. Rust type names and database names are not inputs.
 
 1. Construct `key_info` in the order above. Perform **both** RFC 5869 stages:
@@ -271,22 +280,22 @@ conventions and binding bytes above, with `format_version = 02` and
    each encryption, failing if randomness is unavailable. The fixed nonces in
    the vectors are test inputs only, not a supported application nonce policy.
 3. Construct the 55-byte prefix from magic, version, suite, flags, `KeyId`,
-   binding fingerprint, and nonce using the offset table. Set flag bit `01`
+   context fingerprint, and nonce using the offset table. Set flag bit `01`
    exactly when the AEAD plaintext is padded. Form
-   `aad = aad_label || prefix || binding`.
+   `aad = aad_label || prefix || context`.
 4. Seal the complete AEAD plaintext with XChaCha20-Poly1305 using the 32-byte
    operational key, nonce, and AAD. Append the ciphertext (same length as AEAD
    plaintext) and the full 16-byte tag to the prefix. No text encoding, tag
    truncation, or additional delimiters are applied.
 
-For decryption, structurally validate the envelope, check its binding fingerprint
-under the [reader rules](#reader-rules), resolve only its exact `KeyId`,
-reconstruct the key and AAD with the **expected** binding, and verify
+For decryption, structurally validate the envelope, compare its context fingerprint
+with the expected one (for a binding, under the [reader rules](#reader-rules)), resolve only its exact `KeyId`,
+reconstruct the key and AAD with the **expected** context, and verify
 the tag before returning any plaintext. Only after authentication is padding
 removed, when the authenticated flag is set, and the value decoded; the reader's
-current padding policy never decides whether to remove padding. Wrong binding
-values or changes to supported metadata, flags, nonce, ciphertext, or tag fail
-authentication. Malformed/unsupported envelopes, a different binding declaration, and
+current padding policy never decides whether to remove padding. A wrong context
+or changes to supported metadata, flags, nonce, ciphertext, or tag fail
+authentication. Malformed/unsupported envelopes, a different context fingerprint, and
 unknown keys can fail before authentication. Successful decryption does not
 establish freshness or row identity.
 
@@ -376,14 +385,14 @@ empty declaration's fingerprint:
 ```text
 root key:    1111111111111111111111111111111111111111111111111111111111111111
 KeyId:       11111111-2222-4333-8444-555555555555
-binding:     123456781234423482341234567890ab000000
+context:     123456781234423482341234567890ab000000
 fingerprint: 5d86321261d64380
 plaintext:   6372797074626f7820766563746f72 ("cryptbox vector")
 nonce:       000102030405060708090a0b0c0d0e0f1011121314151617
 envelope:    43425800020100111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1415b33cbc7bfb19bc11afc1b31e3f3075b
 ```
 
-The padded vector uses the same root key, `KeyId`, binding, declaration, and nonce as the
+The padded vector uses the same root key, `KeyId`, context, and nonce as the
 first vector, with `"cryptbox vector"` padded under `Padding::block(16)` and
 flags `01`:
 
@@ -409,14 +418,14 @@ part 22222222-2222-2222-2222-222222222222  bytes  bound only  77732d31 ("ws-1")
 Without a record, the binding fingerprint is `81f8614d4eacb5fb`:
 
 ```text
-binding:  123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
+context:  123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
 envelope: 434258000201001111111122224333844455555555555581f8614d4eacb5fb000102030405060708090a0b0c0d0e0f1011121314151617b887bad9f184f35041b40c3cce0d45ba321676cb9f5d3c39db8f90751b842f
 ```
 
 With the `i64` record `7`, the binding fingerprint is `58bfd20ea23bac14`:
 
 ```text
-binding:  123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
+context:  123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
 envelope: 434258000201001111111122224333844455555555555558bfd20ea23bac14000102030405060708090a0b0c0d0e0f1011121314151617663bba5e4bb37a3df899258809ff56a6b4a7041d51f117d26698875eb9f262
 ```
 

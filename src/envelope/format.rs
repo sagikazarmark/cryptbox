@@ -8,14 +8,14 @@ const FLAG_PADDED: u8 = 0x01;
 
 // The layout table: ../../docs/wire-format.md#envelope. A header is the magic,
 // then one byte each of version, suite ID, and flags, then the key ID and the
-// binding fingerprint. Every header has the same fixed length.
+// context fingerprint. Every header has the same fixed length.
 const KEY_ID_LEN: usize = 16;
 const FINGERPRINT_LEN: usize = 8;
 const FORMAT_VERSION_OFFSET: usize = MAGIC.len();
 const SUITE_ID_OFFSET: usize = FORMAT_VERSION_OFFSET + 1;
 const FLAGS_OFFSET: usize = SUITE_ID_OFFSET + 1;
 const KEY_ID_OFFSET: usize = FLAGS_OFFSET + 1;
-// See ../../docs/wire-format.md#binding-fingerprint.
+// See ../../docs/wire-format.md#context.
 const FINGERPRINT_OFFSET: usize = KEY_ID_OFFSET + KEY_ID_LEN;
 const HEADER_LEN: usize = FINGERPRINT_OFFSET + FINGERPRINT_LEN;
 
@@ -52,7 +52,7 @@ pub struct CiphertextInfo {
     suite_id: SuiteId,
     padded: bool,
     key_id: KeyId,
-    binding_fingerprint: [u8; 8],
+    context_fingerprint: [u8; 8],
 }
 
 impl CiphertextInfo {
@@ -80,15 +80,15 @@ impl CiphertextInfo {
         self.key_id
     }
 
-    /// Returns the fingerprint of the binding the value was sealed under.
+    /// Returns the fingerprint of the context the value was sealed under.
     ///
     /// The envelope stores it unchanged, and opening compares it with the
-    /// fingerprint of the binding the reader expects before any key lookup. It
-    /// names the kind of binding, never its values, so equal fingerprints do not
+    /// fingerprint of the context the reader expects before any key lookup. It
+    /// names the kind of context, never its values, so equal fingerprints do not
     /// imply equal bindings.
     #[must_use]
-    pub const fn binding_fingerprint(self) -> [u8; 8] {
-        self.binding_fingerprint
+    pub const fn context_fingerprint(self) -> [u8; 8] {
+        self.context_fingerprint
     }
 }
 
@@ -140,7 +140,7 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
 
     let padded = flags & FLAG_PADDED != 0;
     let key_id = KeyId::from_bytes(field(bytes, KEY_ID_OFFSET));
-    let binding_fingerprint = field(bytes, FINGERPRINT_OFFSET);
+    let context_fingerprint = field(bytes, FINGERPRINT_OFFSET);
 
     Ok(ParsedEnvelope {
         bytes,
@@ -149,7 +149,7 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
             suite_id,
             padded,
             key_id,
-            binding_fingerprint,
+            context_fingerprint,
         },
         header: &bytes[..HEADER_LEN],
         suite_payload: &bytes[HEADER_LEN..],
