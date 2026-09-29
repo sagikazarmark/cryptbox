@@ -14,6 +14,28 @@ use crate::{EncryptionKey, Error, ShapeFingerprint};
 const ENCRYPTION_KEY_LABEL: &[u8] = b"cryptbox/encryption-key/v1\0";
 const ENVELOPE_AAD_LABEL: &[u8] = b"cryptbox/envelope-aad/v1\0";
 
+/// The binding an envelope is sealed under, as the envelope sees it.
+///
+/// The bytes are mixed into key derivation and the AAD and never stored; the
+/// fingerprint is stored in the header and compared on open. The envelope does
+/// not interpret either: the layer above encodes them.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EnvelopeBinding<'a> {
+    bytes: &'a [u8],
+    fingerprint: ShapeFingerprint,
+}
+
+impl<'a> EnvelopeBinding<'a> {
+    pub(crate) const fn new(bytes: &'a [u8], fingerprint: ShapeFingerprint) -> Self {
+        Self { bytes, fingerprint }
+    }
+
+    /// The fingerprint a reader compares with the one stored in the header.
+    pub(crate) const fn fingerprint(&self) -> ShapeFingerprint {
+        self.fingerprint
+    }
+}
+
 /// A complete encryption construction over the envelope format: how it derives
 /// its key, what it authenticates, and which AEAD seals the payload.
 ///
@@ -31,16 +53,18 @@ pub(super) trait Suite {
     /// The header is built from [`Self::ID`] and the key's ID, so neither can
     /// disagree with the key it seals under.
     fn seal(
+        binding: EnvelopeBinding<'_>,
         plaintext: &AeadPlaintext<'_>,
-        fingerprint: ShapeFingerprint,
-        binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error>;
 
     /// Authenticates `envelope` under `binding` and `key` and returns its payload.
+    ///
+    /// The envelope has already matched `binding`'s fingerprint; only the bytes
+    /// are used here.
     fn open(
+        binding: EnvelopeBinding<'_>,
         envelope: &ParsedEnvelope<'_>,
-        binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error>;
 }
@@ -79,26 +103,23 @@ impl SupportedSuite {
 
     pub(super) fn seal(
         self,
+        binding: EnvelopeBinding<'_>,
         plaintext: &AeadPlaintext<'_>,
-        fingerprint: ShapeFingerprint,
-        binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
         match self {
-            Self::XChaCha20Poly1305 => {
-                XChaCha20Poly1305::seal(plaintext, fingerprint, binding, key)
-            }
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::seal(binding, plaintext, key),
         }
     }
 
     pub(super) fn open(
         self,
+        binding: EnvelopeBinding<'_>,
         envelope: &ParsedEnvelope<'_>,
-        binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
         match self {
-            Self::XChaCha20Poly1305 => XChaCha20Poly1305::open(envelope, binding, key),
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::open(binding, envelope, key),
         }
     }
 }

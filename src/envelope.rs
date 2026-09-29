@@ -4,11 +4,12 @@ mod suite;
 use zeroize::Zeroizing;
 
 use crate::padding::unpad;
-use crate::{EncryptionKeyring, Error, Padding, ShapeFingerprint};
+use crate::{EncryptionKeyring, Error, Padding};
 
 pub(crate) use format::validated_key_id;
 pub use format::{CiphertextInfo, SuiteId, is_ciphertext};
 use format::{ParsedEnvelope, parse_envelope};
+pub(crate) use suite::EnvelopeBinding;
 use suite::SupportedSuite;
 pub use suite::xchacha20_poly1305::EXPERIMENTAL_XCHACHA20_POLY1305;
 
@@ -33,23 +34,6 @@ fn parse_supported(bytes: &[u8]) -> Result<(SupportedSuite, ParsedEnvelope<'_>),
     Ok((suite, envelope))
 }
 
-/// The binding an envelope is sealed under, as the envelope sees it.
-///
-/// The bytes are mixed into key derivation and the AAD and never stored; the
-/// fingerprint is stored in the header. The envelope does not interpret
-/// either: the layer above encodes them.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct EnvelopeBinding<'a> {
-    bytes: &'a [u8],
-    fingerprint: ShapeFingerprint,
-}
-
-impl<'a> EnvelopeBinding<'a> {
-    pub(crate) const fn new(bytes: &'a [u8], fingerprint: ShapeFingerprint) -> Self {
-        Self { bytes, fingerprint }
-    }
-}
-
 /// Pads `plaintext` with `padding` and seals it under `binding` with the
 /// current key of `keyring`.
 ///
@@ -63,12 +47,7 @@ pub(crate) fn seal(
 ) -> Result<Vec<u8>, Error> {
     let plaintext = padding.pad(plaintext)?;
 
-    SupportedSuite::ACTIVE.seal(
-        &plaintext,
-        binding.fingerprint,
-        binding.bytes,
-        keyring.current(),
-    )
+    SupportedSuite::ACTIVE.seal(binding, &plaintext, keyring.current())
 }
 
 /// An envelope that parsed and whose fingerprint matches the binding a reader
@@ -88,7 +67,7 @@ pub(crate) fn check<'a>(
     ciphertext: &'a [u8],
 ) -> Result<CheckedEnvelope<'a>, Error> {
     let (suite, parsed) = parse_supported(ciphertext)?;
-    if parsed.info.shape_fingerprint() != binding.fingerprint {
+    if parsed.info.shape_fingerprint() != binding.fingerprint() {
         return Err(Error::BindingMismatch);
     }
 
@@ -107,7 +86,7 @@ impl CheckedEnvelope<'_> {
         let key = keyring
             .get(key_id)
             .ok_or(Error::UnknownEncryptionKey(key_id))?;
-        let plaintext = self.suite.open(&self.parsed, self.binding.bytes, key)?;
+        let plaintext = self.suite.open(self.binding, &self.parsed, key)?;
 
         // Only the authenticated flag decides unpadding; the current policy must not,
         // or policy changes would silently misread stored values.
@@ -143,19 +122,13 @@ mod tests {
 
     // Seals under suite 1 with a fixed nonce, as the known-answer vectors need.
     fn seal_with_nonce(
-        plaintext: &[u8],
-        padding: Padding,
         binding: EnvelopeBinding<'_>,
+        padding: Padding,
+        plaintext: &[u8],
         key: &EncryptionKey,
         nonce: [u8; NONCE_LEN],
     ) -> Result<Vec<u8>, Error> {
-        XChaCha20Poly1305::seal_with_nonce(
-            &padding.pad(plaintext)?,
-            binding.fingerprint,
-            binding.bytes,
-            key,
-            nonce,
-        )
+        XChaCha20Poly1305::seal_with_nonce(binding, &padding.pad(plaintext)?, key, nonce)
     }
 
     // Fixed inputs make the known-answer vectors in docs/wire-format.md reproducible.
@@ -203,9 +176,9 @@ mod tests {
     fn scoped_vector_is_stable() {
         let bytes = hex::decode(SCOPED_BINDING).unwrap();
         let envelope = seal_with_nonce(
-            b"cryptbox vector",
-            Padding::NONE,
             binding(&bytes, fingerprint(SCOPED_FINGERPRINT)),
+            Padding::NONE,
+            b"cryptbox vector",
             &vector_key(),
             vector_nonce(),
         )
@@ -227,9 +200,9 @@ mod tests {
     fn scoped_record_vector_is_stable() {
         let bytes = hex::decode(SCOPED_RECORD_BINDING).unwrap();
         let envelope = seal_with_nonce(
-            b"cryptbox vector",
-            Padding::NONE,
             binding(&bytes, fingerprint(SCOPED_RECORD_FINGERPRINT)),
+            Padding::NONE,
+            b"cryptbox vector",
             &vector_key(),
             vector_nonce(),
         )
@@ -415,9 +388,9 @@ mod tests {
     fn experimental_padded_format_2_vector_is_stable() {
         let bytes = hex::decode(FIELD_BINDING).unwrap();
         let envelope = seal_with_nonce(
-            b"cryptbox vector",
-            Padding::block(16),
             binding(&bytes, fingerprint(FIELD_FINGERPRINT)),
+            Padding::block(16),
+            b"cryptbox vector",
             &vector_key(),
             vector_nonce(),
         )
@@ -433,9 +406,9 @@ mod tests {
     fn experimental_format_2_vector_is_stable() {
         let bytes = hex::decode(FIELD_BINDING).unwrap();
         let envelope = seal_with_nonce(
-            b"cryptbox vector",
-            Padding::NONE,
             binding(&bytes, fingerprint(FIELD_FINGERPRINT)),
+            Padding::NONE,
+            b"cryptbox vector",
             &vector_key(),
             vector_nonce(),
         )
