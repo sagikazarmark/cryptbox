@@ -56,7 +56,7 @@ back to the current key.
 | --- | --- |
 | Generate every ID as a random UUID, as `EncryptionKey::generate` does | Two independently provisioned keyrings then never collide |
 | Never reuse an ID for different material | A reused ID makes a wrong key look like the right one, and opening fails as corruption |
-| Keep IDs unique within a keyring | `EncryptionKeyring::new` rejects a repeat with `Error::DuplicateEncryptionKey` |
+| Keep IDs unique within a keyring | `EncryptionKeyring::new` rejects a repeat with `KeyError::DuplicateEncryptionKey` |
 | Never share an ID across keyrings | Sharing removes the loud failure: the wrong keyring appears to hold the right key |
 | Keep the ID and its bytes together for the life of the data | Replacing a lost key with new material under the same ID cannot recover ciphertext |
 | Generate encryption and blind-index roots independently | The roles are separate; one root must never serve both |

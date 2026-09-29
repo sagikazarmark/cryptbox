@@ -8,8 +8,8 @@ use std::{
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId, FieldOnly,
-    IndexId, IndexKeyId, KeyId, KeyScope, Keys, Padding, Raw, Sealed, Tenant, TenantId, field_id,
-    index_id, index_key_id, inspect_blind_index, key_id, testing::assert_sealed_under,
+    IndexId, IndexKeyId, KeyError, KeyId, KeyScope, Keys, Padding, Raw, Sealed, Tenant, TenantId,
+    field_id, index_id, index_key_id, inspect_blind_index, key_id, testing::assert_sealed_under,
 };
 use zeroize::Zeroizing;
 
@@ -135,17 +135,17 @@ fn key_ids_are_unique_within_a_keyring() {
     let other = EncryptionKey::new(GENERAL_KEY_ID, [2; 32]);
     assert_eq!(
         EncryptionKeyring::new(key.clone(), [other]).unwrap_err(),
-        Error::DuplicateEncryptionKey(GENERAL_KEY_ID)
+        KeyError::DuplicateEncryptionKey(GENERAL_KEY_ID)
     );
     assert_eq!(
         EncryptionKeyring::new(key.clone(), [key]).unwrap_err(),
-        Error::DuplicateEncryptionKey(GENERAL_KEY_ID)
+        KeyError::DuplicateEncryptionKey(GENERAL_KEY_ID)
     );
 
     let index_key = BlindIndexKey::new(GENERAL_INDEX_KEY_ID, [1; 32]);
     assert_eq!(
         BlindIndexKeyring::new(index_key.clone(), [index_key]).unwrap_err(),
-        Error::DuplicateBlindIndexKey(GENERAL_INDEX_KEY_ID)
+        KeyError::DuplicateBlindIndexKey(GENERAL_INDEX_KEY_ID)
     );
 }
 

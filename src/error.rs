@@ -1,4 +1,4 @@
-use crate::{IndexId, IndexKeyId, KeyId, SuiteId, crypto};
+use crate::{IndexId, IndexKeyId, KeyError, KeyId, SuiteId, crypto};
 
 /// The non-sensitive category of a codec failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -191,6 +191,17 @@ impl From<crypto::Error> for Error {
             crypto::Error::MessageTooLong => Self::MessageTooLong,
             crypto::Error::AuthenticationFailed => Self::AuthenticationFailed,
             crypto::Error::RandomnessUnavailable => Self::RandomnessUnavailable,
+        }
+    }
+}
+
+impl From<KeyError> for Error {
+    fn from(error: KeyError) -> Self {
+        match error {
+            KeyError::RandomnessUnavailable => Self::RandomnessUnavailable,
+            KeyError::InvalidKeyEncoding => Self::InvalidKeyEncoding,
+            KeyError::DuplicateEncryptionKey(id) => Self::DuplicateEncryptionKey(id),
+            KeyError::DuplicateBlindIndexKey(id) => Self::DuplicateBlindIndexKey(id),
         }
     }
 }

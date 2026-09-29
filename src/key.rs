@@ -3,7 +3,28 @@ use std::{collections::BTreeMap, fmt, sync::Arc};
 use base64::Engine as _;
 use zeroize::Zeroizing;
 
-use crate::{Error, IndexKeyId, KeyId};
+use crate::{IndexKeyId, KeyId};
+
+/// A key or keyring could not be created.
+///
+/// It converts into the same variant of [`Error`](crate::Error), so `?` works in
+/// functions that return the crate's error.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+#[non_exhaustive]
+pub enum KeyError {
+    /// The operating-system random source failed.
+    #[error("secure randomness is unavailable")]
+    RandomnessUnavailable,
+    /// Encoded root key material is malformed or does not decode to 32 bytes.
+    #[error("encoded key material is invalid")]
+    InvalidKeyEncoding,
+    /// A keyring contains the same encryption key ID more than once.
+    #[error("duplicate encryption key ID {0}")]
+    DuplicateEncryptionKey(KeyId),
+    /// A keyring contains the same blind-index key ID more than once.
+    #[error("duplicate blind-index key ID {0}")]
+    DuplicateBlindIndexKey(IndexKeyId),
+}
 
 #[derive(Clone)]
 struct KeyMaterial<Id> {
@@ -33,9 +54,9 @@ impl EncryptionKey {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::RandomnessUnavailable`] if the operating-system random
+    /// Returns [`KeyError::RandomnessUnavailable`] if the operating-system random
     /// source fails.
-    pub fn generate() -> Result<Self, Error> {
+    pub fn generate() -> Result<Self, KeyError> {
         let id = KeyId::from_bytes(random_id()?);
         Ok(Self(generate_key_material(id)?))
     }
@@ -47,9 +68,9 @@ impl EncryptionKey {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// Returns [`KeyError::InvalidKeyEncoding`] if `encoded` is malformed or does
     /// not represent exactly 32 bytes.
-    pub fn from_hex(id: KeyId, encoded: &str) -> Result<Self, Error> {
+    pub fn from_hex(id: KeyId, encoded: &str) -> Result<Self, KeyError> {
         Ok(Self(key_material_from_hex(id, encoded)?))
     }
 
@@ -60,9 +81,9 @@ impl EncryptionKey {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// Returns [`KeyError::InvalidKeyEncoding`] if `encoded` is malformed or does
     /// not represent exactly 32 bytes.
-    pub fn from_base64(id: KeyId, encoded: &str) -> Result<Self, Error> {
+    pub fn from_base64(id: KeyId, encoded: &str) -> Result<Self, KeyError> {
         Ok(Self(key_material_from_base64(id, encoded)?))
     }
 
@@ -119,9 +140,9 @@ impl BlindIndexKey {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::RandomnessUnavailable`] if the operating-system random
+    /// Returns [`KeyError::RandomnessUnavailable`] if the operating-system random
     /// source fails.
-    pub fn generate() -> Result<Self, Error> {
+    pub fn generate() -> Result<Self, KeyError> {
         let id = IndexKeyId::from_bytes(random_id()?);
         Ok(Self(generate_key_material(id)?))
     }
@@ -133,9 +154,9 @@ impl BlindIndexKey {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// Returns [`KeyError::InvalidKeyEncoding`] if `encoded` is malformed or does
     /// not represent exactly 32 bytes.
-    pub fn from_hex(id: IndexKeyId, encoded: &str) -> Result<Self, Error> {
+    pub fn from_hex(id: IndexKeyId, encoded: &str) -> Result<Self, KeyError> {
         Ok(Self(key_material_from_hex(id, encoded)?))
     }
 
@@ -146,9 +167,9 @@ impl BlindIndexKey {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// Returns [`KeyError::InvalidKeyEncoding`] if `encoded` is malformed or does
     /// not represent exactly 32 bytes.
-    pub fn from_base64(id: IndexKeyId, encoded: &str) -> Result<Self, Error> {
+    pub fn from_base64(id: IndexKeyId, encoded: &str) -> Result<Self, KeyError> {
         Ok(Self(key_material_from_base64(id, encoded)?))
     }
 
@@ -182,47 +203,54 @@ impl fmt::Debug for BlindIndexKey {
     }
 }
 
-fn random_id() -> Result<[u8; 16], Error> {
+fn random_id() -> Result<[u8; 16], KeyError> {
     let mut id = [0_u8; 16];
-    getrandom::fill(&mut id).map_err(|_| Error::RandomnessUnavailable)?;
+    getrandom::fill(&mut id).map_err(|_| KeyError::RandomnessUnavailable)?;
     Ok(id)
 }
 
-fn generate_key_material<Id>(id: Id) -> Result<Arc<KeyMaterial<Id>>, Error> {
+fn generate_key_material<Id: Clone>(id: Id) -> Result<Arc<KeyMaterial<Id>>, KeyError> {
     initialize_key_material(id, |bytes| {
-        getrandom::fill(bytes).map_err(|_| Error::RandomnessUnavailable)
+        getrandom::fill(bytes).map_err(|_| KeyError::RandomnessUnavailable)
     })
 }
 
-fn key_material_from_hex<Id>(id: Id, encoded: &str) -> Result<Arc<KeyMaterial<Id>>, Error> {
+fn key_material_from_hex<Id: Clone>(
+    id: Id,
+    encoded: &str,
+) -> Result<Arc<KeyMaterial<Id>>, KeyError> {
     initialize_key_material(id, |bytes| {
-        hex::decode_to_slice(encoded, bytes).map_err(|_| Error::InvalidKeyEncoding)
+        hex::decode_to_slice(encoded, bytes).map_err(|_| KeyError::InvalidKeyEncoding)
     })
 }
 
-fn key_material_from_base64<Id>(id: Id, encoded: &str) -> Result<Arc<KeyMaterial<Id>>, Error> {
+fn key_material_from_base64<Id: Clone>(
+    id: Id,
+    encoded: &str,
+) -> Result<Arc<KeyMaterial<Id>>, KeyError> {
     initialize_key_material(id, |bytes| {
         let decoded_len = base64::engine::general_purpose::STANDARD
             .decode_slice(encoded, bytes)
-            .map_err(|_| Error::InvalidKeyEncoding)?;
+            .map_err(|_| KeyError::InvalidKeyEncoding)?;
 
         if decoded_len != bytes.len() {
-            return Err(Error::InvalidKeyEncoding);
+            return Err(KeyError::InvalidKeyEncoding);
         }
 
         Ok(())
     })
 }
 
-fn initialize_key_material<Id>(
+fn initialize_key_material<Id: Clone>(
     id: Id,
-    initialize: impl FnOnce(&mut [u8; 32]) -> Result<(), Error>,
-) -> Result<Arc<KeyMaterial<Id>>, Error> {
+    initialize: impl FnOnce(&mut [u8; 32]) -> Result<(), KeyError>,
+) -> Result<Arc<KeyMaterial<Id>>, KeyError> {
     let mut material = Arc::new(KeyMaterial {
         id,
         bytes: Zeroizing::new([0_u8; 32]),
     });
-    let bytes = &mut Arc::get_mut(&mut material).ok_or(Error::Internal)?.bytes;
+    // A fresh `Arc` is unique, so `make_mut` writes in place and never clones.
+    let bytes = &mut Arc::make_mut(&mut material).bytes;
     initialize(bytes)?;
 
     Ok(material)
@@ -234,7 +262,7 @@ fn initialize_key_material<Id>(
 /// Cloning a keyring is cheap: clones share the same keys.
 ///
 /// New values are sealed with the current key. Opening looks up exactly the key
-/// ID that the envelope names and fails with [`Error::UnknownEncryptionKey`]
+/// ID that the envelope names and fails with [`Error::UnknownEncryptionKey`](crate::Error::UnknownEncryptionKey)
 /// when this keyring does not hold it; it never substitutes the current key.
 /// Keep previous keys until every value sealed with them has been resealed. See
 /// the complete [key-rotation example] and [maintenance sweep example].
@@ -262,16 +290,16 @@ impl EncryptionKeyring {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DuplicateEncryptionKey`] for any repeated key ID.
+    /// Returns [`KeyError::DuplicateEncryptionKey`] for any repeated key ID.
     pub fn new(
         current: EncryptionKey,
         previous: impl IntoIterator<Item = EncryptionKey>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, KeyError> {
         Ring::new(
             current,
             previous,
             EncryptionKey::id,
-            Error::DuplicateEncryptionKey,
+            KeyError::DuplicateEncryptionKey,
         )
         .map(|ring| Self(Arc::new(ring)))
     }
@@ -321,16 +349,16 @@ impl BlindIndexKeyring {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::DuplicateBlindIndexKey`] for any repeated key ID.
+    /// Returns [`KeyError::DuplicateBlindIndexKey`] for any repeated key ID.
     pub fn new(
         current: BlindIndexKey,
         previous: impl IntoIterator<Item = BlindIndexKey>,
-    ) -> Result<Self, Error> {
+    ) -> Result<Self, KeyError> {
         Ring::new(
             current,
             previous,
             BlindIndexKey::id,
-            Error::DuplicateBlindIndexKey,
+            KeyError::DuplicateBlindIndexKey,
         )
         .map(|ring| Self(Arc::new(ring)))
     }
@@ -376,8 +404,8 @@ impl<Id: Ord + Copy, Key: Clone> Ring<Id, Key> {
         current: Key,
         previous: impl IntoIterator<Item = Key>,
         id_of: impl Fn(&Key) -> Id,
-        duplicate: impl FnOnce(Id) -> Error,
-    ) -> Result<Self, Error> {
+        duplicate: impl FnOnce(Id) -> KeyError,
+    ) -> Result<Self, KeyError> {
         let mut keys = BTreeMap::new();
         keys.insert(id_of(&current), current.clone());
         for key in previous {
@@ -407,7 +435,7 @@ impl<Id: fmt::Debug, Key: fmt::Debug> Ring<Id, Key> {
 /// (`Sealed::seal`, `Sealed::open`, `probes_with`, …). It is also what
 /// [`keys::install`](crate::keys::install) installs for the global conveniences.
 ///
-/// Blind-index operations fail with [`Error::BlindIndexKeysNotConfigured`] when
+/// Blind-index operations fail with [`Error::BlindIndexKeysNotConfigured`](crate::Error::BlindIndexKeysNotConfigured) when
 /// `blind_indexes` is `None`.
 ///
 /// `Keys` serves every field and scope alike. To keep fields or scopes under

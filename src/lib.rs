@@ -222,7 +222,7 @@ pub use field::Field;
 pub use id::{
     FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, PartId, ShapeFingerprint, SuiteId,
 };
-pub use key::{BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, Keys};
+pub use key::{BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, KeyError, Keys};
 pub use key_source::{BlindIndexKeySource, EncryptionKeySource, GlobalKeys, KeyContext};
 pub use padding::Padding;
 pub use prepare::Prepared;

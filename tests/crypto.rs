@@ -2,8 +2,8 @@
 
 use cryptbox::EncryptionKey;
 use cryptbox::{
-    EncryptionKeyring, Error, Field, FieldOnly, KeyId, Padding, Raw, Sealed, Utf8, field_id,
-    inspect_ciphertext, is_ciphertext, key_id,
+    EncryptionKeyring, Error, Field, FieldOnly, KeyError, KeyId, Padding, Raw, Sealed, Utf8,
+    field_id, inspect_ciphertext, is_ciphertext, key_id,
 };
 
 const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
@@ -323,7 +323,7 @@ fn keyrings_reject_duplicate_generation_ids() {
 
     assert!(matches!(
         EncryptionKeyring::new(key(CURRENT_KEY_ID, 43), [duplicate]),
-        Err(Error::DuplicateEncryptionKey(id)) if id == CURRENT_KEY_ID
+        Err(KeyError::DuplicateEncryptionKey(id)) if id == CURRENT_KEY_ID
     ));
 }
 

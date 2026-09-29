@@ -145,6 +145,13 @@
   `Error::InvalidBlindIndex` instead of silently matching nothing, and must be
   derived again from their values.
 
+- **Breaking:** key and keyring constructors return `KeyError` instead of
+  `Error`: `EncryptionKey::generate`, `from_hex`, and `from_base64`, the same on
+  `BlindIndexKey`, and `EncryptionKeyring::new` and `BlindIndexKeyring::new`.
+  `KeyError` converts into the `Error` variant of the same name, so `?` in a
+  function returning `Error` is unchanged; only code that names or matches the
+  constructor's error type changes.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls
