@@ -2,9 +2,9 @@
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{Data, DeriveInput, Fields, Member, Type, spanned::Spanned};
+use syn::{Data, DeriveInput, Fields, Member, Path, Type, spanned::Spanned};
 
-use crate::attr::{Attrs, Errors, Key, required};
+use crate::attr::{Attrs, Errors, Key, UuidLiteral, required};
 
 const KEYS: &[Key] = &[
     Key::Id,
@@ -105,21 +105,38 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
+    let items = seal_items(&krate, &id, &padding, &value, &codec, &scope, &indexes);
+
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
             impl #impl_generics #krate::Seal for #name #type_generics #where_clause {
-                const ID: #krate::SealId = #krate::SealId::from_u128(#id);
-                const PADDING: #krate::Padding = #padding;
-                type Value = #value;
-                type Codec = #codec;
-                type Scope = #scope;
-                type Indexes = (#(#indexes,)*);
+                #items
             }
 
             #adapter
         };
     })
+}
+
+/// The items of a `Seal` impl, as every derive that declares a seal writes them.
+pub(crate) fn seal_items(
+    krate: &Path,
+    id: &UuidLiteral,
+    padding: &TokenStream,
+    value: &TokenStream,
+    codec: &TokenStream,
+    scope: &TokenStream,
+    indexes: &[Type],
+) -> TokenStream {
+    quote! {
+        const ID: #krate::SealId = #krate::SealId::from_u128(#id);
+        const PADDING: #krate::Padding = #padding;
+        type Value = #value;
+        type Codec = #codec;
+        type Scope = #scope;
+        type Indexes = (#(#indexes,)*);
+    }
 }
 
 /// Reads the seal's form from the type's shape and its `value`, `codec`, and

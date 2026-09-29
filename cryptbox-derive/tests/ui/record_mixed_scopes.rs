@@ -11,7 +11,7 @@ struct UserEmail;
 struct UserNote;
 
 #[derive(cryptbox::Record)]
-#[cryptbox(record = id, sealed = SealedUser)]
+#[cryptbox(record_id = id, sealed = SealedUser)]
 struct User {
     #[cryptbox(plaintext)]
     id: i64,

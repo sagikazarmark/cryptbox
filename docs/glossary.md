@@ -173,10 +173,14 @@ may be staged before first use.
 <!-- Agent guidance: avoid “old key”; a readable generation may be staged before first use. -->
 
 **Record**:
-A row whose sealed fields are sealed and opened together under one binding
-and the row's record ID (`Record`). The record ID is never encrypted: each seal
-bound to the record binds it, so it must be readable before the row is opened. The sealed form holds each sealed field's value and the blind indexes
-its seal declares; `#[derive(Record)]` rejects a record that omits one.
+A row whose sealed fields are sealed and opened together under one scope and
+the row's record ID (`Record`). Each sealed field usually declares its own seal,
+bound to its field, the scope, and the row, so a value moved to another field,
+table, or row fails to open; one seal never serves two fields of a record. The
+record ID is never encrypted: every seal bound to the record binds it, so it
+must be readable before the row is opened. The sealed form holds each sealed
+field's value and the blind indexes its seal declares; `#[derive(Record)]`
+rejects a record that omits one.
 <!-- Agent guidance: a “record” is the whole row, and its “fields” are the struct's members; a seal “binds a record” when its scope is `Recorded<S, Id>`, which adds the record ID as a bound-only part under the nil part ID. A record passes its ID to every sealed field and binds it only where a seal binds one. Avoid “entity” or “model” for a record. -->
 
 **Schema manifest**:
@@ -204,7 +208,8 @@ indexes. A value sealed with one seal does not open as another. A seal is
 either a marker over a separate value type, so one value type can back several
 seals, such as a home and a billing address, each with its own seal ID; or its
 own value (a self-valued seal), such as `struct UserEmail(String)`. Seals serve
-any sealed value: a database column, a message, or a whole response.
+any sealed value: a database column, a message, or a whole response. A record
+declares a seal for each of its sealed fields.
 <!-- Agent guidance: “field” is the retired name for a seal (ADR-0007) and now means only a member of a struct or record; “profile” is older still. Do not reintroduce either. Avoid “column”, “key”, or “cipher suite” as synonyms: a seal is independent of database names. -->
 
 **Seal ID**:

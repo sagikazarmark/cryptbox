@@ -76,7 +76,7 @@ use crate::{Codec, IndexList, Padding, SealId, SealScope};
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a seal",
     label = "not a seal",
-    note = "declare one with `#[derive(cryptbox::Seal)]`; in a `#[derive(Record)]`, mark a field stored as it is `#[cryptbox(plaintext)]`, or name its seal with `#[cryptbox(seal = …)]`"
+    note = "declare one with `#[derive(cryptbox::Seal)]`; in a `#[derive(Record)]`, declare a field's own seal with `#[cryptbox(id = \"…\")]`, or mark it `#[cryptbox(plaintext)]`"
 )]
 pub trait Seal: 'static {
     /// The stable identifier, independent of Rust and database names.

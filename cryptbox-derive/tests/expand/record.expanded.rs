@@ -81,7 +81,7 @@ const _: () = {
     }
 };
 /// A customer.
-#[cryptbox(record = id, sealed = SealedCustomer, attr(derive(Debug)))]
+#[cryptbox(record_id = id, sealed = SealedCustomer, attr(derive(Debug)))]
 #[sqlx(rename_all = "snake_case")]
 pub struct Customer {
     /// The client-generated record ID.

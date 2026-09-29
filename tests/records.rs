@@ -260,7 +260,7 @@ mod derived {
 
     /// The derived equivalent of [`Customer`].
     #[derive(Clone, Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record = id, sealed = SealedDerivedCustomer)]
+    #[cryptbox(record_id = id, sealed = SealedDerivedCustomer)]
     struct DerivedCustomer {
         #[cryptbox(plaintext)]
         id: i64,
@@ -377,6 +377,114 @@ mod derived {
 }
 
 #[cfg(feature = "derive")]
+mod own_seals {
+    use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Record, Seal, Sealed, Tenant};
+    use zeroize::Zeroizing;
+
+    use super::{
+        Customer, CustomerEmail, CustomerNote, EmailLookup, SealedCustomer, customer, keys, tenant,
+    };
+
+    /// [`Customer`] with its email's seal declared on the field: the same ID,
+    /// scope, and record binding as [`CustomerEmail`], so the same bytes.
+    #[derive(Clone, Debug, PartialEq, cryptbox::Record)]
+    #[cryptbox(record_id = id, sealed = SealedInlineCustomer)]
+    pub struct InlineCustomer {
+        #[cryptbox(plaintext)]
+        id: i64,
+        #[cryptbox(
+            id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
+            scope = Tenant,
+            index(InlineEmailLookup as email_lookup),
+        )]
+        email: String,
+        #[cryptbox(seal = CustomerNote)]
+        note: String,
+    }
+
+    fn normalize_email(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        EmailLookup::normalize_query(query)
+    }
+
+    /// [`EmailLookup`] over the field's own seal.
+    #[derive(cryptbox::BlindIndexSpec)]
+    #[cryptbox(
+        id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
+        seal = InlineCustomerEmail,
+        bits = 1,
+        query = str,
+        normalize = normalize_email,
+        normalizer = "email/1",
+    )]
+    struct InlineEmailLookup;
+
+    /// A field seal under another name.
+    #[derive(Debug, PartialEq, cryptbox::Record)]
+    #[cryptbox(record_id = id, sealed = SealedRenamed)]
+    struct Renamed {
+        #[cryptbox(plaintext)]
+        id: i64,
+        #[cryptbox(id = "5b7d9f13-2c4e-4a68-8b0d-1f3e5a7c9b24", name = RenamedNickname)]
+        nickname: String,
+    }
+
+    #[test]
+    fn a_field_seal_is_named_after_its_record_and_field() {
+        assert_eq!(InlineCustomerEmail::ID, CustomerEmail::ID);
+        assert_eq!(
+            RenamedNickname::ID,
+            cryptbox::seal_id!("5b7d9f13-2c4e-4a68-8b0d-1f3e5a7c9b24")
+        );
+    }
+
+    #[test]
+    fn a_field_seal_writes_the_bytes_of_its_hand_written_equivalent() {
+        let keys = keys();
+        let acme = tenant(b"acme");
+        let inline = InlineCustomer {
+            id: 7,
+            email: "ada@example.com".to_owned(),
+            note: "note 7".to_owned(),
+        };
+        let row = inline.seal(&acme, &keys).unwrap();
+        let manual = customer(7, "ada@example.com").seal(&acme, &keys).unwrap();
+        // Blind indexes are deterministic: both write the same one.
+        assert_eq!(row.email_lookup.as_bytes(), manual.email_lookup.as_bytes());
+
+        let sealed = SealedCustomer {
+            id: row.id,
+            email: Sealed::from_bytes(row.email.into_bytes()).unwrap(),
+            email_lookup: BlindIndex::from_bytes(row.email_lookup.into_bytes()).unwrap(),
+            note: row.note,
+        };
+        assert_eq!(
+            Customer::open(sealed, &acme, &keys).unwrap(),
+            customer(7, "ada@example.com")
+        );
+    }
+
+    #[test]
+    fn a_field_seal_is_bound_to_its_record() {
+        let keys = keys();
+        let acme = tenant(b"acme");
+        let (email, _) =
+            InlineCustomer::seal_email(&"ada@example.com".to_owned(), &acme, &7, &keys).unwrap();
+
+        assert_eq!(email.open((&acme, &7), &keys).unwrap(), "ada@example.com");
+        assert_eq!(
+            email.open((&acme, &8), &keys).unwrap_err(),
+            cryptbox::Error::AuthenticationFailed
+        );
+        let renamed = Renamed {
+            id: 1,
+            nickname: "ada".to_owned(),
+        };
+        let row = renamed.seal(&(), &keys).unwrap();
+        assert_eq!(row.nickname.open(((), &1), &keys).unwrap(), "ada");
+    }
+}
+
+#[cfg(feature = "derive")]
 mod self_valued {
     use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Record, Tenant};
     use zeroize::Zeroizing;
@@ -418,7 +526,7 @@ mod self_valued {
 
     /// [`Customer`] with a field whose type is its own seal.
     #[derive(Clone, Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record = id, sealed = SealedOwnCustomer)]
+    #[cryptbox(record_id = id, sealed = SealedOwnCustomer)]
     struct OwnCustomer {
         #[cryptbox(plaintext)]
         id: i64,
@@ -464,7 +572,7 @@ mod sqlite {
 
     /// A record whose sealed struct is read with `sqlx::FromRow`.
     #[derive(Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record = id, sealed = SealedStoredCustomer, attr(derive(sqlx::FromRow)))]
+    #[cryptbox(record_id = id, sealed = SealedStoredCustomer, attr(derive(sqlx::FromRow)))]
     #[sqlx(rename_all = "UPPERCASE")]
     struct StoredCustomer {
         #[cryptbox(plaintext)]

@@ -1,14 +1,32 @@
 //! Expands `#[derive(Record)]`.
 
 use proc_macro2::{Span, TokenStream};
-use quote::{format_ident, quote, quote_spanned};
+use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{Attribute, Data, DeriveInput, Fields, Ident, LitStr, Path, Type, spanned::Spanned};
 
-use crate::attr::{Attrs, Errors, IndexColumn, Key, required};
+use crate::attr::{Attrs, Errors, IndexColumn, Key, Padding, UuidLiteral, required};
+use crate::seal::seal_items;
 
 const KEYS: &[Key] = &[Key::RecordId, Key::Sealed, Key::Attr, Key::Crate];
 
-const MEMBER_KEYS: &[Key] = &[Key::Seal, Key::IndexColumns, Key::Plaintext];
+const REJECTED: &[(Key, &str)] = &[(
+    Key::Record,
+    "`record` is renamed `record_id`: `#[cryptbox(record_id = field)]`",
+)];
+
+const MEMBER_KEYS: &[Key] = &[
+    Key::Id,
+    Key::Scope,
+    Key::Codec,
+    Key::Padding,
+    Key::Name,
+    Key::Seal,
+    Key::IndexColumns,
+    Key::Plaintext,
+];
+
+/// The keys that declare a field's own seal, besides its `id`.
+const OWN_SEAL_KEYS: [Key; 4] = [Key::Scope, Key::Codec, Key::Padding, Key::Name];
 
 /// One struct field of the record, and how it is stored.
 struct Member<'a> {
@@ -21,7 +39,18 @@ struct Member<'a> {
 /// A member sealed as a cryptbox seal, with the blind indexes it writes.
 struct Sealing {
     seal: Type,
+    /// The seal the field declares for itself, or `None` for an existing seal.
+    own: Option<OwnSeal>,
     indexes: Vec<IndexColumn>,
+}
+
+/// A seal a field declares for itself, which the derive generates.
+struct OwnSeal {
+    name: Ident,
+    id: UuidLiteral,
+    scope: Option<Type>,
+    codec: Option<Type>,
+    padding: Option<Padding>,
 }
 
 impl Member<'_> {
@@ -43,18 +72,23 @@ impl Member<'_> {
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    let mut attrs = Attrs::parse(&input.attrs, KEYS, &mut errors);
+    let mut attrs = Attrs::parse_rejecting(&input.attrs, KEYS, REJECTED, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
 
-    let record = required(
-        attrs.record_id.take(),
-        &attrs,
-        Key::RecordId,
-        name,
-        "id",
-        &mut errors,
-    );
+    // A rejected `record` key already says to use `record_id`.
+    let record = if attrs.seen(Key::Record) {
+        attrs.record_id.take()
+    } else {
+        required(
+            attrs.record_id.take(),
+            &attrs,
+            Key::RecordId,
+            name,
+            "id",
+            &mut errors,
+        )
+    };
     let sealed_name = required(
         attrs.sealed.take(),
         &attrs,
@@ -64,7 +98,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         &mut errors,
     );
     let fields = struct_fields(input, &mut errors);
-    let members = parse_members(&fields, &mut errors);
+    let members = parse_members(name, &fields, &mut errors);
     errors = errors.check()?;
     let (Some(record), Some(sealed_name)) = (record, sealed_name) else {
         unreachable!("missing keys are reported above");
@@ -75,7 +109,16 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let Some(first) = members.iter().find_map(|member| member.sealing.as_ref()) else {
         unreachable!("a record without sealed fields is reported above");
     };
-    let binding_seal = &first.seal;
+    // A field's own seal may be private, so the record names its declared scope
+    // rather than a projection through it.
+    let record_scope = if let Some(own) = &first.own {
+        own.scope
+            .as_ref()
+            .map_or_else(|| quote!(()), |scope| quote!(#scope))
+    } else {
+        let seal = &first.seal;
+        quote!(<<#seal as #krate::Seal>::Scope as #krate::SealScope>::Parts)
+    };
     let record_ty = &members
         .iter()
         .find(|member| *member.ident == record)
@@ -83,6 +126,9 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         .decl
         .ty;
 
+    let own_seals = members
+        .iter()
+        .filter_map(|member| own_seal(&krate, name, record_ty, member));
     let sealed_struct = sealed_struct(input, &attrs, &krate, &sealed_name, &members);
     let checks = members
         .iter()
@@ -97,6 +143,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let open = open_fn(&krate, &sealed_name, &record, &members);
 
     Ok(quote! {
+        #(#own_seals)*
+
         #sealed_struct
 
         const _: () = {
@@ -110,7 +158,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #[automatically_derived]
             impl #krate::Record for #name {
                 type Sealed = #sealed_name;
-                type Scope = <<#binding_seal as #krate::Seal>::Scope as #krate::SealScope>::Parts;
+                type Scope = #record_scope;
 
                 #seal
 
@@ -153,53 +201,104 @@ fn struct_fields<'a>(input: &'a DeriveInput, errors: &mut Errors) -> Vec<&'a syn
 }
 
 /// Parses how each struct field is stored; every one must say.
-fn parse_members<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Member<'a>> {
+fn parse_members<'a>(
+    name: &Ident,
+    fields: &[&'a syn::Field],
+    errors: &mut Errors,
+) -> Vec<Member<'a>> {
     let mut members = Vec::new();
 
     for decl in fields {
         let Some(ident) = &decl.ident else { continue };
         let mut attrs = Attrs::parse(&decl.attrs, MEMBER_KEYS, errors);
+        let declares_own = attrs.seen(Key::Id) || OWN_SEAL_KEYS.iter().any(|key| attrs.seen(*key));
+        let uses_existing = attrs.seen(Key::Seal);
 
-        // A bare `seal` seals the field as its own type. Nothing is inferred from
-        // names: a type that is not a seal fails to compile where it is named.
-        let seal = attrs
-            .seal
-            .take()
-            .or_else(|| attrs.seal_own.map(|_| decl.ty.clone()));
-        let sealing = match (seal, attrs.plaintext) {
-            (Some(seal), None) => Some(Sealing {
-                seal,
-                indexes: attrs.index_columns.take().unwrap_or_default(),
-            }),
-            (None, Some(span)) => {
-                if attrs.seen(Key::IndexColumns) {
+        if let Some(span) = attrs.plaintext
+            && (declares_own || uses_existing)
+        {
+            errors.push(syn::Error::new(
+                span,
+                "a field is either sealed or `plaintext`, not both",
+            ));
+            continue;
+        }
+        if declares_own && uses_existing {
+            errors.push(syn::Error::new(
+                ident.span(),
+                format!(
+                    "`{ident}` declares its own seal with `id` or uses an existing one with `seal`, \
+                     not both"
+                ),
+            ));
+            continue;
+        }
+
+        let sealing = if declares_own {
+            let Some(id) = attrs.id.take() else {
+                // An invalid `id` is already reported.
+                if !attrs.seen(Key::Id) {
                     errors.push(syn::Error::new(
-                        span,
-                        "a `plaintext` field has no blind indexes: seal it with `seal` to index it",
+                        ident.span(),
+                        format!(
+                            "`{ident}` declares its own seal: add its ID with \
+                             `#[cryptbox(id = \"<uuid>\")]`"
+                        ),
                     ));
                 }
-                None
-            }
-            (Some(_), Some(span)) => {
+                continue;
+            };
+            let seal_name = attrs
+                .name
+                .take()
+                .unwrap_or_else(|| own_seal_name(name, ident));
+            Some(Sealing {
+                seal: syn::parse_quote!(#seal_name),
+                own: Some(OwnSeal {
+                    name: seal_name,
+                    id,
+                    scope: attrs.scope.take(),
+                    codec: attrs.codec.take(),
+                    padding: attrs.padding.take(),
+                }),
+                indexes: attrs.index_columns.take().unwrap_or_default(),
+            })
+        } else if uses_existing {
+            // A bare `seal` seals the field as its own type. Nothing is inferred
+            // from names: a type that is not a seal fails to compile where it is
+            // named.
+            let Some(seal) = attrs
+                .seal
+                .take()
+                .or_else(|| attrs.seal_own.map(|_| decl.ty.clone()))
+            else {
+                // A `seal` key whose value was invalid is already reported.
+                continue;
+            };
+            Some(Sealing {
+                seal,
+                own: None,
+                indexes: attrs.index_columns.take().unwrap_or_default(),
+            })
+        } else if let Some(span) = attrs.plaintext {
+            if attrs.seen(Key::IndexColumns) {
                 errors.push(syn::Error::new(
                     span,
-                    "a field is either sealed with `seal` or `plaintext`, not both",
+                    "a `plaintext` field has no blind indexes: seal it to index it",
                 ));
-                continue;
             }
-            // A `seal` key whose value was invalid is already reported.
-            (None, None) if attrs.seen(Key::Seal) => continue,
-            (None, None) => {
-                errors.push(syn::Error::new(
-                    ident.span(),
-                    format!(
-                        "`{ident}` must say how it is stored: add `#[cryptbox(seal)]` if its type is \
-                         a seal, `#[cryptbox(seal = F)]` to seal it with `F`, or \
-                         `#[cryptbox(plaintext)]` to store it as it is"
-                    ),
-                ));
-                continue;
-            }
+            None
+        } else {
+            errors.push(syn::Error::new(
+                ident.span(),
+                format!(
+                    "`{ident}` must say how it is stored: declare its own seal with \
+                     `#[cryptbox(id = \"<uuid>\")]`, use an existing one with \
+                     `#[cryptbox(seal = F)]` or, if its type is a seal, `#[cryptbox(seal)]`, \
+                     or store it as it is with `#[cryptbox(plaintext)]`"
+                ),
+            ));
+            continue;
         };
 
         members.push(Member {
@@ -212,6 +311,24 @@ fn parse_members<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Memb
     members
 }
 
+/// The default name of a field's own seal: the record's name and the field's,
+/// as `CustomerEmail` for `Customer::email`.
+fn own_seal_name(record: &Ident, field: &Ident) -> Ident {
+    let field = field.to_string();
+    let pascal: String = field
+        .trim_start_matches("r#")
+        .split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            chars.next().map_or_else(String::new, |first| {
+                first.to_uppercase().chain(chars).collect()
+            })
+        })
+        .collect();
+
+    // The name resolves where the record is declared.
+    Ident::new(&format!("{record}{pascal}"), record.span())
+}
 /// Checks the record ID field and the names the sealed struct adds.
 fn check_members(name: &Ident, record: &Ident, members: &[Member<'_>], errors: &mut Errors) {
     match members.iter().find(|member| member.ident == record) {
@@ -232,10 +349,30 @@ fn check_members(name: &Ident, record: &Ident, members: &[Member<'_>], errors: &
         Some(_) => {}
     }
 
+    // Two fields of one seal could have their values swapped within a row.
+    let mut seals: Vec<(String, &Ident)> = Vec::new();
+    for member in members {
+        let Some(sealing) = &member.sealing else {
+            continue;
+        };
+        let seal = sealing.seal.to_token_stream().to_string();
+        match seals.iter().find(|(other, _)| *other == seal) {
+            Some((_, other)) => errors.push(syn::Error::new(
+                sealing.seal.span(),
+                format!(
+                    "`{}` also seals `{other}`: give each field its own seal, or the two \
+                     fields' values could be swapped within a row",
+                    sealing.seal.to_token_stream()
+                ),
+            )),
+            None => seals.push((seal, member.ident)),
+        }
+    }
+
     if members.iter().all(|member| member.sealing.is_none()) {
         errors.push(syn::Error::new(
             name.span(),
-            "a record needs at least one sealed field: add `#[cryptbox(seal)]` or `#[cryptbox(seal = F)]` to one",
+            "a record needs at least one sealed field: declare a seal on one with `#[cryptbox(id = \"<uuid>\")]`",
         ));
     }
 
@@ -281,7 +418,7 @@ fn sealed_struct(
         let forwarded = member.forwarded_attrs();
         let vis = &member.decl.vis;
         let ident = member.ident;
-        let Some(Sealing { seal, indexes }) = &member.sealing else {
+        let Some(Sealing { seal, indexes, .. }) = &member.sealing else {
             let ty = &member.decl.ty;
             return quote!(#(#forwarded)* #vis #ident: #ty,);
         };
@@ -316,7 +453,7 @@ fn sealed_struct(
 
 /// Asserts that a sealed field writes exactly the indexes its seal declares.
 fn index_check(krate: &Path, member: &Member<'_>) -> Option<TokenStream> {
-    let Sealing { seal, indexes } = member.sealing.as_ref()?;
+    let Sealing { seal, indexes, .. } = member.sealing.as_ref()?;
     let ident = member.ident;
     let specs = indexes.iter().map(|index| &index.spec);
     let message = LitStr::new(
@@ -352,7 +489,7 @@ fn hygienic_at(name: &str, span: Span) -> Ident {
 
 /// `seal_<field>`: seals one field with its indexes, for a partial update.
 fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<TokenStream> {
-    let Sealing { seal, indexes } = member.sealing.as_ref()?;
+    let Sealing { seal, indexes, .. } = member.sealing.as_ref()?;
     let ident = member.ident;
     let vis = &member.decl.vis;
     let sealer = sealer_name(ident);
@@ -422,7 +559,7 @@ fn seal_fn(
     let [binding, keys] = ["binding", "keys"].map(hygienic);
 
     let seals = members.iter().filter_map(|member| {
-        let Sealing { seal, indexes } = member.sealing.as_ref()?;
+        let Sealing { seal, indexes, .. } = member.sealing.as_ref()?;
         let ident = member.ident;
         let sealer = sealer_name(ident);
         let columns = indexes.iter().map(|index| &index.column);
@@ -536,5 +673,66 @@ fn indexed_by<'a>(
                 }
             }
         }
+    })
+}
+
+/// The seal a field declares for itself: a unit struct with the field's
+/// visibility, the least at which the sealed struct can name it, bound to the
+/// field's scope and the record's ID.
+fn own_seal(
+    krate: &Path,
+    record: &Ident,
+    record_ty: &Type,
+    member: &Member<'_>,
+) -> Option<TokenStream> {
+    let Sealing {
+        own: Some(own),
+        indexes,
+        ..
+    } = member.sealing.as_ref()?
+    else {
+        return None;
+    };
+    let OwnSeal {
+        name,
+        id,
+        scope,
+        codec,
+        padding,
+    } = own;
+    let vis = &member.decl.vis;
+    let value = &member.decl.ty;
+    let doc = format!(
+        "The seal of `{record}::{}`, which `#[derive(Record)]` declares.",
+        member.ident
+    );
+
+    // Never inferred from a shape: without a codec, the value type's built-in
+    // default applies, and a type without one reports its own diagnostic.
+    let codec = codec.as_ref().map_or_else(
+        || quote_spanned!(value.span()=> <#value as #krate::__private::DefaultCodec>::Codec),
+        |codec| quote!(#codec),
+    );
+    let padding = padding.as_ref().map_or_else(
+        || quote!(#krate::Padding::NONE),
+        |padding| padding.to_tokens(krate),
+    );
+    let scope = scope
+        .as_ref()
+        .map_or_else(|| quote!(()), |scope| quote!(#scope));
+    let scope = quote!(#krate::Recorded<#scope, #record_ty>);
+    let specs: Vec<_> = indexes.iter().map(|index| index.spec.clone()).collect();
+    let items = seal_items(krate, id, &padding, &quote!(#value), &codec, &scope, &specs);
+
+    Some(quote! {
+        #[doc = #doc]
+        #vis struct #name;
+
+        const _: () = {
+            #[automatically_derived]
+            impl #krate::Seal for #name {
+                #items
+            }
+        };
     })
 }

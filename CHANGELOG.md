@@ -212,6 +212,16 @@
   prints the record's kind or `no`. The bytes of every value and blind index
   change; none were released since 0.5.0.
 
+- **Breaking:** `#[derive(Record)]` declares a seal for each sealed field
+  (ADR-0008). `#[cryptbox(id = "…")]` on a field generates its seal, named after
+  the record and the field, such as `CustomerEmail`, or as `name = …` says, with
+  the field's visibility; `scope`, `codec`, and `padding` configure it as for
+  `#[derive(Seal)]`, and its scope is `Recorded<Scope, Id>` with the record ID's
+  type, so a value moved to another field, table, or row fails to open. A field
+  can still use an existing seal with `seal = F` or a bare `seal`, but one seal
+  on two fields fails the build. The struct's `record = field` key is renamed
+  `record_id = field`.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Records declare their fields' seals; the record ID is a bound part

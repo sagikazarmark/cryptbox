@@ -55,7 +55,7 @@ struct CustomerNote;
 
 #[derive(Debug, PartialEq, cryptbox::Record)]
 #[cryptbox(
-    record = id,
+    record_id = id,
     sealed = SealedCustomer,
     attr(derive(serde::Serialize, serde::Deserialize))
 )]

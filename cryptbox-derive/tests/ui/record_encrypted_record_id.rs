@@ -7,7 +7,7 @@ struct UserEmail;
 struct UserHandle;
 
 #[derive(cryptbox::Record)]
-#[cryptbox(record = handle, sealed = SealedUser)]
+#[cryptbox(record_id = handle, sealed = SealedUser)]
 struct User {
     #[cryptbox(seal = UserHandle)]
     handle: String,

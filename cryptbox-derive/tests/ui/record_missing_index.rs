@@ -26,7 +26,7 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 struct EmailLookup;
 
 #[derive(cryptbox::Record)]
-#[cryptbox(record = id, sealed = SealedUser)]
+#[cryptbox(record_id = id, sealed = SealedUser)]
 struct User {
     #[cryptbox(plaintext)]
     id: i64,
