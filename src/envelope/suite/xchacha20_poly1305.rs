@@ -10,8 +10,8 @@ use chacha20poly1305::{KeyInit, XChaCha20Poly1305 as Cipher};
 use zeroize::Zeroizing;
 
 use super::{
-    EXPERIMENTAL_XCHACHA20_POLY1305, FORMAT_VERSION, ParsedEnvelope, Suite, SuiteId,
-    derive_encryption_key, envelope_aad, envelope_header,
+    FORMAT_VERSION, ParsedEnvelope, Suite, SuiteId, derive_encryption_key, envelope_aad,
+    envelope_header,
 };
 use crate::crypto;
 use crate::padding::AeadPlaintext;
@@ -22,6 +22,12 @@ const TAG_LEN: usize = <Cipher as AeadCore>::TagSize::USIZE;
 // One byte below RFC 8439's `(2^32 - 1) * 64`: chacha20poly1305 rejects a message of
 // exactly that length, which would otherwise surface as Error::Internal.
 const MAX_MESSAGE_LEN: u64 = 274_877_906_879;
+
+/// The provisional suite ID for HKDF-SHA-256 plus XChaCha20-Poly1305.
+///
+/// This construction and its wire format are experimental pending focused
+/// cryptographic review and independently verified test vectors.
+pub const EXPERIMENTAL_XCHACHA20_POLY1305: SuiteId = SuiteId::new(1);
 
 /// Suite 1: HKDF-SHA-256 and XChaCha20-Poly1305 over the format 2 envelope.
 pub(in crate::envelope) struct XChaCha20Poly1305;

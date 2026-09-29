@@ -14,12 +14,6 @@ use crate::{EncryptionKey, Error, ShapeFingerprint};
 const ENCRYPTION_KEY_LABEL: &[u8] = b"cryptbox/encryption-key/v1\0";
 const ENVELOPE_AAD_LABEL: &[u8] = b"cryptbox/envelope-aad/v1\0";
 
-/// The provisional suite ID for HKDF-SHA-256 plus XChaCha20-Poly1305.
-///
-/// This construction and its wire format are experimental pending focused
-/// cryptographic review and independently verified test vectors.
-pub const EXPERIMENTAL_XCHACHA20_POLY1305: SuiteId = SuiteId::new(1);
-
 /// A complete encryption construction over the envelope format: how it derives
 /// its key, what it authenticates, and which AEAD seals the payload.
 ///

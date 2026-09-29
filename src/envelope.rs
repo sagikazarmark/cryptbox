@@ -9,8 +9,8 @@ use crate::{EncryptionKeyring, Error, Padding, ShapeFingerprint};
 pub(crate) use format::validated_key_id;
 pub use format::{CiphertextInfo, SuiteId, is_ciphertext};
 use format::{ParsedEnvelope, parse_envelope};
-pub use suite::EXPERIMENTAL_XCHACHA20_POLY1305;
 use suite::SupportedSuite;
+pub use suite::xchacha20_poly1305::EXPERIMENTAL_XCHACHA20_POLY1305;
 
 /// Parses supported envelope metadata without authenticating it.
 ///
