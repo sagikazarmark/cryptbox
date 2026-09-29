@@ -18,7 +18,6 @@ struct Unpadded;
 impl Seal for Unpadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -30,7 +29,6 @@ struct SharedSealPadded;
 impl Seal for SharedSealPadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -42,7 +40,6 @@ struct FixedLength;
 impl Seal for FixedLength {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::length(16);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -54,7 +51,6 @@ struct WiderBlockPadded;
 impl Seal for WiderBlockPadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(32);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -66,7 +62,6 @@ struct BlockPadded;
 impl Seal for BlockPadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -78,7 +73,6 @@ struct PolicyFixedLength;
 impl Seal for PolicyFixedLength {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::length(1_048_576);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -158,7 +152,6 @@ struct RawUnpadded;
 impl Seal for RawUnpadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
@@ -170,7 +163,6 @@ struct RawPadded;
 impl Seal for RawPadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();

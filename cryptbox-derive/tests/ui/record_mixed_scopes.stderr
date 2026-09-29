@@ -36,6 +36,6 @@ error[E0308]: mismatched types
 note: tuple struct defined here
   --> $WORKSPACE/src/binding/args.rs
    |
-   | pub struct InRecord<'a, B>(pub &'a B, pub RecordId<'a>);
+   | pub struct InRecord<'a, S, Id: ?Sized>(pub &'a S, pub &'a Id);
    |            ^^^^^^^^
    = note: this error originates in the derive macro `cryptbox::Record` (in Nightly builds, run with -Z macro-backtrace for more info)

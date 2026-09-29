@@ -1,8 +1,8 @@
 #[cryptbox(
     id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
     value = String,
-    scope = cryptbox::Tenant,
-    record,
+    scope = cryptbox::Recorded<cryptbox::Tenant,
+    i64>,
     indexes(EmailLookup, EmailDomainLookup),
 )]
 pub struct CustomerEmail;
@@ -13,10 +13,9 @@ const _: () = {
             0xca274e85_63c4_4f7d_a255_2dfecbfe5e25,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
-        const RECORD: bool = true;
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Scope = cryptbox::Tenant;
+        type Scope = cryptbox::Recorded<cryptbox::Tenant, i64>;
         type Indexes = (EmailLookup, EmailDomainLookup);
     }
 };

@@ -54,7 +54,6 @@ struct HomeAddress;
 impl Seal for HomeAddress {
     const ID: SealId = seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Address;
     type Codec = AddressCodec;
     type Scope = ();
@@ -67,7 +66,6 @@ struct BillingAddress;
 impl Seal for BillingAddress {
     const ID: SealId = seal_id!("5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25");
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = Address;
     type Codec = AddressCodec;
     type Scope = ();
@@ -121,7 +119,6 @@ struct UserEmail;
 impl Seal for UserEmail {
     const ID: SealId = seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -133,7 +130,6 @@ struct SecretUserEmail;
 impl Seal for SecretUserEmail {
     const ID: SealId = UserEmail::ID;
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Secret<String>;
     type Codec = Utf8;
     type Scope = ();
@@ -145,7 +141,6 @@ struct ApiToken;
 impl Seal for ApiToken {
     const ID: SealId = seal_id!("de8c983c-7d2b-4c4f-8162-f7193010de55");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
@@ -157,7 +152,6 @@ struct SecretApiToken;
 impl Seal for SecretApiToken {
     const ID: SealId = ApiToken::ID;
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Secret<Vec<u8>>;
     type Codec = Raw;
     type Scope = ();

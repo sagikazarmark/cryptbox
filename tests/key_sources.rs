@@ -24,7 +24,6 @@ struct Email;
 impl Seal for Email {
     const ID: SealId = seal_id!("40000000-0000-4000-8000-000000000004");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
@@ -36,7 +35,6 @@ struct Iban;
 impl Seal for Iban {
     const ID: SealId = seal_id!("50000000-0000-4000-8000-000000000005");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
@@ -48,7 +46,6 @@ struct TenantNote;
 impl Seal for TenantNote {
     const ID: SealId = seal_id!("80000000-0000-4000-8000-000000000008");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = Tenant;

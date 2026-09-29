@@ -15,7 +15,6 @@ struct EmailSeal;
 impl Seal for EmailSeal {
     const ID: cryptbox::SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();

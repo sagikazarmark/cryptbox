@@ -5,8 +5,7 @@ use zeroize::Zeroizing;
 #[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    scope = cryptbox::Tenant,
-    record,
+    scope = cryptbox::Recorded<cryptbox::Tenant, i64>,
     indexes(EmailLookup),
 )]
 pub struct CustomerEmail;

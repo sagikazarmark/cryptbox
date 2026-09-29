@@ -49,8 +49,7 @@ struct CustomerEmail;
 #[cryptbox(
     id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     value = String,
-    scope = Tenant,
-    record
+    scope = cryptbox::Recorded<Tenant, i64>
 )]
 struct CustomerNote;
 

@@ -4,8 +4,8 @@
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
     CodecErrorKind, EncryptionKey, EncryptionKeyring, FromIndexValues, IndexId, IndexKeyId,
-    IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues, RecordId,
-    Scope, Seal, SealId, Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
+    IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues, Scope, Seal,
+    SealId, Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -28,7 +28,6 @@ struct ManualUserEmail;
 impl Seal for ManualUserEmail {
     const ID: SealId = seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -450,8 +449,7 @@ fn a_derived_binding_declares_its_parts_sorted_by_part_id() {
 #[cryptbox(
     id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",
     value = String,
-    scope = OrgProject,
-    record,
+    scope = cryptbox::Recorded<OrgProject, i64>,
 )]
 struct ProjectNote;
 
@@ -461,10 +459,9 @@ struct ManualProjectNote;
 impl Seal for ManualProjectNote {
     const ID: SealId = seal_id!("7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = true;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ManualOrgProject;
+    type Scope = cryptbox::Recorded<ManualOrgProject, i64>;
     type Indexes = ();
 }
 
@@ -481,14 +478,13 @@ fn a_derived_bound_seal_opens_values_of_its_manual_equivalent() {
         org: b"acme".to_vec(),
         project: 7,
     };
-    let record = RecordId::from(9_i64);
+    let record = &9_i64;
 
     let manual =
         Sealed::<ManualProjectNote>::seal(&"ship it".to_owned(), (&manual_scope, record), &keys)
             .unwrap();
     let derived = Sealed::<ProjectNote>::from_bytes(manual.into_bytes()).unwrap();
 
-    const { assert!(ProjectNote::RECORD) };
     assert_eq!(derived.open((&scope, record), &keys).unwrap(), "ship it");
 }
 

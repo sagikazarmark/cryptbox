@@ -17,7 +17,6 @@ const _: () = {
             0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
-        const RECORD: bool = false;
         type Value = Address;
         type Codec = AddressCodec;
         type Scope = ();

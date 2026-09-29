@@ -3,8 +3,8 @@
 **Binding**:
 The expected cryptographic domain of a value, independent of where its stored
 bytes are found. Every sealed value is bound at runtime to its seal ID, to the
-values of its seal's declared scope, and, when the seal declares `RECORD`, to a
-record ID. The binding of an unscoped seal identifies the seal alone, not a row
+values of its seal's declared scope, and, when the seal's scope is
+`Recorded`, to the ID of the record it is stored in. The binding of an unscoped seal identifies the seal alone, not a row
 or tenant. The binding's *declaration* (its parts and whether it binds a record)
 is persistent schema, declared by the seal; its values are supplied at each call as
 the seal's binding arguments (`Args`). Opening under other values fails
@@ -13,10 +13,10 @@ authentication; opening under another declaration reports a binding mismatch.
 
 **Binding arguments**:
 The binding values of one sealing or opening call, typed by the seal (`Args<F>`):
-`()` for an unscoped seal, `RecordId` for an unscoped seal that binds a record,
-`&F::Scope`, or `(&F::Scope, RecordId)`. A missing or extra record fails the
-build. Within a record, `InRecord(&F::Scope, RecordId)` binds the record
-exactly when the seal declares one.
+`()` for an unscoped seal, `&scope`, `(&scope, &record_id)` for a seal whose
+scope is `Recorded`, or `((), &record_id)` for `Recorded<(), Id>`. A missing or
+extra record is a type error. Within a record, the record ID is bound exactly
+where a field's seal binds one.
 
 **Binding fingerprint**:
 A public 8-byte summary of a binding's declaration: truncated SHA-256 over its
@@ -175,14 +175,13 @@ may be staged before first use.
 **Record**:
 A row whose sealed fields are sealed and opened together under one binding
 and the row's record ID (`Record`). The record ID is never encrypted: each seal
-that declares `RECORD` binds it, so it must be readable before the row is
-opened. The sealed form holds each sealed field's value and the blind indexes
+bound to the record binds it, so it must be readable before the row is opened. The sealed form holds each sealed field's value and the blind indexes
 its seal declares; `#[derive(Record)]` rejects a record that omits one.
-<!-- Agent guidance: a “record” is the whole row, and its “fields” are the struct's members; a seal “binds a record” when it declares `RECORD`. `InRecord` passes the record ID to every seal and binds it only where declared. Avoid “entity” or “model” for a record. -->
+<!-- Agent guidance: a “record” is the whole row, and its “fields” are the struct's members; a seal “binds a record” when its scope is `Recorded<S, Id>`, which adds the record ID as a bound-only part under the nil part ID. A record passes its ID to every sealed field and binds it only where a seal binds one. Avoid “entity” or “model” for a record. -->
 
 **Schema manifest**:
 A reviewable listing of registered seals and blind indexes with their
-persistent schema: seal ID, codec ID, padding, record flag, binding declaration
+persistent schema: seal ID, codec ID, padding, record kind, binding declaration
 (fingerprint, parts, kinds, and roles), shred unit, index ID, precision, and
 normalizer name. It names IDs, never Rust types, so its output is the same on
 every toolchain. A seal may carry a custody label, a declarative note of which

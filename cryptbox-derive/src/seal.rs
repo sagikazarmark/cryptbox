@@ -13,10 +13,15 @@ const KEYS: &[Key] = &[
     Key::Transparent,
     Key::Padding,
     Key::Scope,
-    Key::Record,
     Key::Indexes,
     Key::Crate,
 ];
+
+const REJECTED: &[(Key, &str)] = &[(
+    Key::Record,
+    "a seal binds a record through its scope: use `scope = cryptbox::Recorded<Scope, Id>`, \
+     or declare the seal on its field in a `#[derive(Record)]`",
+)];
 
 /// What the seal's values are, and how they are encoded.
 enum Form<'a> {
@@ -34,7 +39,7 @@ enum Form<'a> {
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    let mut attrs = Attrs::parse(&input.attrs, KEYS, &mut errors);
+    let mut attrs = Attrs::parse_rejecting(&input.attrs, KEYS, REJECTED, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
 
@@ -56,7 +61,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         || quote!(#krate::Padding::NONE),
         |padding| padding.to_tokens(&krate),
     );
-    let record = attrs.record.is_some();
     let scope = attrs
         .scope
         .map_or_else(|| quote!(()), |scope| quote!(#scope));
@@ -107,7 +111,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             impl #impl_generics #krate::Seal for #name #type_generics #where_clause {
                 const ID: #krate::SealId = #krate::SealId::from_u128(#id);
                 const PADDING: #krate::Padding = #padding;
-                const RECORD: bool = #record;
                 type Value = #value;
                 type Codec = #codec;
                 type Scope = #scope;

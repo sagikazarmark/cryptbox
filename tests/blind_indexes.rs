@@ -3,7 +3,7 @@
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, PartKind, PartSpec, PartValue,
-    PartValues, RecordId, Scope, Seal, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
+    PartValues, Recorded, Scope, Seal, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
     key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
@@ -17,7 +17,6 @@ struct EmailSeal;
 impl Seal for EmailSeal {
     const ID: cryptbox::SealId = seal_id!("80000000-0000-4000-8000-000000000008");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -29,7 +28,6 @@ struct PhoneSeal;
 impl Seal for PhoneSeal {
     const ID: cryptbox::SealId = seal_id!("90000000-0000-4000-8000-000000000009");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -223,7 +221,6 @@ struct PersonSeal;
 impl Seal for PersonSeal {
     const ID: cryptbox::SealId = seal_id!("d0000000-0000-4000-8000-00000000000d");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Person;
     type Codec = PersonCodec;
     type Scope = ();
@@ -502,10 +499,9 @@ struct TicketEmail;
 impl Seal for TicketEmail {
     const ID: cryptbox::SealId = seal_id!("c0000000-0000-4000-8000-00000000000c");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = true;
     type Value = String;
     type Codec = Utf8;
-    type Scope = OrgWorkspace;
+    type Scope = Recorded<OrgWorkspace, i64>;
     type Indexes = (TicketEmailExact,);
 }
 
@@ -579,11 +575,10 @@ fn prepared_indexes_ignore_bound_only_parts_and_the_record() {
     let value = email("mark@example.com");
     let prepare = |workspace: &[u8], record: i64| {
         let scope = ticket_scope(1, 7, workspace);
-        let prepared =
-            Sealed::<TicketEmail>::prepare(&value, (&scope, RecordId::from(record)), &keys)
-                .unwrap()
-                .with_index_with::<TicketEmailExact>(&index_keys)
-                .unwrap();
+        let prepared = Sealed::<TicketEmail>::prepare(&value, (&scope, &record), &keys)
+            .unwrap()
+            .with_index_with::<TicketEmailExact>(&index_keys)
+            .unwrap();
         let index = prepared.index::<TicketEmailExact>().unwrap();
 
         index.as_bytes().to_vec()
@@ -606,7 +601,7 @@ fn probes_find_a_prepared_index_only_in_its_scope() {
     let index_keys = index_keys();
     let value = email("mark@example.com");
     let scope = ticket_scope(1, 7, b"ws-1");
-    let prepared = Sealed::<TicketEmail>::prepare(&value, (&scope, RecordId::from(1_i64)), &keys)
+    let prepared = Sealed::<TicketEmail>::prepare(&value, (&scope, &1_i64), &keys)
         .unwrap()
         .with_index_with::<TicketEmailExact>(&index_keys)
         .unwrap();
@@ -666,7 +661,6 @@ struct TeamEmail;
 impl Seal for TeamEmail {
     const ID: cryptbox::SealId = seal_id!("e0000000-0000-4000-8000-00000000000e");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = Team;

@@ -37,7 +37,6 @@ use crate::{
 /// impl Seal for UserEmail {
 ///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
@@ -248,15 +247,6 @@ impl<F: Seal> Sealed<F> {
     }
 }
 
-// Panics become build errors in `const` context. The process-wide keys and the
-// automatic column see no record, so a seal that binds one never reaches them.
-const fn check_no_record(record: bool) {
-    assert!(
-        !record,
-        "this seal binds a record: the installed keys and the automatic column serve only seals without one"
-    );
-}
-
 impl<F: Seal<Scope = ()>> Sealed<F> {
     /// Seals `value` with the [installed keys](keys::installed).
     ///
@@ -268,7 +258,6 @@ impl<F: Seal<Scope = ()>> Sealed<F> {
     /// Returns [`Error::KeysNotInstalled`] before installation, or any error of
     /// [`Self::seal`].
     pub fn seal_global(value: &F::Value) -> Result<Self, Error> {
-        const { check_no_record(F::RECORD) };
         Self::seal(value, (), keys::installed()?)
     }
 
@@ -281,7 +270,6 @@ impl<F: Seal<Scope = ()>> Sealed<F> {
     /// Returns [`Error::KeysNotInstalled`] before installation, or any error of
     /// [`Self::open`].
     pub fn open_global(&self) -> Result<F::Value, Error> {
-        const { check_no_record(F::RECORD) };
         self.open((), keys::installed()?)
     }
 }
@@ -346,7 +334,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// impl Seal for UserEmail {
 ///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
@@ -367,7 +354,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// impl Seal for CustomerEmail {
 ///     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Tenant;
@@ -390,7 +376,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// impl Seal for UserEmail {
 ///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
@@ -418,19 +403,18 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// let email = Plain::<UserEmail>::new("user@example.com");
 /// ```
 ///
-/// And a seal that binds a record fails the build:
+/// And a seal that binds a record is a type error:
 ///
-/// ```compile_fail,E0080
-/// # use cryptbox::{Seal, SealId, Padding, Plain, Utf8};
+/// ```compile_fail,E0599
+/// # use cryptbox::{Padding, Plain, Recorded, Seal, SealId, Utf8};
 /// struct RowNote;
 ///
 /// impl Seal for RowNote {
 ///     const ID: SealId = cryptbox::seal_id!("9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = true;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Scope = Recorded<(), i64>;
 ///     type Indexes = ();
 /// }
 ///
@@ -445,7 +429,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// # impl Seal for UserEmail {
 /// #     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 /// #     const PADDING: Padding = Padding::NONE;
-/// #     const RECORD: bool = false;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
 /// #     type Scope = ();
@@ -478,7 +461,6 @@ where
     }
 
     const fn from_value(value: F::Value) -> Self {
-        const { check_no_record(F::RECORD) };
         Self {
             value,
             marker: PhantomData,

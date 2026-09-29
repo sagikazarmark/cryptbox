@@ -199,6 +199,19 @@
   declares `type Scope = ();` and its values still bind to its seal ID alone.
   Stored bytes are unchanged.
 
+- **Breaking:** a record is bound through the seal scope (ADR-0008).
+  `Seal::RECORD`, the `record` flag of `#[derive(Seal)]`, and `InRecord` are
+  removed: a record-bound seal declares `type Scope = Recorded<S, Id>`, where
+  `Id` is the record ID's type, and takes `(&scope, &id)`, or `((), &id)` for
+  the empty scope. A missing or extra record is a type error instead of a
+  post-monomorphization assert. The record is bound as a bound-only part under
+  the nil part ID, so the binding loses its record slot and the binding
+  fingerprint its record flag, and the record's kind becomes part of the
+  declaration. `Seal::Scope` is bounded by the new `SealScope`. Legacy-binding
+  windows name the old seal scope, `Recorded` included, and the schema manifest
+  prints the record's kind or `no`. The bytes of every value and blind index
+  change; none were released since 0.5.0.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

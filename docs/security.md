@@ -33,7 +33,7 @@ Seals supply persistent schema, including their binding declaration. Binding val
 record IDs are only as trustworthy as their source: take them from verified claims
 or an authorized request, never from the stored row. The exception is a
 `Record`'s record ID, which is read from the row and checked by opening every
-seal that declares `record`; a record whose seals bind none gets no check.
+seal bound to the record; a record whose seals bind none gets no check.
 Secure OS randomness and a compatible target are required; see [platform constraints](features.md#platforms-and-tested-configurations).
 
 ## Threats and unsuitable uses

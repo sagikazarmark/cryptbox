@@ -98,7 +98,6 @@ where
     /// impl Seal for UserEmail {
     ///     const ID: SealId = SealId::from_bytes([1; 16]);
     ///     const PADDING: Padding = Padding::NONE;
-    ///     const RECORD: bool = false;
     ///     type Value = String;
     ///     type Codec = Utf8;
     ///     type Scope = ();
@@ -110,7 +109,6 @@ where
     /// impl Seal for InviteEmail {
     ///     const ID: SealId = SealId::from_bytes([2; 16]);
     ///     const PADDING: Padding = Padding::NONE;
-    ///     const RECORD: bool = false;
     ///     type Value = String;
     ///     type Codec = Utf8;
     ///     type Scope = ();

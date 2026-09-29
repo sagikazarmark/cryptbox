@@ -16,7 +16,7 @@ A binding has two halves, and they change on different schedules:
 
 | Half | Where it is declared | When it changes |
 | --- | --- | --- |
-| **Declaration**: part IDs, kinds, roles, and the record flag | The seal and its `Scope` type | Only through a [declaration migration](#change-a-binding-declaration) |
+| **Declaration**: part IDs, kinds, roles, and the record's kind | The seal and its seal scope, such as `Tenant` or `Recorded<Tenant, i64>` | Only through a [declaration migration](#change-a-binding-declaration) |
 | **Values**: this org, this workspace, this record | The binding arguments of each call | Every call |
 
 One seal never seals with different part sets on different calls: that would
@@ -47,8 +47,7 @@ pub struct OrgWorkspace {
 #[cryptbox(
     id = "2cef6a47-3e20-42dc-a319-56022cb4cf30",
     value = String,
-    scope = OrgWorkspace,
-    record,
+    scope = cryptbox::Recorded<OrgWorkspace, [u8; 16]>,
     indexes(EmailLookup),
 )]
 pub struct CustomerEmail;
@@ -94,8 +93,9 @@ Three consequences follow from the table:
   because it changes index derivation and custody. The binding fingerprint covers
   roles for exactly that reason.
 
-A record ID is never a part: declare `record` on the seal. It is always bound
-only, since a record-scoped index could not be searched.
+A record ID is never a declared part: a seal binds one with the seal scope
+`Recorded<S, Id>`, which adds it as one more part under the nil part ID. It is
+always bound only, since a record-scoped index could not be searched.
 
 ## Bound values come from an authorized source
 
@@ -113,7 +113,7 @@ whatever the row says will match what the row was sealed with.
 | A client-supplied scope the request was not authorized for | **Never**: authorize first, then bind |
 
 A `Record` is the one exception, and only for its record ID. Opening takes the
-ID from the row, and every seal that declares `record` fails to open under
+ID from the row, and every seal bound to the record fails to open under
 another one, so a value copied from another row is rejected. Storage can still
 return a whole authentic row in place of another, which no binding prevents:
 when you asked for one record, compare the opened ID with the one you asked for.
@@ -127,8 +127,8 @@ such a change only over columns the application already trusts.
 
 ## Record IDs
 
-A seal that declares `record` binds every value to a record ID, so the ID must
-exist before the first value is sealed:
+A seal whose scope is `Recorded<S, Id>` binds every value to a record ID, so the
+ID must exist before the first value is sealed:
 
 - **The client generates it**, UUIDv7 recommended, so that inserts carry their
   ID. Sealing after an insert, against a database-assigned key, is not
@@ -137,19 +137,20 @@ exist before the first value is sealed:
   carry a separate, stable record ID; what matters is that the ID never changes
   while sealed values exist.
 - **It is never encrypted**, because opening the row needs it first.
-- **Its kind is fixed**: a UUID, an `i64`, or bytes. Any `PartType` can hold
-  one.
+- **Its kind is fixed**: a UUID, an `i64`, or bytes, the kind of `Id`. Any
+  `PartType` can hold one, and changing its type is a declaration change.
 
-A record field whose seal declares no record is bound to the record's scope
-alone, and gets no check of the ID. Within a `Record`, `InRecord` passes the ID
-to every seal and binds it only where the seal declares it.
+A record field whose seal binds no record is bound to the record's scope
+alone, and gets no check of the ID. A `Record` passes the ID to every sealed
+field and binds it only where the seal's scope is `Recorded`.
 
 ## Seal and open under a scope
 
 The binding arguments of a call are typed by the seal
-([`Args<F>`](https://docs.rs/cryptbox/latest/cryptbox/trait.Args.html)): `()` and
-`RecordId` for an unscoped seal, `&F::Scope`, or `(&F::Scope, RecordId)`.
-A missing or extra record fails the build rather than the read.
+([`Args<F>`](https://docs.rs/cryptbox/latest/cryptbox/trait.Args.html)): `()` for
+an unscoped seal, `&scope`, `(&scope, &record_id)` for a seal whose scope is
+`Recorded`, or `((), &record_id)` for `Recorded<(), Id>`. A missing or extra
+record is a type error rather than a failed read.
 
 The [tenant example](../examples/tenant_field.rs) is the complete program: a
 seal bound to `Tenant` with a record, one `EncryptionKeyring` per tenant behind a

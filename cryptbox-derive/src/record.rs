@@ -110,7 +110,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #[automatically_derived]
             impl #krate::Record for #name {
                 type Sealed = #sealed_name;
-                type Scope = <#binding_seal as #krate::Seal>::Scope;
+                type Scope = <<#binding_seal as #krate::Seal>::Scope as #krate::SealScope>::Parts;
 
                 #seal
 
@@ -223,7 +223,7 @@ fn check_members(name: &Ident, record: &Ident, members: &[Member<'_>], errors: &
             errors.push(syn::Error::new(
                 member.ident.span(),
                 format!(
-                    "the record ID `{record}` is never encrypted: the seals that declare `record` \
+                    "the record ID `{record}` is never encrypted: the seals bound to the record \
                      bind it, so it must be readable before the row is opened; \
                      mark it `#[cryptbox(plaintext)]`"
                 ),
@@ -358,7 +358,7 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
     let sealer = sealer_name(ident);
     let [value, binding, record, keys, prepared] =
         ["value", "binding", "record", "keys", "prepared"].map(hygienic);
-    let args = quote!(#krate::InRecord(#binding, #krate::RecordId::of(#record)));
+    let args = quote!(#krate::__private::InRecord(#binding, #record));
     let specs: Vec<_> = indexes.iter().map(|index| &index.spec).collect();
 
     let (doc, bounds, output, body) = if indexes.is_empty() {
@@ -396,7 +396,7 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
         #[doc = #doc]
         #vis fn #sealer<K>(
             #value: &<#seal as #krate::Seal>::Value,
-            #binding: &<#seal as #krate::Seal>::Scope,
+            #binding: &<<#seal as #krate::Seal>::Scope as #krate::SealScope>::Parts,
             #record: &#record_ty,
             #keys: &K,
         ) -> ::core::result::Result<#output, #krate::Error>
@@ -483,7 +483,7 @@ fn open_fn(
         // Naming the seal's binding reports a seal of another binding here.
         Some(quote_spanned! {seal.span()=>
             let #ident = #sealed.#ident.open(
-                #krate::InRecord::<<#seal as #krate::Seal>::Scope>(#binding, #record_id),
+                #krate::__private::InRecord::<<<#seal as #krate::Seal>::Scope as #krate::SealScope>::Parts, _>(#binding, #record_id),
                 #keys,
             )?;
         })
@@ -506,7 +506,7 @@ fn open_fn(
         where
             K: #krate::EncryptionKeySource + ?::core::marker::Sized,
         {
-            let #record_id = #krate::RecordId::of(&#sealed.#record);
+            let #record_id = &#sealed.#record;
             #(#opens)*
 
             ::core::result::Result::Ok(Self {

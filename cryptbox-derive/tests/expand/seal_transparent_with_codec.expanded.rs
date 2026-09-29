@@ -16,7 +16,6 @@ const _: () = {
             0x2e4a6c8e_0b1d_4f3a_a5c7_9e1b3d5f7a90,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
-        const RECORD: bool = false;
         type Value = Self;
         type Codec = Self;
         type Scope = ();

@@ -22,7 +22,6 @@ struct EmailSeal;
 impl Seal for EmailSeal {
     const ID: cryptbox::SealId = seal_id!("30000000-0000-4000-8000-000000000003");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
@@ -34,7 +33,6 @@ struct PaddedEmailSeal;
 impl Seal for PaddedEmailSeal {
     const ID: cryptbox::SealId = EmailSeal::ID;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
@@ -63,7 +61,6 @@ struct PhoneSeal;
 impl Seal for PhoneSeal {
     const ID: cryptbox::SealId = seal_id!("40000000-0000-4000-8000-000000000004");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
@@ -162,7 +159,7 @@ fn unscoped_envelopes_carry_the_empty_declaration_fingerprint() {
                 .unwrap()
                 .context_fingerprint()
         ),
-        "5d86321261d64380"
+        "65640fc8333534b9"
     );
 }
 
@@ -254,7 +251,6 @@ struct TypedEmail;
 impl Seal for TypedEmail {
     const ID: cryptbox::SealId = EmailSeal::ID;
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();

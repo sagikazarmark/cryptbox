@@ -112,43 +112,50 @@ impl fmt::Debug for TenantId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BindingDomain, RecordId, SealId, seal_id};
+    use crate::{BindingDomain, Recorded, SealId, seal_id};
 
     const SEAL: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
 
     #[test]
     fn unscoped_is_the_empty_binding() {
-        let domain = BindingDomain::of(SEAL, &(), None).unwrap();
+        let domain = BindingDomain::of::<()>(SEAL, &(), None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
-            "123456781234423482341234567890ab000000"
+            "123456781234423482341234567890ab0000"
         );
-        assert_eq!(domain.fingerprint(), hex_array("5d86321261d64380"));
+        assert_eq!(domain.fingerprint(), hex_array("65640fc8333534b9"));
     }
 
     #[test]
     fn unscoped_with_a_record_binds_the_record_alone() {
-        let domain = BindingDomain::of(SEAL, &(), Some(RecordId::from(1_i64))).unwrap();
+        let domain =
+            BindingDomain::of::<Recorded<(), i64>>(SEAL, &(), Some(PartValue::I64(1))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
-            "123456781234423482341234567890ab020000000800000000000000010000"
+            concat!(
+                "123456781234423482341234567890ab",
+                "0001",
+                "00000000000000000000000000000000",
+                "02",
+                "00000008",
+                "0000000000000001",
+            )
         );
-        assert_eq!(domain.fingerprint(), hex_array("4e56863e564d3de9"));
+        assert_eq!(domain.fingerprint(), hex_array("76081b730530f822"));
     }
 
     #[test]
     fn tenant_binds_one_bytes_keys_part() {
         let tenant = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
-        let domain = BindingDomain::of(SEAL, &tenant, None).unwrap();
+        let domain = BindingDomain::of::<Tenant>(SEAL, &tenant, None).unwrap();
 
         // docs/wire-format.md#presets
         assert_eq!(
             hex::encode(domain.as_bytes()),
             concat!(
                 "123456781234423482341234567890ab",
-                "00",
                 "0001",
                 "1e8306bf31354570831c6732f92550e9",
                 "03",
@@ -156,7 +163,7 @@ mod tests {
                 "61636d65",
             )
         );
-        assert_eq!(domain.fingerprint(), hex_array("4bca2676fab96fae"));
+        assert_eq!(domain.fingerprint(), hex_array("9b73125a52bc08d1"));
     }
 
     #[test]

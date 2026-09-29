@@ -5,7 +5,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, Error,
-    IndexId, IndexKeyId, Scope, Seal, keys,
+    IndexId, IndexKeyId, Scope, Seal, binding::PartsOf, keys,
 };
 
 mod format;
@@ -16,8 +16,7 @@ use format::{stored_key_id, valid_bits};
 use recipe::derive_index;
 
 /// The query-time arguments of `Spec`: its seal binding's `keys` and `index` part values.
-pub(crate) type IndexArgs<Spec> =
-    <<<Spec as BlindIndexSpec>::Seal as Seal>::Scope as Scope>::IndexArgs;
+pub(crate) type IndexArgs<Spec> = <PartsOf<<Spec as BlindIndexSpec>::Seal> as Scope>::IndexArgs;
 
 /// A logical blind index over one seal.
 ///
@@ -54,7 +53,6 @@ pub(crate) type IndexArgs<Spec> =
 /// impl Seal for UserEmail {
 ///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
@@ -94,7 +92,6 @@ pub(crate) type IndexArgs<Spec> =
 /// # impl Seal for Bytes {
 /// #     const ID: SealId = SealId::from_bytes([1; 16]);
 /// #     const PADDING: Padding = Padding::NONE;
-/// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = ();
@@ -122,7 +119,6 @@ pub(crate) type IndexArgs<Spec> =
 /// # impl Seal for Bytes {
 /// #     const ID: SealId = SealId::from_bytes([1; 16]);
 /// #     const PADDING: Padding = Padding::NONE;
-/// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = ();
@@ -337,7 +333,6 @@ pub trait BlindIndexSpec: Sized + 'static {
 /// impl Seal for UserEmail {
 ///     const ID: SealId = SealId::from_bytes([1; 16]);
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
@@ -349,7 +344,6 @@ pub trait BlindIndexSpec: Sized + 'static {
 /// impl Seal for InviteEmail {
 ///     const ID: SealId = SealId::from_bytes([2; 16]);
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
@@ -631,7 +625,7 @@ fn check_consistency<Spec: BlindIndexSpec>(
 // Blind indexes are domain-separated by their seal and the `keys` and `index`
 // parts of its binding, never by bound-only parts or a record.
 fn index_domain<Spec: BlindIndexSpec>(args: &IndexArgs<Spec>) -> Result<BindingDomain, Error> {
-    BindingDomain::index::<<Spec::Seal as Seal>::Scope>(<Spec::Seal as Seal>::ID, args)
+    BindingDomain::index::<PartsOf<Spec::Seal>>(<Spec::Seal as Seal>::ID, args)
 }
 
 // Asks the source for the keyring of the index in the domain's key scope.

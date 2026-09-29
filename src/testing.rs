@@ -28,7 +28,6 @@ use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 /// impl Seal for Nickname {
 ///     const ID: SealId = cryptbox::seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
@@ -95,7 +94,6 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 /// impl Seal for Iban {
 ///     const ID: SealId = cryptbox::seal_id!("50000000-0000-4000-8000-000000000005");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();

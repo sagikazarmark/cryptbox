@@ -2,7 +2,7 @@
 
 use cryptbox::{
     EncryptionKey, EncryptionKeyring, Error, Padding, PartKind, PartSpec, PartValue, PartValues,
-    RecordId, Scope, Seal, SealId, Sealed, Tenant, TenantId, Utf8, key_id, part_id,
+    Recorded, Scope, Seal, SealId, Sealed, Tenant, TenantId, Utf8, key_id, part_id,
 };
 
 /// An org scopes keys; a workspace is only bound.
@@ -40,43 +40,39 @@ impl Scope for OrgWorkspace {
 }
 
 macro_rules! seal {
-    ($name:ident, $id:literal, $binding:ty, $record:literal) => {
+    ($name:ident, $id:literal, $scope:ty) => {
         struct $name;
 
         impl Seal for $name {
             const ID: SealId = cryptbox::seal_id!($id);
             const PADDING: Padding = Padding::NONE;
-            const RECORD: bool = $record;
             type Value = String;
             type Codec = Utf8;
-            type Scope = $binding;
+            type Scope = $scope;
             type Indexes = ();
         }
     };
 }
 
-seal!(Nickname, "5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01", (), false);
-seal!(RowNote, "9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24", (), true);
+seal!(Nickname, "5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01", ());
+seal!(
+    RowNote,
+    "9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24",
+    Recorded<(), i64>
+);
 seal!(
     CustomerEmail,
     "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-    OrgWorkspace,
-    true
+    Recorded<OrgWorkspace, i64>
 );
 // Same binding as `CustomerEmail`, another seal ID.
 seal!(
     BillingEmail,
     "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
-    OrgWorkspace,
-    true
+    Recorded<OrgWorkspace, i64>
 );
 // Same seal ID as `CustomerEmail`, another binding declaration.
-seal!(
-    TenantEmail,
-    "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-    Tenant,
-    false
-);
+seal!(TenantEmail, "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", Tenant);
 
 fn first_key() -> EncryptionKey {
     EncryptionKey::new(key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"), [0x42; 32])
@@ -101,13 +97,13 @@ fn email() -> String {
 fn every_argument_form_round_trips() {
     let keys = keys();
     let scope = scope(1, b"ws-1");
-    let record = RecordId::from(7_i64);
+    let record = &7_i64;
 
     let unscoped = Sealed::<Nickname>::seal(&email(), (), &keys).unwrap();
     assert_eq!(unscoped.open((), &keys).unwrap(), email());
 
-    let row_note = Sealed::<RowNote>::seal(&email(), record, &keys).unwrap();
-    assert_eq!(row_note.open(record, &keys).unwrap(), email());
+    let row_note = Sealed::<RowNote>::seal(&email(), ((), record), &keys).unwrap();
+    assert_eq!(row_note.open(((), record), &keys).unwrap(), email());
 
     let scoped = Sealed::<CustomerEmail>::seal(&email(), (&scope, record), &keys).unwrap();
     assert_eq!(scoped.open((&scope, record), &keys).unwrap(), email());
@@ -124,13 +120,13 @@ fn unscoped_values_carry_the_empty_declaration_fingerprint() {
 
     let info = cryptbox::inspect_ciphertext(sealed.as_bytes()).unwrap();
     // docs/wire-format.md#binding-fingerprint
-    assert_eq!(hex::encode(info.context_fingerprint()), "5d86321261d64380");
+    assert_eq!(hex::encode(info.context_fingerprint()), "65640fc8333534b9");
 }
 
 #[test]
 fn opening_under_other_binding_values_fails_authentication() {
     let keys = keys();
-    let record = RecordId::from(7_i64);
+    let record = &7_i64;
     let sealed =
         Sealed::<CustomerEmail>::seal(&email(), (&scope(1, b"ws-1"), record), &keys).unwrap();
 
@@ -143,14 +139,7 @@ fn opening_under_other_binding_values_fails_authentication() {
             "bound part",
             sealed.open((&scope(1, b"ws-2"), record), &keys),
         ),
-        (
-            "record",
-            sealed.open((&scope(1, b"ws-1"), RecordId::from(8_i64)), &keys),
-        ),
-        (
-            "record kind",
-            sealed.open((&scope(1, b"ws-1"), RecordId::from([7; 16])), &keys),
-        ),
+        ("record", sealed.open((&scope(1, b"ws-1"), &8_i64), &keys)),
     ] {
         assert_eq!(result.unwrap_err(), Error::AuthenticationFailed, "{case}");
     }
@@ -160,7 +149,7 @@ fn opening_under_other_binding_values_fails_authentication() {
 fn opening_as_another_seal_fails() {
     let keys = keys();
     let scope = scope(1, b"ws-1");
-    let record = RecordId::from(7_i64);
+    let record = &7_i64;
     let sealed = Sealed::<CustomerEmail>::seal(&email(), (&scope, record), &keys).unwrap();
 
     let billing = Sealed::<BillingEmail>::from_bytes(sealed.as_bytes()).unwrap();
@@ -176,7 +165,7 @@ fn opening_as_another_seal_fails() {
         Error::BindingMismatch
     );
 
-    let row_note = Sealed::<RowNote>::seal(&email(), record, &keys).unwrap();
+    let row_note = Sealed::<RowNote>::seal(&email(), ((), record), &keys).unwrap();
     let nickname = Sealed::<Nickname>::from_bytes(row_note.as_bytes()).unwrap();
     assert_eq!(
         nickname.open((), &keys).unwrap_err(),
@@ -205,12 +194,7 @@ fn invalid_binding_values_are_rejected() {
         }
     }
 
-    seal!(
-        Scoped,
-        "4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95",
-        Unchecked,
-        false
-    );
+    seal!(Scoped, "4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95", Unchecked);
 
     assert_eq!(
         Sealed::<Scoped>::seal(&email(), &Unchecked(Vec::new()), &keys()).unwrap_err(),
@@ -233,7 +217,7 @@ fn key_id_names_the_sealing_key() {
 fn reseal_rewrites_a_value_under_the_current_key() {
     let first = keys();
     let sealed_scope = scope(1, b"ws-1");
-    let args = (&sealed_scope, RecordId::from(7_i64));
+    let args = (&sealed_scope, &7_i64);
     let sealed = Sealed::<CustomerEmail>::seal(&email(), args, &first).unwrap();
     assert!(!sealed.needs_reseal(args, &first).unwrap());
 
@@ -256,7 +240,7 @@ fn needs_reseal_reports_another_declaration() {
 
     assert_eq!(
         other
-            .needs_reseal((&scope(1, b"ws-1"), RecordId::from(7_i64)), &keys)
+            .needs_reseal((&scope(1, b"ws-1"), &7_i64), &keys)
             .unwrap_err(),
         Error::BindingMismatch
     );
@@ -267,7 +251,7 @@ fn reseal_across_moves_a_value_to_other_binding_values_and_keys() {
     let from_keys = keys();
     let to_keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
     let (from_scope, to_scope) = (scope(1, b"ws-1"), scope(1, b"ws-2"));
-    let record = RecordId::from(7_i64);
+    let record = &7_i64;
     let sealed =
         Sealed::<CustomerEmail>::seal(&email(), (&from_scope, record), &from_keys).unwrap();
 

@@ -30,7 +30,6 @@ struct UserEmail;
 impl Seal for UserEmail {
     const ID: cryptbox::SealId = seal_id!("50000000-0000-4000-8000-000000000005");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
@@ -42,7 +41,6 @@ struct PaddedUserEmail;
 impl Seal for PaddedUserEmail {
     const ID: cryptbox::SealId = UserEmail::ID;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = ();

@@ -94,8 +94,8 @@
 //!
 #![doc = include_str!("../docs/snippets/tenant-field.md")]
 //!
-//! The seal declares `Scope = Tenant` and `RECORD = true`, so each call
-//! passes `(&tenant, record)`; a missing or extra record fails the build. Bound
+//! The seal declares `Scope = Recorded<Tenant, [u8; 16]>`, so each call passes
+//! `(&tenant, &record)`; a missing or extra record is a type error. Bound
 //! values come from an authorized source, such as the request's verified claims,
 //! never from the stored row. The library passes the key source the seal and the
 //! binding's [`KeyScope`], and choosing which keyring protects which scope is
@@ -203,8 +203,8 @@ mod value;
 
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    Args, FromIndexValues, InRecord, KeyScope, PartKind, PartRole, PartSpec, PartType, PartValue,
-    PartValues, RecordId, Scope, Tenant, TenantId,
+    Args, FromIndexValues, KeyScope, PartKind, PartRole, PartSpec, PartType, PartValue, PartValues,
+    RecordId, Recorded, Scope, SealScope, Tenant, TenantId,
 };
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexList, inspect_blind_index,
@@ -238,6 +238,7 @@ pub mod __private {
     pub use uuid;
     pub use zeroize::Zeroizing;
 
+    pub use crate::binding::InRecord;
     pub use crate::codec::DefaultCodec;
     pub use crate::schema::{has_duplicate, writes_declared_indexes};
 }

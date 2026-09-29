@@ -53,7 +53,6 @@ impl Codec<Handle> for HandleCodec {
 impl Seal for Handle {
     const ID: SealId = cryptbox::seal_id!("dcaa3c69-1767-49a1-8476-36555eaf54bf");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Self;
     type Codec = HandleCodec;
     type Scope = ();
@@ -254,7 +253,7 @@ seal dcaa3c69-1767-49a1-8476-36555eaf54bf
   codec: handle/1
   padding: none
   record: no
-  binding: 5d86321261d64380
+  binding: 65640fc8333534b9
   shred unit: keyring
 index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
   seal: dcaa3c69-1767-49a1-8476-36555eaf54bf
@@ -271,7 +270,6 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
         impl Seal for PlainHandle {
             const ID: SealId = Handle::ID;
             const PADDING: Padding = Padding::NONE;
-            const RECORD: bool = false;
             type Value = String;
             type Codec = cryptbox::Utf8;
             type Scope = ();

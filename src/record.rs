@@ -8,10 +8,9 @@ use crate::{BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Sco
 /// Plaintext fields, such as the record ID, are copied as they are.
 ///
 /// Every sealed field shares the record's [`Scope`], and each field whose seal
-/// declares [`Seal::RECORD`] is also bound to the record's ID, through
-/// [`InRecord`](crate::InRecord). The record ID is never encrypted, so it can
-/// be read before the row is opened. The binding must come from an authorized
-/// source, never from the stored row.
+/// scope is [`Recorded`](crate::Recorded) is also bound to the record's ID. The
+/// record ID is never encrypted, so it can be read before the row is opened. The
+/// binding must come from an authorized source, never from the stored row.
 ///
 /// [`Self::open`] takes the record ID from the row itself. A value copied from
 /// another record fails authentication, but a whole row returned in place of

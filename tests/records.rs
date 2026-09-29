@@ -2,8 +2,8 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring,
-    BlindIndexSpec, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, InRecord,
-    IndexId, Keys, Padding, Record, RecordId, Seal, SealId, Sealed, Tenant, TenantId, Utf8,
+    BlindIndexSpec, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, IndexId, Keys,
+    Padding, Record, Recorded, Seal, SealId, Sealed, Tenant, TenantId, Utf8,
 };
 use zeroize::Zeroizing;
 
@@ -13,10 +13,9 @@ struct CustomerEmail;
 impl Seal for CustomerEmail {
     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = true;
     type Value = String;
     type Codec = Utf8;
-    type Scope = Tenant;
+    type Scope = Recorded<Tenant, i64>;
     type Indexes = (EmailLookup,);
 }
 
@@ -26,7 +25,6 @@ struct CustomerNote;
 impl Seal for CustomerNote {
     const ID: SealId = cryptbox::seal_id!("0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
     type Scope = Tenant;
@@ -80,9 +78,8 @@ impl Customer {
     where
         K: EncryptionKeySource + BlindIndexKeySource + ?Sized,
     {
-        let prepared =
-            Sealed::<CustomerEmail>::prepare(value, InRecord(binding, RecordId::of(record)), keys)?
-                .with_index_with::<EmailLookup>(keys)?;
+        let prepared = Sealed::<CustomerEmail>::prepare(value, (binding, record), keys)?
+            .with_index_with::<EmailLookup>(keys)?;
         let email_lookup = prepared.index::<EmailLookup>()?.to_blind_index();
 
         Ok((prepared.into_sealed(), email_lookup))
@@ -91,13 +88,13 @@ impl Customer {
     fn seal_note<K>(
         value: &String,
         binding: &Tenant,
-        record: &i64,
+        _record: &i64,
         keys: &K,
     ) -> Result<Sealed<CustomerNote>, Error>
     where
         K: EncryptionKeySource + ?Sized,
     {
-        Sealed::<CustomerNote>::seal(value, InRecord(binding, RecordId::of(record)), keys)
+        Sealed::<CustomerNote>::seal(value, binding, keys)
     }
 }
 
@@ -124,9 +121,8 @@ impl Record for Customer {
     where
         K: EncryptionKeySource + ?Sized,
     {
-        let record = RecordId::of(&sealed.id);
-        let email = sealed.email.open(InRecord(binding, record), keys)?;
-        let note = sealed.note.open(InRecord(binding, record), keys)?;
+        let email = sealed.email.open((binding, &sealed.id), keys)?;
+        let note = sealed.note.open(binding, keys)?;
 
         Ok(Self {
             id: sealed.id,
@@ -258,8 +254,8 @@ fn open_matching_drops_false_candidates() {
 #[cfg(feature = "derive")]
 mod derived {
     use super::{
-        BlindIndexSpec, Customer, CustomerEmail, CustomerNote, EmailLookup, InRecord, Record,
-        RecordId, SealedCustomer, keys, tenant,
+        BlindIndexSpec, Customer, CustomerEmail, CustomerNote, EmailLookup, Record, SealedCustomer,
+        keys, tenant,
     };
 
     /// The derived equivalent of [`Customer`].
@@ -346,10 +342,7 @@ mod derived {
         let probes = EmailLookup::probes_with("ada@example.org", &acme, &keys).unwrap();
         assert!(probes.contains(&updated.email_lookup));
         assert_eq!(
-            updated
-                .email
-                .open(InRecord(&acme, RecordId::from(7_i64)), &keys)
-                .unwrap(),
+            updated.email.open((&acme, &7_i64), &keys).unwrap(),
             "ada@example.org"
         );
         assert_eq!(
@@ -395,8 +388,7 @@ mod self_valued {
     #[cryptbox(
         id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
         transparent,
-        scope = Tenant,
-        record,
+        scope = cryptbox::Recorded<Tenant, i64>,
         indexes(OwnEmailLookup),
     )]
     struct OwnEmail(String);

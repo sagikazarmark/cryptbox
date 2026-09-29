@@ -12,7 +12,6 @@ struct TestSeal;
 impl Seal for TestSeal {
     const ID: SealId = cryptbox::seal_id!("5d3a1f7e-2b8c-4e69-a0d4-7f1b3c5e9a82");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
