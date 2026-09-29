@@ -172,7 +172,7 @@ where
     F: Field,
 {
     /// The shape's fingerprint without a record.
-    unrecorded: Option<ShapeFingerprint>,
+    unrecorded: ShapeFingerprint,
     /// The shape's fingerprint with a record, for a field that binds one.
     recorded: Option<ShapeFingerprint>,
     domain: fn(&F::Binding, Option<RecordId<'_>>) -> Result<BindingDomain, Error>,
@@ -300,7 +300,7 @@ where
     pub fn legacy_binding<Old: Binding>(mut self, keys: &'a dyn EncryptionKeySource) -> Self {
         self.legacy_shapes.push(LegacyShape {
             unrecorded: shape_fingerprint::<Old>(false),
-            recorded: F::RECORD.then(|| shape_fingerprint::<Old>(true)).flatten(),
+            recorded: F::RECORD.then(|| shape_fingerprint::<Old>(true)),
             domain: |binding, record| {
                 BindingDomain::projected::<Old, F::Binding>(F::ID, binding, record)
             },
@@ -551,7 +551,7 @@ where
     fn legacy_shape(
         &self,
         binding: &RowBinding,
-        stored: Option<ShapeFingerprint>,
+        stored: ShapeFingerprint,
     ) -> Option<(&LegacyShape<'a, F>, bool)> {
         if stored == binding.domain.fingerprint() {
             return None;
@@ -560,7 +560,7 @@ where
         self.legacy_shapes.iter().find_map(|legacy| {
             if stored == legacy.unrecorded {
                 Some((legacy, false))
-            } else if stored.is_some() && stored == legacy.recorded {
+            } else if legacy.recorded == Some(stored) {
                 Some((legacy, true))
             } else {
                 None

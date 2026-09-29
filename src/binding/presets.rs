@@ -130,7 +130,10 @@ mod tests {
             hex::encode(domain.as_bytes()),
             "01123456781234423482341234567890ab"
         );
-        assert_eq!(domain.fingerprint(), None);
+        assert_eq!(
+            domain.fingerprint(),
+            ShapeFingerprint::from_bytes(hex_array("ff670aba047d77fa"))
+        );
     }
 
     #[test]
@@ -164,7 +167,7 @@ mod tests {
         );
         assert_eq!(
             domain.fingerprint(),
-            Some(ShapeFingerprint::from_bytes(hex_array("f8311e0a178867bc")))
+            ShapeFingerprint::from_bytes(hex_array("f8311e0a178867bc"))
         );
     }
 

@@ -274,10 +274,10 @@ fn project<'v>(
         .collect()
 }
 
-/// The shape fingerprint of binding `B`, with or without a record, as a scoped
-/// header carries it; `None` for a field-only binding.
-pub(crate) fn shape_fingerprint<B: Binding>(record: bool) -> Option<ShapeFingerprint> {
-    (record || !B::PARTS.is_empty()).then(|| BindingShape::new(B::PARTS, record).fingerprint())
+/// The shape fingerprint of binding `B`, with or without a record, as the
+/// envelope header carries it.
+pub(crate) fn shape_fingerprint<B: Binding>(record: bool) -> ShapeFingerprint {
+    BindingShape::new(B::PARTS, record).fingerprint()
 }
 
 /// The canonical kind of a part or record value.
@@ -578,13 +578,13 @@ impl<'a> BindingShape<'a> {
 ///
 /// The encoded bytes are the domain separator that encryption mixes into key
 /// derivation and AAD, and that a blind index mixes into its MAC input. The
-/// field and key scope select the keyring; the shape fingerprint, set only for
-/// a scoped binding, is recorded in the envelope and checked by readers.
+/// field and key scope select the keyring; the shape fingerprint is recorded in
+/// the envelope and checked by readers.
 #[derive(Clone, Debug)]
 pub(crate) struct BindingDomain {
     field: FieldId,
     encoded: Vec<u8>,
-    fingerprint: Option<ShapeFingerprint>,
+    fingerprint: ShapeFingerprint,
     key_scope: KeyScope,
 }
 
@@ -603,7 +603,8 @@ impl BindingDomain {
         Self {
             field: id,
             encoded,
-            fingerprint: None,
+            // The empty shape: no parts and no record.
+            fingerprint: BindingShape::new(&[], false).fingerprint(),
             key_scope: KeyScope::empty(),
         }
     }
@@ -646,7 +647,7 @@ impl BindingDomain {
         Ok(Self {
             field: id,
             encoded,
-            fingerprint: Some(shape.fingerprint()),
+            fingerprint: shape.fingerprint(),
             key_scope,
         })
     }
@@ -787,8 +788,8 @@ impl BindingDomain {
         self.field
     }
 
-    /// The shape fingerprint a scoped header carries; `None` for a field-only binding.
-    pub(crate) fn fingerprint(&self) -> Option<ShapeFingerprint> {
+    /// The shape fingerprint the envelope header carries.
+    pub(crate) fn fingerprint(&self) -> ShapeFingerprint {
         self.fingerprint
     }
 
@@ -1029,12 +1030,16 @@ mod tests {
     }
 
     #[test]
-    fn scoped_domain_carries_its_shape_fingerprint() {
+    fn every_domain_carries_its_shape_fingerprint() {
         let shape = BindingShape::new(&[TENANT], false);
         let domain = scoped(&[TENANT], false, &[PartValue::Uuid([0x33; 16])], None).unwrap();
 
-        assert_eq!(domain.fingerprint(), Some(shape.fingerprint()));
-        assert_eq!(BindingDomain::field(FIELD).fingerprint(), None);
+        assert_eq!(domain.fingerprint(), shape.fingerprint());
+        // Independently computed with shasum over the documented empty shape.
+        assert_eq!(
+            BindingDomain::field(FIELD).fingerprint(),
+            ShapeFingerprint::from_bytes(hex_array("ff670aba047d77fa"))
+        );
     }
 
     fn hex_array(value: &str) -> [u8; 8] {
@@ -1103,7 +1108,7 @@ mod tests {
         );
         assert_eq!(
             domain.fingerprint(),
-            Some(ShapeFingerprint::from_bytes(hex_array("cda083fe6eae1bf1")))
+            ShapeFingerprint::from_bytes(hex_array("cda083fe6eae1bf1"))
         );
     }
 
@@ -1117,7 +1122,7 @@ mod tests {
         );
         assert_eq!(
             domain.fingerprint(),
-            Some(ShapeFingerprint::from_bytes(hex_array("505a9cd2bc286636")))
+            ShapeFingerprint::from_bytes(hex_array("505a9cd2bc286636"))
         );
     }
 

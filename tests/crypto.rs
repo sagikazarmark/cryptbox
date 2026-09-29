@@ -102,7 +102,7 @@ fn empty_plaintext_is_a_valid_authenticated_message() {
     let keys = keyring(CURRENT_KEY_ID, 9);
     let ciphertext = encrypt::<EmailField>(b"", &keys);
 
-    assert_eq!(ciphertext.len(), 63);
+    assert_eq!(ciphertext.len(), 71);
     assert!(is_ciphertext(&ciphertext));
     assert!(
         decrypt::<EmailField>(&ciphertext, &keys)
@@ -116,7 +116,7 @@ fn padded_encryption_records_the_flag_and_decryption_removes_the_padding() {
     let keys = keyring(CURRENT_KEY_ID, 9);
     let ciphertext = encrypt::<PaddedEmailField>(b"padded", &keys);
 
-    assert_eq!(ciphertext.len(), 63 + 16);
+    assert_eq!(ciphertext.len(), 71 + 16);
     assert!(inspect_ciphertext(&ciphertext).unwrap().padded());
     assert_eq!(
         decrypt::<EmailField>(&ciphertext, &keys).unwrap(),
@@ -145,7 +145,7 @@ fn flipping_the_padding_flag_fails_authentication() {
 fn reserved_flag_bits_are_rejected_before_authentication() {
     let keys = keyring(CURRENT_KEY_ID, 9);
 
-    for bit in [0x04, 0x08, 0x10, 0x20, 0x40, 0x80] {
+    for bit in [0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80] {
         let mut ciphertext = encrypt::<EmailField>(b"flagged", &keys);
         ciphertext[6] |= bit;
 
@@ -158,49 +158,37 @@ fn reserved_flag_bits_are_rejected_before_authentication() {
 }
 
 #[test]
-fn field_only_envelopes_carry_no_shape_fingerprint() {
+fn field_only_envelopes_carry_the_empty_shape_fingerprint() {
     let keys = keyring(CURRENT_KEY_ID, 9);
     let ciphertext = encrypt::<EmailField>(b"field only", &keys);
 
+    // docs/wire-format.md#shape-fingerprint
     assert_eq!(
-        inspect_ciphertext(&ciphertext).unwrap().shape_fingerprint(),
-        None
+        inspect_ciphertext(&ciphertext)
+            .unwrap()
+            .shape_fingerprint()
+            .to_string(),
+        "ff670aba047d77fa"
     );
 }
 
 #[test]
-fn a_scoped_flag_on_a_field_only_envelope_reports_binding_mismatch() {
+fn a_changed_fingerprint_reports_binding_mismatch() {
     let keys = keyring(CURRENT_KEY_ID, 9);
-    let mut ciphertext = encrypt::<EmailField>(b"long enough to reparse", &keys);
-    // Reparsed as scoped: the first nonce bytes now read as a shape fingerprint.
-    ciphertext[6] |= 0x02;
+    let mut ciphertext = encrypt::<EmailField>(b"field only", &keys);
+    ciphertext[23] ^= 1;
 
-    assert!(
-        inspect_ciphertext(&ciphertext)
-            .unwrap()
-            .shape_fingerprint()
-            .is_some()
-    );
     assert_eq!(
         decrypt::<EmailField>(&ciphertext, &keys),
         Err(Error::BindingMismatch)
     );
-    // `from_bytes` checks structure only, so the scoped header still parses.
+    // `from_bytes` checks structure only, so the changed header still parses.
     assert_eq!(
         Sealed::<EmailField>::from_bytes(ciphertext)
             .unwrap()
             .needs_reseal((), &keys),
         Err(Error::BindingMismatch)
     );
-}
-
-#[test]
-fn a_scoped_flag_without_room_for_the_fingerprint_is_malformed() {
-    let keys = keyring(CURRENT_KEY_ID, 9);
-    let mut ciphertext = encrypt::<EmailField>(b"", &keys);
-    ciphertext[6] |= 0x02;
-
-    assert_eq!(inspect_ciphertext(&ciphertext), Err(Error::InvalidEnvelope));
 }
 
 #[test]

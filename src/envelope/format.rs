@@ -3,20 +3,19 @@ use crate::{Error, KeyId, ShapeFingerprint, SuiteId};
 const MAGIC: &[u8; 4] = b"CBX\0";
 pub(super) const FORMAT_VERSION: u8 = 2;
 const FLAG_PADDED: u8 = 0x01;
-const FLAG_SCOPED: u8 = 0x02;
 
 // The layout table: ../../docs/wire-format.md#envelope. A header is the magic,
-// then one byte each of version, suite ID, and flags, then the key ID.
+// then one byte each of version, suite ID, and flags, then the key ID and the
+// shape fingerprint. Every header has the same fixed length.
 const KEY_ID_LEN: usize = 16;
 const FINGERPRINT_LEN: usize = 8;
 const FORMAT_VERSION_OFFSET: usize = MAGIC.len();
 const SUITE_ID_OFFSET: usize = FORMAT_VERSION_OFFSET + 1;
 const FLAGS_OFFSET: usize = SUITE_ID_OFFSET + 1;
 const KEY_ID_OFFSET: usize = FLAGS_OFFSET + 1;
-const HEADER_LEN: usize = KEY_ID_OFFSET + KEY_ID_LEN;
-// A scoped binding extends the header with its shape fingerprint.
 // See ../../docs/wire-format.md#shape-fingerprint.
-const SCOPED_HEADER_LEN: usize = HEADER_LEN + FINGERPRINT_LEN;
+const FINGERPRINT_OFFSET: usize = KEY_ID_OFFSET + KEY_ID_LEN;
+const HEADER_LEN: usize = FINGERPRINT_OFFSET + FINGERPRINT_LEN;
 
 /// Structurally parsed, unauthenticated ciphertext metadata.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -25,7 +24,7 @@ pub struct CiphertextInfo {
     suite_id: SuiteId,
     padded: bool,
     key_id: KeyId,
-    shape_fingerprint: Option<ShapeFingerprint>,
+    shape_fingerprint: ShapeFingerprint,
 }
 
 impl CiphertextInfo {
@@ -53,13 +52,13 @@ impl CiphertextInfo {
         self.key_id
     }
 
-    /// Returns the shape fingerprint of a scoped binding.
+    /// Returns the shape fingerprint of the binding the value was sealed under.
     ///
-    /// Field-only envelopes carry none and return `None`. The
+    /// A field-only binding carries the empty shape's fingerprint. The
     /// fingerprint is diagnostic: a reader compares it with its own field's
     /// shape, so it can count values written with an older shape.
     #[must_use]
-    pub const fn shape_fingerprint(self) -> Option<ShapeFingerprint> {
+    pub const fn shape_fingerprint(self) -> ShapeFingerprint {
         self.shape_fingerprint
     }
 }
@@ -104,16 +103,7 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
     let flags = bytes[FLAGS_OFFSET];
 
     // Reject reserved bits so a flag this reader does not know is never ignored.
-    if flags & !(FLAG_PADDED | FLAG_SCOPED) != 0 {
-        return Err(Error::InvalidEnvelope);
-    }
-
-    let header_len = if flags & FLAG_SCOPED == 0 {
-        HEADER_LEN
-    } else {
-        SCOPED_HEADER_LEN
-    };
-    if bytes.len() < header_len {
+    if flags & !FLAG_PADDED != 0 {
         return Err(Error::InvalidEnvelope);
     }
 
@@ -121,8 +111,7 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
 
     let padded = flags & FLAG_PADDED != 0;
     let key_id = KeyId::from_bytes(field(bytes, KEY_ID_OFFSET));
-    let shape_fingerprint =
-        (flags & FLAG_SCOPED != 0).then(|| ShapeFingerprint::from_bytes(field(bytes, HEADER_LEN)));
+    let shape_fingerprint = ShapeFingerprint::from_bytes(field(bytes, FINGERPRINT_OFFSET));
 
     Ok(ParsedEnvelope {
         bytes,
@@ -133,8 +122,8 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
             key_id,
             shape_fingerprint,
         },
-        header: &bytes[..header_len],
-        suite_payload: &bytes[header_len..],
+        header: &bytes[..HEADER_LEN],
+        suite_payload: &bytes[HEADER_LEN..],
     })
 }
 
@@ -142,20 +131,15 @@ pub(super) fn envelope_header(
     suite_id: SuiteId,
     padded: bool,
     key_id: KeyId,
-    fingerprint: Option<ShapeFingerprint>,
+    fingerprint: ShapeFingerprint,
 ) -> Vec<u8> {
-    let mut flags = if padded { FLAG_PADDED } else { 0 };
-    if fingerprint.is_some() {
-        flags |= FLAG_SCOPED;
-    }
+    let flags = if padded { FLAG_PADDED } else { 0 };
 
-    let mut header = Vec::with_capacity(SCOPED_HEADER_LEN);
+    let mut header = Vec::with_capacity(HEADER_LEN);
     header.extend_from_slice(MAGIC);
     header.extend_from_slice(&[FORMAT_VERSION, suite_id.get(), flags]);
     header.extend_from_slice(key_id.as_bytes());
-    if let Some(fingerprint) = fingerprint {
-        header.extend_from_slice(fingerprint.as_bytes());
-    }
+    header.extend_from_slice(fingerprint.as_bytes());
 
     header
 }

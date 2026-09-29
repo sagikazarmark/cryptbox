@@ -121,8 +121,7 @@
   Readers remove padding only when that flag is set, so `Field::PADDING` is
   write policy rather than persistent schema: a field can enable, disable, or
   resize padding without making stored values unreadable, and re-encryption
-  rewrites them with the current policy. The header gains a flags byte, so
-  envelopes are one byte longer (`W = P + 63`). `encrypt`, `reencrypt`, and
+  rewrites them with the current policy. The header gains a flags byte. `encrypt`, `reencrypt`, and
   `needs_reencryption` take the field's `Padding` after its ID
   (`encrypt(F::ID, F::PADDING, bytes, &keys)`); `decrypt` removes recorded
   padding. `needs_reencryption` also reports a padding flag that disagrees
@@ -172,14 +171,15 @@
   and `Arc<P>` report `Routed`, `Fallback`, or `Unrouted`. `Padding` implements
   `Display`.
 - Define the wire format for scoped binding (ADR-0005): binding tag `02`
-  frames sorted, kind-tagged scope parts and an optional record, and a scoped
-  envelope sets flag bit `02` and carries a 64-bit shape fingerprint after the
-  `KeyId`. Field-only envelopes and blind indexes are byte-identical.
+  frames sorted, kind-tagged scope parts and an optional record, and every
+  envelope carries a 64-bit shape fingerprint after the `KeyId`, in a fixed
+  31-byte header, so `W = P + 71`. A field-only binding carries the empty
+  shape's fingerprint. Blind indexes are byte-identical.
   `CiphertextInfo::shape_fingerprint` reports the fingerprint as a
-  `ShapeFingerprint`. Reading an envelope sealed with a different binding shape
+  `ShapeFingerprint`, not an `Option`. Reading an envelope sealed with a different binding shape
   fails with the new `Error::BindingMismatch` before any key lookup. The new
   `Error::InvalidBinding` rejects malformed binding declarations or values.
-  Flag bit `02` is no longer reserved.
+  Only flag bit `01` is defined; every other bit stays reserved.
 - Add the `Binding` trait for declaring a scope (ADR-0005). It is unrelated to
   the 0.5 `Binding` trait removed above. A binding lists its parts as
   `const PARTS: &[PartSpec]`, each with a `PartId` (`part_id!`), a `PartKind`
@@ -335,7 +335,7 @@
   exposes and the org-shredding runbook.
 - **Breaking:** the schema manifest shows bindings and custody instead of Rust
   types. Each field lists whether it binds a record, its binding's shape
-  fingerprint (or `field-only`), each part's ID, kind, and role, and its shred
+  fingerprint, each part's ID, kind, and role, and its shred
   unit: its `keys` parts, or `keyring` when it has none. The marker and value
   type names, which `std::any::type_name` did not keep stable across
   compilers, are removed, so snapshots are the same on every toolchain; update

@@ -41,11 +41,11 @@ fn parse_supported(bytes: &[u8]) -> Result<(Suite, ParsedEnvelope<'_>), Error> {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct EnvelopeBinding<'a> {
     bytes: &'a [u8],
-    fingerprint: Option<ShapeFingerprint>,
+    fingerprint: ShapeFingerprint,
 }
 
 impl<'a> EnvelopeBinding<'a> {
-    pub(crate) const fn new(bytes: &'a [u8], fingerprint: Option<ShapeFingerprint>) -> Self {
+    pub(crate) const fn new(bytes: &'a [u8], fingerprint: ShapeFingerprint) -> Self {
         Self { bytes, fingerprint }
     }
 }
@@ -171,7 +171,7 @@ mod tests {
 
     // The envelope does not interpret the binding: the vectors take its bytes
     // and fingerprint as given. The binding module pins how they are encoded.
-    fn binding(bytes: &[u8], fingerprint: Option<ShapeFingerprint>) -> EnvelopeBinding<'_> {
+    fn binding(bytes: &[u8], fingerprint: ShapeFingerprint) -> EnvelopeBinding<'_> {
         EnvelopeBinding::new(bytes, fingerprint)
     }
 
@@ -189,7 +189,7 @@ mod tests {
         let envelope = seal_with_nonce(
             b"cryptbox vector",
             Padding::NONE,
-            binding(&bytes, Some(fingerprint(SCOPED_FINGERPRINT))),
+            binding(&bytes, fingerprint(SCOPED_FINGERPRINT)),
             &vector_key(),
             vector_nonce(),
         )
@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(
             hex::encode(&envelope[..55]),
             concat!(
-                "4342580002010211111111222243338444555555555555",
+                "4342580002010011111111222243338444555555555555",
                 // Shape fingerprint, then the nonce.
                 "cda083fe6eae1bf1",
                 "000102030405060708090a0b0c0d0e0f1011121314151617",
@@ -213,7 +213,7 @@ mod tests {
         let envelope = seal_with_nonce(
             b"cryptbox vector",
             Padding::NONE,
-            binding(&bytes, Some(fingerprint(SCOPED_RECORD_FINGERPRINT))),
+            binding(&bytes, fingerprint(SCOPED_RECORD_FINGERPRINT)),
             &vector_key(),
             vector_nonce(),
         )
@@ -225,12 +225,14 @@ mod tests {
 
     // docs/wire-format.md#provisional-scoped-vectors
     const FIELD_BINDING: &str = "01123456781234423482341234567890ab";
+    // The empty shape's fingerprint, which a field-only binding carries.
+    const FIELD_FINGERPRINT: &str = "ff670aba047d77fa";
     const SCOPED_BINDING: &str = "02123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
     const SCOPED_RECORD_BINDING: &str = "02123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
     const SCOPED_FINGERPRINT: &str = "cda083fe6eae1bf1";
     const SCOPED_RECORD_FINGERPRINT: &str = "505a9cd2bc286636";
-    const SCOPED_VECTOR: &str = "4342580002010211111111222243338444555555555555cda083fe6eae1bf1000102030405060708090a0b0c0d0e0f1011121314151617b51d411fdf173c5725d9000dae571d2bc413649bd09198dd576ab7879aeb42";
-    const SCOPED_RECORD_VECTOR: &str = "4342580002010211111111222243338444555555555555505a9cd2bc286636000102030405060708090a0b0c0d0e0f10111213141516172619b76ce657aac8910c65d99b49a02880a201078edb80702123597f908f71";
+    const SCOPED_VECTOR: &str = "4342580002010011111111222243338444555555555555cda083fe6eae1bf1000102030405060708090a0b0c0d0e0f1011121314151617b51d411fdf173c5725d9000dae571d0907d4e42fe05a9f0eec3fd60ffd70b5";
+    const SCOPED_RECORD_VECTOR: &str = "4342580002010011111111222243338444555555555555505a9cd2bc286636000102030405060708090a0b0c0d0e0f10111213141516172619b76ce657aac8910c65d99b49a0825f127f4fbbd3c2920c03eaadb38d1b";
 
     #[test]
     fn scoped_vectors_open_under_their_binding() {
@@ -247,7 +249,7 @@ mod tests {
 
             assert_eq!(
                 open(
-                    binding(&bytes, Some(fingerprint(expected))),
+                    binding(&bytes, fingerprint(expected)),
                     &envelope,
                     &keyring()
                 )
@@ -261,12 +263,12 @@ mod tests {
     #[test]
     fn a_sealed_value_round_trips_and_reports_its_fingerprint() {
         let bytes = hex::decode(SCOPED_RECORD_BINDING).unwrap();
-        let binding = binding(&bytes, Some(fingerprint(SCOPED_RECORD_FINGERPRINT)));
+        let binding = binding(&bytes, fingerprint(SCOPED_RECORD_FINGERPRINT));
         let envelope = seal(binding, Padding::NONE, b"secret", &keyring()).unwrap();
 
         assert_eq!(
             inspect_ciphertext(&envelope).unwrap().shape_fingerprint(),
-            Some(fingerprint(SCOPED_RECORD_FINGERPRINT))
+            fingerprint(SCOPED_RECORD_FINGERPRINT)
         );
         assert_eq!(
             open(binding, &envelope, &keyring()).unwrap().as_slice(),
@@ -275,21 +277,28 @@ mod tests {
     }
 
     #[test]
-    fn envelopes_without_a_fingerprint_carry_none() {
+    fn every_header_carries_the_fingerprint() {
         let bytes = hex::decode(FIELD_BINDING).unwrap();
-        let envelope = seal(binding(&bytes, None), Padding::NONE, b"secret", &keyring()).unwrap();
+        let expected = fingerprint(FIELD_FINGERPRINT);
+        let envelope = seal(
+            binding(&bytes, expected),
+            Padding::NONE,
+            b"secret",
+            &keyring(),
+        )
+        .unwrap();
 
-        assert_eq!(envelope.len(), 47 + 6 + 16);
+        assert_eq!(envelope.len(), 55 + 6 + 16);
         assert_eq!(
             inspect_ciphertext(&envelope).unwrap().shape_fingerprint(),
-            None
+            expected
         );
     }
 
     #[test]
     fn other_binding_bytes_fail_authentication() {
         let bytes = hex::decode(SCOPED_RECORD_BINDING).unwrap();
-        let expected = Some(fingerprint(SCOPED_RECORD_FINGERPRINT));
+        let expected = fingerprint(SCOPED_RECORD_FINGERPRINT);
         let envelope = seal(
             binding(&bytes, expected),
             Padding::NONE,
@@ -316,16 +325,16 @@ mod tests {
     fn a_different_fingerprint_reports_binding_mismatch_before_any_key() {
         let field_bytes = hex::decode(FIELD_BINDING).unwrap();
         let scoped_bytes = hex::decode(SCOPED_BINDING).unwrap();
-        let field_only = binding(&field_bytes, None);
-        let scoped = binding(&scoped_bytes, Some(fingerprint(SCOPED_FINGERPRINT)));
-        let with_record = binding(&scoped_bytes, Some(fingerprint(SCOPED_RECORD_FINGERPRINT)));
+        let field_only = binding(&field_bytes, fingerprint(FIELD_FINGERPRINT));
+        let scoped = binding(&scoped_bytes, fingerprint(SCOPED_FINGERPRINT));
+        let with_record = binding(&scoped_bytes, fingerprint(SCOPED_RECORD_FINGERPRINT));
         let field_only_envelope = seal(field_only, Padding::NONE, b"secret", &keyring()).unwrap();
         let scoped_envelope = seal(scoped, Padding::NONE, b"secret", &keyring()).unwrap();
 
         // `check` takes no keyring: the mismatch is reported before any key is chosen.
         for (case, reader, envelope) in [
-            ("no fingerprint reads one", field_only, &scoped_envelope),
-            ("fingerprint reads none", scoped, &field_only_envelope),
+            ("field-only reads scoped", field_only, &scoped_envelope),
+            ("scoped reads field-only", scoped, &field_only_envelope),
             ("other fingerprint", with_record, &scoped_envelope),
         ] {
             assert_eq!(
@@ -342,7 +351,7 @@ mod tests {
         let bytes = hex::decode(SCOPED_BINDING).unwrap();
         let other = ShapeFingerprint::from_bytes([7; 8]);
         let mut envelope = seal(
-            binding(&bytes, Some(fingerprint(SCOPED_FINGERPRINT))),
+            binding(&bytes, fingerprint(SCOPED_FINGERPRINT)),
             Padding::NONE,
             b"secret",
             &keyring(),
@@ -351,7 +360,7 @@ mod tests {
         envelope[23..31].copy_from_slice(other.as_bytes());
 
         assert_eq!(
-            open(binding(&bytes, Some(other)), &envelope, &keyring()).unwrap_err(),
+            open(binding(&bytes, other), &envelope, &keyring()).unwrap_err(),
             Error::AuthenticationFailed
         );
     }
@@ -359,7 +368,13 @@ mod tests {
     #[test]
     fn an_unknown_key_is_reported_after_the_check() {
         let bytes = hex::decode(FIELD_BINDING).unwrap();
-        let envelope = seal(binding(&bytes, None), Padding::NONE, b"secret", &keyring()).unwrap();
+        let envelope = seal(
+            binding(&bytes, fingerprint(FIELD_FINGERPRINT)),
+            Padding::NONE,
+            b"secret",
+            &keyring(),
+        )
+        .unwrap();
         let other = EncryptionKeyring::new(
             EncryptionKey::new(
                 crate::key_id!("99999999-2222-4333-8444-555555555555"),
@@ -370,7 +385,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            open(binding(&bytes, None), &envelope, &other).unwrap_err(),
+            open(
+                binding(&bytes, fingerprint(FIELD_FINGERPRINT)),
+                &envelope,
+                &other
+            )
+            .unwrap_err(),
             Error::UnknownEncryptionKey(vector_key().id())
         );
     }
@@ -381,7 +401,7 @@ mod tests {
         let envelope = seal_with_nonce(
             b"cryptbox vector",
             Padding::block(16),
-            binding(&bytes, None),
+            binding(&bytes, fingerprint(FIELD_FINGERPRINT)),
             &vector_key(),
             vector_nonce(),
         )
@@ -389,7 +409,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(envelope),
-            "4342580002010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd489a56ec6e125f07deaa76f7502ad2613f"
+            "4342580002010111111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd48fc08a3b4d7223429153e158cff27228e"
         );
     }
 
@@ -399,7 +419,7 @@ mod tests {
         let envelope = seal_with_nonce(
             b"cryptbox vector",
             Padding::NONE,
-            binding(&bytes, None),
+            binding(&bytes, fingerprint(FIELD_FINGERPRINT)),
             &vector_key(),
             vector_nonce(),
         )
@@ -407,7 +427,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(envelope),
-            "4342580002010011111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd4f8e9c4e8454cd34732e7966a50994cd"
+            "4342580002010011111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fdcb03d10799ab94530c780554ccfb8d05"
         );
     }
 }

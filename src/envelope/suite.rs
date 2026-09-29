@@ -53,7 +53,7 @@ impl Suite {
     pub(super) fn seal(
         self,
         plaintext: &AeadPlaintext<'_>,
-        fingerprint: Option<ShapeFingerprint>,
+        fingerprint: ShapeFingerprint,
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
@@ -135,7 +135,7 @@ mod xchacha20_poly1305 {
 
     pub(super) fn seal(
         plaintext: &AeadPlaintext<'_>,
-        fingerprint: Option<ShapeFingerprint>,
+        fingerprint: ShapeFingerprint,
         binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
@@ -150,7 +150,7 @@ mod xchacha20_poly1305 {
 
     pub(super) fn seal_with_nonce(
         plaintext: &AeadPlaintext<'_>,
-        fingerprint: Option<ShapeFingerprint>,
+        fingerprint: ShapeFingerprint,
         binding: &[u8],
         key: &EncryptionKey,
         nonce: [u8; NONCE_LEN],

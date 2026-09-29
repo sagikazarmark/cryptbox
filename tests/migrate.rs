@@ -444,7 +444,7 @@ fn planner_encrypts_legacy_plaintext_with_the_field_padding_policy() {
     let outcome = planner.plan_row(&(), b"mark@example.com", &[]).unwrap();
     assert_eq!(outcome.state(), RowState::Legacy);
     let write = outcome.into_write().unwrap();
-    assert_eq!(write.ciphertext().len(), 63 + 32);
+    assert_eq!(write.ciphertext().len(), 71 + 32);
     assert_eq!(
         Sealed::<PaddedUserEmail>::from_bytes(write.ciphertext().to_vec())
             .unwrap()

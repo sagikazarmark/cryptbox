@@ -21,7 +21,7 @@ A binding has two halves, and they change on different schedules:
 
 One field never seals with different part sets on different calls: that would
 give one value two valid encodings. The shape is persistent schema exactly as a
-field ID or codec is, and a scoped envelope carries a fingerprint of it so a
+field ID or codec is, and every envelope carries a fingerprint of it so a
 reader that expects another shape reports `Error::BindingMismatch` instead of an
 authentication failure.
 
