@@ -4,7 +4,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     Binding, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, Field, FieldOnly, IndexKeyId, KeyScope, RecordId, ShapeFingerprint,
+    EncryptionKeySource, Error, Field, FieldOnly, IndexKeyId, KeyScope, RecordId,
     binding::shape_fingerprint,
     blind::{current_key_id, derive_value},
     bound, inspect_blind_index, inspect_ciphertext,
@@ -172,9 +172,9 @@ where
     F: Field,
 {
     /// The shape's fingerprint without a record.
-    unrecorded: ShapeFingerprint,
+    unrecorded: [u8; 8],
     /// The shape's fingerprint with a record, for a field that binds one.
-    recorded: Option<ShapeFingerprint>,
+    recorded: Option<[u8; 8]>,
     domain: fn(&F::Binding, Option<RecordId<'_>>) -> Result<BindingDomain, Error>,
     keys: &'a dyn EncryptionKeySource,
 }
@@ -420,7 +420,7 @@ where
         match inspect_ciphertext(ciphertext) {
             Ok(info)
                 if self
-                    .legacy_shape(&binding, info.shape_fingerprint())
+                    .legacy_shape(&binding, info.binding_fingerprint())
                     .is_some() =>
             {
                 return Ok(RowState::LegacyBinding);
@@ -471,7 +471,7 @@ where
 
         match inspect_ciphertext(ciphertext) {
             Ok(info) => {
-                if let Some(legacy) = self.legacy_shape(&binding, info.shape_fingerprint()) {
+                if let Some(legacy) = self.legacy_shape(&binding, info.binding_fingerprint()) {
                     return self.plan_legacy_binding_row(legacy, &args, &binding, ciphertext);
                 }
             }
@@ -551,7 +551,7 @@ where
     fn legacy_shape(
         &self,
         binding: &RowBinding,
-        stored: ShapeFingerprint,
+        stored: [u8; 8],
     ) -> Option<(&LegacyShape<'a, F>, bool)> {
         if stored == binding.domain.fingerprint() {
             return None;

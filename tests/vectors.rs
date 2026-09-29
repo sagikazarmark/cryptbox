@@ -57,7 +57,7 @@ fn experimental_envelope_vectors_record_their_padding() {
         assert_eq!(info.format_version(), 2);
         assert_eq!(info.padded(), padded);
         // The empty shape's fingerprint: docs/wire-format.md#shape-fingerprint
-        assert_eq!(info.shape_fingerprint().to_string(), "ff670aba047d77fa");
+        assert_eq!(hex::encode(info.binding_fingerprint()), "ff670aba047d77fa");
         assert_eq!(read::<VectorField>(vector).unwrap(), b"cryptbox vector");
     }
 }

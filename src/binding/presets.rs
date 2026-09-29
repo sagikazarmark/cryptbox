@@ -118,7 +118,7 @@ impl fmt::Debug for TenantId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BindingDomain, FieldId, RecordId, ShapeFingerprint, field_id};
+    use crate::{BindingDomain, FieldId, RecordId, field_id};
 
     const FIELD: FieldId = field_id!("12345678-1234-4234-8234-1234567890ab");
 
@@ -130,10 +130,7 @@ mod tests {
             hex::encode(domain.as_bytes()),
             "123456781234423482341234567890ab000000"
         );
-        assert_eq!(
-            domain.fingerprint(),
-            ShapeFingerprint::from_bytes(hex_array("ff670aba047d77fa"))
-        );
+        assert_eq!(domain.fingerprint(), hex_array("ff670aba047d77fa"));
     }
 
     #[test]
@@ -144,10 +141,7 @@ mod tests {
             hex::encode(domain.as_bytes()),
             "123456781234423482341234567890ab020000000800000000000000010000"
         );
-        assert_eq!(
-            domain.fingerprint(),
-            ShapeFingerprint::from_bytes(hex_array("8a2f3d5f4bb04af5"))
-        );
+        assert_eq!(domain.fingerprint(), hex_array("8a2f3d5f4bb04af5"));
     }
 
     #[test]
@@ -168,10 +162,7 @@ mod tests {
                 "61636d65",
             )
         );
-        assert_eq!(
-            domain.fingerprint(),
-            ShapeFingerprint::from_bytes(hex_array("f8311e0a178867bc"))
-        );
+        assert_eq!(domain.fingerprint(), hex_array("f8311e0a178867bc"));
     }
 
     #[test]

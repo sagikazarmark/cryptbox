@@ -134,7 +134,7 @@ fn field_only_values_carry_the_empty_shape_fingerprint() {
 
     let info = cryptbox::inspect_ciphertext(sealed.as_bytes()).unwrap();
     // docs/wire-format.md#shape-fingerprint
-    assert_eq!(info.shape_fingerprint().to_string(), "ff670aba047d77fa");
+    assert_eq!(hex::encode(info.binding_fingerprint()), "ff670aba047d77fa");
 }
 
 #[test]

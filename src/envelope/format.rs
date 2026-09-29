@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{Error, KeyId, ShapeFingerprint};
+use crate::{Error, KeyId};
 
 const MAGIC: &[u8; 4] = b"CBX\0";
 pub(super) const FORMAT_VERSION: u8 = 2;
@@ -52,7 +52,7 @@ pub struct CiphertextInfo {
     suite_id: SuiteId,
     padded: bool,
     key_id: KeyId,
-    shape_fingerprint: ShapeFingerprint,
+    binding_fingerprint: [u8; 8],
 }
 
 impl CiphertextInfo {
@@ -80,14 +80,15 @@ impl CiphertextInfo {
         self.key_id
     }
 
-    /// Returns the shape fingerprint of the binding the value was sealed under.
+    /// Returns the fingerprint of the binding the value was sealed under.
     ///
-    /// A field-only binding carries the empty shape's fingerprint. The
-    /// fingerprint is diagnostic: a reader compares it with its own field's
-    /// shape, so it can count values written with an older shape.
+    /// The envelope stores it unchanged, and opening compares it with the
+    /// fingerprint of the binding the reader expects before any key lookup. It
+    /// names the kind of binding, never its values, so equal fingerprints do not
+    /// imply equal bindings.
     #[must_use]
-    pub const fn shape_fingerprint(self) -> ShapeFingerprint {
-        self.shape_fingerprint
+    pub const fn binding_fingerprint(self) -> [u8; 8] {
+        self.binding_fingerprint
     }
 }
 
@@ -139,7 +140,7 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
 
     let padded = flags & FLAG_PADDED != 0;
     let key_id = KeyId::from_bytes(field(bytes, KEY_ID_OFFSET));
-    let shape_fingerprint = ShapeFingerprint::from_bytes(field(bytes, FINGERPRINT_OFFSET));
+    let binding_fingerprint = field(bytes, FINGERPRINT_OFFSET);
 
     Ok(ParsedEnvelope {
         bytes,
@@ -148,7 +149,7 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
             suite_id,
             padded,
             key_id,
-            shape_fingerprint,
+            binding_fingerprint,
         },
         header: &bytes[..HEADER_LEN],
         suite_payload: &bytes[HEADER_LEN..],
@@ -159,7 +160,7 @@ pub(super) fn envelope_header(
     suite_id: SuiteId,
     padded: bool,
     key_id: KeyId,
-    fingerprint: ShapeFingerprint,
+    fingerprint: [u8; 8],
 ) -> Vec<u8> {
     let flags = if padded { FLAG_PADDED } else { 0 };
 
@@ -167,7 +168,7 @@ pub(super) fn envelope_header(
     header.extend_from_slice(MAGIC);
     header.extend_from_slice(&[FORMAT_VERSION, suite_id.get(), flags]);
     header.extend_from_slice(key_id.as_bytes());
-    header.extend_from_slice(fingerprint.as_bytes());
+    header.extend_from_slice(&fingerprint);
 
     header
 }

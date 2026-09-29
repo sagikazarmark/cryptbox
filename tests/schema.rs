@@ -236,7 +236,10 @@ field 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
     let sealed =
         Sealed::<WorkspaceNote>::seal(&"hi".to_owned(), (&scope, RecordId::I64(1)), &keys).unwrap();
     let header = inspect_ciphertext(sealed.as_bytes()).unwrap();
-    assert!(snapshot.contains(&format!("  binding: {}\n", header.shape_fingerprint())));
+    assert!(snapshot.contains(&format!(
+        "  binding: {}\n",
+        hex::encode(header.binding_fingerprint())
+    )));
 }
 
 struct NicknameLookup;

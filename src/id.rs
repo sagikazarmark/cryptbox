@@ -64,51 +64,6 @@ identifier!(
     "A stable binding-part identifier, independent of Rust names."
 );
 
-/// A 64-bit fingerprint of a binding's shape: its part IDs, kinds, and roles,
-/// and whether it binds a record.
-///
-/// Every ciphertext header carries the fingerprint of the shape it was sealed
-/// with; a field-only binding has the empty shape. It is diagnostic only: a reader always takes the expected shape
-/// from its own field, and reports [`Error::BindingMismatch`](crate::Error::BindingMismatch) when the stored
-/// fingerprint disagrees. See the [wire format].
-///
-#[doc = concat!(
-    "[wire format]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#shape-fingerprint",
-)]
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub struct ShapeFingerprint([u8; 8]);
-
-impl ShapeFingerprint {
-    /// Creates a fingerprint from its stored 8-byte representation.
-    #[must_use]
-    pub const fn from_bytes(bytes: [u8; 8]) -> Self {
-        Self(bytes)
-    }
-
-    /// Returns the stored 8-byte representation.
-    #[must_use]
-    pub const fn as_bytes(&self) -> &[u8; 8] {
-        &self.0
-    }
-}
-
-impl fmt::Display for ShapeFingerprint {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0
-            .iter()
-            .try_for_each(|byte| write!(formatter, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for ShapeFingerprint {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_tuple("ShapeFingerprint")
-            .field(&format_args!("{self}"))
-            .finish()
-    }
-}
-
 /// The supplied text is not a canonical hyphenated UUID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]

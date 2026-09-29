@@ -164,10 +164,11 @@ fn field_only_envelopes_carry_the_empty_shape_fingerprint() {
 
     // docs/wire-format.md#shape-fingerprint
     assert_eq!(
-        inspect_ciphertext(&ciphertext)
-            .unwrap()
-            .shape_fingerprint()
-            .to_string(),
+        hex::encode(
+            inspect_ciphertext(&ciphertext)
+                .unwrap()
+                .binding_fingerprint()
+        ),
         "ff670aba047d77fa"
     );
 }

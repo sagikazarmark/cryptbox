@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use crate::{Error, FieldId, PartId, ShapeFingerprint};
+use crate::{Error, FieldId, PartId};
 
 mod args;
 mod encoding;
@@ -272,7 +272,7 @@ fn project<'v>(
 
 /// The shape fingerprint of binding `B`, with or without a record, as the
 /// envelope header carries it.
-pub(crate) fn shape_fingerprint<B: Binding>(record: bool) -> ShapeFingerprint {
+pub(crate) fn shape_fingerprint<B: Binding>(record: bool) -> [u8; 8] {
     BindingShape::new(B::PARTS, record).fingerprint()
 }
 
@@ -505,7 +505,7 @@ impl<'a> BindingShape<'a> {
     }
 
     /// Fingerprints the shape; declaration order does not matter.
-    pub(crate) fn fingerprint(&self) -> ShapeFingerprint {
+    pub(crate) fn fingerprint(&self) -> [u8; 8] {
         encoding::fingerprint(self.parts, self.record)
     }
 }
@@ -520,7 +520,7 @@ impl<'a> BindingShape<'a> {
 pub(crate) struct BindingDomain {
     field: FieldId,
     encoded: Vec<u8>,
-    fingerprint: ShapeFingerprint,
+    fingerprint: [u8; 8],
     key_scope: KeyScope,
 }
 
@@ -675,7 +675,7 @@ impl BindingDomain {
     }
 
     /// The shape fingerprint the envelope header carries.
-    pub(crate) fn fingerprint(&self) -> ShapeFingerprint {
+    pub(crate) fn fingerprint(&self) -> [u8; 8] {
         self.fingerprint
     }
 
@@ -890,11 +890,11 @@ mod tests {
         // Independently computed with shasum over the documented shape bytes.
         assert_eq!(
             BindingShape::new(&[SEQUENCE, TENANT], false).fingerprint(),
-            ShapeFingerprint::from_bytes(hex_array("f93e3f05d673ab72")),
+            hex_array("f93e3f05d673ab72"),
         );
         assert_eq!(
             BindingShape::new(&[TENANT], true).fingerprint(),
-            ShapeFingerprint::from_bytes(hex_array("f99c70ac24ad8a9a")),
+            hex_array("f99c70ac24ad8a9a"),
         );
     }
 
@@ -926,7 +926,7 @@ mod tests {
         // Independently computed with shasum over the documented empty shape.
         assert_eq!(
             scoped(&[], false, &[], None).unwrap().fingerprint(),
-            ShapeFingerprint::from_bytes(hex_array("ff670aba047d77fa"))
+            hex_array("ff670aba047d77fa")
         );
     }
 
@@ -994,10 +994,7 @@ mod tests {
             hex::encode(domain.as_bytes()),
             "123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31"
         );
-        assert_eq!(
-            domain.fingerprint(),
-            ShapeFingerprint::from_bytes(hex_array("cda083fe6eae1bf1"))
-        );
+        assert_eq!(domain.fingerprint(), hex_array("cda083fe6eae1bf1"));
     }
 
     #[test]
@@ -1008,10 +1005,7 @@ mod tests {
             hex::encode(domain.as_bytes()),
             "123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31"
         );
-        assert_eq!(
-            domain.fingerprint(),
-            ShapeFingerprint::from_bytes(hex_array("505a9cd2bc286636"))
-        );
+        assert_eq!(domain.fingerprint(), hex_array("505a9cd2bc286636"));
     }
 
     const LOW: [u8; 16] = [0x11; 16];

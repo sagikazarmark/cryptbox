@@ -7,7 +7,7 @@ use zeroize::Zeroizing;
 use super::format::{FORMAT_VERSION, ParsedEnvelope, SuiteId, envelope_header};
 use crate::crypto;
 use crate::padding::AeadPlaintext;
-use crate::{EncryptionKey, Error, ShapeFingerprint};
+use crate::{EncryptionKey, Error};
 
 // Labels, including NULs, are persistent domain separators, not display strings.
 // See ../../docs/wire-format.md#encryption-recipe.
@@ -19,19 +19,22 @@ const ENVELOPE_AAD_LABEL: &[u8] = b"cryptbox/envelope-aad/v1\0";
 /// The bytes are mixed into key derivation and the AAD and never stored; the
 /// fingerprint is stored in the header and compared on open. The envelope does
 /// not interpret either: the layer above encodes them.
+///
+/// The header is stored in plaintext, so the fingerprint must depend only on
+/// what kind of binding this is, never on its values.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct EnvelopeBinding<'a> {
     bytes: &'a [u8],
-    fingerprint: ShapeFingerprint,
+    fingerprint: [u8; 8],
 }
 
 impl<'a> EnvelopeBinding<'a> {
-    pub(crate) const fn new(bytes: &'a [u8], fingerprint: ShapeFingerprint) -> Self {
+    pub(crate) const fn new(bytes: &'a [u8], fingerprint: [u8; 8]) -> Self {
         Self { bytes, fingerprint }
     }
 
     /// The fingerprint a reader compares with the one stored in the header.
-    pub(crate) const fn fingerprint(&self) -> ShapeFingerprint {
+    pub(crate) const fn fingerprint(&self) -> [u8; 8] {
         self.fingerprint
     }
 }

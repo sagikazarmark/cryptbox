@@ -36,7 +36,7 @@ where
     F: Field,
 {
     let bytes = sealed.as_bytes();
-    let stored = inspect_ciphertext(bytes)?.shape_fingerprint();
+    let stored = inspect_ciphertext(bytes)?.binding_fingerprint();
     let plaintext = with_domain::<F, _, _>(args, |domain, binding, record| {
         if stored == domain.fingerprint() {
             return bound::open(&domain, bytes, keys);

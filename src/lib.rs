@@ -219,7 +219,7 @@ pub use envelope::{
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use field::Field;
-pub use id::{FieldId, IndexId, InvalidIdentifier, PartId, ShapeFingerprint};
+pub use id::{FieldId, IndexId, InvalidIdentifier, PartId};
 pub use key::{
     BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyError,
     KeyId, Keys,

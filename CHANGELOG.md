@@ -191,8 +191,8 @@
   fingerprint after the `KeyId`, in a fixed 31-byte header, so `W = P + 71`. A
   field-only binding is the empty shape, with no parts and no record, and
   carries that shape's fingerprint.
-  `CiphertextInfo::shape_fingerprint` reports the fingerprint as a
-  `ShapeFingerprint`, not an `Option`. Reading an envelope sealed with a different binding shape
+  `CiphertextInfo::binding_fingerprint` reports it as a `[u8; 8]`, not an
+  `Option`, and the `ShapeFingerprint` type is removed. Reading an envelope sealed with a different binding shape
   fails with the new `Error::BindingMismatch` before any key lookup. The new
   `Error::InvalidBinding` rejects malformed binding declarations or values.
   Only flag bit `01` is defined; every other bit stays reserved.

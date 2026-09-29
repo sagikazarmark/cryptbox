@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use super::{PartKind, PartRole, PartSpec, PartValue};
-use crate::{Error, FieldId, ShapeFingerprint};
+use crate::{Error, FieldId};
 
 // A persistent domain separator, not a display string. See ../../docs/wire-format.md#shape-fingerprint.
 const SHAPE_LABEL: &[u8] = b"cryptbox/binding-shape/v1\0";
@@ -39,7 +39,7 @@ pub(super) fn encode<'v>(
 
 /// Fingerprints a shape from its part IDs, kinds, and roles and its record
 /// flag, never values; declaration order does not matter.
-pub(super) fn fingerprint(parts: &[PartSpec], record: bool) -> ShapeFingerprint {
+pub(super) fn fingerprint(parts: &[PartSpec], record: bool) -> [u8; 8] {
     let mut parts = parts.to_vec();
     parts.sort_by_key(|spec| spec.id);
     // A count that does not fit is rejected when the binding is encoded.
@@ -60,7 +60,7 @@ pub(super) fn fingerprint(parts: &[PartSpec], record: bool) -> ShapeFingerprint 
     let mut fingerprint = [0_u8; 8];
     fingerprint.copy_from_slice(&digest[..8]);
 
-    ShapeFingerprint::from_bytes(fingerprint)
+    fingerprint
 }
 
 // Kind-tagged and length-prefixed, so no two values of any kinds share bytes.

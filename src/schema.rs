@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     Binding, BlindIndexSpec, Codec, Field, FieldId, IndexId, Padding, PartKind, PartRole, PartSpec,
-    ShapeFingerprint, binding::shape_fingerprint,
+    binding::shape_fingerprint,
 };
 
 /// Lists fields and blind indexes with their persistent schema.
@@ -21,8 +21,8 @@ use crate::{
 ///
 /// - its field ID, codec ID, and padding;
 /// - `record`: whether it binds a record;
-/// - `binding`: the [shape fingerprint](crate::ShapeFingerprint) its
-///   headers carry, followed by each part's ID, kind, and role in part-ID
+/// - `binding`: the [binding fingerprint](crate::CiphertextInfo::binding_fingerprint),
+///   in hex, that its headers carry, followed by each part's ID, kind, and role in part-ID
 ///   order;
 /// - `shred unit`: the finest unit that destroying root keys can shred, if the
 ///   application stores root keys per [key scope](crate::KeyScope): the
@@ -97,7 +97,7 @@ struct FieldEntry {
     padding: Padding,
     record: bool,
     parts: &'static [PartSpec],
-    fingerprint: ShapeFingerprint,
+    fingerprint: [u8; 8],
     custody: Option<String>,
 }
 
@@ -250,7 +250,7 @@ impl fmt::Display for Manifest {
             writeln!(formatter, "  codec: {}", field.codec)?;
             writeln!(formatter, "  padding: {}", field.padding)?;
             writeln!(formatter, "  record: {}", yes_no(field.record))?;
-            writeln!(formatter, "  binding: {}", field.fingerprint)?;
+            writeln!(formatter, "  binding: {}", hex::encode(field.fingerprint))?;
             for part in field.parts {
                 writeln!(
                     formatter,

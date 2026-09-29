@@ -67,7 +67,7 @@ pub(crate) fn check<'a>(
     ciphertext: &'a [u8],
 ) -> Result<CheckedEnvelope<'a>, Error> {
     let (suite, parsed) = parse_supported(ciphertext)?;
-    if parsed.info.shape_fingerprint() != binding.fingerprint() {
+    if parsed.info.binding_fingerprint() != binding.fingerprint() {
         return Err(Error::BindingMismatch);
     }
 
@@ -118,7 +118,7 @@ mod tests {
 
     use super::suite::xchacha20_poly1305::{NONCE_LEN, XChaCha20Poly1305};
     use super::{EnvelopeBinding, check, inspect_ciphertext, seal};
-    use crate::{EncryptionKey, EncryptionKeyring, Error, Padding, ShapeFingerprint};
+    use crate::{EncryptionKey, EncryptionKeyring, Error, Padding};
 
     // Seals under suite 1 with a fixed nonce, as the known-answer vectors need.
     fn seal_with_nonce(
@@ -154,13 +154,13 @@ mod tests {
         EncryptionKeyring::new(vector_key(), []).unwrap()
     }
 
-    fn fingerprint(value: &str) -> ShapeFingerprint {
-        ShapeFingerprint::from_bytes(hex::decode(value).unwrap().try_into().unwrap())
+    fn fingerprint(value: &str) -> [u8; 8] {
+        hex::decode(value).unwrap().try_into().unwrap()
     }
 
     // The envelope does not interpret the binding: the vectors take its bytes
     // and fingerprint as given. The binding module pins how they are encoded.
-    fn binding(bytes: &[u8], fingerprint: ShapeFingerprint) -> EnvelopeBinding<'_> {
+    fn binding(bytes: &[u8], fingerprint: [u8; 8]) -> EnvelopeBinding<'_> {
         EnvelopeBinding::new(bytes, fingerprint)
     }
 
@@ -256,7 +256,7 @@ mod tests {
         let envelope = seal(binding, Padding::NONE, b"secret", &keyring()).unwrap();
 
         assert_eq!(
-            inspect_ciphertext(&envelope).unwrap().shape_fingerprint(),
+            inspect_ciphertext(&envelope).unwrap().binding_fingerprint(),
             fingerprint(SCOPED_RECORD_FINGERPRINT)
         );
         assert_eq!(
@@ -279,7 +279,7 @@ mod tests {
 
         assert_eq!(envelope.len(), 55 + 6 + 16);
         assert_eq!(
-            inspect_ciphertext(&envelope).unwrap().shape_fingerprint(),
+            inspect_ciphertext(&envelope).unwrap().binding_fingerprint(),
             expected
         );
     }
@@ -338,7 +338,7 @@ mod tests {
     fn a_resealed_fingerprint_fails_authentication() {
         // A role change keeps the binding bytes but changes the fingerprint.
         let bytes = hex::decode(SCOPED_BINDING).unwrap();
-        let other = ShapeFingerprint::from_bytes([7; 8]);
+        let other = [7; 8];
         let mut envelope = seal(
             binding(&bytes, fingerprint(SCOPED_FINGERPRINT)),
             Padding::NONE,
@@ -346,7 +346,7 @@ mod tests {
             &keyring(),
         )
         .unwrap();
-        envelope[23..31].copy_from_slice(other.as_bytes());
+        envelope[23..31].copy_from_slice(&other);
 
         assert_eq!(
             open(binding(&bytes, other), &envelope, &keyring()).unwrap_err(),
