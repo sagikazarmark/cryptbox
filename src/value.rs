@@ -332,7 +332,7 @@ impl<F: Field> fmt::Debug for Sealed<F> {
 ///
 /// `K` is the column's key source. The default, [`GlobalKeys`], reads the keys
 /// installed with [`keys::install`]; name another
-/// [`KeyContext`](crate::KeyContext) to use application-owned keys instead.
+/// [`ColumnKeys`](crate::ColumnKeys) to use application-owned keys instead.
 ///
 /// `Plain` contains plaintext while it is in application memory. It redacts
 /// `Debug`, does not implement `Display`, `Deref`, `PartialEq`, or Serde, and
@@ -498,11 +498,11 @@ where
         self.value
     }
 
-    /// Moves this value into the column type of another key context.
+    /// Moves this value into the column type that reads its keys from `K2`.
     ///
     /// This moves the plaintext; it neither copies nor reseals it.
     #[must_use]
-    pub fn with_key_context<K2>(self) -> Plain<F, K2> {
+    pub fn with_column_keys<K2>(self) -> Plain<F, K2> {
         Plain::from_value(self.value)
     }
 }
@@ -512,7 +512,7 @@ where
 impl<F, K> Plain<F, K>
 where
     F: Field<Binding = FieldOnly, Indexes = ()>,
-    K: crate::KeyContext,
+    K: crate::ColumnKeys,
 {
     pub(crate) fn seal_for_column(&self) -> Result<Sealed<F>, Error> {
         Sealed::seal(&self.value, (), K::keys()?)

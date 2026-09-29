@@ -5,8 +5,8 @@
 use std::sync::LazyLock;
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, EncryptionKey, EncryptionKeyring,
-    Error, Field, FieldOnly, IndexId, KeyContext, KeyId, Keys, Padding, Plain, Sealed, Utf8,
+    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, ColumnKeys, EncryptionKey,
+    EncryptionKeyring, Error, Field, FieldOnly, IndexId, KeyId, Keys, Padding, Plain, Sealed, Utf8,
     index_id, key_id, keys,
 };
 use sqlx::{
@@ -21,7 +21,7 @@ const KEY_ID: KeyId = key_id!("c0000000-0000-4000-8000-00000000000c");
 /// global, so every column round trip here proves the column reads `K`.
 struct TestKeys;
 
-impl KeyContext for TestKeys {
+impl ColumnKeys for TestKeys {
     fn keys() -> Result<&'static Keys, Error> {
         static KEYS: LazyLock<Keys> = LazyLock::new(|| {
             Keys::new(EncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap())

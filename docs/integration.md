@@ -110,7 +110,7 @@ keys are needed and where plaintext becomes available:
 | --- | --- |
 | Explicit sealing or preparation | Produce a sealed value before calling storage. Key failures happen at that explicit step; the stored representation can then cross a database or serialization boundary. |
 | Read as `Sealed<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to open it, with the binding values of the row. Useful when only some loaded values need plaintext. |
-| Automatic SQLx `Plain<F>` | The adapter seals on encode and opens on decode. It reads keys from its key context: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Plain<F, K>`. |
+| Automatic SQLx `Plain<F>` | The adapter seals on encode and opens on decode. It reads keys from its `ColumnKeys` type `K`: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Plain<F, K>`. |
 
 The automatic `Plain<F>` column serves only `FieldOnly` fields without a record or
 blind indexes: a column decoder sees neither the row nor its scope, and would not
@@ -135,7 +135,7 @@ A **keyring** holds one current key generation and the previous generations
 that stored data still needs: `EncryptionKeyring` for values and
 `BlindIndexKeyring` for blind indexes. `Keys` pairs an encryption keyring with an
 optional blind-index keyring. The **installed keys** back the process-wide forms,
-and a **key context** selects the keys of an automatic SQLx column.
+and a **`ColumnKeys`** type selects the keys of an automatic SQLx column.
 
 Which keyring protects which field and scope is the decision with the most
 silent failure modes; [choosing keyrings](choosing-keyrings.md) covers it in
@@ -171,9 +171,9 @@ spawned outside a scope would silently use other keys
 
 The automatic SQLx column `Plain<F, K>` takes its key source as a type,
 because SQLx decoding receives no context. The default `K`, `GlobalKeys`, reads
-the installed keys. Implement `KeyContext` over an application-owned static
+the installed keys. Implement `ColumnKeys` over an application-owned static
 `Keys` to use a second keyring or a test fixture without the global.
-`Plain::with_key_context::<K>()` moves a value into another column type without
+`Plain::with_column_keys::<K>()` moves a value into another column type without
 resealing it. A field does not choose its keys.
 
 Teams that forbid the global can deny `keys::install` and the process-wide forms with

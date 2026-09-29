@@ -224,7 +224,7 @@ pub use key::{
     BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyError,
     KeyId, Keys,
 };
-pub use key_source::{BlindIndexKeySource, EncryptionKeySource, GlobalKeys, KeyContext};
+pub use key_source::{BlindIndexKeySource, ColumnKeys, EncryptionKeySource, GlobalKeys};
 pub use padding::Padding;
 pub use prepare::Prepared;
 pub use record::{IndexedBy, Record, open_matching};

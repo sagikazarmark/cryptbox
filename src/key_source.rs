@@ -144,7 +144,7 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
 /// use std::sync::LazyLock;
 ///
 /// use cryptbox::{
-///     EncryptionKey, EncryptionKeyring, Error, Field, FieldId, FieldOnly, KeyContext, Keys,
+///     EncryptionKey, EncryptionKeyring, Error, Field, FieldId, FieldOnly, ColumnKeys, Keys,
 ///     Padding, Plain, Utf8,
 /// };
 ///
@@ -162,7 +162,7 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
 ///
 /// struct ArchiveKeys;
 ///
-/// impl KeyContext for ArchiveKeys {
+/// impl ColumnKeys for ArchiveKeys {
 ///     fn keys() -> Result<&'static Keys, Error> {
 ///         // Load durable key material here; a generated key is for demonstration only.
 ///         static KEYS: LazyLock<Result<Keys, Error>> = LazyLock::new(|| {
@@ -177,7 +177,7 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
 /// let email = Plain::<UserEmail, ArchiveKeys>::new("user@example.com");
 /// # let _ = email;
 /// ```
-pub trait KeyContext: 'static {
+pub trait ColumnKeys: 'static {
     /// Returns the keys of this key source.
     ///
     /// # Errors
@@ -194,7 +194,7 @@ pub trait KeyContext: 'static {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GlobalKeys;
 
-impl KeyContext for GlobalKeys {
+impl ColumnKeys for GlobalKeys {
     fn keys() -> Result<&'static Keys, Error> {
         crate::keys::installed()
     }

@@ -156,6 +156,10 @@
   header, as `Error::UnsupportedFormatVersion` does, instead of a `SuiteId`.
   `SuiteId` itself is unchanged and still exported at the crate root.
 
+- **Breaking:** `KeyContext`, the key source an automatic SQLx column names in
+  its type, is renamed `ColumnKeys`, and `Plain::with_key_context` is renamed
+  `Plain::with_column_keys`. "Context" now names only the envelope's context.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

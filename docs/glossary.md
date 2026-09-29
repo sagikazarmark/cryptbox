@@ -50,6 +50,13 @@ The encrypted bytes of a value: the envelope that a sealed value wraps.
 Structurally valid ciphertext has not necessarily been authenticated.
 <!-- Agent guidance: in the typed API, say “sealed value” (`Sealed<F>`); “ciphertext” is the byte-level envelope. Avoid “encrypted value” for plaintext-bearing types. -->
 
+**Column keys**:
+The key source of an automatic SQLx column, named in its type as
+`Plain<F, K>` (`ColumnKeys`): the installed keys (`GlobalKeys`, the default) or
+an application-owned static `Keys`. It belongs to the column type, not to a
+field.
+<!-- Agent guidance: “key context” is the retired name; do not reintroduce it. -->
+
 **Context**:
 What an envelope binds a value to: bytes that key derivation and the AAD both
 take, which are never stored, and a context fingerprint that the header
@@ -98,13 +105,7 @@ serve only `FieldOnly` fields without a record. The global conveniences
 (`seal_global()`, `open_global()`, `with_index()`, `probes()`) and the automatic
 column read them and fail with `KeysNotInstalled` before installation; every
 other operation takes keys explicitly.
-<!-- Agent guidance: avoid “global key context” or “global keyring”; the global is the installed keys. -->
-
-**Key context**:
-The key source of an automatic SQLx column, named in its type as
-`Plain<F, K>`: the installed keys (`GlobalKeys`, the default) or an
-application-owned static `Keys`. It belongs to the column type, not to a field.
-<!-- Agent guidance: avoid “binding context” as a synonym. -->
+<!-- Agent guidance: avoid “global column keys” or “global keyring”; the global is the installed keys. -->
 
 **Key generation**:
 An immutable pairing of a generation identifier and root key material. Encryption

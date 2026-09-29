@@ -35,7 +35,7 @@ runs in its own process.
 its index. The example seals its indexed field explicitly with `Sealed::prepare`
 and `with_index()`, and writes the pair atomically.
 
-To test automatic columns without the installed keys, implement `KeyContext`
+To test automatic columns without the installed keys, implement `ColumnKeys`
 over a fixed test keyring in a `static` and use `Plain<F, TestKeys>`, as the
 crate's [SQLite adapter tests](../tests/sqlx_sqlite.rs) do. Such tests run
 concurrently in one process because nothing is installed or replaced.

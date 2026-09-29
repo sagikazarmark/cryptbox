@@ -5,8 +5,8 @@
 use std::sync::LazyLock;
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, EncryptionKey, EncryptionKeyring,
-    Error, Field, FieldOnly, IndexId, KeyContext, KeyId, Keys, Padding, Plain, Sealed, Utf8,
+    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, ColumnKeys, EncryptionKey,
+    EncryptionKeyring, Error, Field, FieldOnly, IndexId, KeyId, Keys, Padding, Plain, Sealed, Utf8,
     index_id, key_id, keys,
 };
 use sqlx::{
@@ -21,7 +21,7 @@ const KEY_ID: KeyId = key_id!("f0000000-0000-4000-8000-00000000000f");
 /// global, so every column round trip here proves the column reads `K`.
 struct TestKeys;
 
-impl KeyContext for TestKeys {
+impl ColumnKeys for TestKeys {
     fn keys() -> Result<&'static Keys, Error> {
         static KEYS: LazyLock<Keys> = LazyLock::new(|| {
             Keys::new(EncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap())
@@ -167,7 +167,7 @@ fn sqlite_round_trips_sealed_values_and_opens_plain_columns() {
 }
 
 #[test]
-fn sqlite_binds_an_explicitly_opened_value_through_its_own_key_context() {
+fn sqlite_binds_an_explicitly_opened_value_through_its_own_column_keys() {
     futures_executor::block_on(async {
         let mut connection = SqliteConnection::connect("sqlite::memory:").await.unwrap();
         sqlx::query("CREATE TABLE secrets (value BLOB NOT NULL)")

@@ -6,7 +6,7 @@ use sqlx::{
 };
 
 use crate::{
-    BlindIndex, BlindIndexRef, BlindIndexSpec, Field, FieldOnly, KeyContext, Plain, Sealed,
+    BlindIndex, BlindIndexRef, BlindIndexSpec, ColumnKeys, Field, FieldOnly, Plain, Sealed,
 };
 
 fn bytea_type_info() -> PgTypeInfo {
@@ -20,7 +20,7 @@ fn bytea_compatible(ty: &PgTypeInfo) -> bool {
 impl<F, K> Type<Postgres> for Plain<F, K>
 where
     F: Field<Binding = FieldOnly, Indexes = ()>,
-    K: KeyContext,
+    K: ColumnKeys,
 {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
@@ -34,7 +34,7 @@ where
 impl<F, K> Encode<'_, Postgres> for Plain<F, K>
 where
     F: Field<Binding = FieldOnly, Indexes = ()>,
-    K: KeyContext,
+    K: ColumnKeys,
 {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         let sealed = self.seal_for_column()?;
@@ -51,7 +51,7 @@ where
 impl<'row, F, K> Decode<'row, Postgres> for Plain<F, K>
 where
     F: Field<Binding = FieldOnly, Indexes = ()>,
-    K: KeyContext,
+    K: ColumnKeys,
 {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;

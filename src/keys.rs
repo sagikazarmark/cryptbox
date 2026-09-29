@@ -52,7 +52,7 @@
 //! paths that do not exist, so add them only when the feature is enabled.
 //!
 //! The automatic `SQLx` column defaults to [`GlobalKeys`](crate::GlobalKeys);
-//! name another [`KeyContext`](crate::KeyContext) as its second type parameter,
+//! name another [`ColumnKeys`](crate::ColumnKeys) as its second type parameter,
 //! `Plain<F, K>`, to use application-owned keys instead.
 //!
 #![doc = concat!(
