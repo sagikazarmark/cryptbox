@@ -42,8 +42,8 @@ impl Codec<Secret<String>> for HandleCodec {
     }
 }
 
-// The seal names the validating codec explicitly. `<Secret<String> as Plaintext>::Codec`
-// (plain UTF-8) would store the same bytes but skip the handle policy.
+// The seal names the validating codec explicitly. `Utf8`, the default codec of
+// `Secret<String>`, would store the same bytes but skip the handle policy.
 struct Handle;
 
 impl Seal for Handle {

@@ -14,7 +14,6 @@
 mod attr;
 mod binding;
 mod blind_index;
-mod plaintext;
 mod record;
 mod seal;
 
@@ -42,12 +41,13 @@ use syn::{DeriveInput, parse_macro_input};
 /// always stated or a built-in default, never inferred from the shape:
 ///
 /// - A **unit struct** is a marker over a separate `value` type, which several
-///   seals can share. Without `codec`, the value type's `Plaintext` codec applies,
-///   and a value type without one reports that it has no default codec.
+///   seals can share. Without `codec`, the value type's built-in default applies: only
+///   `String`, `Vec<u8>`, and their `Secret` wrappers have one, and any other
+///   value type reports that it has no default codec.
 /// - **Any other type** is its own value (`Value = Self`). With `codec`, that codec
 ///   encodes the whole type. With `transparent`, the type must be a struct with
 ///   exactly one field, and the seal stores that field alone: with `codec` if
-///   given, or else with the field type's `Plaintext` codec. A transparent seal
+///   given, or else with the field type's built-in default codec. A transparent seal
 ///   stores exactly the bytes of a marker over the field's type with the same
 ///   ID and codec, so the two read each other's values.
 ///
@@ -76,7 +76,7 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
 ///         const RECORD: bool = false;
 ///         type Value = String;
-///         type Codec = <String as ::cryptbox::Plaintext>::Codec;
+///         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
 ///         type Binding = ::cryptbox::FieldOnly;
 ///         type Indexes = ();
 ///     }
@@ -139,7 +139,7 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
 ///         const RECORD: bool = true;
 ///         type Value = String;
-///         type Codec = <String as ::cryptbox::Plaintext>::Codec;
+///         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
 ///         type Binding = cryptbox::Tenant;
 ///         type Indexes = (EmailLookup,);
 ///     }
@@ -192,16 +192,16 @@ use syn::{DeriveInput, parse_macro_input};
 ///     #[automatically_derived]
 ///     impl ::cryptbox::Codec<Self> for UserEmail {
 ///         const ID: &'static str =
-///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::ID;
+///             <<String as ::cryptbox::__private::DefaultCodec>::Codec as ::cryptbox::Codec<String>>::ID;
 ///
 ///         fn encode(value: &Self) -> Result<Zeroizing<Vec<u8>>, ::cryptbox::CodecError> {
-///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::encode(
+///             <<String as ::cryptbox::__private::DefaultCodec>::Codec as ::cryptbox::Codec<String>>::encode(
 ///                 &value.0,
 ///             )
 ///         }
 ///
 ///         fn decode(bytes: &[u8]) -> Result<Self, ::cryptbox::CodecError> {
-///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::decode(
+///             <<String as ::cryptbox::__private::DefaultCodec>::Codec as ::cryptbox::Codec<String>>::decode(
 ///                 bytes,
 ///             )
 ///             .map(Self)
@@ -305,89 +305,11 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
     derive(input, blind_index::expand)
 }
 
-/// Derives `cryptbox::Plaintext`, naming a value type's default codec.
-///
-/// | Key | Required | Meaning |
-/// | --- | --- | --- |
-/// | `codec = Type` | no | The default codec. Only a single-field tuple struct may omit it. |
-///
-/// The mapping is persistent schema: never change it for a type with stored
-/// data.
-///
-/// ```
-/// #[derive(serde::Serialize, serde::Deserialize, cryptbox::Plaintext)]
-/// #[cryptbox(codec = cryptbox::Json)]
-/// struct Address {
-///     street: String,
-/// }
-/// ```
-///
-/// expands to exactly the manual impl:
-///
-/// ```
-/// # #[derive(serde::Serialize, serde::Deserialize)]
-/// # struct Address {
-/// #     street: String,
-/// # }
-/// const _: () = {
-///     #[automatically_derived]
-///     impl ::cryptbox::Plaintext for Address {
-///         type Codec = cryptbox::Json;
-///     }
-/// };
-/// ```
-///
-/// Without `codec`, a single-field tuple struct is transparent: it is its own
-/// codec, stores exactly the bytes its inner value's default codec stores, and
-/// shares that codec's `ID`.
-///
-/// ```
-/// #[derive(cryptbox::Plaintext)]
-/// struct Email(String);
-/// ```
-///
-/// expands to exactly the manual impls, with `Result`, `Vec`, and `Zeroizing` spelled
-/// as absolute paths in the real expansion:
-///
-/// ```
-/// # use zeroize::Zeroizing;
-/// # struct Email(String);
-/// const _: () = {
-///     #[automatically_derived]
-///     impl ::cryptbox::Plaintext for Email {
-///         type Codec = Self;
-///     }
-///
-///     #[automatically_derived]
-///     impl ::cryptbox::Codec<Self> for Email {
-///         const ID: &'static str =
-///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::ID;
-///
-///         fn encode(value: &Self) -> Result<Zeroizing<Vec<u8>>, ::cryptbox::CodecError> {
-///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::encode(
-///                 &value.0,
-///             )
-///         }
-///
-///         fn decode(bytes: &[u8]) -> Result<Self, ::cryptbox::CodecError> {
-///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::decode(
-///                 bytes,
-///             )
-///             .map(Self)
-///         }
-///     }
-/// };
-/// ```
-#[proc_macro_derive(Plaintext, attributes(cryptbox))]
-pub fn derive_plaintext(input: TokenStream) -> TokenStream {
-    derive(input, plaintext::expand)
-}
-
 /// Derives `cryptbox::Binding` for an owned scope struct.
 ///
 /// Each named field is one part, declared on the field:
 ///
-/// | Seal key | Required | Meaning |
+/// | Field key | Required | Meaning |
 /// | --- | --- | --- |
 /// | `part = "…"` | yes | The part ID, a hyphenated UUID string literal. |
 /// | `keys` | no | The part scopes key custody and blind indexes. |

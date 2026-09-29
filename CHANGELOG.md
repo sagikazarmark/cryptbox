@@ -178,6 +178,15 @@
   marker with the same ID and codec read each other's values. A type with fields
   rejects `value`.
 
+- **Breaking:** `Plaintext` and `#[derive(Plaintext)]` are removed (ADR-0007).
+  Only `String`, `Vec<u8>`, and their `Secret` wrappers keep a default codec,
+  permanently, which a derived seal uses when it names none; no application or
+  dependency can declare or change one. A seal over any other value type names
+  its `codec`, and a newtype that derived `Plaintext` becomes a `transparent`
+  seal or names its codec on the marker. A hand-written `Seal` impl names its
+  codec, such as `Utf8`, instead of `<String as Plaintext>::Codec`. Stored bytes
+  are unchanged.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

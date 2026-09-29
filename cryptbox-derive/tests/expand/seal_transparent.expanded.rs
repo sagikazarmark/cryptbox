@@ -19,7 +19,7 @@ const _: () = {
     }
     #[automatically_derived]
     impl ::cryptbox::Codec<Self> for UserEmail {
-        const ID: &'static str = <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<
+        const ID: &'static str = <<String as ::cryptbox::__private::DefaultCodec>::Codec as ::cryptbox::Codec<
             String,
         >>::ID;
         fn encode(
@@ -28,12 +28,12 @@ const _: () = {
             ::cryptbox::__private::Zeroizing<::std::vec::Vec<u8>>,
             ::cryptbox::CodecError,
         > {
-            <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<
+            <<String as ::cryptbox::__private::DefaultCodec>::Codec as ::cryptbox::Codec<
                 String,
             >>::encode(&value.0)
         }
         fn decode(bytes: &[u8]) -> ::core::result::Result<Self, ::cryptbox::CodecError> {
-            <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<
+            <<String as ::cryptbox::__private::DefaultCodec>::Codec as ::cryptbox::Codec<
                 String,
             >>::decode(bytes)
                 .map(Self)

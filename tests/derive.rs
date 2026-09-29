@@ -5,7 +5,7 @@ use cryptbox::{
     Binding, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
     CodecErrorKind, EncryptionKey, EncryptionKeyring, FieldOnly, FromIndexValues, IndexId,
     IndexKeyId, IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues,
-    Plaintext, RecordId, Seal, SealId, Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
+    RecordId, Seal, SealId, Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -30,7 +30,7 @@ impl Seal for ManualUserEmail {
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
-    type Codec = <String as Plaintext>::Codec;
+    type Codec = Utf8;
     type Binding = FieldOnly;
     type Indexes = ();
 }
@@ -329,41 +329,15 @@ fn a_projected_blind_index_normalizes_part_of_the_value() {
     assert!(!StreetLookup::verify_candidate("Springfield", &address()).unwrap());
 }
 
-/// A transparent newtype: stored with exactly the bytes of its inner `String`.
-#[derive(Debug, PartialEq, cryptbox::Plaintext)]
-struct Email(String);
-
-#[derive(Seal)]
-#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = Email)]
-struct TypedUserEmail;
-
 #[test]
-fn a_transparent_value_type_stores_its_inner_values_bytes() {
-    let keys = keyring();
-
-    let typed =
-        Sealed::<TypedUserEmail>::seal(&Email("mark@example.com".to_owned()), (), &keys).unwrap();
-    let as_string = Sealed::<ManualUserEmail>::from_bytes(typed.into_bytes()).unwrap();
-    assert_eq!(as_string.open((), &keys).unwrap(), "mark@example.com");
-
-    let plain = Sealed::<ManualUserEmail>::seal(&"ada@example.com".to_owned(), (), &keys).unwrap();
-    let as_email = Sealed::<TypedUserEmail>::from_bytes(plain.into_bytes()).unwrap();
-    assert_eq!(
-        as_email.open((), &keys).unwrap(),
-        Email("ada@example.com".to_owned())
-    );
-}
-
-#[test]
-fn a_transparent_value_type_rejects_what_its_inner_codec_rejects() {
-    let error = <Email as Plaintext>::Codec::decode(&[0xff]).unwrap_err();
+fn a_transparent_seal_rejects_what_its_inner_codec_rejects() {
+    let error = <SelfValuedEmail as Codec<SelfValuedEmail>>::decode(&[0xff]).unwrap_err();
 
     assert_eq!(error.kind(), CodecErrorKind::InvalidUtf8);
 }
 
-/// A value type that names its default codec.
-#[derive(Clone, Debug, PartialEq, cryptbox::Plaintext)]
-#[cryptbox(codec = PostcodeCodec)]
+/// A value type without a default codec: every seal over it names one.
+#[derive(Clone, Debug, PartialEq)]
 struct Postcode {
     code: String,
 }
@@ -385,13 +359,6 @@ impl Codec<Postcode> for PostcodeCodec {
     }
 }
 
-#[test]
-fn a_derived_plaintext_names_its_codec() {
-    fn assert_plaintext<T: Plaintext<Codec = C>, C>() {}
-
-    assert_plaintext::<Postcode, PostcodeCodec>();
-}
-
 mod renamed {
     pub use cryptbox as encryption;
 }
@@ -401,6 +368,7 @@ mod renamed {
     crate = "renamed::encryption",
     id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
     value = Postcode,
+    codec = PostcodeCodec,
 )]
 struct RenamedCratePostcode;
 
@@ -414,11 +382,6 @@ fn derives_can_name_cryptbox_through_another_path() {
 fn a_derived_blind_index_names_its_normalizer() {
     assert_eq!(EmailLookup::NORMALIZER, ManualEmailLookup::NORMALIZER);
     assert_eq!(StreetLookup::NORMALIZER, ManualStreetLookup::NORMALIZER);
-}
-
-#[test]
-fn a_transparent_value_type_shares_its_inner_codec_id() {
-    assert_eq!(<<Email as Plaintext>::Codec as Codec<Email>>::ID, "utf8");
 }
 
 /// An org scopes keys, a project scopes blind indexes, and a workspace is only
@@ -500,7 +463,7 @@ impl Seal for ManualProjectNote {
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = true;
     type Value = String;
-    type Codec = <String as Plaintext>::Codec;
+    type Codec = Utf8;
     type Binding = ManualOrgProject;
     type Indexes = ();
 }

@@ -140,7 +140,7 @@ fn form<'a>(input: &'a DeriveInput, attrs: &mut Attrs, errors: &mut Errors) -> O
         // Without a codec, the value type's built-in default applies, and a type
         // without one reports its own diagnostic.
         let codec = codec.map_or_else(
-            || quote_spanned!(value.span()=> <#value as #krate::Plaintext>::Codec),
+            || quote_spanned!(value.span()=> <#value as #krate::__private::DefaultCodec>::Codec),
             |codec| quote!(#codec),
         );
         return Some(Form::Marker { value, codec });
@@ -164,7 +164,7 @@ fn form<'a>(input: &'a DeriveInput, attrs: &mut Attrs, errors: &mut Errors) -> O
             return None;
         };
         let codec = codec.map_or_else(
-            || quote_spanned!(inner.span()=> <#inner as #krate::Plaintext>::Codec),
+            || quote_spanned!(inner.span()=> <#inner as #krate::__private::DefaultCodec>::Codec),
             |codec| quote!(#codec),
         );
         return Some(Form::Transparent {

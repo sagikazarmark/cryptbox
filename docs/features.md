@@ -6,7 +6,7 @@ included in the crate landing documentation.
 No features are enabled by default, and all features are additive:
 
 - `derive` adds `#[derive(Seal)]`, `#[derive(Binding)]`,
-  `#[derive(BlindIndexSpec)]`, `#[derive(Plaintext)]`, and `#[derive(Record)]`
+  `#[derive(BlindIndexSpec)]`, and `#[derive(Record)]`
   from the `cryptbox-derive` proc-macro crate. Each expands to exactly the trait
   impls you would write by hand, plus the index-arguments struct a binding names
   with `index_args`, and a record's sealed struct and per-field sealers, so a

@@ -33,11 +33,11 @@ The [legacy migration guide](legacy-migration.md) covers adopting CryptBox over
 plaintext or another encryption solution; it is not a general seal-schema
 migration procedure.
 
-A value type's `Plaintext` implementation names its default codec: `Utf8` for
-`String` and `Secret<String>`, `Raw` for `Vec<u8>` and `Secret<Vec<u8>>`. These
-mappings are permanent and no feature changes them. Other value types, including
-Serde types, either name their codec on the seal or implement `Plaintext`
-themselves; that mapping is persistent schema too. Two seals over one value type
+Only four value types have a default codec: `Utf8` for `String` and
+`Secret<String>`, `Raw` for `Vec<u8>` and `Secret<Vec<u8>>`. These mappings are
+permanent and no feature changes them. A seal over any other value type,
+including a Serde type, names its codec, which is persistent schema too; a
+`transparent` seal stores its single field with that field's codec. Two seals over one value type
 (`HomeAddress` and `BillingAddress` over `Address`) have separate seal IDs, so
 their ciphertext cannot be swapped.
 

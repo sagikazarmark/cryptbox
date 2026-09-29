@@ -551,7 +551,7 @@ impl<F: Seal, K> fmt::Debug for Plain<F, K> {
 /// erase previous copies, superseded allocations, or OS copies. For an opened
 /// `String`, use `Secret::new(sealed.open(args, keys)?)`.
 /// A seal can also take `Secret<String>` or `Secret<Vec<u8>>` as its value type: their
-/// [`crate::Plaintext`] codecs ([`crate::Utf8`], [`crate::Raw`]) write the same bytes.
+/// default codecs ([`crate::Utf8`], [`crate::Raw`]) write the same bytes.
 /// See the [custom-field example] and [ownership reference].
 ///
 #[doc = concat!(

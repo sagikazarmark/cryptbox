@@ -24,8 +24,7 @@ before persisting data.
 
 - **`HandleCodec: Codec<Secret<String>>`** validates letters, digits and hyphens,
   preserving case. It returns zeroizing encoded bytes and an owned `Secret<String>`
-  on decode. `Utf8` also encodes `Secret<String>` (it is the wrapper's
-  [`Plaintext`](https://docs.rs/cryptbox/latest/cryptbox/trait.Plaintext.html)
+  on decode. `Utf8` also encodes `Secret<String>` (it is the wrapper's default
   codec, with the same bytes), but it would not enforce the handle policy, so the
   seal names `HandleCodec` explicitly.
   It also declares `type Indexes = (HandleEquality,)`, so storage helpers that
@@ -44,7 +43,6 @@ before persisting data.
 | Extension | Contract |
 | --- | --- |
 | [Codec](https://docs.rs/cryptbox/latest/cryptbox/trait.Codec.html) | Preserve encoding compatibility; return zeroizing encoded bytes and owned decoded values. Sanitize input-bearing errors and protect intermediate allocations. |
-| [Plaintext](https://docs.rs/cryptbox/latest/cryptbox/trait.Plaintext.html) | Optional: name your own value type's default codec so seals can use `<Value as Plaintext>::Codec`. The mapping is persistent schema; never change it for stored data or select it with a Cargo feature. |
 | [BlindIndexSpec](https://docs.rs/cryptbox/latest/cryptbox/trait.BlindIndexSpec.html) | Declare the index over exactly one seal. `normalize_value` and `normalize_query` must agree on stable, deterministic equality rules for writes, all readable-generation probes and candidate comparison. Process only the indexed value; protect sensitive buffers. |
 | [EncryptionKeySource](https://docs.rs/cryptbox/latest/cryptbox/trait.EncryptionKeySource.html) | Return the keyring that protects the seal and key scope from a local snapshot, without I/O. Return `KeysUnavailable` when the snapshot is not loaded. Keep key IDs generated UUIDs, unique, and never shared across keyrings, and keep previous keys while values sealed with them remain. Choosing the wrong keyring seals silently; see [choosing keyrings](../../docs/choosing-keyrings.md). |
 | [BlindIndexKeySource](https://docs.rs/cryptbox/latest/cryptbox/trait.BlindIndexKeySource.html) | The same rules for blind-index keyrings, keyed by index. Provision index roots independently from encryption roots. |

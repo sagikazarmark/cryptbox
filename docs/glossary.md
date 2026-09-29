@@ -75,20 +75,13 @@ the wrong keyring succeeds. Record it per seal and key scope, and test it; see
 [choosing keyrings](choosing-keyrings.md).
 <!-- Agent guidance: custody is about whose keys, not about access control or storage location. Sealing with the wrong keyring is a silent write-time error, not an authentication failure. -->
 
-**Seal**:
-A type that declares how its values are sealed (`Seal`): its seal ID, value
-type, codec, padding, binding scope, whether it binds a record, and its blind
-indexes. A value sealed with one seal does not open as another. A seal is
-either a marker over a separate value type, so one value type can back several
-seals, such as a home and a billing address, each with its own seal ID; or its
-own value (a self-valued seal), such as `struct UserEmail(String)`. Seals serve
-any sealed value: a database column, a message, or a whole response.
-<!-- Agent guidance: “field” is the retired name for a seal (ADR-0007) and now means only a member of a struct or record; “profile” is older still. Do not reintroduce either. Avoid “column”, “key”, or “cipher suite” as synonyms: a seal is independent of database names. -->
-
-**Seal ID**:
-The stable identity of a seal, independent of Rust and database names. Seals
-that declare the same seal ID can read each other's ciphertext; a different
-seal ID fails authentication.
+**Default codec**:
+The codec a derived seal uses when it names none. Only `String` and
+`Secret<String>` (UTF-8) and `Vec<u8>` and `Secret<Vec<u8>>` (raw bytes) have
+one, permanently and independent of features; a seal over any other value type
+names its codec. A `transparent` seal stores its single field with that field's
+codec.
+<!-- Agent guidance: “plaintext type” and the `Plaintext` trait are retired (ADR-0007); no application or dependency can declare or change a default codec. -->
 
 **Index binding**:
 The binding a blind index is derived under: the seal ID and the values of the
@@ -165,12 +158,6 @@ row nor a scope, so it serves only `FieldOnly` seals without a record or blind
 indexes.
 <!-- Agent guidance: `Plain` is the only plaintext-typed column; values of bound or indexed seals are sealed explicitly. `Encrypted<F>` is the retired name of the plaintext carrier; do not reintroduce it. -->
 
-**Plaintext type**:
-A value type that names a default codec. `String` and `Secret<String>` default
-to UTF-8, and `Vec<u8>` and `Secret<Vec<u8>>` to raw bytes; these defaults
-are permanent. Any other value type names its codec explicitly or declares its
-own default.
-
 **Prepared storage**:
 A sealed value and optional blind indexes derived from the same source value, ready
 for an application-owned atomic write. Preparation is not persistence.
@@ -208,6 +195,21 @@ The declared parts of a binding, such as a tenant, or an org plus a workspace
 (`Binding`). Parts have roles: `keys` parts form the key scope, `index` parts
 also scope blind indexes, and other parts are bound only. A scope struct owns
 its values; a record is never part of it.
+
+**Seal**:
+A type that declares how its values are sealed (`Seal`): its seal ID, value
+type, codec, padding, binding scope, whether it binds a record, and its blind
+indexes. A value sealed with one seal does not open as another. A seal is
+either a marker over a separate value type, so one value type can back several
+seals, such as a home and a billing address, each with its own seal ID; or its
+own value (a self-valued seal), such as `struct UserEmail(String)`. Seals serve
+any sealed value: a database column, a message, or a whole response.
+<!-- Agent guidance: “field” is the retired name for a seal (ADR-0007) and now means only a member of a struct or record; “profile” is older still. Do not reintroduce either. Avoid “column”, “key”, or “cipher suite” as synonyms: a seal is independent of database names. -->
+
+**Seal ID**:
+The stable identity of a seal, independent of Rust and database names. Seals
+that declare the same seal ID can read each other's ciphertext; a different
+seal ID fails authentication.
 
 **Sealed value**:
 A value encrypted under a seal and bound to its binding (`Sealed<F>`).

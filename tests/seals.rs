@@ -2,7 +2,7 @@
 
 use cryptbox::{
     Codec, CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, Error, FieldOnly, IndexId,
-    Padding, Plaintext, Raw, Seal, SealId, Sealed, Secret, Utf8, index_id, seal_id,
+    Padding, Raw, Seal, SealId, Sealed, Secret, Utf8, index_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -48,13 +48,6 @@ impl Codec<Address> for AddressCodec {
     }
 }
 
-impl Plaintext for Address {
-    type Codec = AddressCodec;
-}
-
-// Fixtures deliberately mix `<Value as Plaintext>::Codec` and a named codec:
-// both forms must resolve to the same stored bytes.
-
 /// Where a user lives.
 struct HomeAddress;
 
@@ -63,7 +56,7 @@ impl Seal for HomeAddress {
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Address;
-    type Codec = <Address as Plaintext>::Codec;
+    type Codec = AddressCodec;
     type Binding = FieldOnly;
     type Indexes = ();
 }
@@ -123,17 +116,6 @@ fn swapping_sealed_values_between_seals_over_one_value_type_fails_authentication
     ));
 }
 
-// These mappings are persistent schema: changing them would silently misread stored data.
-#[test]
-fn built_in_plaintext_types_name_permanent_codecs() {
-    fn assert_codec<T: Plaintext<Codec = C>, C>() {}
-
-    assert_codec::<String, Utf8>();
-    assert_codec::<Vec<u8>, Raw>();
-    assert_codec::<Secret<String>, Utf8>();
-    assert_codec::<Secret<Vec<u8>>, Raw>();
-}
-
 struct UserEmail;
 
 impl Seal for UserEmail {
@@ -141,7 +123,7 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
-    type Codec = <String as Plaintext>::Codec;
+    type Codec = Utf8;
     type Binding = FieldOnly;
     type Indexes = ();
 }
@@ -153,7 +135,7 @@ impl Seal for SecretUserEmail {
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Secret<String>;
-    type Codec = <Secret<String> as Plaintext>::Codec;
+    type Codec = Utf8;
     type Binding = FieldOnly;
     type Indexes = ();
 }

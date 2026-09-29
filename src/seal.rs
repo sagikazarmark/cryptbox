@@ -39,7 +39,7 @@ use crate::{Binding, Codec, IndexList, Padding, SealId};
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Plaintext};
+/// use cryptbox::{FieldOnly, Padding, Seal, SealId, Utf8};
 ///
 /// /// Primary contact address.
 /// pub struct UserEmail;
@@ -49,41 +49,24 @@ use crate::{Binding, Codec, IndexList, Padding, SealId};
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
-///     type Codec = <String as Plaintext>::Codec;
+///     type Codec = Utf8;
 ///     type Binding = FieldOnly;
 ///     type Indexes = ();
 /// }
 /// ```
 ///
-/// With the `derive` feature, `#[derive(Seal)]` writes exactly this impl from
-/// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`.
+/// With the `derive` feature, `#[derive(Seal)]` writes this impl from
+/// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
+/// taking `String`'s built-in default codec, `Utf8`.
 /// Add `binding = Tenant`, `record`, or `indexes(EmailLookup)` to set
 /// [`Self::Binding`], [`Self::RECORD`], or [`Self::Indexes`]. On a type with
 /// fields, the derive makes the type its own value: `codec = Json` encodes it
 /// whole, and `transparent` stores its single field.
 ///
-/// A value type without a [`Plaintext`](crate::Plaintext) implementation has no
-/// default codec; implement `Plaintext` for it or name an explicit codec:
-///
-/// ```compile_fail,E0277
-/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Plaintext};
-///
-/// struct Address {
-///     city: String,
-/// }
-///
-/// struct HomeAddress;
-///
-/// impl Seal for HomeAddress {
-///     const ID: SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
-///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
-///     type Value = Address;
-///     type Codec = <Address as Plaintext>::Codec;
-///     type Binding = FieldOnly;
-///     type Indexes = ();
-/// }
-/// ```
+/// A hand-written impl always names its codec. Only a derived seal over `String`,
+/// `Vec<u8>`, or their [`Secret`](crate::Secret) wrappers may omit it, taking
+/// [`Utf8`](crate::Utf8) or [`Raw`](crate::Raw); every other value type names
+/// its codec, so no other crate can choose or change it.
 ///
 /// See the [custom-field example] and [ownership reference].
 ///
@@ -117,7 +100,8 @@ pub trait Seal: 'static {
     /// The codec used before encryption and after decryption.
     ///
     /// Its byte representation must remain compatible with stored values.
-    /// Use `<Self::Value as Plaintext>::Codec` for the value type's default codec.
+    /// A derived seal over `String`, `Vec<u8>`, or their `Secret` wrappers
+    /// defaults to [`Utf8`](crate::Utf8) or [`Raw`](crate::Raw).
     type Codec: Codec<Self::Value>;
 
     /// The declared scope every value is bound to, such as a tenant.

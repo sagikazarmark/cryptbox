@@ -19,7 +19,7 @@ resolver = "2"
 
 [features]
 default = []
-# Derive macros for `Binding`, `Field`, `BlindIndexSpec`, `Plaintext`, and `Record`.
+# Derive macros for `Seal`, `Binding`, `BlindIndexSpec`, and `Record`.
 derive = ["dep:cryptbox-derive"]
 json = ["serde", "dep:serde_json"]
 migrate = []

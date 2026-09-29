@@ -23,8 +23,9 @@
 //!   seal binds a record.
 //! - [`Plain<F>`] and [`Secret<T>`] contain plaintext. `Plain` is the automatic
 //!   `SQLx` column, for [`FieldOnly`] seals without a record or blind indexes.
-//! - [`Plaintext`] names a value type's default codec: [`Utf8`] for `String`
-//!   and [`Raw`] for `Vec<u8>`, and the same for their [`Secret`] wrappers.
+//! - A [`Codec`] encodes a seal's values. Only `String` and `Vec<u8>` and their
+//!   [`Secret`] wrappers have a default ([`Utf8`] and [`Raw`]); every other value
+//!   type names its codec.
 //! - [`EncryptionKeyring`] and [`BlindIndexKeyring`] hold a current key plus
 //!   previous keys; [`Keys`] pairs them. Operations take keys directly through
 //!   [`EncryptionKeySource`] and [`BlindIndexKeySource`]; choosing which
@@ -212,9 +213,9 @@ pub use blind::{
 pub use codec::Json;
 #[cfg(feature = "postcard")]
 pub use codec::Postcard;
-pub use codec::{Codec, Plaintext, Raw, Utf8};
+pub use codec::{Codec, Raw, Utf8};
 #[cfg(feature = "derive")]
-pub use cryptbox_derive::{Binding, BlindIndexSpec, Plaintext, Record, Seal};
+pub use cryptbox_derive::{Binding, BlindIndexSpec, Record, Seal};
 pub use envelope::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, SuiteId, inspect_ciphertext, is_ciphertext,
 };
@@ -237,5 +238,6 @@ pub mod __private {
     pub use uuid;
     pub use zeroize::Zeroizing;
 
+    pub use crate::codec::DefaultCodec;
     pub use crate::schema::{has_duplicate, writes_declared_indexes};
 }

@@ -11,7 +11,7 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         const RECORD: bool = false;
         type Value = String;
-        type Codec = <String as ::cryptbox::Plaintext>::Codec;
+        type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Binding = ::cryptbox::FieldOnly;
         type Indexes = ();
     }

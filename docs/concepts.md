@@ -60,8 +60,9 @@ choosing them.
 
 The value type is your application's own type: it says how it encodes, never
 where it is stored. One `Address` type can back both a `HomeAddress` and a
-`BillingAddress` seal, each with its own seal ID. A value type can name a
-default codec by implementing `Plaintext`; `String` and `Vec<u8>` already do.
+`BillingAddress` seal, each with its own seal ID. Only `String`, `Vec<u8>`, and
+their `Secret` wrappers have a default codec; a seal over any other value type
+names its codec.
 
 Sealing and opening bind the value at runtime to its seal ID, to the values of
 the seal's binding, and to its record when the seal binds one. The binding's

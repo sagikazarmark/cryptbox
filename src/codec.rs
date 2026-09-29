@@ -81,8 +81,9 @@ impl std::io::Write for ZeroizingByteBuffer {
 /// Encodes and decodes typed values independently from encryption.
 ///
 /// A codec is a strategy: it does not decide which values use it. A seal names
-/// its codec with [`Seal::Codec`](crate::Seal::Codec), and a value type can name
-/// a default with [`Plaintext`].
+/// its codec with [`Seal::Codec`](crate::Seal::Codec). Only `String`, `Vec<u8>`,
+/// and their [`Secret`] wrappers have a built-in default, which a derived seal
+/// uses when it names no codec.
 ///
 /// A seal's codec is part of its persistent schema: ciphertext does not
 /// contain a codec identifier or codec version. Changing the emitted bytes or
@@ -115,7 +116,7 @@ impl std::io::Write for ZeroizingByteBuffer {
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot encode `{T}`",
     label = "not a codec for `{T}`",
-    note = "use `<{T} as cryptbox::Plaintext>::Codec`, or name a codec that implements `Codec<{T}>`"
+    note = "name a codec that implements `Codec<{T}>`, such as `cryptbox::Json`"
 )]
 pub trait Codec<T>: 'static {
     /// A stable name for this codec's byte representation, such as `"json/1"`.
@@ -142,74 +143,53 @@ pub trait Codec<T>: 'static {
     fn decode(bytes: &[u8]) -> Result<T, CodecError>;
 }
 
-/// Names the default codec of an application value type.
+/// The built-in default codec of a value type, which a seal uses when it names
+/// none.
 ///
-/// A seal over a `Plaintext` type can use `<Value as Plaintext>::Codec` instead
-/// of naming a codec. The crate provides permanent mappings that no feature
-/// changes: `String` and [`Secret<String>`] use [`Utf8`], and `Vec<u8>` and
+/// Exactly four types have one, permanently and independent of features:
+/// `String` and [`Secret<String>`] use [`Utf8`], and `Vec<u8>` and
 /// [`Secret<Vec<u8>>`] use [`Raw`]. A `Secret` value is stored with exactly the
-/// same bytes as the value it wraps.
+/// same bytes as the value it wraps. The set is closed: a default another crate
+/// could declare, or change behind a Cargo feature, would silently change the
+/// bytes of every seal that relied on it. Every other type names its codec on
+/// the seal, or is stored through a `transparent` seal (ADR-0007).
 ///
-/// Implement this trait for your own value types to give them a default. The
-/// mapping is persistent schema: ciphertext does not record its codec, and a
-/// different codec can decode existing bytes into a wrong value without an
-/// error. Never change it for a type with stored data, and do not let a Cargo
-/// feature select it.
-///
-/// ```
-/// use cryptbox::{Codec, CodecError, CodecErrorKind, Plaintext};
-/// use zeroize::Zeroizing;
-///
-/// pub struct Postcode(String);
-///
-/// pub struct PostcodeCodec;
-///
-/// impl Codec<Postcode> for PostcodeCodec {
-///     const ID: &'static str = "postcode/1";
-///
-///     fn encode(value: &Postcode) -> Result<Zeroizing<Vec<u8>>, CodecError> {
-///         Ok(Zeroizing::new(value.0.as_bytes().to_vec()))
-///     }
-///
-///     fn decode(bytes: &[u8]) -> Result<Postcode, CodecError> {
-///         std::str::from_utf8(bytes)
-///             .map(|text| Postcode(text.to_owned()))
-///             .map_err(|_| CodecError::new(CodecErrorKind::InvalidUtf8))
-///     }
-/// }
-///
-/// impl Plaintext for Postcode {
-///     type Codec = PostcodeCodec;
-/// }
-/// ```
-///
-/// With the `derive` feature, `#[derive(Plaintext)]` with
-/// `#[cryptbox(codec = PostcodeCodec)]` writes exactly the `Plaintext` impl.
-/// Without `codec`, it makes a single-field tuple struct such as `Postcode`
-/// its own codec, storing exactly the bytes of its inner value's default codec.
+/// Only derive-generated code names this trait.
+#[doc(hidden)]
 #[diagnostic::on_unimplemented(
     message = "`{Self}` has no default codec",
-    label = "`{Self}` does not implement `cryptbox::Plaintext`",
-    note = "implement `cryptbox::Plaintext` for `{Self}`, or name an explicit codec such as `cryptbox::Json`; the codec is persistent schema"
+    label = "`{Self}` has no built-in codec",
+    note = "only `String`, `Vec<u8>`, `Secret<String>`, and `Secret<Vec<u8>>` have one: name the codec with `#[cryptbox(codec = …)]`, such as `cryptbox::Json`; the codec is persistent schema"
 )]
-pub trait Plaintext: Sized {
-    /// The codec used for this value type by default.
+pub trait DefaultCodec: Sized + sealed::Sealed {
+    /// The codec a seal over this type uses when it names none.
     type Codec: Codec<Self>;
 }
 
-impl Plaintext for String {
+mod sealed {
+    use crate::Secret;
+
+    pub trait Sealed {}
+
+    impl Sealed for String {}
+    impl Sealed for Vec<u8> {}
+    impl Sealed for Secret<String> {}
+    impl Sealed for Secret<Vec<u8>> {}
+}
+
+impl DefaultCodec for String {
     type Codec = Utf8;
 }
 
-impl Plaintext for Vec<u8> {
+impl DefaultCodec for Vec<u8> {
     type Codec = Raw;
 }
 
-impl Plaintext for Secret<String> {
+impl DefaultCodec for Secret<String> {
     type Codec = Utf8;
 }
 
-impl Plaintext for Secret<Vec<u8>> {
+impl DefaultCodec for Secret<Vec<u8>> {
     type Codec = Raw;
 }
 
@@ -346,5 +326,22 @@ where
             Ok((value, [])) => Ok(value),
             _ => Err(CodecError::new(CodecErrorKind::Decoding)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // These defaults are persistent schema: changing one would silently misread
+    // every value a seal sealed without naming its codec.
+    #[test]
+    fn the_built_in_types_have_permanent_default_codecs() {
+        fn assert_default<T: DefaultCodec<Codec = C>, C>() {}
+
+        assert_default::<String, Utf8>();
+        assert_default::<Vec<u8>, Raw>();
+        assert_default::<Secret<String>, Utf8>();
+        assert_default::<Secret<Vec<u8>>, Raw>();
     }
 }

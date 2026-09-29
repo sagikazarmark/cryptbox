@@ -1,32 +1,26 @@
-error: missing `codec`: add `#[cryptbox(codec = Codec)]`; only a single-field tuple struct defaults to its inner value's codec
-  --> tests/ui/missing_codec.rs:10:8
-   |
-10 | struct Postcode {
-   |        ^^^^^^^^
-
 error[E0277]: `Address` has no default codec
  --> tests/ui/missing_codec.rs:6:65
   |
 6 | #[cryptbox(id = "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64", value = Address)]
-  |                                                                 ^^^^^^^ `Address` does not implement `cryptbox::Plaintext`
+  |                                                                 ^^^^^^^ `Address` has no built-in codec
   |
-help: the trait `Plaintext` is not implemented for `Address`
+help: the trait `cryptbox::__private::DefaultCodec` is not implemented for `Address`
  --> tests/ui/missing_codec.rs:1:1
   |
 1 | struct Address {
   | ^^^^^^^^^^^^^^
-  = note: implement `cryptbox::Plaintext` for `Address`, or name an explicit codec such as `cryptbox::Json`; the codec is persistent schema
-help: the following other types implement trait `Plaintext`
+  = note: only `String`, `Vec<u8>`, `Secret<String>`, and `Secret<Vec<u8>>` have one: name the codec with `#[cryptbox(codec = …)]`, such as `cryptbox::Json`; the codec is persistent schema
+help: the following other types implement trait `cryptbox::__private::DefaultCodec`
  --> $WORKSPACE/src/codec.rs
   |
-  | impl Plaintext for String {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^ `String`
+  | impl DefaultCodec for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `String`
 ...
-  | impl Plaintext for Vec<u8> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
+  | impl DefaultCodec for Vec<u8> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
 ...
-  | impl Plaintext for Secret<String> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Secret<String>`
+  | impl DefaultCodec for Secret<String> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Secret<String>`
 ...
-  | impl Plaintext for Secret<Vec<u8>> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Secret<Vec<u8>>`
+  | impl DefaultCodec for Secret<Vec<u8>> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Secret<Vec<u8>>`
