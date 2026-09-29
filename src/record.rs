@@ -1,4 +1,4 @@
-use crate::{Binding, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Field};
+use crate::{Binding, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Seal};
 
 /// A row of plaintext values sealed and opened together under one binding.
 ///
@@ -8,7 +8,7 @@ use crate::{Binding, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, E
 /// Plaintext fields, such as the record ID, are copied as they are.
 ///
 /// Every encrypted field shares the record's [`Binding`], and each field that
-/// declares [`Field::RECORD`] is also bound to the record's ID, through
+/// declares [`Seal::RECORD`] is also bound to the record's ID, through
 /// [`InRecord`](crate::InRecord). The record ID is never encrypted, so it can
 /// be read before the row is opened. The binding must come from an authorized
 /// source, never from the stored row.
@@ -60,7 +60,7 @@ pub trait Record: Sized {
 /// candidates. `#[derive(Record)]` implements it for each index a field writes.
 pub trait IndexedBy<S: BlindIndexSpec>: Record {
     /// Returns the value of the field `S` indexes.
-    fn indexed_value(&self) -> &<S::Field as Field>::Value;
+    fn indexed_value(&self) -> &<S::Seal as Seal>::Value;
 }
 
 /// Opens the candidate rows of a blind-index lookup and keeps the matches.

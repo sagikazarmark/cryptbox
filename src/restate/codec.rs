@@ -9,12 +9,12 @@ use std::convert::Infallible;
 use bytes::Bytes;
 use restate_sdk::serde::{Deserialize, InputMetadata, OutputMetadata, PayloadMetadata, Serialize};
 
-use crate::{BlindIndex, BlindIndexSpec, Error, Field, Sealed};
+use crate::{BlindIndex, BlindIndexSpec, Error, Seal, Sealed};
 
 const OCTET_STREAM: &str = "application/octet-stream";
 
 /// Journals the binary envelope unchanged.
-impl<F: Field> Serialize for Sealed<F> {
+impl<F: Seal> Serialize for Sealed<F> {
     type Error = Infallible;
 
     fn serialize(&self) -> Result<Bytes, Self::Error> {
@@ -24,7 +24,7 @@ impl<F: Field> Serialize for Sealed<F> {
 
 /// Checks the journaled envelope's structure, as [`Sealed::from_bytes`] does.
 /// It uses no keys and does not authenticate.
-impl<F: Field> Deserialize for Sealed<F> {
+impl<F: Seal> Deserialize for Sealed<F> {
     type Error = Error;
 
     fn deserialize(bytes: &mut Bytes) -> Result<Self, Self::Error> {
@@ -33,7 +33,7 @@ impl<F: Field> Deserialize for Sealed<F> {
 }
 
 /// An `application/octet-stream` payload without a JSON schema.
-impl<F: Field> PayloadMetadata for Sealed<F> {
+impl<F: Seal> PayloadMetadata for Sealed<F> {
     fn json_schema() -> Option<serde_json::Value> {
         None
     }

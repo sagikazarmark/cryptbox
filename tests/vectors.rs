@@ -2,9 +2,9 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Raw, Sealed,
-    Tenant, TenantId, Utf8, field_id, index_id, index_key_id, inspect_blind_index,
-    inspect_ciphertext, key_id,
+    EncryptionKeyring, Error, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Raw, Seal, Sealed,
+    Tenant, TenantId, Utf8, index_id, index_key_id, inspect_blind_index, inspect_ciphertext,
+    key_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -18,7 +18,7 @@ fn keys() -> EncryptionKeyring {
     EncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap()
 }
 
-fn read<F: Field<Binding = FieldOnly>>(vector: &str) -> Result<F::Value, Error> {
+fn read<F: Seal<Binding = FieldOnly>>(vector: &str) -> Result<F::Value, Error> {
     Sealed::<F>::from_bytes(hex::decode(vector).unwrap())
         .unwrap()
         .open((), &keys())
@@ -26,8 +26,8 @@ fn read<F: Field<Binding = FieldOnly>>(vector: &str) -> Result<F::Value, Error> 
 
 struct VectorField;
 
-impl Field for VectorField {
-    const ID: cryptbox::FieldId = field_id!("12345678-1234-4234-8234-1234567890ab");
+impl Seal for VectorField {
+    const ID: cryptbox::SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -38,8 +38,8 @@ impl Field for VectorField {
 
 struct PaddedVectorField;
 
-impl Field for PaddedVectorField {
-    const ID: cryptbox::FieldId = VectorField::ID;
+impl Seal for PaddedVectorField {
+    const ID: cryptbox::SealId = VectorField::ID;
     const PADDING: Padding = Padding::block(16);
     const RECORD: bool = false;
     type Value = String;
@@ -87,7 +87,7 @@ fn format_1_envelopes_are_not_read() {
 struct VectorIndex;
 
 impl BlindIndexSpec for VectorIndex {
-    type Field = VectorField;
+    type Seal = VectorField;
     const ID: IndexId = index_id!("abcdefab-cdef-4def-8def-abcdefabcdef");
     const BITS: u16 = 13;
     const NORMALIZER: &'static str = "exact/1";
@@ -130,8 +130,8 @@ fn format_1_blind_indexes_are_rejected() {
 
 struct TenantVectorField;
 
-impl Field for TenantVectorField {
-    const ID: cryptbox::FieldId = VectorField::ID;
+impl Seal for TenantVectorField {
+    const ID: cryptbox::SealId = VectorField::ID;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -143,7 +143,7 @@ impl Field for TenantVectorField {
 struct TenantVectorIndex;
 
 impl BlindIndexSpec for TenantVectorIndex {
-    type Field = TenantVectorField;
+    type Seal = TenantVectorField;
     const ID: IndexId = VectorIndex::ID;
     const BITS: u16 = VectorIndex::BITS;
     const NORMALIZER: &'static str = "exact/1";

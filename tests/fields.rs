@@ -1,8 +1,8 @@
 //! Public-boundary tests for field markers over application value types.
 
 use cryptbox::{
-    Codec, CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, Error, Field, FieldId,
-    FieldOnly, IndexId, Padding, Plaintext, Raw, Sealed, Secret, Utf8, field_id, index_id,
+    Codec, CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, Error, FieldOnly, IndexId,
+    Padding, Plaintext, Raw, Seal, SealId, Sealed, Secret, Utf8, index_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -58,8 +58,8 @@ impl Plaintext for Address {
 /// Where a user lives.
 struct HomeAddress;
 
-impl Field for HomeAddress {
-    const ID: FieldId = field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
+impl Seal for HomeAddress {
+    const ID: SealId = seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Address;
@@ -71,8 +71,8 @@ impl Field for HomeAddress {
 /// Where a user's invoices go.
 struct BillingAddress;
 
-impl Field for BillingAddress {
-    const ID: FieldId = field_id!("5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25");
+impl Seal for BillingAddress {
+    const ID: SealId = seal_id!("5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25");
     const PADDING: Padding = Padding::block(16);
     const RECORD: bool = false;
     type Value = Address;
@@ -136,8 +136,8 @@ fn built_in_plaintext_types_name_permanent_codecs() {
 
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: FieldId = field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+impl Seal for UserEmail {
+    const ID: SealId = seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -148,8 +148,8 @@ impl Field for UserEmail {
 
 struct SecretUserEmail;
 
-impl Field for SecretUserEmail {
-    const ID: FieldId = UserEmail::ID;
+impl Seal for SecretUserEmail {
+    const ID: SealId = UserEmail::ID;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Secret<String>;
@@ -160,8 +160,8 @@ impl Field for SecretUserEmail {
 
 struct ApiToken;
 
-impl Field for ApiToken {
-    const ID: FieldId = field_id!("de8c983c-7d2b-4c4f-8162-f7193010de55");
+impl Seal for ApiToken {
+    const ID: SealId = seal_id!("de8c983c-7d2b-4c4f-8162-f7193010de55");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -172,8 +172,8 @@ impl Field for ApiToken {
 
 struct SecretApiToken;
 
-impl Field for SecretApiToken {
-    const ID: FieldId = ApiToken::ID;
+impl Seal for SecretApiToken {
+    const ID: SealId = ApiToken::ID;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Secret<Vec<u8>>;
@@ -215,8 +215,8 @@ fn secret_string_codec_rejects_invalid_utf8() {
 #[test]
 fn an_identifier_from_u128_reads_the_uuid_digits_in_order() {
     assert_eq!(
-        FieldId::from_u128(0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64),
-        field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64")
+        SealId::from_u128(0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64),
+        seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64")
     );
     assert_eq!(
         IndexId::from_u128(0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53),

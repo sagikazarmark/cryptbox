@@ -14,7 +14,7 @@
 //!
 //! - [`Sealed<F>`] contains stored encrypted bytes. Parsing checks structure;
 //!   opening authenticates. Sealing borrows the source value.
-//! - [`Field`] is a marker type for one logical encrypted field. It declares the
+//! - [`Seal`] is a marker type for one logical encrypted field. It declares the
 //!   field ID, value type, codec, [`Padding`], [`Binding`], whether values bind a
 //!   record, and its blind indexes. Several fields can share one value type.
 //! - [`Args<F>`](Args) are the binding values of one call: `()` for a
@@ -177,7 +177,6 @@ mod codec;
 mod crypto;
 mod envelope;
 mod error;
-mod field;
 mod id;
 mod key;
 mod key_source;
@@ -190,6 +189,7 @@ mod record;
 #[cfg(feature = "restate")]
 pub mod restate;
 pub mod schema;
+mod seal;
 #[cfg(feature = "serde")]
 mod serde_impl;
 #[cfg(feature = "sqlx-postgres")]
@@ -213,13 +213,12 @@ pub use codec::Json;
 pub use codec::Postcard;
 pub use codec::{Codec, Plaintext, Raw, Utf8};
 #[cfg(feature = "derive")]
-pub use cryptbox_derive::{Binding, BlindIndexSpec, Field, Plaintext, Record};
+pub use cryptbox_derive::{Binding, BlindIndexSpec, Plaintext, Record, Seal};
 pub use envelope::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, SuiteId, inspect_ciphertext, is_ciphertext,
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
-pub use field::Field;
-pub use id::{FieldId, IndexId, InvalidIdentifier, PartId};
+pub use id::{IndexId, InvalidIdentifier, PartId, SealId};
 pub use key::{
     BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyError,
     KeyId, Keys,
@@ -228,6 +227,7 @@ pub use key_source::{BlindIndexKeySource, ColumnKeys, EncryptionKeySource, Globa
 pub use padding::Padding;
 pub use prepare::Prepared;
 pub use record::{IndexedBy, Record, open_matching};
+pub use seal::Seal;
 pub use value::{Plain, Sealed, Secret};
 
 // Paths that derive-generated code names; not public API.

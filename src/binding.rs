@@ -1,6 +1,6 @@
 use std::hash::Hash;
 
-use crate::{Error, FieldId, PartId};
+use crate::{Error, PartId, SealId};
 
 mod args;
 mod encoding;
@@ -518,7 +518,7 @@ impl<'a> BindingDeclaration<'a> {
 /// the envelope and checked by readers.
 #[derive(Clone, Debug)]
 pub(crate) struct BindingDomain {
-    field: FieldId,
+    seal: SealId,
     encoded: Vec<u8>,
     fingerprint: [u8; 8],
     key_scope: KeyScope,
@@ -532,7 +532,7 @@ impl BindingDomain {
     ///
     /// `values` follows the order of `declaration`'s parts.
     pub(crate) fn scoped(
-        id: FieldId,
+        id: SealId,
         declaration: BindingDeclaration<'_>,
         values: &[PartValue<'_>],
         record: Option<PartValue<'_>>,
@@ -549,7 +549,7 @@ impl BindingDomain {
         let key_scope = KeyScope::keys_of(parts.iter().copied());
 
         Ok(Self {
-            field: id,
+            seal: id,
             encoded: encoding::encode(id, record, parts)?,
             fingerprint: declaration.fingerprint(),
             key_scope,
@@ -558,7 +558,7 @@ impl BindingDomain {
 
     /// Encodes `binding` for field `id`, with `record` if any.
     pub(crate) fn of<B: Binding>(
-        id: FieldId,
+        id: SealId,
         binding: &B,
         record: Option<RecordId<'_>>,
     ) -> Result<Self, Error> {
@@ -578,7 +578,7 @@ impl BindingDomain {
     /// The domain is the binding restricted to its `keys` and `index` parts,
     /// without a record: the empty binding when it has no such parts.
     // See ../docs/wire-format.md#index-binding.
-    pub(crate) fn index<B: Binding>(id: FieldId, args: &B::IndexArgs) -> Result<Self, Error> {
+    pub(crate) fn index<B: Binding>(id: SealId, args: &B::IndexArgs) -> Result<Self, Error> {
         const { check_parts(B::PARTS) };
 
         let specs: Vec<_> = B::PARTS
@@ -593,7 +593,7 @@ impl BindingDomain {
     /// Encodes the blind-index domain of field `id` under a whole binding: the
     /// same domain as [`Self::index`] under the binding's `keys` and `index`
     /// values.
-    pub(crate) fn index_of<B: Binding>(id: FieldId, binding: &B) -> Result<Self, Error> {
+    pub(crate) fn index_of<B: Binding>(id: SealId, binding: &B) -> Result<Self, Error> {
         const { check_parts(B::PARTS) };
 
         let values = binding.values();
@@ -615,7 +615,7 @@ impl BindingDomain {
     /// [`Error::InvalidBinding`].
     #[cfg(feature = "migrate")]
     pub(crate) fn projected<Old: Binding, B: Binding>(
-        id: FieldId,
+        id: SealId,
         binding: &B,
         record: Option<RecordId<'_>>,
     ) -> Result<Self, Error> {
@@ -642,7 +642,7 @@ impl BindingDomain {
     /// arguments for binding `B`, by part ID.
     #[cfg(feature = "migrate")]
     pub(crate) fn index_projected<Old: Binding, B: Binding>(
-        id: FieldId,
+        id: SealId,
         args: &B::IndexArgs,
     ) -> Result<Self, Error> {
         const { check_parts(Old::PARTS) };
@@ -663,15 +663,15 @@ impl BindingDomain {
 
     // Encodes `specs` with `values`, without a record.
     fn index_parts(
-        id: FieldId,
+        id: SealId,
         specs: &[PartSpec],
         values: &[PartValue<'_>],
     ) -> Result<Self, Error> {
         Self::scoped(id, BindingDeclaration::new(specs, false), values, None)
     }
 
-    pub(crate) fn field_id(&self) -> FieldId {
-        self.field
+    pub(crate) fn seal_id(&self) -> SealId {
+        self.seal
     }
 
     /// The binding fingerprint the envelope header carries.
@@ -692,9 +692,9 @@ impl BindingDomain {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{field_id, part_id};
+    use crate::{part_id, seal_id};
 
-    const FIELD: FieldId = field_id!("12345678-1234-4234-8234-1234567890ab");
+    const FIELD: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
 
     #[test]
     fn the_empty_binding_is_the_field_id_without_record_or_parts() {

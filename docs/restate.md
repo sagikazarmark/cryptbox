@@ -20,7 +20,7 @@ them.
 use cryptbox::{Keys, Sealed, Tenant, restate::{self, ObjectKey}};
 use restate_sdk::prelude::*;
 
-#[derive(cryptbox::Field)]
+#[derive(cryptbox::Seal)]
 #[cryptbox(id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", value = String, binding = Tenant)]
 struct CustomerEmail;
 

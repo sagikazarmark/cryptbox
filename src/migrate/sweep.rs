@@ -2,7 +2,7 @@ use std::{fmt, future::Future};
 
 use zeroize::Zeroize;
 
-use crate::{Error, Field};
+use crate::{Error, Seal};
 
 use super::{RowPlanner, RowWrite, SweepReport};
 
@@ -141,7 +141,7 @@ where
 #[derive(Debug)]
 pub struct Sweep<'a, F, R = ()>
 where
-    F: Field,
+    F: Seal,
 {
     planner: RowPlanner<'a, F, R>,
     batch_size: usize,
@@ -149,7 +149,7 @@ where
 
 impl<'a, F, R> Sweep<'a, F, R>
 where
-    F: Field,
+    F: Seal,
 {
     /// Creates a driver over a configured row planner.
     #[must_use]

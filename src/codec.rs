@@ -81,7 +81,7 @@ impl std::io::Write for ZeroizingByteBuffer {
 /// Encodes and decodes typed values independently from encryption.
 ///
 /// A codec is a strategy: it does not decide which values use it. A field names
-/// its codec with [`Field::Codec`](crate::Field::Codec), and a value type can name
+/// its codec with [`Seal::Codec`](crate::Seal::Codec), and a value type can name
 /// a default with [`Plaintext`].
 ///
 /// A field's codec is part of its persistent schema: ciphertext does not

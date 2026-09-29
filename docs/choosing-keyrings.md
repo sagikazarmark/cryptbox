@@ -71,7 +71,7 @@ reviewers and auditors can see it and where a test can check it. Keep, beside
 the [manifest snapshot](integration.md#guarding-the-schema-in-ci), a committed
 table of one row per field:
 
-| Field | Key scope | Custody | Shred unit |
+| Seal | Key scope | Custody | Shred unit |
 | --- | --- | --- | --- |
 | `CustomerEmail` | `org` | `general` keyring, per org | the org |
 | `CustomerIban` | `org` | `payments` keyring, per org | the org |

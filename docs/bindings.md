@@ -43,7 +43,7 @@ pub struct OrgWorkspace {
     pub workspace: [u8; 16],
 }
 
-#[derive(cryptbox::Field)]
+#[derive(cryptbox::Seal)]
 #[cryptbox(
     id = "2cef6a47-3e20-42dc-a319-56022cb4cf30",
     value = String,
@@ -213,7 +213,7 @@ and [shredding](shredding.md) before you rely on destroying one scope's keys.
 
 ## ID hygiene
 
-Field IDs, index IDs, and part IDs are generated UUIDs, never derived from a
+Seal IDs, index IDs, and part IDs are generated UUIDs, never derived from a
 Rust type name and never copied from documentation:
 
 ```sh

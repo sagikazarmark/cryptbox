@@ -21,7 +21,7 @@ These choices form persistent schema just as database column types do:
 | Choice | Why it must remain compatible |
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
-| Field ID | Every value is bound to its field ID; a different ID fails authentication. |
+| Seal ID | Every value is bound to its field ID; a different ID fails authentication. |
 | Binding declaration and record flag | Every value is bound to its binding's part IDs, kinds, and roles, and to its record when the field binds one; a different declaration reports `BindingMismatch`. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |

@@ -3,7 +3,7 @@
 
 use std::{error::Error, fs::File, io::Read, path::Path};
 
-use cryptbox::{EncryptionKey, EncryptionKeyring, Field, KeyId, Sealed, key_id};
+use cryptbox::{EncryptionKey, EncryptionKeyring, KeyId, Seal, Sealed, key_id};
 use sqlx::{Connection, Row, sqlite::SqliteConnectOptions, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
@@ -16,7 +16,7 @@ enum Command {
     Read,
 }
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 struct UserEmail;
 

@@ -79,7 +79,7 @@ authentication because the reader has no construction with which to verify it.
 ### Binding
 
 A binding identifies the expected cryptographic domain of a value. Every value is
-bound to a stable `FieldId`, so an email field's ciphertext is not accepted under
+bound to a stable `SealId`, so an email field's ciphertext is not accepted under
 a different field, even when both use the same root key. A field declares its
 binding **declaration**: a fixed set of parts, each with a part ID (a UUID), a value
 kind, and a role, plus whether it binds a record. The declaration is persistent
@@ -379,7 +379,7 @@ obligations.
 
 These fixed inputs and expected outputs help check byte-for-byte compatibility.
 The first vector encrypts unpadded plaintext (flags `00`) bound to
-`FieldId 12345678-1234-4234-8234-1234567890ab` alone, so its header carries the
+`SealId 12345678-1234-4234-8234-1234567890ab` alone, so its header carries the
 empty declaration's fingerprint:
 
 ```text
@@ -407,7 +407,7 @@ independently as described under the scoped vectors below.
 
 ### Provisional scoped vectors
 
-These vectors use the root key, `KeyId`, `FieldId`, plaintext, and nonce above,
+These vectors use the root key, `KeyId`, `SealId`, plaintext, and nonce above,
 unpadded, with a [binding](#binding) of two parts:
 
 ```text
@@ -506,7 +506,7 @@ the key scope of the `keys` parts.
 Inputs are an independent 32-byte blind-index root (never an encryption root),
 its immutable `IndexKeyId`, the expected [index binding](#index-binding),
 logical `IndexId`, retained bit count, and normalized bytes. `IndexKeyId`,
-`IndexId`, and any `FieldId` are encoded using the UUID convention above, and
+`IndexId`, and any `SealId` are encoded using the UUID convention above, and
 `binding` is the encoded index binding. The version is one byte `02`; `bits_be`
 is a two-byte unsigned big-endian count in `1..=256`.
 
@@ -548,7 +548,7 @@ decryption and normalized plaintext comparison. See the
 root key:     2222222222222222222222222222222222222222222222222222222222222222
 IndexKeyId:   aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
 IndexId:      abcdefab-cdef-4def-8def-abcdefabcdef
-FieldId:      12345678-1234-4234-8234-1234567890ab
+SealId:      12345678-1234-4234-8234-1234567890ab
 binding:      123456781234423482341234567890ab000000
 bits:         13
 normalized:   6e6f726d616c697a6564406578616d706c652e636f6d ("normalized@example.com")

@@ -1,12 +1,12 @@
 use super::{BindingDomain, FieldOnly, RecordId};
-use crate::{Error, Field};
+use crate::{Error, Seal};
 
 /// The binding arguments of one seal or open of field `F`.
 ///
 /// Every value is bound to its field's [`Binding`](crate::Binding) and, when
-/// [`Field::RECORD`] is set, to a record. The arguments take one of these forms:
+/// [`Seal::RECORD`] is set, to a record. The arguments take one of these forms:
 ///
-/// | Field | Arguments |
+/// | Seal | Arguments |
 /// | --- | --- |
 /// | [`FieldOnly`], no record | `()` |
 /// | [`FieldOnly`], with a record | `RecordId` |
@@ -30,14 +30,14 @@ use crate::{Error, Field};
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, Field, FieldId, EncryptionKeyring, Padding, RecordId, Sealed,
+///     EncryptionKey, Seal, SealId, EncryptionKeyring, Padding, RecordId, Sealed,
 ///     Tenant, TenantId, Utf8,
 /// };
 ///
 /// struct CustomerEmail;
 ///
-/// impl Field for CustomerEmail {
-///     const ID: FieldId = cryptbox::field_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
+/// impl Seal for CustomerEmail {
+///     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = true;
 ///     type Value = String;
@@ -59,12 +59,12 @@ use crate::{Error, Field};
 ///
 /// ```compile_fail,E0080
 /// # use cryptbox::{
-/// #     EncryptionKey, Field, FieldId, EncryptionKeyring, Padding, Sealed, Tenant, TenantId,
+/// #     EncryptionKey, Seal, SealId, EncryptionKeyring, Padding, Sealed, Tenant, TenantId,
 /// #     Utf8,
 /// # };
 /// # struct CustomerEmail;
-/// # impl Field for CustomerEmail {
-/// #     const ID: FieldId = cryptbox::field_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
+/// # impl Seal for CustomerEmail {
+/// #     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     const RECORD: bool = true;
 /// #     type Value = String;
@@ -83,12 +83,12 @@ use crate::{Error, Field};
 ///
 /// ```compile_fail,E0080
 /// # use cryptbox::{
-/// #     EncryptionKey, Field, FieldId, FieldOnly, EncryptionKeyring, Padding, RecordId,
+/// #     EncryptionKey, Seal, SealId, FieldOnly, EncryptionKeyring, Padding, RecordId,
 /// #     Sealed, Utf8,
 /// # };
 /// # struct Nickname;
-/// # impl Field for Nickname {
-/// #     const ID: FieldId = cryptbox::field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
+/// # impl Seal for Nickname {
+/// #     const ID: SealId = cryptbox::seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     const RECORD: bool = false;
 /// #     type Value = String;
@@ -105,12 +105,12 @@ use crate::{Error, Field};
 ///
 /// ```compile_fail,E0277
 /// # use cryptbox::{
-/// #     EncryptionKey, Field, FieldId, FieldOnly, EncryptionKeyring, Padding, Sealed, Tenant,
+/// #     EncryptionKey, Seal, SealId, FieldOnly, EncryptionKeyring, Padding, Sealed, Tenant,
 /// #     TenantId, Utf8,
 /// # };
 /// # struct Nickname;
-/// # impl Field for Nickname {
-/// #     const ID: FieldId = cryptbox::field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
+/// # impl Seal for Nickname {
+/// #     const ID: SealId = cryptbox::seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     const RECORD: bool = false;
 /// #     type Value = String;
@@ -124,14 +124,14 @@ use crate::{Error, Field};
 /// let sealed = Sealed::<Nickname>::seal(&"ada".into(), &tenant, &keys)?;
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
-pub trait Args<F: Field>: sealed::Sealed<F> {}
+pub trait Args<F: Seal>: sealed::Sealed<F> {}
 
-impl<F, T: sealed::Sealed<F>> Args<F> for T where F: Field {}
+impl<F, T: sealed::Sealed<F>> Args<F> for T where F: Seal {}
 
 pub(crate) mod sealed {
-    use crate::{Field, RecordId};
+    use crate::{RecordId, Seal};
 
-    pub trait Sealed<F: Field> {
+    pub trait Sealed<F: Seal> {
         /// Whether this form carries a record.
         const RECORD: bool;
 
@@ -140,7 +140,7 @@ pub(crate) mod sealed {
     }
 }
 
-impl<F: Field<Binding = FieldOnly>> sealed::Sealed<F> for () {
+impl<F: Seal<Binding = FieldOnly>> sealed::Sealed<F> for () {
     const RECORD: bool = false;
 
     fn with_parts<R>(self, f: impl FnOnce(&FieldOnly, Option<RecordId<'_>>) -> R) -> R {
@@ -148,7 +148,7 @@ impl<F: Field<Binding = FieldOnly>> sealed::Sealed<F> for () {
     }
 }
 
-impl<F: Field<Binding = FieldOnly>> sealed::Sealed<F> for RecordId<'_> {
+impl<F: Seal<Binding = FieldOnly>> sealed::Sealed<F> for RecordId<'_> {
     const RECORD: bool = true;
 
     fn with_parts<R>(self, f: impl FnOnce(&FieldOnly, Option<RecordId<'_>>) -> R) -> R {
@@ -156,7 +156,7 @@ impl<F: Field<Binding = FieldOnly>> sealed::Sealed<F> for RecordId<'_> {
     }
 }
 
-impl<F: Field> sealed::Sealed<F> for &F::Binding {
+impl<F: Seal> sealed::Sealed<F> for &F::Binding {
     const RECORD: bool = false;
 
     fn with_parts<R>(self, f: impl FnOnce(&F::Binding, Option<RecordId<'_>>) -> R) -> R {
@@ -164,7 +164,7 @@ impl<F: Field> sealed::Sealed<F> for &F::Binding {
     }
 }
 
-impl<F: Field> sealed::Sealed<F> for (&F::Binding, RecordId<'_>) {
+impl<F: Seal> sealed::Sealed<F> for (&F::Binding, RecordId<'_>) {
     const RECORD: bool = true;
 
     fn with_parts<R>(self, f: impl FnOnce(&F::Binding, Option<RecordId<'_>>) -> R) -> R {
@@ -175,7 +175,7 @@ impl<F: Field> sealed::Sealed<F> for (&F::Binding, RecordId<'_>) {
 /// The binding arguments of a field of a [`Record`](crate::Record): the
 /// record's binding and ID.
 ///
-/// The record is bound exactly when the field declares [`Field::RECORD`], so
+/// The record is bound exactly when the field declares [`Seal::RECORD`], so
 /// one record ID serves every field of a row, whether or not it binds one.
 /// Unlike the other [`Args`] forms, a record passed to a field that binds none
 /// is not a build error: it is ignored. Pass `(&binding, record)` where the
@@ -183,15 +183,15 @@ impl<F: Field> sealed::Sealed<F> for (&F::Binding, RecordId<'_>) {
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, EncryptionKeyring, Field, FieldId, InRecord, Padding, RecordId, Sealed,
+///     EncryptionKey, EncryptionKeyring, Seal, SealId, InRecord, Padding, RecordId, Sealed,
 ///     Tenant, TenantId, Utf8,
 /// };
 ///
 /// /// Bound to its tenant only.
 /// struct CustomerNote;
 ///
-/// impl Field for CustomerNote {
-///     const ID: FieldId = cryptbox::field_id!("0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38");
+/// impl Seal for CustomerNote {
+///     const ID: SealId = cryptbox::seal_id!("0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -221,7 +221,7 @@ impl<B> Clone for InRecord<'_, B> {
 
 impl<B> Copy for InRecord<'_, B> {}
 
-impl<F: Field> sealed::Sealed<F> for InRecord<'_, F::Binding> {
+impl<F: Seal> sealed::Sealed<F> for InRecord<'_, F::Binding> {
     const RECORD: bool = F::RECORD;
 
     fn with_parts<R>(self, f: impl FnOnce(&F::Binding, Option<RecordId<'_>>) -> R) -> R {
@@ -243,7 +243,7 @@ const fn check_record(field: bool, args: bool) {
 
 /// Encodes the binding of field `F` under `args`, checking at build time that
 /// `args` carries a record exactly when `F` binds one.
-pub(crate) fn domain<F: Field, A: Args<F>>(args: A) -> Result<BindingDomain, Error> {
+pub(crate) fn domain<F: Seal, A: Args<F>>(args: A) -> Result<BindingDomain, Error> {
     const { check_record(F::RECORD, <A as sealed::Sealed<F>>::RECORD) };
 
     args.with_parts(|binding, record| BindingDomain::of(F::ID, binding, record))
@@ -252,7 +252,7 @@ pub(crate) fn domain<F: Field, A: Args<F>>(args: A) -> Result<BindingDomain, Err
 /// Encodes the binding of field `F` under `args`, as [`domain`] does, and
 /// passes it to `f` with the binding and record it was encoded from.
 #[cfg(feature = "migrate")]
-pub(crate) fn with_domain<F: Field, A: Args<F>, T>(
+pub(crate) fn with_domain<F: Seal, A: Args<F>, T>(
     args: A,
     f: impl FnOnce(BindingDomain, &F::Binding, Option<RecordId<'_>>) -> Result<T, Error>,
 ) -> Result<T, Error> {
@@ -265,7 +265,7 @@ pub(crate) fn with_domain<F: Field, A: Args<F>, T>(
 
 /// Encodes the binding of field `F` under `args`, as [`domain`] does, together
 /// with the blind-index domain of its `keys` and `index` parts.
-pub(crate) fn domains<F: Field, A: Args<F>>(
+pub(crate) fn domains<F: Seal, A: Args<F>>(
     args: A,
 ) -> Result<(BindingDomain, BindingDomain), Error> {
     const { check_record(F::RECORD, <A as sealed::Sealed<F>>::RECORD) };

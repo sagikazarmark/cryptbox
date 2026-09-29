@@ -26,7 +26,7 @@ struct OrgWorkspace {
     workspace: [u8; 16],
 }
 
-#[derive(cryptbox::Field)]
+#[derive(cryptbox::Seal)]
 #[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
@@ -43,7 +43,7 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 #[derive(cryptbox::BlindIndexSpec)]
 #[cryptbox(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-    field = CustomerEmail,
+    seal = CustomerEmail,
     bits = 32,
     query = str,
     normalize = normalize_email,

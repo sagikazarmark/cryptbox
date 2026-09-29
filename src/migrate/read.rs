@@ -2,7 +2,7 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
-use crate::{Args, Codec, EncryptionKeySource, Error, Field, FieldOnly, Sealed};
+use crate::{Args, Codec, EncryptionKeySource, Error, FieldOnly, Seal, Sealed};
 
 use super::{LegacyFormat, legacy};
 
@@ -52,8 +52,8 @@ use super::{LegacyFormat, legacy};
 ///
 /// struct UserEmail;
 ///
-/// impl cryptbox::Field for UserEmail {
-///     const ID: cryptbox::FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// impl cryptbox::Seal for UserEmail {
+///     const ID: cryptbox::SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -91,17 +91,17 @@ use super::{LegacyFormat, legacy};
 /// assert!(!read.is_legacy());
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
-pub struct MaybeEncrypted<F: Field> {
+pub struct MaybeEncrypted<F: Seal> {
     state: State<F>,
 }
 
-enum State<F: Field> {
+enum State<F: Seal> {
     Sealed(Sealed<F>),
     Plaintext(F::Value),
     Legacy(Zeroizing<Vec<u8>>),
 }
 
-fn decode_legacy<F: Field>(
+fn decode_legacy<F: Seal>(
     bytes: &[u8],
     legacy: Option<&dyn LegacyFormat>,
 ) -> Result<F::Value, Error> {
@@ -111,7 +111,7 @@ fn decode_legacy<F: Field>(
 
 impl<F> MaybeEncrypted<F>
 where
-    F: Field,
+    F: Seal,
 {
     /// Classifies stored bytes as a `CryptBox` envelope or legacy data.
     ///
@@ -153,8 +153,8 @@ where
     ///
     /// struct LegacyBlob;
     ///
-    /// impl cryptbox::Field for LegacyBlob {
-    ///     const ID: cryptbox::FieldId = cryptbox::field_id!("3f0e8f5c-2d4b-4e7a-9c1d-6b5a4f3e2d1c");
+    /// impl cryptbox::Seal for LegacyBlob {
+    ///     const ID: cryptbox::SealId = cryptbox::seal_id!("3f0e8f5c-2d4b-4e7a-9c1d-6b5a4f3e2d1c");
     ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
     ///     const RECORD: bool = false;
     ///     type Value = Vec<u8>;
@@ -225,7 +225,7 @@ where
 
 impl<F> MaybeEncrypted<F>
 where
-    F: Field<Binding = FieldOnly>,
+    F: Seal<Binding = FieldOnly>,
 {
     /// Consumes the read and opens it with the [installed keys](crate::keys::installed).
     ///
@@ -259,7 +259,7 @@ where
     }
 }
 
-impl<F: Field> MaybeEncrypted<F> {
+impl<F: Seal> MaybeEncrypted<F> {
     /// Returns whether the value represents legacy, non-envelope storage.
     #[doc(alias = "is_plaintext")]
     #[must_use]
@@ -277,7 +277,7 @@ impl<F: Field> MaybeEncrypted<F> {
     }
 }
 
-impl<F: Field> From<Sealed<F>> for MaybeEncrypted<F> {
+impl<F: Seal> From<Sealed<F>> for MaybeEncrypted<F> {
     fn from(sealed: Sealed<F>) -> Self {
         Self {
             state: State::Sealed(sealed),
@@ -285,7 +285,7 @@ impl<F: Field> From<Sealed<F>> for MaybeEncrypted<F> {
     }
 }
 
-impl<F: Field> fmt::Debug for MaybeEncrypted<F> {
+impl<F: Seal> fmt::Debug for MaybeEncrypted<F> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("MaybeEncrypted([REDACTED])")
     }

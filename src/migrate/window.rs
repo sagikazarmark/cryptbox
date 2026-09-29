@@ -1,6 +1,6 @@
 use crate::{
     Args, Binding, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, Field, Sealed,
+    EncryptionKeySource, Error, Seal, Sealed,
     binding::{declaration_fingerprint, with_domain},
     blind::{IndexArgs, probes_in},
     bound, inspect_ciphertext,
@@ -33,7 +33,7 @@ pub fn open_across<Old, F>(
 ) -> Result<F::Value, Error>
 where
     Old: Binding,
-    F: Field,
+    F: Seal,
 {
     let bytes = sealed.as_bytes();
     let stored = inspect_ciphertext(bytes)?.context_fingerprint();
@@ -85,8 +85,8 @@ where
     Old: Binding,
 {
     let mut probes = S::probes_with(query, args, keys)?;
-    let old = BindingDomain::index_projected::<Old, <S::Field as Field>::Binding>(
-        <S::Field as Field>::ID,
+    let old = BindingDomain::index_projected::<Old, <S::Seal as Seal>::Binding>(
+        <S::Seal as Seal>::ID,
         args,
     )?;
     for probe in probes_in::<S>(query, &old, old_keys)? {

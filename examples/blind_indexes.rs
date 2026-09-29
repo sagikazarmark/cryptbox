@@ -2,7 +2,7 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Field, IndexKeyId, KeyId, Sealed, index_key_id, key_id,
+    EncryptionKeyring, IndexKeyId, KeyId, Seal, Sealed, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -10,7 +10,7 @@ const ENCRYPTION_KEY_ID: KeyId = key_id!("d0238a8e-7352-4b0b-a089-1fa767e28c35")
 const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("92ba353d-4a5b-419c-be7b-577ec21a8336");
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("1ca61eba-f5d2-4b37-86db-cdc2b8204d88");
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(id = "283e5ff6-40ba-45e9-b55f-20ce5cee88c4", value = String)]
 struct UserEmail;
 
@@ -24,7 +24,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 #[derive(BlindIndexSpec)]
 #[cryptbox(
     id = "84651307-589f-4df2-a4b0-f8eaf9e52d3d",
-    field = UserEmail,
+    seal = UserEmail,
     bits = 128,
     query = str,
     normalize = normalize_email,

@@ -14,14 +14,14 @@
 mod attr;
 mod binding;
 mod blind_index;
-mod field;
 mod plaintext;
 mod record;
+mod seal;
 
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
-/// Derives `cryptbox::Field` for a field marker type.
+/// Derives `cryptbox::Seal` for a field marker type.
 ///
 /// | Key | Required | Meaning |
 /// | --- | --- | --- |
@@ -43,7 +43,7 @@ use syn::{DeriveInput, parse_macro_input};
 /// ID alone: `Binding = FieldOnly`, no record, and no declared blind indexes.
 ///
 /// ```
-/// #[derive(cryptbox::Field)]
+/// #[derive(cryptbox::Seal)]
 /// #[cryptbox(
 ///     id = "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64",
 ///     value = String,
@@ -58,9 +58,9 @@ use syn::{DeriveInput, parse_macro_input};
 /// # pub struct HomeAddress;
 /// const _: () = {
 ///     #[automatically_derived]
-///     impl ::cryptbox::Field for HomeAddress {
-///         const ID: ::cryptbox::FieldId =
-///             ::cryptbox::FieldId::from_u128(0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64);
+///     impl ::cryptbox::Seal for HomeAddress {
+///         const ID: ::cryptbox::SealId =
+///             ::cryptbox::SealId::from_u128(0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64);
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
 ///         const RECORD: bool = false;
 ///         type Value = String;
@@ -79,7 +79,7 @@ use syn::{DeriveInput, parse_macro_input};
 /// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
-/// #[derive(cryptbox::Field)]
+/// #[derive(cryptbox::Seal)]
 /// #[cryptbox(
 ///     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
 ///     value = String,
@@ -92,7 +92,7 @@ use syn::{DeriveInput, parse_macro_input};
 /// #[derive(cryptbox::BlindIndexSpec)]
 /// #[cryptbox(
 ///     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-///     field = CustomerEmail,
+///     seal = CustomerEmail,
 ///     bits = 32,
 ///     query = str,
 ///     normalize = normalize_email,
@@ -107,7 +107,7 @@ use syn::{DeriveInput, parse_macro_input};
 /// # pub struct CustomerEmail;
 /// # pub struct EmailLookup;
 /// # impl cryptbox::BlindIndexSpec for EmailLookup {
-/// #     type Field = CustomerEmail;
+/// #     type Seal = CustomerEmail;
 /// #     const ID: cryptbox::IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
 /// #     const BITS: u16 = 32;
 /// #     const NORMALIZER: &'static str = "email/1";
@@ -121,9 +121,9 @@ use syn::{DeriveInput, parse_macro_input};
 /// # }
 /// const _: () = {
 ///     #[automatically_derived]
-///     impl ::cryptbox::Field for CustomerEmail {
-///         const ID: ::cryptbox::FieldId =
-///             ::cryptbox::FieldId::from_u128(0x6c3b1f0e_8a24_4d5b_9e71_2f4a6c8d0b13);
+///     impl ::cryptbox::Seal for CustomerEmail {
+///         const ID: ::cryptbox::SealId =
+///             ::cryptbox::SealId::from_u128(0x6c3b1f0e_8a24_4d5b_9e71_2f4a6c8d0b13);
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
 ///         const RECORD: bool = true;
 ///         type Value = String;
@@ -133,9 +133,9 @@ use syn::{DeriveInput, parse_macro_input};
 ///     }
 /// };
 /// ```
-#[proc_macro_derive(Field, attributes(cryptbox))]
-pub fn derive_field(input: TokenStream) -> TokenStream {
-    derive(input, field::expand)
+#[proc_macro_derive(Seal, attributes(cryptbox))]
+pub fn derive_seal(input: TokenStream) -> TokenStream {
+    derive(input, seal::expand)
 }
 
 /// Derives `cryptbox::BlindIndexSpec` for a blind-index marker type.
@@ -143,7 +143,7 @@ pub fn derive_field(input: TokenStream) -> TokenStream {
 /// | Key | Required | Meaning |
 /// | --- | --- | --- |
 /// | `id = "…"` | yes | The index ID, a hyphenated UUID string literal. |
-/// | `field = Type` | yes | The field whose values the index projects. |
+/// | `seal = Type` | yes | The field whose values the index projects. |
 /// | `bits = N` | yes | The retained index bits, from 1 to 256. |
 /// | `query = Type` | yes | The lookup input, such as `str`. |
 /// | `normalize = path` | yes | A `fn(&Query) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>`. |
@@ -164,7 +164,7 @@ pub fn derive_field(input: TokenStream) -> TokenStream {
 /// use cryptbox::BlindIndexError;
 /// use zeroize::Zeroizing;
 ///
-/// #[derive(cryptbox::Field)]
+/// #[derive(cryptbox::Seal)]
 /// #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 /// struct UserEmail;
 ///
@@ -175,7 +175,7 @@ pub fn derive_field(input: TokenStream) -> TokenStream {
 /// #[derive(cryptbox::BlindIndexSpec)]
 /// #[cryptbox(
 ///     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-///     field = UserEmail,
+///     seal = UserEmail,
 ///     bits = 32,
 ///     query = str,
 ///     normalize = normalize_email,
@@ -190,7 +190,7 @@ pub fn derive_field(input: TokenStream) -> TokenStream {
 /// ```
 /// # use cryptbox::BlindIndexError;
 /// # use zeroize::Zeroizing;
-/// # #[derive(cryptbox::Field)]
+/// # #[derive(cryptbox::Seal)]
 /// # #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 /// # struct UserEmail;
 /// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -200,7 +200,7 @@ pub fn derive_field(input: TokenStream) -> TokenStream {
 /// const _: () = {
 ///     #[automatically_derived]
 ///     impl ::cryptbox::BlindIndexSpec for EmailLookup {
-///         type Field = UserEmail;
+///         type Seal = UserEmail;
 ///         const ID: ::cryptbox::IndexId =
 ///             ::cryptbox::IndexId::from_u128(0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53);
 ///         const BITS: u16 = 32;
@@ -214,7 +214,7 @@ pub fn derive_field(input: TokenStream) -> TokenStream {
 ///         }
 ///
 ///         fn normalize_value(
-///             value: &<UserEmail as ::cryptbox::Field>::Value,
+///             value: &<UserEmail as ::cryptbox::Seal>::Value,
 ///         ) -> Result<Zeroizing<Vec<u8>>, ::cryptbox::BlindIndexError> {
 ///             normalize_email(value)
 ///         }
@@ -311,7 +311,7 @@ pub fn derive_plaintext(input: TokenStream) -> TokenStream {
 ///
 /// Each named field is one part, declared on the field:
 ///
-/// | Field key | Required | Meaning |
+/// | Seal key | Required | Meaning |
 /// | --- | --- | --- |
 /// | `part = "…"` | yes | The part ID, a hyphenated UUID string literal. |
 /// | `keys` | no | The part scopes key custody and blind indexes. |
@@ -429,16 +429,16 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///
 /// Every field says how it is stored:
 ///
-/// | Field key | Meaning |
+/// | Seal key | Meaning |
 /// | --- | --- |
-/// | `field = F` | Sealed as field `F`: the sealed struct holds a `Sealed<F>`. |
+/// | `seal = F` | Sealed as field `F`: the sealed struct holds a `Sealed<F>`. |
 /// | `index(S as column, …)` | With `field`: the blind indexes it writes, each in a `BlindIndex<S>` field named `column`. |
 /// | `plaintext` | Stored as it is. The record ID must be `plaintext`. |
 ///
 /// An unannotated field fails the build. Every sealed field must share one
 /// `Binding`, and each field that declares `record` is also bound to the record
 /// ID, which any `PartType` can hold. A field must write exactly the blind
-/// indexes its `Field` declares in `indexes(…)`: a missing, extra, or repeated
+/// indexes its `Seal` declares in `indexes(…)`: a missing, extra, or repeated
 /// one fails the build, so no field can be sealed without writing its indexes.
 ///
 /// The sealed struct copies the struct's visibility, and each field's
@@ -459,7 +459,7 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 /// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
-/// # #[derive(cryptbox::Field)]
+/// # #[derive(cryptbox::Seal)]
 /// # #[cryptbox(
 /// #     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
 /// #     value = String,
@@ -468,13 +468,13 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 /// #     indexes(EmailLookup),
 /// # )]
 /// # pub struct CustomerEmail;
-/// # #[derive(cryptbox::Field)]
+/// # #[derive(cryptbox::Seal)]
 /// # #[cryptbox(id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38", value = String, binding = cryptbox::Tenant)]
 /// # pub struct CustomerNote;
 /// # #[derive(cryptbox::BlindIndexSpec)]
 /// # #[cryptbox(
 /// #     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-/// #     field = CustomerEmail,
+/// #     seal = CustomerEmail,
 /// #     bits = 32,
 /// #     query = str,
 /// #     normalize = normalize_email,
@@ -486,9 +486,9 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 /// pub struct Customer {
 ///     #[cryptbox(plaintext)]
 ///     pub id: i64,
-///     #[cryptbox(field = CustomerEmail, index(EmailLookup as email_lookup))]
+///     #[cryptbox(seal = CustomerEmail, index(EmailLookup as email_lookup))]
 ///     pub email: String,
-///     #[cryptbox(field = CustomerNote)]
+///     #[cryptbox(seal = CustomerNote)]
 ///     pub note: String,
 /// }
 /// ```
@@ -500,14 +500,14 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///
 /// ```
 /// # use cryptbox::{
-/// #     BlindIndex, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Field,
+/// #     BlindIndex, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Seal,
 /// #     InRecord, RecordId, Sealed,
 /// # };
 /// # use zeroize::Zeroizing;
 /// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, cryptbox::BlindIndexError> {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
-/// # #[derive(cryptbox::Field)]
+/// # #[derive(cryptbox::Seal)]
 /// # #[cryptbox(
 /// #     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
 /// #     value = String,
@@ -516,13 +516,13 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 /// #     indexes(EmailLookup),
 /// # )]
 /// # pub struct CustomerEmail;
-/// # #[derive(cryptbox::Field)]
+/// # #[derive(cryptbox::Seal)]
 /// # #[cryptbox(id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38", value = String, binding = cryptbox::Tenant)]
 /// # pub struct CustomerNote;
 /// # #[derive(cryptbox::BlindIndexSpec)]
 /// # #[cryptbox(
 /// #     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-/// #     field = CustomerEmail,
+/// #     seal = CustomerEmail,
 /// #     bits = 32,
 /// #     query = str,
 /// #     normalize = normalize_email,
@@ -550,8 +550,8 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///         /// Seals `email` alone under `binding` and the record ID `record`, with the
 ///         /// blind indexes it stores, for a partial update.
 ///         pub fn seal_email<K>(
-///             value: &<CustomerEmail as Field>::Value,
-///             binding: &<CustomerEmail as Field>::Binding,
+///             value: &<CustomerEmail as Seal>::Value,
+///             binding: &<CustomerEmail as Seal>::Binding,
 ///             record: &i64,
 ///             keys: &K,
 ///         ) -> Result<(Sealed<CustomerEmail>, BlindIndex<EmailLookup>), Error>
@@ -572,8 +572,8 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///         /// Seals `note` alone under `binding` and the record ID `record`, for a
 ///         /// partial update.
 ///         pub fn seal_note<K>(
-///             value: &<CustomerNote as Field>::Value,
-///             binding: &<CustomerNote as Field>::Binding,
+///             value: &<CustomerNote as Seal>::Value,
+///             binding: &<CustomerNote as Seal>::Binding,
 ///             record: &i64,
 ///             keys: &K,
 ///         ) -> Result<Sealed<CustomerNote>, Error>
@@ -587,7 +587,7 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///     #[automatically_derived]
 ///     impl cryptbox::Record for Customer {
 ///         type Sealed = SealedCustomer;
-///         type Binding = <CustomerEmail as Field>::Binding;
+///         type Binding = <CustomerEmail as Seal>::Binding;
 ///
 ///         fn seal<K>(&self, binding: &Self::Binding, keys: &K) -> Result<SealedCustomer, Error>
 ///         where
@@ -610,11 +610,11 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///         {
 ///             let record_id = RecordId::of(&sealed.id);
 ///             let email = sealed.email.open(
-///                 InRecord::<<CustomerEmail as Field>::Binding>(binding, record_id),
+///                 InRecord::<<CustomerEmail as Seal>::Binding>(binding, record_id),
 ///                 keys,
 ///             )?;
 ///             let note = sealed.note.open(
-///                 InRecord::<<CustomerNote as Field>::Binding>(binding, record_id),
+///                 InRecord::<<CustomerNote as Seal>::Binding>(binding, record_id),
 ///                 keys,
 ///             )?;
 ///
@@ -624,7 +624,7 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///
 ///     #[automatically_derived]
 ///     impl cryptbox::IndexedBy<EmailLookup> for Customer {
-///         fn indexed_value(&self) -> &<<EmailLookup as BlindIndexSpec>::Field as Field>::Value {
+///         fn indexed_value(&self) -> &<<EmailLookup as BlindIndexSpec>::Seal as Seal>::Value {
 ///             &self.email
 ///         }
 ///     }

@@ -4,7 +4,7 @@ use std::error::Error;
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Field, IndexKeyId, KeyId, Sealed, index_key_id, key_id,
+    EncryptionKeyring, IndexKeyId, KeyId, Seal, Sealed, index_key_id, key_id,
     migrate::{MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
@@ -15,7 +15,7 @@ const CURRENT_KEY_ID: KeyId = key_id!("a35c87a8-9779-48c9-b03d-03972a92bc45");
 const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("0e53698f-f685-44a7-8a2a-925559b303b4");
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("d36ea642-619a-4d37-b3d2-1b54298c31b8");
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(id = "fb3669ca-fb43-4111-b8c1-306459fe4222", value = String)]
 struct UserEmail;
 
@@ -29,7 +29,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 #[derive(BlindIndexSpec)]
 #[cryptbox(
     id = "3b209afe-0a9e-4da7-8f23-13ebd5831149",
-    field = UserEmail,
+    seal = UserEmail,
     bits = 128,
     query = str,
     normalize = normalize_email,

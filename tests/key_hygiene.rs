@@ -2,15 +2,15 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Field, FieldId, FieldOnly, IndexId, KeyError, Padding, Raw, Sealed,
-    index_id, index_key_id, key_id,
+    EncryptionKeyring, FieldOnly, IndexId, KeyError, Padding, Raw, Seal, SealId, Sealed, index_id,
+    index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
 struct TestField;
 
-impl Field for TestField {
-    const ID: FieldId = cryptbox::field_id!("5d3a1f7e-2b8c-4e69-a0d4-7f1b3c5e9a82");
+impl Seal for TestField {
+    const ID: SealId = cryptbox::seal_id!("5d3a1f7e-2b8c-4e69-a0d4-7f1b3c5e9a82");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -22,7 +22,7 @@ impl Field for TestField {
 struct ExactValue;
 
 impl BlindIndexSpec for ExactValue {
-    type Field = TestField;
+    type Seal = TestField;
     const ID: IndexId = index_id!("abcdefab-cdef-4abc-8def-abcdefabcdef");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";

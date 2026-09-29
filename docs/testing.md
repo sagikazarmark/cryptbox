@@ -80,7 +80,7 @@ when the value names a key that the keyring does not hold.
 
 ## Diagnostics
 
-Allowlist the stable `Field::ID`, a caller-owned static label, operation and sanitized
+Allowlist the stable `Seal::ID`, a caller-owned static label, operation and sanitized
 error category. Labels must not contain record data or secrets; even schema labels
 should go only to approved destinations. CryptBox does not emit logs.
 

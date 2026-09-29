@@ -5,7 +5,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     Binding, BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring,
-    Error, Field, FieldOnly, IndexId, IndexKeyId, keys,
+    Error, FieldOnly, IndexId, IndexKeyId, Seal, keys,
 };
 
 mod format;
@@ -17,11 +17,11 @@ use recipe::derive_index;
 
 /// The query-time arguments of `Spec`: its field binding's `keys` and `index` part values.
 pub(crate) type IndexArgs<Spec> =
-    <<<Spec as BlindIndexSpec>::Field as Field>::Binding as Binding>::IndexArgs;
+    <<<Spec as BlindIndexSpec>::Seal as Seal>::Binding as Binding>::IndexArgs;
 
 /// A logical blind index over one field.
 ///
-/// A specification binds an index to exactly one [`Field`]: the field's ID
+/// A specification binds an index to exactly one [`Seal`]: the field's ID
 /// domain-separates derivation, stored indexes are derived from the field's
 /// value with [`Self::normalize_value`], and lookups normalize a [`Self::Query`]
 /// with [`Self::normalize_query`]. Both normalizers must produce identical bytes
@@ -46,13 +46,13 @@ pub(crate) type IndexArgs<Spec> =
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Utf8};
+/// use cryptbox::{BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Utf8};
 /// use zeroize::Zeroizing;
 ///
 /// struct UserEmail;
 ///
-/// impl Field for UserEmail {
-///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// impl Seal for UserEmail {
+///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -64,7 +64,7 @@ pub(crate) type IndexArgs<Spec> =
 /// struct EmailLookup;
 ///
 /// impl BlindIndexSpec for EmailLookup {
-///     type Field = UserEmail;
+///     type Seal = UserEmail;
 ///     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "email/1";
@@ -81,18 +81,18 @@ pub(crate) type IndexArgs<Spec> =
 /// ```
 ///
 /// With the `derive` feature, `#[derive(BlindIndexSpec)]` writes exactly this
-/// impl from `#[cryptbox(id = "…", field = UserEmail, bits = 32, query = str,
+/// impl from `#[cryptbox(id = "…", seal = UserEmail, bits = 32, query = str,
 /// normalize = normalize_email, normalizer = "email/1")]`, given a free
 /// `normalize_email` function with `normalize_query`'s body.
 ///
 /// Invalid precision is rejected when the specification is used:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Raw};
+/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Raw};
 /// # use zeroize::Zeroizing;
 /// # struct Bytes;
-/// # impl Field for Bytes {
-/// #     const ID: FieldId = FieldId::from_bytes([1; 16]);
+/// # impl Seal for Bytes {
+/// #     const ID: SealId = SealId::from_bytes([1; 16]);
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
@@ -103,7 +103,7 @@ pub(crate) type IndexArgs<Spec> =
 /// struct ZeroBits;
 ///
 /// impl BlindIndexSpec for ZeroBits {
-///     type Field = Bytes;
+///     type Seal = Bytes;
 ///     const ID: IndexId = IndexId::from_bytes([0; 16]);
 ///     const BITS: u16 = 0;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -116,11 +116,11 @@ pub(crate) type IndexArgs<Spec> =
 /// ```
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Raw};
+/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Raw};
 /// # use zeroize::Zeroizing;
 /// # struct Bytes;
-/// # impl Field for Bytes {
-/// #     const ID: FieldId = FieldId::from_bytes([1; 16]);
+/// # impl Seal for Bytes {
+/// #     const ID: SealId = SealId::from_bytes([1; 16]);
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
@@ -131,7 +131,7 @@ pub(crate) type IndexArgs<Spec> =
 /// struct TooManyBits;
 ///
 /// impl BlindIndexSpec for TooManyBits {
-///     type Field = Bytes;
+///     type Seal = Bytes;
 ///     const ID: IndexId = IndexId::from_bytes([0; 16]);
 ///     const BITS: u16 = 300;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -175,7 +175,7 @@ pub(crate) type IndexArgs<Spec> =
 )]
 pub trait BlindIndexSpec: Sized + 'static {
     /// The field whose values this index projects.
-    type Field: Field;
+    type Seal: Seal;
 
     /// The stable logical index identifier.
     const ID: IndexId;
@@ -208,10 +208,10 @@ pub trait BlindIndexSpec: Sized + 'static {
     ///
     /// Returns a sanitized error when this value cannot be normalized.
     fn normalize_value(
-        value: &<Self::Field as Field>::Value,
+        value: &<Self::Seal as Seal>::Value,
     ) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>;
 
-    /// Derives the current stored index for a value of [`Self::Field`] in the
+    /// Derives the current stored index for a value of [`Self::Seal`] in the
     /// scope of `args`.
     ///
     /// Use this to recompute a stored index from decrypted plaintext. New
@@ -224,7 +224,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// binding's `keys` and `index` parts, or an error for normalization
     /// failure or unavailable keys.
     fn derive_with(
-        value: &<Self::Field as Field>::Value,
+        value: &<Self::Seal as Seal>::Value,
         args: &IndexArgs<Self>,
         keys: &(impl BlindIndexKeySource + ?Sized),
     ) -> Result<BlindIndex<Self>, Error> {
@@ -266,7 +266,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// probe derivation fails.
     fn probes(query: &Self::Query) -> Result<Vec<BlindIndex<Self>>, Error>
     where
-        Self::Field: Field<Binding = FieldOnly>,
+        Self::Seal: Seal<Binding = FieldOnly>,
     {
         Self::probes_with(query, &(), keys::installed()?)
     }
@@ -287,7 +287,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// Returns a sanitized error when either input cannot be normalized.
     fn verify_candidate(
         query: &Self::Query,
-        candidate: &<Self::Field as Field>::Value,
+        candidate: &<Self::Seal as Seal>::Value,
     ) -> Result<bool, Error> {
         compare_normalized::<Self>(query, candidate)
     }
@@ -311,7 +311,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// `args` does not match the binding's `keys` and `index` parts. Also
     /// returns an error for normalization failure or unavailable keys.
     fn is_consistent_with(
-        value: &<Self::Field as Field>::Value,
+        value: &<Self::Seal as Seal>::Value,
         stored: &BlindIndex<Self>,
         args: &IndexArgs<Self>,
         keys: &(impl BlindIndexKeySource + ?Sized),
@@ -323,19 +323,19 @@ pub trait BlindIndexSpec: Sized + 'static {
 /// The blind indexes declared over field `F`: `()`, or a tuple of up to eight
 /// [`BlindIndexSpec`]s over `F`.
 ///
-/// This is [`Field::Indexes`]. Listing an index declared over another field is
+/// This is [`Seal::Indexes`]. Listing an index declared over another field is
 /// a type error.
 ///
 /// ```compile_fail,E0271
 /// use cryptbox::{
-///     BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Utf8,
+///     BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Utf8,
 /// };
 /// use zeroize::Zeroizing;
 ///
 /// struct UserEmail;
 ///
-/// impl Field for UserEmail {
-///     const ID: FieldId = FieldId::from_bytes([1; 16]);
+/// impl Seal for UserEmail {
+///     const ID: SealId = SealId::from_bytes([1; 16]);
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -346,8 +346,8 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///
 /// struct InviteEmail;
 ///
-/// impl Field for InviteEmail {
-///     const ID: FieldId = FieldId::from_bytes([2; 16]);
+/// impl Seal for InviteEmail {
+///     const ID: SealId = SealId::from_bytes([2; 16]);
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -359,7 +359,7 @@ pub trait BlindIndexSpec: Sized + 'static {
 /// struct InviteEmailLookup;
 ///
 /// impl BlindIndexSpec for InviteEmailLookup {
-///     type Field = InviteEmail;
+///     type Seal = InviteEmail;
 ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -386,7 +386,7 @@ impl<F: ?Sized> IndexList<F> for () {
 // `F` names the field, so the spec parameters skip it.
 macro_rules! index_list {
     ($($spec:ident),+) => {
-        impl<F: Field, $($spec: BlindIndexSpec<Field = F>),+> IndexList<F> for ($($spec,)+) {
+        impl<F: Seal, $($spec: BlindIndexSpec<Seal = F>),+> IndexList<F> for ($($spec,)+) {
             const IDS: &'static [IndexId] = &[$($spec::ID),+];
         }
     };
@@ -558,7 +558,7 @@ impl<Spec> fmt::Debug for BlindIndexRef<'_, Spec> {
 /// Derives the current stored index of `Spec` in `domain`, an index domain of
 /// `Spec`'s field.
 pub(crate) fn derive_value<Spec: BlindIndexSpec>(
-    value: &<Spec::Field as Field>::Value,
+    value: &<Spec::Seal as Seal>::Value,
     domain: &BindingDomain,
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<BlindIndex<Spec>, Error> {
@@ -578,7 +578,7 @@ pub(crate) fn current_key_id<Spec: BlindIndexSpec>(
 }
 
 fn derive_value_with_key<Spec: BlindIndexSpec>(
-    value: &<Spec::Field as Field>::Value,
+    value: &<Spec::Seal as Seal>::Value,
     domain: &BindingDomain,
     key: &BlindIndexKey,
 ) -> Result<BlindIndex<Spec>, Error> {
@@ -611,7 +611,7 @@ pub(crate) fn probes_in<Spec: BlindIndexSpec>(
 }
 
 fn check_consistency<Spec: BlindIndexSpec>(
-    value: &<Spec::Field as Field>::Value,
+    value: &<Spec::Seal as Seal>::Value,
     stored: &BlindIndex<Spec>,
     args: &IndexArgs<Spec>,
     keys: &(impl BlindIndexKeySource + ?Sized),
@@ -631,7 +631,7 @@ fn check_consistency<Spec: BlindIndexSpec>(
 // Blind indexes are domain-separated by their field and the `keys` and `index`
 // parts of its binding, never by bound-only parts or a record.
 fn index_domain<Spec: BlindIndexSpec>(args: &IndexArgs<Spec>) -> Result<BindingDomain, Error> {
-    BindingDomain::index::<<Spec::Field as Field>::Binding>(<Spec::Field as Field>::ID, args)
+    BindingDomain::index::<<Spec::Seal as Seal>::Binding>(<Spec::Seal as Seal>::ID, args)
 }
 
 // Asks the source for the keyring of the index in the domain's key scope.
@@ -644,7 +644,7 @@ fn keyring<Spec: BlindIndexSpec>(
 
 fn compare_normalized<Spec: BlindIndexSpec>(
     query: &Spec::Query,
-    candidate: &<Spec::Field as Field>::Value,
+    candidate: &<Spec::Seal as Seal>::Value,
 ) -> Result<bool, Error> {
     let query = Spec::normalize_query(query)?;
     let candidate = Spec::normalize_value(candidate)?;

@@ -3,13 +3,13 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, Field, Sealed, index_key_id, inspect_blind_index, inspect_ciphertext,
+    EncryptionKeyring, Error, Seal, Sealed, index_key_id, inspect_blind_index, inspect_ciphertext,
     key_id,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(id = "181642fe-59de-4fe3-9576-cb1cb66116ef", value = String)]
 struct UserEmail;
 
@@ -24,7 +24,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 #[derive(BlindIndexSpec)]
 #[cryptbox(
     id = "2ce82e31-6001-4b05-b4e2-8fc262997209",
-    field = UserEmail,
+    seal = UserEmail,
     // Demonstration precision; choose precision and normalization for your domain.
     bits = 128,
     query = str,

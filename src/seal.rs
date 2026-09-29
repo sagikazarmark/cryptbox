@@ -1,4 +1,4 @@
-use crate::{Binding, Codec, FieldId, IndexList, Padding};
+use crate::{Binding, Codec, IndexList, Padding, SealId};
 
 /// Declares a logical encrypted field: its identity, value type, codec,
 /// padding, binding, and blind indexes.
@@ -36,13 +36,13 @@ use crate::{Binding, Codec, FieldId, IndexList, Padding};
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Plaintext};
+/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Plaintext};
 ///
 /// /// Primary contact address.
 /// pub struct UserEmail;
 ///
-/// impl Field for UserEmail {
-///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// impl Seal for UserEmail {
+///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -52,7 +52,7 @@ use crate::{Binding, Codec, FieldId, IndexList, Padding};
 /// }
 /// ```
 ///
-/// With the `derive` feature, `#[derive(Field)]` writes exactly this impl from
+/// With the `derive` feature, `#[derive(Seal)]` writes exactly this impl from
 /// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`.
 /// Add `binding = Tenant`, `record`, or `indexes(EmailLookup)` to set
 /// [`Self::Binding`], [`Self::RECORD`], or [`Self::Indexes`].
@@ -61,7 +61,7 @@ use crate::{Binding, Codec, FieldId, IndexList, Padding};
 /// default codec; implement `Plaintext` for it or name an explicit codec:
 ///
 /// ```compile_fail,E0277
-/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Plaintext};
+/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Plaintext};
 ///
 /// struct Address {
 ///     city: String,
@@ -69,8 +69,8 @@ use crate::{Binding, Codec, FieldId, IndexList, Padding};
 ///
 /// struct HomeAddress;
 ///
-/// impl Field for HomeAddress {
-///     const ID: FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
+/// impl Seal for HomeAddress {
+///     const ID: SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = Address;
@@ -86,9 +86,9 @@ use crate::{Binding, Codec, FieldId, IndexList, Padding};
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub trait Field: 'static {
+pub trait Seal: 'static {
     /// The stable identifier, independent of Rust and database names.
-    const ID: FieldId;
+    const ID: SealId;
 
     /// The padding policy applied to new values between the codec and encryption.
     ///

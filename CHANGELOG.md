@@ -160,6 +160,16 @@
   its type, is renamed `ColumnKeys`, and `Plain::with_key_context` is renamed
   `Plain::with_column_keys`. "Context" now names only the envelope's context.
 
+- **Breaking:** `Field` is renamed `Seal` (ADR-0007), since sealed values are
+  not only database fields. `FieldId` becomes `SealId`, `field_id!` becomes
+  `seal_id!`, `#[derive(Field)]` becomes `#[derive(Seal)]`,
+  `BlindIndexSpec::Field` becomes `BlindIndexSpec::Seal`, `Manifest::field`
+  becomes `Manifest::seal`, and the derives' `field = …` key becomes
+  `seal = …`. Key sources receive a `SealId`. The schema manifest prints
+  `seal <id>` and `seal: <id>` instead of `field <id>` and `field: <id>`, so
+  committed manifest snapshots change once without a schema change. IDs and
+  stored bytes are unchanged.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

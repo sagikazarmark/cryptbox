@@ -9,12 +9,13 @@ use std::{
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, Field, FieldOnly, IndexId, KeyScope, Padding, RecordId, Sealed,
-    Tenant, TenantId, Utf8, field_id, index_id, index_key_id, key_id,
+    EncryptionKeyring, Error, FieldOnly, IndexId, KeyScope, Padding, RecordId, Seal, Sealed,
+    Tenant, TenantId, Utf8, index_id, index_key_id, key_id,
     migrate::{
         RowArgs, RowPlanner, RowState, RowWrite, Sweep, SweepRow, SweepStore, open_across,
         probes_across,
     },
+    seal_id,
 };
 use futures_executor::block_on;
 use zeroize::Zeroizing;
@@ -22,8 +23,8 @@ use zeroize::Zeroizing;
 /// The field after the migration: bound to its tenant and its record.
 struct CustomerEmail;
 
-impl Field for CustomerEmail {
-    const ID: cryptbox::FieldId = field_id!("8a000000-0000-4000-8000-00000000000a");
+impl Seal for CustomerEmail {
+    const ID: cryptbox::SealId = seal_id!("8a000000-0000-4000-8000-00000000000a");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = true;
     type Value = String;
@@ -35,8 +36,8 @@ impl Field for CustomerEmail {
 /// The same field as it was declared before the migration.
 struct FieldOnlyEmail;
 
-impl Field for FieldOnlyEmail {
-    const ID: cryptbox::FieldId = CustomerEmail::ID;
+impl Seal for FieldOnlyEmail {
+    const ID: cryptbox::SealId = CustomerEmail::ID;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -54,7 +55,7 @@ fn normalize(input: &str) -> Zeroizing<Vec<u8>> {
 struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
-    type Field = CustomerEmail;
+    type Seal = CustomerEmail;
     const ID: IndexId = LOOKUP_ID;
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -73,7 +74,7 @@ impl BlindIndexSpec for EmailLookup {
 struct FieldOnlyEmailLookup;
 
 impl BlindIndexSpec for FieldOnlyEmailLookup {
-    type Field = FieldOnlyEmail;
+    type Seal = FieldOnlyEmail;
     const ID: IndexId = LOOKUP_ID;
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -320,8 +321,8 @@ fn a_field_only_row_without_a_legacy_binding_window_is_a_binding_mismatch() {
 /// The same field when it was bound to its tenant but not yet to its record.
 struct TenantEmail;
 
-impl Field for TenantEmail {
-    const ID: cryptbox::FieldId = CustomerEmail::ID;
+impl Seal for TenantEmail {
+    const ID: cryptbox::SealId = CustomerEmail::ID;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -399,8 +400,8 @@ fn a_legacy_binding_with_a_part_the_current_binding_lacks_is_invalid() {
 
 struct RegionEmail;
 
-impl Field for RegionEmail {
-    const ID: cryptbox::FieldId = CustomerEmail::ID;
+impl Seal for RegionEmail {
+    const ID: cryptbox::SealId = CustomerEmail::ID;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -714,8 +715,8 @@ impl cryptbox::Binding for TenantWorkspace {
 /// The field after a workspace part is added to a binding that already binds a record.
 struct WorkspaceEmail;
 
-impl Field for WorkspaceEmail {
-    const ID: cryptbox::FieldId = CustomerEmail::ID;
+impl Seal for WorkspaceEmail {
+    const ID: cryptbox::SealId = CustomerEmail::ID;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = true;
     type Value = String;

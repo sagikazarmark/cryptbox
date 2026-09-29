@@ -54,7 +54,7 @@ allocation, not allocations already released by growth. When growth is unavoidab
 copy into a new zeroizing allocation, then wipe the old allocation before release.
 Protect failure paths too. See the [ownership contracts](../../docs/ownership.md).
 
-[`Field`](https://docs.rs/cryptbox/latest/cryptbox/trait.Field.html) ties these
+[`Seal`](https://docs.rs/cryptbox/latest/cryptbox/trait.Seal.html) ties these
 together: `Handle` names its ID, value type, codec and padding.
 **`Padding` is a closed set**: choose `Padding::NONE`, `Padding::block(n)` or
 `Padding::length(n)`. Every field binds its ciphertext to its field ID. A codec or

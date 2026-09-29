@@ -6,9 +6,10 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, Field, FieldId, FieldOnly, IndexId, IndexKeyId, KeyId, Keys, Padding,
-    Sealed, Utf8, field_id, index_id, index_key_id, key_id,
+    EncryptionKeyring, Error, FieldOnly, IndexId, IndexKeyId, KeyId, Keys, Padding, Seal, SealId,
+    Sealed, Utf8, index_id, index_key_id, key_id,
     keys::{self, AlreadyInstalled},
+    seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -20,8 +21,8 @@ const EXPLICIT_INDEX_KEY_ID: IndexKeyId = index_key_id!("70000000-0000-4000-8000
 
 struct Email;
 
-impl Field for Email {
-    const ID: FieldId = field_id!("40000000-0000-4000-8000-000000000004");
+impl Seal for Email {
+    const ID: SealId = seal_id!("40000000-0000-4000-8000-000000000004");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -33,7 +34,7 @@ impl Field for Email {
 struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
-    type Field = Email;
+    type Seal = Email;
     const ID: IndexId = index_id!("50000000-0000-4000-8000-000000000005");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";

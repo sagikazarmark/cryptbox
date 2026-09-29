@@ -4,7 +4,7 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Field, FieldOnly, IndexId, Padding, Sealed, Utf8, index_id, index_key_id,
+    EncryptionKeyring, FieldOnly, IndexId, Padding, Seal, Sealed, Utf8, index_id, index_key_id,
     key_id,
 };
 #[cfg(feature = "json")]
@@ -13,8 +13,8 @@ use zeroize::Zeroizing;
 
 struct EmailField;
 
-impl Field for EmailField {
-    const ID: cryptbox::FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
+impl Seal for EmailField {
+    const ID: cryptbox::SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -26,7 +26,7 @@ impl Field for EmailField {
 struct EmailExact;
 
 impl BlindIndexSpec for EmailExact {
-    type Field = EmailField;
+    type Seal = EmailField;
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";

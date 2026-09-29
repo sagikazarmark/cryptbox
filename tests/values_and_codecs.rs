@@ -5,13 +5,13 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use cryptbox::{Codec, Field, FieldOnly, Padding, Plain, Raw, Secret, Utf8};
+use cryptbox::{Codec, FieldOnly, Padding, Plain, Raw, Seal, Secret, Utf8};
 use zeroize::Zeroize;
 
 struct ExampleField;
 
-impl Field for ExampleField {
-    const ID: cryptbox::FieldId = cryptbox::field_id!("7c1e6a52-0d3b-4f8e-9a61-2b5c4d7e8f90");
+impl Seal for ExampleField {
+    const ID: cryptbox::SealId = cryptbox::seal_id!("7c1e6a52-0d3b-4f8e-9a61-2b5c4d7e8f90");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;

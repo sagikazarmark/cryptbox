@@ -11,8 +11,8 @@ pub struct AddressCodec;
 pub struct HomeAddress;
 const _: () = {
     #[automatically_derived]
-    impl ::cryptbox::Field for HomeAddress {
-        const ID: ::cryptbox::FieldId = ::cryptbox::FieldId::from_u128(
+    impl ::cryptbox::Seal for HomeAddress {
+        const ID: ::cryptbox::SealId = ::cryptbox::SealId::from_u128(
             0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
@@ -28,8 +28,8 @@ const _: () = {
 pub struct FixedAddress;
 const _: () = {
     #[automatically_derived]
-    impl ::cryptbox::Field for FixedAddress {
-        const ID: ::cryptbox::FieldId = ::cryptbox::FieldId::from_u128(
+    impl ::cryptbox::Seal for FixedAddress {
+        const ID: ::cryptbox::SealId = ::cryptbox::SealId::from_u128(
             0x00000000_0000_4000_8000_000000000001,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::length(256usize);

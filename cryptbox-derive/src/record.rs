@@ -8,7 +8,7 @@ use crate::attr::{Attrs, Errors, IndexColumn, Key, required};
 
 const KEYS: &[Key] = &[Key::RecordId, Key::Sealed, Key::Attr, Key::Crate];
 
-const MEMBER_KEYS: &[Key] = &[Key::Field, Key::IndexColumns, Key::Plaintext];
+const MEMBER_KEYS: &[Key] = &[Key::Seal, Key::IndexColumns, Key::Plaintext];
 
 /// One struct field of the record, and how it is stored.
 struct Member<'a> {
@@ -18,9 +18,9 @@ struct Member<'a> {
     sealing: Option<Sealing>,
 }
 
-/// A member sealed as a cryptbox field, with the blind indexes it writes.
+/// A member sealed as a cryptbox seal, with the blind indexes it writes.
 struct Sealing {
-    field: Type,
+    seal: Type,
     indexes: Vec<IndexColumn>,
 }
 
@@ -75,7 +75,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let Some(first) = members.iter().find_map(|member| member.sealing.as_ref()) else {
         unreachable!("a record without sealed fields is reported above");
     };
-    let binding_field = &first.field;
+    let binding_seal = &first.seal;
     let record_ty = &members
         .iter()
         .find(|member| *member.ident == record)
@@ -110,7 +110,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #[automatically_derived]
             impl #krate::Record for #name {
                 type Sealed = #sealed_name;
-                type Binding = <#binding_field as #krate::Field>::Binding;
+                type Binding = <#binding_seal as #krate::Seal>::Binding;
 
                 #seal
 
@@ -160,16 +160,16 @@ fn parse_members<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Memb
         let Some(ident) = &decl.ident else { continue };
         let mut attrs = Attrs::parse(&decl.attrs, MEMBER_KEYS, errors);
 
-        let sealing = match (attrs.field.take(), attrs.plaintext) {
-            (Some(field), None) => Some(Sealing {
-                field,
+        let sealing = match (attrs.seal.take(), attrs.plaintext) {
+            (Some(seal), None) => Some(Sealing {
+                seal,
                 indexes: attrs.index_columns.take().unwrap_or_default(),
             }),
             (None, Some(span)) => {
                 if attrs.seen(Key::IndexColumns) {
                     errors.push(syn::Error::new(
                         span,
-                        "a `plaintext` field has no blind indexes: seal it with `field = F` to index it",
+                        "a `plaintext` field has no blind indexes: seal it with `seal = F` to index it",
                     ));
                 }
                 None
@@ -177,17 +177,17 @@ fn parse_members<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Memb
             (Some(_), Some(span)) => {
                 errors.push(syn::Error::new(
                     span,
-                    "a field is either sealed with `field = F` or `plaintext`, not both",
+                    "a field is either sealed with `seal = F` or `plaintext`, not both",
                 ));
                 continue;
             }
-            // A `field` key whose value was invalid is already reported.
-            (None, None) if attrs.seen(Key::Field) => continue,
+            // A `seal` key whose value was invalid is already reported.
+            (None, None) if attrs.seen(Key::Seal) => continue,
             (None, None) => {
                 errors.push(syn::Error::new(
                     ident.span(),
                     format!(
-                        "`{ident}` must say how it is stored: add `#[cryptbox(field = F)]` to seal it, \
+                        "`{ident}` must say how it is stored: add `#[cryptbox(seal = F)]` to seal it, \
                          or `#[cryptbox(plaintext)]` to store it as it is"
                     ),
                 ));
@@ -228,7 +228,7 @@ fn check_members(name: &Ident, record: &Ident, members: &[Member<'_>], errors: &
     if members.iter().all(|member| member.sealing.is_none()) {
         errors.push(syn::Error::new(
             name.span(),
-            "a record needs at least one sealed field: add `#[cryptbox(field = F)]` to one",
+            "a record needs at least one sealed field: add `#[cryptbox(seal = F)]` to one",
         ));
     }
 
@@ -274,7 +274,7 @@ fn sealed_struct(
         let forwarded = member.forwarded_attrs();
         let vis = &member.decl.vis;
         let ident = member.ident;
-        let Some(Sealing { field, indexes }) = &member.sealing else {
+        let Some(Sealing { seal, indexes }) = &member.sealing else {
             let ty = &member.decl.ty;
             return quote!(#(#forwarded)* #vis #ident: #ty,);
         };
@@ -292,7 +292,7 @@ fn sealed_struct(
             quote!(#[doc = #doc] #vis #column: #krate::BlindIndex<#spec>,)
         });
         quote! {
-            #(#forwarded)* #vis #ident: #krate::Sealed<#field>,
+            #(#forwarded)* #vis #ident: #krate::Sealed<#seal>,
             #(#indexes)*
         }
     });
@@ -309,7 +309,7 @@ fn sealed_struct(
 
 /// Asserts that a sealed field writes exactly the indexes its field declares.
 fn index_check(krate: &Path, member: &Member<'_>) -> Option<TokenStream> {
-    let Sealing { field, indexes } = member.sealing.as_ref()?;
+    let Sealing { seal, indexes } = member.sealing.as_ref()?;
     let ident = member.ident;
     let specs = indexes.iter().map(|index| &index.spec);
     let message = LitStr::new(
@@ -320,10 +320,10 @@ fn index_check(krate: &Path, member: &Member<'_>) -> Option<TokenStream> {
         ident.span(),
     );
 
-    Some(quote_spanned! {field.span()=>
+    Some(quote_spanned! {seal.span()=>
         const _: () = ::core::assert!(
             #krate::__private::writes_declared_indexes(
-                <<#field as #krate::Field>::Indexes as #krate::IndexList<#field>>::IDS,
+                <<#seal as #krate::Seal>::Indexes as #krate::IndexList<#seal>>::IDS,
                 &[#(<#specs as #krate::BlindIndexSpec>::ID),*],
             ),
             #message,
@@ -345,7 +345,7 @@ fn hygienic_at(name: &str, span: Span) -> Ident {
 
 /// `seal_<field>`: seals one field with its indexes, for a partial update.
 fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<TokenStream> {
-    let Sealing { field, indexes } = member.sealing.as_ref()?;
+    let Sealing { seal, indexes } = member.sealing.as_ref()?;
     let ident = member.ident;
     let vis = &member.decl.vis;
     let sealer = sealer_name(ident);
@@ -360,8 +360,8 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
                 "Seals `{ident}` alone under `binding` and the record ID `record`, for a partial update."
             ),
             quote!(#krate::EncryptionKeySource),
-            quote!(#krate::Sealed<#field>),
-            quote!(#krate::Sealed::<#field>::seal(#value, #args, #keys)),
+            quote!(#krate::Sealed<#seal>),
+            quote!(#krate::Sealed::<#seal>::seal(#value, #args, #keys)),
         )
     } else {
         let locals: Vec<_> = indexes
@@ -374,9 +374,9 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
                  indexes it stores, for a partial update."
             ),
             quote!(#krate::EncryptionKeySource + #krate::BlindIndexKeySource),
-            quote!((#krate::Sealed<#field>, #(#krate::BlindIndex<#specs>),*)),
+            quote!((#krate::Sealed<#seal>, #(#krate::BlindIndex<#specs>),*)),
             quote! {
-                let #prepared = #krate::Sealed::<#field>::prepare(#value, #args, #keys)?
+                let #prepared = #krate::Sealed::<#seal>::prepare(#value, #args, #keys)?
                     #(.with_index_with::<#specs>(#keys)?)*;
                 #(let #locals = #prepared.index::<#specs>()?.to_blind_index();)*
 
@@ -388,8 +388,8 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
     Some(quote! {
         #[doc = #doc]
         #vis fn #sealer<K>(
-            #value: &<#field as #krate::Field>::Value,
-            #binding: &<#field as #krate::Field>::Binding,
+            #value: &<#seal as #krate::Seal>::Value,
+            #binding: &<#seal as #krate::Seal>::Binding,
             #record: &#record_ty,
             #keys: &K,
         ) -> ::core::result::Result<#output, #krate::Error>
@@ -415,13 +415,13 @@ fn seal_fn(
     let [binding, keys] = ["binding", "keys"].map(hygienic);
 
     let seals = members.iter().filter_map(|member| {
-        let Sealing { field, indexes } = member.sealing.as_ref()?;
+        let Sealing { seal, indexes } = member.sealing.as_ref()?;
         let ident = member.ident;
         let sealer = sealer_name(ident);
         let columns = indexes.iter().map(|index| &index.column);
-        let binding = hygienic_at("binding", field.span());
+        let binding = hygienic_at("binding", seal.span());
         // Spanned on the field, so a field of another binding is reported there.
-        let call = quote_spanned! {field.span()=>
+        let call = quote_spanned! {seal.span()=>
             Self::#sealer(&self.#ident, #binding, &self.#record, #keys)?
         };
 
@@ -470,13 +470,13 @@ fn open_fn(
         ["sealed", "binding", "keys", "record_id"].map(hygienic);
 
     let opens = members.iter().filter_map(|member| {
-        let Sealing { field, .. } = member.sealing.as_ref()?;
+        let Sealing { seal, .. } = member.sealing.as_ref()?;
         let ident = member.ident;
-        let binding = hygienic_at("binding", field.span());
+        let binding = hygienic_at("binding", seal.span());
         // Naming the field's binding reports a field of another binding here.
-        Some(quote_spanned! {field.span()=>
+        Some(quote_spanned! {seal.span()=>
             let #ident = #sealed.#ident.open(
-                #krate::InRecord::<<#field as #krate::Field>::Binding>(#binding, #record_id),
+                #krate::InRecord::<<#seal as #krate::Seal>::Binding>(#binding, #record_id),
                 #keys,
             )?;
         })
@@ -524,7 +524,7 @@ fn indexed_by<'a>(
             impl #krate::IndexedBy<#spec> for #name {
                 fn indexed_value(
                     &self,
-                ) -> &<<#spec as #krate::BlindIndexSpec>::Field as #krate::Field>::Value {
+                ) -> &<<#spec as #krate::BlindIndexSpec>::Seal as #krate::Seal>::Value {
                     &self.#ident
                 }
             }

@@ -118,7 +118,7 @@ authenticates and decodes, returning the bare `String`. Sealing borrows the
 original plaintext, and no global keys are installed: `keys` supplies the
 key explicitly.
 
-Field binding identifies a logical field, not a row or tenant. Preserve the field
+Seal binding identifies a logical field, not a row or tenant. Preserve the field
 ID, codec compatibility, and binding choices with your stored data; see
 [persistent schema](../../docs/integration.md#persistent-schema).
 

@@ -2,16 +2,16 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring,
-    BlindIndexSpec, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId,
-    InRecord, IndexId, Keys, Padding, Record, RecordId, Sealed, Tenant, TenantId, Utf8,
+    BlindIndexSpec, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, InRecord,
+    IndexId, Keys, Padding, Record, RecordId, Seal, SealId, Sealed, Tenant, TenantId, Utf8,
 };
 use zeroize::Zeroizing;
 
 /// A customer's email, bound to its tenant and record.
 struct CustomerEmail;
 
-impl Field for CustomerEmail {
-    const ID: FieldId = cryptbox::field_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
+impl Seal for CustomerEmail {
+    const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = true;
     type Value = String;
@@ -23,8 +23,8 @@ impl Field for CustomerEmail {
 /// A customer's note, bound to its tenant only.
 struct CustomerNote;
 
-impl Field for CustomerNote {
-    const ID: FieldId = cryptbox::field_id!("0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38");
+impl Seal for CustomerNote {
+    const ID: SealId = cryptbox::seal_id!("0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -37,7 +37,7 @@ impl Field for CustomerNote {
 struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
-    type Field = CustomerEmail;
+    type Seal = CustomerEmail;
     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
     const BITS: u16 = 1;
     const NORMALIZER: &'static str = "email/1";
@@ -268,9 +268,9 @@ mod derived {
     struct DerivedCustomer {
         #[cryptbox(plaintext)]
         id: i64,
-        #[cryptbox(field = CustomerEmail, index(EmailLookup as email_lookup))]
+        #[cryptbox(seal = CustomerEmail, index(EmailLookup as email_lookup))]
         email: String,
-        #[cryptbox(field = CustomerNote)]
+        #[cryptbox(seal = CustomerNote)]
         note: String,
     }
 
@@ -396,10 +396,10 @@ mod sqlite {
     struct StoredCustomer {
         #[cryptbox(plaintext)]
         id: i64,
-        #[cryptbox(field = CustomerEmail, index(EmailLookup as email_lookup))]
+        #[cryptbox(seal = CustomerEmail, index(EmailLookup as email_lookup))]
         #[sqlx(rename = "EMAIL_CIPHERTEXT")]
         email: String,
-        #[cryptbox(field = CustomerNote)]
+        #[cryptbox(seal = CustomerNote)]
         note: String,
     }
 

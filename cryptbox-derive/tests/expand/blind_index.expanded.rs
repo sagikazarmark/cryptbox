@@ -4,8 +4,8 @@ use zeroize::Zeroizing;
 pub struct UserEmail;
 const _: () = {
     #[automatically_derived]
-    impl ::cryptbox::Field for UserEmail {
-        const ID: ::cryptbox::FieldId = ::cryptbox::FieldId::from_u128(
+    impl ::cryptbox::Seal for UserEmail {
+        const ID: ::cryptbox::SealId = ::cryptbox::SealId::from_u128(
             0xca274e85_63c4_4f7d_a255_2dfecbfe5e25,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
@@ -21,7 +21,7 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 #[cryptbox(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-    field = UserEmail,
+    seal = UserEmail,
     bits = 32,
     query = str,
     normalize = normalize_email,
@@ -31,7 +31,7 @@ pub struct EmailLookup;
 const _: () = {
     #[automatically_derived]
     impl ::cryptbox::BlindIndexSpec for EmailLookup {
-        type Field = UserEmail;
+        type Seal = UserEmail;
         const ID: ::cryptbox::IndexId = ::cryptbox::IndexId::from_u128(
             0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53,
         );
@@ -47,7 +47,7 @@ const _: () = {
             normalize_email(query)
         }
         fn normalize_value(
-            value: &<UserEmail as ::cryptbox::Field>::Value,
+            value: &<UserEmail as ::cryptbox::Seal>::Value,
         ) -> ::core::result::Result<
             ::cryptbox::__private::Zeroizing<::std::vec::Vec<u8>>,
             ::cryptbox::BlindIndexError,

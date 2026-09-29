@@ -1,14 +1,14 @@
 //! Public-boundary tests for golden-bytes encoding fixtures.
 
 use cryptbox::{
-    Codec, CodecError, Field, FieldId, FieldOnly, Padding, Utf8, field_id, testing::assert_encoding,
+    Codec, CodecError, FieldOnly, Padding, Seal, SealId, Utf8, seal_id, testing::assert_encoding,
 };
 use zeroize::Zeroizing;
 
 struct Nickname;
 
-impl Field for Nickname {
-    const ID: FieldId = field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
+impl Seal for Nickname {
+    const ID: SealId = seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -45,8 +45,8 @@ impl Codec<String> for DriftingCodec {
 
 struct DriftingNickname;
 
-impl Field for DriftingNickname {
-    const ID: FieldId = field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
+impl Seal for DriftingNickname {
+    const ID: SealId = seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -63,7 +63,7 @@ fn fixture_that_decodes_to_another_value_fails() {
 
 #[cfg(feature = "json")]
 mod json {
-    use cryptbox::{Field, FieldId, FieldOnly, Json, Padding, field_id, testing::assert_encoding};
+    use cryptbox::{FieldOnly, Json, Padding, Seal, SealId, seal_id, testing::assert_encoding};
     use serde::{Deserialize, Serialize};
 
     // The committed fixture for `{"postal_code":"1010"}`, written before the
@@ -88,8 +88,8 @@ mod json {
 
     struct HomeAddressBefore;
 
-    impl Field for HomeAddressBefore {
-        const ID: FieldId = field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
+    impl Seal for HomeAddressBefore {
+        const ID: SealId = seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
         const PADDING: Padding = Padding::NONE;
         const RECORD: bool = false;
         type Value = before::Address;
@@ -100,8 +100,8 @@ mod json {
 
     struct HomeAddress;
 
-    impl Field for HomeAddress {
-        const ID: FieldId = field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
+    impl Seal for HomeAddress {
+        const ID: SealId = seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
         const PADDING: Padding = Padding::NONE;
         const RECORD: bool = false;
         type Value = Address;
@@ -131,8 +131,8 @@ mod json {
 
     struct Latitude;
 
-    impl Field for Latitude {
-        const ID: FieldId = field_id!("6b1e0d2f-4c3a-4f85-a7d6-1e9c8b0a2f47");
+    impl Seal for Latitude {
+        const ID: SealId = seal_id!("6b1e0d2f-4c3a-4f85-a7d6-1e9c8b0a2f47");
         const PADDING: Padding = Padding::NONE;
         const RECORD: bool = false;
         type Value = f64;

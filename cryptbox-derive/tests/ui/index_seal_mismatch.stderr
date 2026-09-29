@@ -1,11 +1,11 @@
 error[E0308]: mismatched types
-  --> tests/ui/index_field_mismatch.rs:15:13
+  --> tests/ui/index_seal_mismatch.rs:15:12
    |
 12 | #[derive(cryptbox::BlindIndexSpec)]
    |          ------------------------ in this derive macro expansion
 ...
-15 |     field = ApiToken,
-   |             ^^^^^^^^ expected `&str`, found `&Vec<u8>`
+15 |     seal = ApiToken,
+   |            ^^^^^^^^ expected `&str`, found `&Vec<u8>`
 ...
 18 |     normalize = normalize_email,
    |                 --------------- arguments to this function are incorrect
@@ -13,7 +13,7 @@ error[E0308]: mismatched types
    = note: expected reference `&str`
               found reference `&Vec<u8>`
 note: function defined here
-  --> tests/ui/index_field_mismatch.rs:8:4
+  --> tests/ui/index_seal_mismatch.rs:8:4
    |
  8 | fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
    |    ^^^^^^^^^^^^^^^ -----------

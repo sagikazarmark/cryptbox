@@ -1,7 +1,7 @@
 //! Test helpers that pin persistent schema to committed fixtures and check
 //! which keyring protects a value.
 
-use crate::{Codec, EncryptionKeyring, Field, Sealed};
+use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 
 /// Asserts that field `F` encodes `value` as exactly the hex bytes in `expected`,
 /// and decodes those bytes back to a value that encodes identically.
@@ -21,12 +21,12 @@ use crate::{Codec, EncryptionKeyring, Field, Sealed};
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Utf8, testing::assert_encoding};
+/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Utf8, testing::assert_encoding};
 ///
 /// struct Nickname;
 ///
-/// impl Field for Nickname {
-///     const ID: FieldId = cryptbox::field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
+/// impl Seal for Nickname {
+///     const ID: SealId = cryptbox::seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -45,7 +45,7 @@ use crate::{Codec, EncryptionKeyring, Field, Sealed};
 /// encodes differently. The message includes the actual bytes in hex, so use
 /// synthetic values, never production data.
 #[track_caller]
-pub fn assert_encoding<F: Field>(value: &F::Value, expected: &str) {
+pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
     let expected = hex::decode(expected).expect("fixture must be hex");
 
     let encoded = F::Codec::encode(value).expect("value must encode");
@@ -86,14 +86,14 @@ pub fn assert_encoding<F: Field>(value: &F::Value, expected: &str) {
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId, FieldOnly,
+///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId, FieldOnly,
 ///     KeyScope, Padding, Sealed, Utf8, testing::assert_sealed_under,
 /// };
 ///
 /// struct Iban;
 ///
-/// impl Field for Iban {
-///     const ID: FieldId = cryptbox::field_id!("50000000-0000-4000-8000-000000000005");
+/// impl Seal for Iban {
+///     const ID: SealId = cryptbox::seal_id!("50000000-0000-4000-8000-000000000005");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -109,8 +109,8 @@ pub fn assert_encoding<F: Field>(value: &F::Value, expected: &str) {
 /// }
 ///
 /// impl EncryptionKeySource for AppKeys {
-///     fn encryption_keyring(&self, field: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
-///         Ok(if field == Iban::ID { self.payments.clone() } else { self.general.clone() })
+///     fn encryption_keyring(&self, seal: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+///         Ok(if seal == Iban::ID { self.payments.clone() } else { self.general.clone() })
 ///     }
 /// }
 ///
@@ -130,11 +130,11 @@ pub fn assert_encoding<F: Field>(value: &F::Value, expected: &str) {
 /// Panics when `keyring` does not hold the key that `sealed` names. The message
 /// includes the field ID and the key ID, never the value.
 #[track_caller]
-pub fn assert_sealed_under<F: Field>(sealed: &Sealed<F>, keyring: &EncryptionKeyring) {
+pub fn assert_sealed_under<F: Seal>(sealed: &Sealed<F>, keyring: &EncryptionKeyring) {
     let key = sealed.key_id();
     assert!(
         keyring.get(key).is_some(),
-        "field {} is sealed under key {key}, which the keyring does not hold",
+        "seal {} is sealed under key {key}, which the keyring does not hold",
         F::ID,
     );
 }

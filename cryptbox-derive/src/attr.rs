@@ -15,7 +15,7 @@ pub(crate) enum Key {
     Value,
     Codec,
     Padding,
-    Field,
+    Seal,
     Bits,
     Query,
     Normalize,
@@ -42,7 +42,7 @@ impl Key {
         Self::Value,
         Self::Codec,
         Self::Padding,
-        Self::Field,
+        Self::Seal,
         Self::Bits,
         Self::Query,
         Self::Normalize,
@@ -69,7 +69,7 @@ impl Key {
             Self::Value => "value",
             Self::Codec => "codec",
             Self::Padding => "padding",
-            Self::Field => "field",
+            Self::Seal => "seal",
             Self::Bits => "bits",
             Self::Query => "query",
             Self::Normalize => "normalize",
@@ -159,7 +159,7 @@ pub(crate) struct Attrs {
     pub(crate) value: Option<Type>,
     pub(crate) codec: Option<Type>,
     pub(crate) padding: Option<Padding>,
-    pub(crate) field: Option<Type>,
+    pub(crate) seal: Option<Type>,
     pub(crate) bits: Option<LitInt>,
     pub(crate) query: Option<Type>,
     pub(crate) normalize: Option<Path>,
@@ -274,7 +274,7 @@ impl Attrs {
             Key::Value => self.value = Some(input.parse()?),
             Key::Codec => self.codec = Some(input.parse()?),
             Key::Padding => self.padding = Some(parse_padding(input)?),
-            Key::Field => self.field = Some(input.parse()?),
+            Key::Seal => self.seal = Some(input.parse()?),
             Key::Bits => self.bits = Some(parse_bits(input)?),
             Key::Query => self.query = Some(input.parse()?),
             Key::Normalize => self.normalize = Some(input.parse()?),
@@ -475,7 +475,7 @@ fn parse_uuid(key: Key, input: ParseStream) -> syn::Result<UuidLiteral> {
     })
 }
 
-/// Parses the hyphenated form `cryptbox::FieldId::from_str` accepts.
+/// Parses the hyphenated form `cryptbox::SealId::from_str` accepts.
 fn uuid_value(text: &str) -> Option<u128> {
     let bytes = text.as_bytes();
     if bytes.len() != 36 {

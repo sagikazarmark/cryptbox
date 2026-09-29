@@ -3,9 +3,9 @@
 
 use cryptbox::{
     Binding, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, FromIndexValues,
-    IndexId, IndexKeyId, IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue,
-    PartValues, Plaintext, RecordId, Sealed, Utf8, field_id, index_id, index_key_id, part_id,
+    CodecErrorKind, EncryptionKey, EncryptionKeyring, FieldOnly, FromIndexValues, IndexId,
+    IndexKeyId, IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues,
+    Plaintext, RecordId, Seal, SealId, Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -13,20 +13,20 @@ fn keyring() -> EncryptionKeyring {
     EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap()
 }
 
-fn assert_codec<F: Field<Codec = C>, C>() {}
+fn assert_codec<F: Seal<Codec = C>, C>() {}
 
-fn assert_value<F: Field<Value = V>, V>() {}
+fn assert_value<F: Seal<Value = V>, V>() {}
 
 /// Primary contact address.
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 struct UserEmail;
 
 /// The manual equivalent of [`UserEmail`].
 struct ManualUserEmail;
 
-impl Field for ManualUserEmail {
-    const ID: FieldId = field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+impl Seal for ManualUserEmail {
+    const ID: SealId = seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -39,7 +39,7 @@ impl Field for ManualUserEmail {
 fn a_derived_field_declares_its_id_value_and_default_codec_without_padding() {
     assert_eq!(
         UserEmail::ID,
-        field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25")
+        seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25")
     );
     assert_eq!(UserEmail::PADDING, Padding::NONE);
     assert_value::<UserEmail, String>();
@@ -95,7 +95,7 @@ fn address() -> Address {
     }
 }
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(
     id = "5D2E8A17-4C6B-4F93-8E0A-7B1C9D3F6A25",
     value = Address,
@@ -104,7 +104,7 @@ fn address() -> Address {
 )]
 struct BillingAddress;
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(id = "5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25")]
 #[cryptbox(value = Address, codec = AddressCodec, padding = length(64usize))]
 struct FixedBillingAddress;
@@ -113,7 +113,7 @@ struct FixedBillingAddress;
 fn a_derived_field_uses_its_named_codec_and_padding() {
     assert_eq!(
         BillingAddress::ID,
-        field_id!("5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25")
+        seal_id!("5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25")
     );
     assert_eq!(BillingAddress::PADDING, Padding::block(16));
     assert_value::<BillingAddress, Address>();
@@ -146,7 +146,7 @@ fn normalize_text(text: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 #[derive(BlindIndexSpec)]
 #[cryptbox(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-    field = UserEmail,
+    seal = UserEmail,
     bits = 32,
     query = str,
     normalize = normalize_text,
@@ -158,7 +158,7 @@ struct EmailLookup;
 struct ManualEmailLookup;
 
 impl BlindIndexSpec for ManualEmailLookup {
-    type Field = ManualUserEmail;
+    type Seal = ManualUserEmail;
     const ID: IndexId = index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "text/1";
@@ -202,7 +202,7 @@ fn street(address: &Address) -> &str {
 #[derive(BlindIndexSpec)]
 #[cryptbox(
     id = "3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64",
-    field = BillingAddress,
+    seal = BillingAddress,
     bits = 64,
     query = str,
     normalize = normalize_text,
@@ -215,7 +215,7 @@ struct StreetLookup;
 struct ManualStreetLookup;
 
 impl BlindIndexSpec for ManualStreetLookup {
-    type Field = BillingAddress;
+    type Seal = BillingAddress;
     const ID: IndexId = index_id!("3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64");
     const BITS: u16 = 64;
     const NORMALIZER: &'static str = "street/1";
@@ -250,7 +250,7 @@ fn a_projected_blind_index_normalizes_part_of_the_value() {
 #[derive(Debug, PartialEq, cryptbox::Plaintext)]
 struct Email(String);
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = Email)]
 struct TypedUserEmail;
 
@@ -313,7 +313,7 @@ mod renamed {
     pub use cryptbox as encryption;
 }
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(
     crate = "renamed::encryption",
     id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
@@ -400,7 +400,7 @@ fn a_derived_binding_declares_its_parts_sorted_by_part_id() {
     assert_eq!(OrgProject::PARTS, ManualOrgProject::PARTS);
 }
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(
     id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",
     value = String,
@@ -412,8 +412,8 @@ struct ProjectNote;
 /// The manual equivalent of [`ProjectNote`].
 struct ManualProjectNote;
 
-impl Field for ManualProjectNote {
-    const ID: FieldId = field_id!("7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c");
+impl Seal for ManualProjectNote {
+    const ID: SealId = seal_id!("7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = true;
     type Value = String;
@@ -464,7 +464,7 @@ fn derived_index_args_share_the_bindings_key_scope() {
     );
 }
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(
     id = "4b8e2d6f-1a3c-4e57-b9d0-6f2a4c8e1b35",
     value = String,
@@ -476,7 +476,7 @@ struct ProjectEmail;
 #[derive(BlindIndexSpec)]
 #[cryptbox(
     id = "9c1e5a3d-7f2b-4d48-a6e0-3b5d9f1c7e24",
-    field = ProjectEmail,
+    seal = ProjectEmail,
     bits = 32,
     query = str,
     normalize = normalize_text,
@@ -487,7 +487,7 @@ struct ProjectEmailLookup;
 #[test]
 fn a_derived_field_declares_its_blind_indexes() {
     assert_eq!(
-        <<ProjectEmail as Field>::Indexes as IndexList<ProjectEmail>>::IDS,
+        <<ProjectEmail as Seal>::Indexes as IndexList<ProjectEmail>>::IDS,
         [index_id!("9c1e5a3d-7f2b-4d48-a6e0-3b5d9f1c7e24")]
     );
 }

@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use crate::{BlindIndexKeyring, EncryptionKeyring, Error, FieldId, IndexId, KeyScope, Keys};
+use crate::{BlindIndexKeyring, EncryptionKeyring, Error, IndexId, KeyScope, Keys, SealId};
 
 /// Supplies the encryption keyring for each operation.
 ///
@@ -26,14 +26,14 @@ use crate::{BlindIndexKeyring, EncryptionKeyring, Error, FieldId, IndexId, KeySc
     "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
 )]
 pub trait EncryptionKeySource: Send + Sync {
-    /// Returns the keyring that protects `field` in `scope`.
+    /// Returns the keyring that protects `seal` in `scope`.
     ///
     /// # Errors
     ///
     /// Returns an error when this source cannot supply that keyring.
     fn encryption_keyring(
         &self,
-        field: FieldId,
+        seal: SealId,
         scope: &KeyScope,
     ) -> Result<EncryptionKeyring, Error>;
 }
@@ -63,7 +63,7 @@ pub trait BlindIndexKeySource: Send + Sync {
 }
 
 impl EncryptionKeySource for EncryptionKeyring {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
         Ok(self.clone())
     }
 }
@@ -75,7 +75,7 @@ impl BlindIndexKeySource for BlindIndexKeyring {
 }
 
 impl EncryptionKeySource for Keys {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
         Ok(self.encryption.clone())
     }
 }
@@ -91,10 +91,10 @@ impl BlindIndexKeySource for Keys {
 impl<S: EncryptionKeySource + ?Sized> EncryptionKeySource for &S {
     fn encryption_keyring(
         &self,
-        field: FieldId,
+        seal: SealId,
         scope: &KeyScope,
     ) -> Result<EncryptionKeyring, Error> {
-        (**self).encryption_keyring(field, scope)
+        (**self).encryption_keyring(seal, scope)
     }
 }
 
@@ -111,10 +111,10 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for &S {
 impl<S: EncryptionKeySource + ?Sized> EncryptionKeySource for Arc<S> {
     fn encryption_keyring(
         &self,
-        field: FieldId,
+        seal: SealId,
         scope: &KeyScope,
     ) -> Result<EncryptionKeyring, Error> {
-        (**self).encryption_keyring(field, scope)
+        (**self).encryption_keyring(seal, scope)
     }
 }
 
@@ -144,14 +144,14 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
 /// use std::sync::LazyLock;
 ///
 /// use cryptbox::{
-///     EncryptionKey, EncryptionKeyring, Error, Field, FieldId, FieldOnly, ColumnKeys, Keys,
+///     EncryptionKey, EncryptionKeyring, Error, Seal, SealId, FieldOnly, ColumnKeys, Keys,
 ///     Padding, Plain, Utf8,
 /// };
 ///
 /// struct UserEmail;
 ///
-/// impl Field for UserEmail {
-///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// impl Seal for UserEmail {
+///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;

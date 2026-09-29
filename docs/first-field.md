@@ -10,7 +10,7 @@ To run the complete example from a checkout:
 cargo run --locked --example first_field
 ```
 
-Expect `Field-bound round trip succeeded.` To build it yourself, follow the two
+Expect `Seal-bound round trip succeeded.` To build it yourself, follow the two
 steps below using the same source.
 
 ## 1. Create a consumer project
@@ -48,13 +48,13 @@ Replace `src/main.rs` with this [example](../examples/first_field.rs).
 
 ```rust
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, Padding, Sealed, Utf8,
+    EncryptionKey, EncryptionKeyring, Seal, SealId, FieldOnly, Padding, Sealed, Utf8,
 };
 
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+impl Seal for UserEmail {
+    const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -71,7 +71,7 @@ fn main() -> Result<(), cryptbox::Error> {
     let opened = sealed.open((), &keys)?;
     assert_eq!(opened, "mark@example.com");
     assert_eq!(email, "mark@example.com"); // Source retained.
-    println!("Field-bound round trip succeeded.");
+    println!("Seal-bound round trip succeeded.");
     Ok(())
 }
 ```
@@ -82,7 +82,7 @@ fn main() -> Result<(), cryptbox::Error> {
 cargo run
 ```
 
-Expect `Field-bound round trip succeeded.` and exit status 0.
+Expect `Seal-bound round trip succeeded.` and exit status 0.
 
 ### What just happened?
 

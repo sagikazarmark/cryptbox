@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, ColumnKeys, EncryptionKey,
-    EncryptionKeyring, Error, Field, FieldOnly, IndexId, KeyId, Keys, Padding, Plain, Sealed, Utf8,
+    EncryptionKeyring, Error, FieldOnly, IndexId, KeyId, Keys, Padding, Plain, Seal, Sealed, Utf8,
     index_id, key_id, keys,
 };
 use sqlx::{
@@ -33,8 +33,8 @@ impl ColumnKeys for TestKeys {
 
 struct TestField;
 
-impl Field for TestField {
-    const ID: cryptbox::FieldId = cryptbox::field_id!("4e2d8b17-6c3a-4f95-8b0e-1a7c9d3f5e26");
+impl Seal for TestField {
+    const ID: cryptbox::SealId = cryptbox::seal_id!("4e2d8b17-6c3a-4f95-8b0e-1a7c9d3f5e26");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -46,7 +46,7 @@ impl Field for TestField {
 struct IndexSpec;
 
 impl BlindIndexSpec for IndexSpec {
-    type Field = TestField;
+    type Seal = TestField;
     const ID: IndexId = index_id!("d0000000-0000-4000-8000-00000000000d");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";

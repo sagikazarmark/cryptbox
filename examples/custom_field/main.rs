@@ -5,8 +5,8 @@ use std::sync::{PoisonError, RwLock};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId,
-    FieldOnly, KeyScope, Padding, Sealed, Secret,
+    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldOnly,
+    KeyScope, Padding, Seal, SealId, Sealed, Secret,
 };
 use zeroize::Zeroizing;
 
@@ -46,8 +46,8 @@ impl Codec<Secret<String>> for HandleCodec {
 // (plain UTF-8) would store the same bytes but skip the handle policy.
 struct Handle;
 
-impl Field for Handle {
-    const ID: FieldId = cryptbox::field_id!("dcaa3c69-1767-49a1-8476-36555eaf54bf");
+impl Seal for Handle {
+    const ID: SealId = cryptbox::seal_id!("dcaa3c69-1767-49a1-8476-36555eaf54bf");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Secret<String>;
@@ -59,7 +59,7 @@ impl Field for Handle {
 struct HandleEquality;
 
 impl BlindIndexSpec for HandleEquality {
-    type Field = Handle;
+    type Seal = Handle;
     const ID: cryptbox::IndexId = cryptbox::index_id!("6c0e20d5-cb30-4b84-8dd1-995f872b417c");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "handle-lowercase/1";
@@ -103,7 +103,7 @@ impl CachedEncryptionKeys {
 }
 
 impl EncryptionKeySource for CachedEncryptionKeys {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
         // Cloning shares the keys; it does not copy key material.
         self.snapshot
             .read()
@@ -240,19 +240,19 @@ mod tests {
 
         assert_encoding::<Handle>(&Secret::new("Alice-7".to_owned()), "416c6963652d37");
 
-        let manifest = Manifest::new().field::<Handle>().index::<HandleEquality>();
+        let manifest = Manifest::new().seal::<Handle>().index::<HandleEquality>();
         assert!(manifest.duplicates().is_empty());
         assert_eq!(
             manifest.to_string(),
             "\
-field dcaa3c69-1767-49a1-8476-36555eaf54bf
+seal dcaa3c69-1767-49a1-8476-36555eaf54bf
   codec: handle/1
   padding: none
   record: no
   binding: 5d86321261d64380
   shred unit: keyring
 index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
-  field: dcaa3c69-1767-49a1-8476-36555eaf54bf
+  seal: dcaa3c69-1767-49a1-8476-36555eaf54bf
   bits: 128
   normalizer: handle-lowercase/1
 "
@@ -263,8 +263,8 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
     fn an_opened_string_can_be_moved_into_secret() -> Result<(), cryptbox::Error> {
         struct PlainHandle;
 
-        impl Field for PlainHandle {
-            const ID: FieldId = Handle::ID;
+        impl Seal for PlainHandle {
+            const ID: SealId = Handle::ID;
             const PADDING: Padding = Padding::NONE;
             const RECORD: bool = false;
             type Value = String;

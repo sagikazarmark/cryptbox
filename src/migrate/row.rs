@@ -4,7 +4,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     Binding, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, Field, FieldOnly, IndexKeyId, KeyScope, RecordId,
+    EncryptionKeySource, Error, FieldOnly, IndexKeyId, KeyScope, RecordId, Seal,
     binding::declaration_fingerprint,
     blind::{current_key_id, derive_value},
     bound, inspect_blind_index, inspect_ciphertext,
@@ -108,7 +108,7 @@ impl RowOutcome {
 /// closure builds from the row's columns.
 ///
 /// It holds the row's binding and, for a field that declares
-/// [`Field::RECORD`], its record ID. A record passed to a field that binds
+/// [`Seal::RECORD`], its record ID. A record passed to a field that binds
 /// none, or omitted for a field that binds one, fails planning with
 /// [`Error::InvalidBinding`].
 ///
@@ -142,15 +142,15 @@ impl<'r, B: Binding> RowArgs<'r, B> {
 }
 
 type RowArgsFn<'a, F, R> =
-    Box<dyn for<'r> Fn(&'r R) -> Result<RowArgs<'r, <F as Field>::Binding>, Error> + 'a>;
+    Box<dyn for<'r> Fn(&'r R) -> Result<RowArgs<'r, <F as Seal>::Binding>, Error> + 'a>;
 
 type IndexDeriver<F> =
-    fn(&<F as Field>::Value, &BindingDomain, &dyn BlindIndexKeySource) -> Result<Vec<u8>, Error>;
+    fn(&<F as Seal>::Value, &BindingDomain, &dyn BlindIndexKeySource) -> Result<Vec<u8>, Error>;
 
 type CurrentIndexKey = fn(&BindingDomain, &dyn BlindIndexKeySource) -> Result<IndexKeyId, Error>;
 
 fn derive_index_bytes<Spec: BlindIndexSpec>(
-    value: &<Spec::Field as Field>::Value,
+    value: &<Spec::Seal as Seal>::Value,
     domain: &BindingDomain,
     keys: &dyn BlindIndexKeySource,
 ) -> Result<Vec<u8>, Error> {
@@ -159,7 +159,7 @@ fn derive_index_bytes<Spec: BlindIndexSpec>(
 
 struct IndexColumn<'a, F>
 where
-    F: Field,
+    F: Seal,
 {
     deriver: IndexDeriver<F>,
     current_key: CurrentIndexKey,
@@ -169,7 +169,7 @@ where
 /// An older binding declaration whose rows the planner reseals, and its keys.
 struct LegacyDeclaration<'a, F>
 where
-    F: Field,
+    F: Seal,
 {
     /// The declaration's fingerprint without a record.
     unrecorded: [u8; 8],
@@ -220,7 +220,7 @@ const fn check_no_record(record: bool) {
 /// opened under it and resealed under the current one.
 pub struct RowPlanner<'a, F, R = ()>
 where
-    F: Field,
+    F: Seal,
 {
     keys: &'a dyn EncryptionKeySource,
     scope: KeyScope,
@@ -232,7 +232,7 @@ where
 
 impl<'a, F, R> RowPlanner<'a, F, R>
 where
-    F: Field<Binding = FieldOnly>,
+    F: Seal<Binding = FieldOnly>,
 {
     /// Creates a planner for a [`FieldOnly`] field `F` without a record and an
     /// encryption key source.
@@ -247,7 +247,7 @@ where
 
 impl<'a, F, R> RowPlanner<'a, F, R>
 where
-    F: Field,
+    F: Seal,
 {
     /// Creates a planner for the rows of one key scope of field `F`.
     ///
@@ -321,15 +321,15 @@ where
     ///
     /// ```compile_fail,E0271
     /// use cryptbox::{
-    ///     BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId,
+    ///     BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId,
     ///     BlindIndexKeyring, EncryptionKeyring, Padding, Utf8, migrate::RowPlanner,
     /// };
     /// use zeroize::Zeroizing;
     ///
     /// struct UserEmail;
     ///
-    /// impl Field for UserEmail {
-    ///     const ID: FieldId = FieldId::from_bytes([1; 16]);
+    /// impl Seal for UserEmail {
+    ///     const ID: SealId = SealId::from_bytes([1; 16]);
     ///     const PADDING: Padding = Padding::NONE;
     ///     const RECORD: bool = false;
     ///     type Value = String;
@@ -340,8 +340,8 @@ where
     ///
     /// struct InviteEmail;
     ///
-    /// impl Field for InviteEmail {
-    ///     const ID: FieldId = FieldId::from_bytes([2; 16]);
+    /// impl Seal for InviteEmail {
+    ///     const ID: SealId = SealId::from_bytes([2; 16]);
     ///     const PADDING: Padding = Padding::NONE;
     ///     const RECORD: bool = false;
     ///     type Value = String;
@@ -353,7 +353,7 @@ where
     /// struct InviteEmailLookup;
     ///
     /// impl BlindIndexSpec for InviteEmailLookup {
-    ///     type Field = InviteEmail;
+    ///     type Seal = InviteEmail;
     ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
     ///     const BITS: u16 = 32;
     ///     const NORMALIZER: &'static str = "exact/1";
@@ -378,7 +378,7 @@ where
     #[must_use]
     pub fn with_index_with<Spec>(mut self, keys: &'a dyn BlindIndexKeySource) -> Self
     where
-        Spec: BlindIndexSpec<Field = F>,
+        Spec: BlindIndexSpec<Seal = F>,
     {
         self.indexes.push(IndexColumn {
             deriver: derive_index_bytes::<Spec>,
@@ -641,7 +641,7 @@ where
 
 impl<F> IndexColumn<'_, F>
 where
-    F: Field,
+    F: Seal,
 {
     fn is_stale(&self, bytes: &[u8], domain: &BindingDomain) -> Result<bool, Error> {
         Ok(inspect_blind_index(bytes)?.index_key_id() != (self.current_key)(domain, self.keys)?)
@@ -654,7 +654,7 @@ where
 
 impl<F, R> fmt::Debug for RowPlanner<'_, F, R>
 where
-    F: Field,
+    F: Seal,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter

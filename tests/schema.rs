@@ -1,17 +1,18 @@
 //! Public-boundary tests for the schema manifest and unique-ID checks.
 
 use cryptbox::{
-    Binding, BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, Field, FieldId,
-    FieldOnly, IndexId, Padding, PartKind, PartSpec, PartValue, PartValues, Raw, RecordId, Sealed,
-    Tenant, Utf8, field_id, index_id, inspect_ciphertext, part_id,
+    Binding, BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, FieldOnly, IndexId,
+    Padding, PartKind, PartSpec, PartValue, PartValues, Raw, RecordId, Seal, SealId, Sealed,
+    Tenant, Utf8, index_id, inspect_ciphertext, part_id,
     schema::{Duplicate, Manifest},
+    seal_id,
 };
 use zeroize::Zeroizing;
 
 struct Nickname;
 
-impl Field for Nickname {
-    const ID: FieldId = field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
+impl Seal for Nickname {
+    const ID: SealId = seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -22,8 +23,8 @@ impl Field for Nickname {
 
 struct Avatar;
 
-impl Field for Avatar {
-    const ID: FieldId = field_id!("9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e");
+impl Seal for Avatar {
+    const ID: SealId = seal_id!("9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e");
     const PADDING: Padding = Padding::block(64);
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -34,18 +35,18 @@ impl Field for Avatar {
 
 #[test]
 fn manifest_lists_each_field() {
-    let manifest = Manifest::new().field::<Nickname>().field::<Avatar>();
+    let manifest = Manifest::new().seal::<Nickname>().seal::<Avatar>();
 
     assert_eq!(
         manifest.to_string(),
         "\
-field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
+seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   codec: utf8
   padding: none
   record: no
   binding: 5d86321261d64380
   shred unit: keyring
-field 9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e
+seal 9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e
   codec: raw
   padding: block(64)
   record: no
@@ -57,8 +58,8 @@ field 9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e
 
 struct TenantNote;
 
-impl Field for TenantNote {
-    const ID: FieldId = field_id!("4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37");
+impl Seal for TenantNote {
+    const ID: SealId = seal_id!("4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -71,9 +72,9 @@ impl Field for TenantNote {
 fn manifest_shows_a_scoped_binding_and_its_shred_unit() {
     // The tenant part and its binding fingerprint are in docs/wire-format.md#presets.
     assert_eq!(
-        Manifest::new().field::<TenantNote>().to_string(),
+        Manifest::new().seal::<TenantNote>().to_string(),
         "\
-field 4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37
+seal 4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37
   codec: utf8
   padding: none
   record: no
@@ -87,14 +88,14 @@ field 4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37
 #[test]
 fn manifest_shows_custody_labels() {
     let manifest = Manifest::new()
-        .field::<TenantNote>()
-        .field::<Nickname>()
+        .seal::<TenantNote>()
+        .seal::<Nickname>()
         .custody::<TenantNote>("per-tenant KMS key");
 
     assert_eq!(
         manifest.to_string(),
         "\
-field 4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37
+seal 4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37
   codec: utf8
   padding: none
   record: no
@@ -102,7 +103,7 @@ field 4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37
     part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
   shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
   custody: per-tenant KMS key
-field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
+seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   codec: utf8
   padding: none
   record: no
@@ -116,9 +117,9 @@ field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
 fn labelling_custody_registers_the_field_once() {
     let labelled_first = Manifest::new()
         .custody::<Nickname>("general KMS")
-        .field::<Nickname>();
+        .seal::<Nickname>();
     let registered_first = Manifest::new()
-        .field::<Nickname>()
+        .seal::<Nickname>()
         .custody::<Nickname>("payments KMS")
         .custody::<Nickname>("general KMS");
 
@@ -126,7 +127,7 @@ fn labelling_custody_registers_the_field_once() {
     assert_eq!(
         labelled_first.to_string(),
         "\
-field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
+seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   codec: utf8
   padding: none
   record: no
@@ -194,8 +195,8 @@ impl Binding for ProjectScope {
 
 struct WorkspaceNote;
 
-impl Field for WorkspaceNote {
-    const ID: FieldId = field_id!("6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51");
+impl Seal for WorkspaceNote {
+    const ID: SealId = seal_id!("6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51");
     const PADDING: Padding = Padding::block(16);
     const RECORD: bool = true;
     type Value = String;
@@ -206,12 +207,12 @@ impl Field for WorkspaceNote {
 
 #[test]
 fn manifest_shows_every_part_and_the_record_flag() {
-    let snapshot = Manifest::new().field::<WorkspaceNote>().to_string();
+    let snapshot = Manifest::new().seal::<WorkspaceNote>().to_string();
 
     assert_eq!(
         snapshot,
         "\
-field 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
+seal 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
   codec: utf8
   padding: block(16)
   record: yes
@@ -245,7 +246,7 @@ field 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
 struct NicknameLookup;
 
 impl BlindIndexSpec for NicknameLookup {
-    type Field = Nickname;
+    type Seal = Nickname;
     const ID: IndexId = index_id!("3d8b1f4e-6a2c-4e71-9f05-8c7d6b5a4e3f");
     const BITS: u16 = 24;
     const NORMALIZER: &'static str = "trim-lowercase/1";
@@ -268,7 +269,7 @@ fn manifest_lists_each_index() {
         manifest.to_string(),
         "\
 index 3d8b1f4e-6a2c-4e71-9f05-8c7d6b5a4e3f
-  field: 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
+  seal: 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   bits: 24
   normalizer: trim-lowercase/1
 "
@@ -278,8 +279,8 @@ index 3d8b1f4e-6a2c-4e71-9f05-8c7d6b5a4e3f
 /// Copied from [`Nickname`] without generating a fresh ID.
 struct DisplayName;
 
-impl Field for DisplayName {
-    const ID: FieldId = field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
+impl Seal for DisplayName {
+    const ID: SealId = seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -290,11 +291,11 @@ impl Field for DisplayName {
 
 #[test]
 fn manifest_reports_duplicate_ids() {
-    let unique = Manifest::new().field::<Nickname>().field::<Avatar>();
+    let unique = Manifest::new().seal::<Nickname>().seal::<Avatar>();
     let duplicated = Manifest::new()
-        .field::<Nickname>()
-        .field::<Avatar>()
-        .field::<DisplayName>();
+        .seal::<Nickname>()
+        .seal::<Avatar>()
+        .seal::<DisplayName>();
 
     assert!(unique.duplicates().is_empty());
     assert_eq!(
@@ -303,14 +304,14 @@ fn manifest_reports_duplicate_ids() {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>(),
-        ["duplicate field ID 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01: \
+        ["duplicate seal ID 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01: \
              schema::Nickname, schema::DisplayName"]
     );
     // The snapshot flags the ID without naming types.
     assert!(
         duplicated
             .to_string()
-            .ends_with("duplicate field ID 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01\n")
+            .ends_with("duplicate seal ID 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01\n")
     );
 }
 
@@ -318,7 +319,7 @@ fn manifest_reports_duplicate_ids() {
 struct DisplayNameLookup;
 
 impl BlindIndexSpec for DisplayNameLookup {
-    type Field = Nickname;
+    type Seal = Nickname;
     const ID: IndexId = index_id!("3d8b1f4e-6a2c-4e71-9f05-8c7d6b5a4e3f");
     const BITS: u16 = 16;
     const NORMALIZER: &'static str = "exact/1";
@@ -354,7 +355,7 @@ cryptbox::assert_unique_ids!(indexes: NicknameLookup);
 
 #[cfg(any(feature = "json", feature = "postcard"))]
 mod serde_codecs {
-    use cryptbox::{Field, FieldId, FieldOnly, Padding, field_id, schema::Manifest};
+    use cryptbox::{FieldOnly, Padding, Seal, SealId, schema::Manifest, seal_id};
     use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize)]
@@ -366,8 +367,8 @@ mod serde_codecs {
     struct HomeAddress;
 
     #[cfg(feature = "json")]
-    impl Field for HomeAddress {
-        const ID: FieldId = field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
+    impl Seal for HomeAddress {
+        const ID: SealId = seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
         const PADDING: Padding = Padding::length(256);
         const RECORD: bool = false;
         type Value = Address;
@@ -380,9 +381,9 @@ mod serde_codecs {
     #[test]
     fn manifest_names_the_json_codec() {
         assert_eq!(
-            Manifest::new().field::<HomeAddress>().to_string(),
+            Manifest::new().seal::<HomeAddress>().to_string(),
             "\
-field 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
+seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
   codec: json/1
   padding: length(256)
   record: no
@@ -396,8 +397,8 @@ field 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
     struct BillingAddress;
 
     #[cfg(feature = "postcard")]
-    impl Field for BillingAddress {
-        const ID: FieldId = field_id!("7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13");
+    impl Seal for BillingAddress {
+        const ID: SealId = seal_id!("7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13");
         const PADDING: Padding = Padding::NONE;
         const RECORD: bool = false;
         type Value = Address;
@@ -410,9 +411,9 @@ field 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
     #[test]
     fn manifest_names_the_postcard_codec() {
         assert_eq!(
-            Manifest::new().field::<BillingAddress>().to_string(),
+            Manifest::new().seal::<BillingAddress>().to_string(),
             "\
-field 7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13
+seal 7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13
   codec: postcard/1
   padding: none
   record: no

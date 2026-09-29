@@ -75,14 +75,14 @@ the wrong keyring succeeds. Record it per field and key scope, and test it; see
 [choosing keyrings](choosing-keyrings.md).
 <!-- Agent guidance: custody is about whose keys, not about access control or storage location. Sealing with the wrong keyring is a silent write-time error, not an authentication failure. -->
 
-**Field**:
+**Seal**:
 A marker type that declares one logical encrypted field: its field ID, value
 type, codec, padding, binding scope, whether it binds a record, and its blind
 indexes. One value type can back several fields, such as a
 home and a billing address, each with its own field ID.
 <!-- Agent guidance: “profile” is the retired name for a field; do not reintroduce it. Avoid “column”, “key”, or “cipher suite” as synonyms: a field is a logical location, independent of database names. -->
 
-**Field ID**:
+**Seal ID**:
 The stable identity of a logical encrypted field, independent of Rust and
 database names. Fields that declare the same field ID can read each other's
 ciphertext; a different field ID fails authentication.

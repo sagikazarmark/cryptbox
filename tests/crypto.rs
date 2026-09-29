@@ -2,8 +2,8 @@
 
 use cryptbox::EncryptionKey;
 use cryptbox::{
-    EncryptionKeyring, Error, Field, FieldOnly, KeyError, KeyId, Padding, Raw, Sealed, Utf8,
-    field_id, inspect_ciphertext, is_ciphertext, key_id,
+    EncryptionKeyring, Error, FieldOnly, KeyError, KeyId, Padding, Raw, Seal, Sealed, Utf8,
+    inspect_ciphertext, is_ciphertext, key_id, seal_id,
 };
 
 const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
@@ -19,8 +19,8 @@ fn keyring(current_id: KeyId, current_byte: u8) -> EncryptionKeyring {
 
 struct EmailField;
 
-impl Field for EmailField {
-    const ID: cryptbox::FieldId = field_id!("30000000-0000-4000-8000-000000000003");
+impl Seal for EmailField {
+    const ID: cryptbox::SealId = seal_id!("30000000-0000-4000-8000-000000000003");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -31,8 +31,8 @@ impl Field for EmailField {
 
 struct PaddedEmailField;
 
-impl Field for PaddedEmailField {
-    const ID: cryptbox::FieldId = EmailField::ID;
+impl Seal for PaddedEmailField {
+    const ID: cryptbox::SealId = EmailField::ID;
     const PADDING: Padding = Padding::block(16);
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -42,7 +42,7 @@ impl Field for PaddedEmailField {
 }
 
 // Raw fields carry opaque bytes through `Sealed`, as the byte-level API did.
-fn encrypt<F: Field<Value = Vec<u8>, Binding = FieldOnly>>(
+fn encrypt<F: Seal<Value = Vec<u8>, Binding = FieldOnly>>(
     plaintext: &[u8],
     keys: &EncryptionKeyring,
 ) -> Vec<u8> {
@@ -51,7 +51,7 @@ fn encrypt<F: Field<Value = Vec<u8>, Binding = FieldOnly>>(
         .into_bytes()
 }
 
-fn decrypt<F: Field<Value = Vec<u8>, Binding = FieldOnly>>(
+fn decrypt<F: Seal<Value = Vec<u8>, Binding = FieldOnly>>(
     ciphertext: &[u8],
     keys: &EncryptionKeyring,
 ) -> Result<Vec<u8>, Error> {
@@ -60,8 +60,8 @@ fn decrypt<F: Field<Value = Vec<u8>, Binding = FieldOnly>>(
 
 struct PhoneField;
 
-impl Field for PhoneField {
-    const ID: cryptbox::FieldId = field_id!("40000000-0000-4000-8000-000000000004");
+impl Seal for PhoneField {
+    const ID: cryptbox::SealId = seal_id!("40000000-0000-4000-8000-000000000004");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -260,8 +260,8 @@ fn rotation_preserves_reads_and_reencryption_uses_the_current_key() {
 
 struct TypedEmail;
 
-impl Field for TypedEmail {
-    const ID: cryptbox::FieldId = EmailField::ID;
+impl Seal for TypedEmail {
+    const ID: cryptbox::SealId = EmailField::ID;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;

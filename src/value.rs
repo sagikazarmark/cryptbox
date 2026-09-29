@@ -3,8 +3,8 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Args, BindingDomain, Codec, EncryptionKeySource, Error, Field, FieldOnly, GlobalKeys, KeyId,
-    Prepared,
+    Args, BindingDomain, Codec, EncryptionKeySource, Error, FieldOnly, GlobalKeys, KeyId, Prepared,
+    Seal,
     binding::{domain, domains},
     bound,
     envelope::validated_key_id,
@@ -16,7 +16,7 @@ use crate::{
 ///
 /// This is what applications store. [`Self::seal`] encodes, pads, and encrypts a
 /// value; [`Self::open`] authenticates and decrypts it under the same
-/// [binding arguments](Args), and returns the bare [`Field::Value`]. Plaintext
+/// [binding arguments](Args), and returns the bare [`Seal::Value`]. Plaintext
 /// hygiene comes from the value type, such as [`Secret`].
 ///
 /// Construction from bytes validates only the envelope structure. Authenticity
@@ -30,13 +30,13 @@ use crate::{
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, Field, FieldId, FieldOnly, EncryptionKeyring, Padding, Sealed, Utf8,
+///     EncryptionKey, Seal, SealId, FieldOnly, EncryptionKeyring, Padding, Sealed, Utf8,
 /// };
 ///
 /// struct UserEmail;
 ///
-/// impl Field for UserEmail {
-///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// impl Seal for UserEmail {
+///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -51,12 +51,12 @@ use crate::{
 /// assert_eq!(sealed.open((), &keys)?, "user@example.com");
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
-pub struct Sealed<F: Field> {
+pub struct Sealed<F: Seal> {
     bytes: Vec<u8>,
     marker: PhantomData<fn() -> F>,
 }
 
-impl<F: Field> Sealed<F> {
+impl<F: Seal> Sealed<F> {
     /// Validates and wraps a binary `CryptBox` envelope.
     ///
     /// # Errors
@@ -174,7 +174,7 @@ impl<F: Field> Sealed<F> {
     /// Reports whether this envelope differs from what `F` currently writes.
     ///
     /// That is a non-current suite or key, or a padding flag that disagrees
-    /// with [`Field::PADDING`].
+    /// with [`Seal::PADDING`].
     ///
     /// Envelope metadata is unauthenticated until the value is opened. A `false`
     /// result does not establish authenticated readability or codec validity.
@@ -200,7 +200,7 @@ impl<F: Field> Sealed<F> {
     /// Opens and reseals this value as `F` currently writes it, under the same
     /// binding and keys.
     ///
-    /// The rewrite uses the current suite, key, and [`Field::PADDING`],
+    /// The rewrite uses the current suite, key, and [`Seal::PADDING`],
     /// so a sweep can enable or disable padding. This authenticates the value
     /// and checks padding, but does not decode it with the field's codec or
     /// check any stored blind indexes. Use [`Self::open`] when decoded-value
@@ -258,7 +258,7 @@ const fn check_no_record(record: bool) {
     );
 }
 
-impl<F: Field<Binding = FieldOnly>> Sealed<F> {
+impl<F: Seal<Binding = FieldOnly>> Sealed<F> {
     /// Seals `value` with the [installed keys](keys::installed).
     ///
     /// This is exactly `Self::seal(value, (), keys::installed()?)`. The
@@ -287,7 +287,7 @@ impl<F: Field<Binding = FieldOnly>> Sealed<F> {
     }
 }
 
-impl<F: Field> TryFrom<Vec<u8>> for Sealed<F> {
+impl<F: Seal> TryFrom<Vec<u8>> for Sealed<F> {
     type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
@@ -295,27 +295,27 @@ impl<F: Field> TryFrom<Vec<u8>> for Sealed<F> {
     }
 }
 
-impl<F: Field> AsRef<[u8]> for Sealed<F> {
+impl<F: Seal> AsRef<[u8]> for Sealed<F> {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
     }
 }
 
-impl<F: Field> Clone for Sealed<F> {
+impl<F: Seal> Clone for Sealed<F> {
     fn clone(&self) -> Self {
         Self::from_validated_bytes(self.bytes.clone())
     }
 }
 
-impl<F: Field> PartialEq for Sealed<F> {
+impl<F: Seal> PartialEq for Sealed<F> {
     fn eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
 
-impl<F: Field> Eq for Sealed<F> {}
+impl<F: Seal> Eq for Sealed<F> {}
 
-impl<F: Field> fmt::Debug for Sealed<F> {
+impl<F: Seal> fmt::Debug for Sealed<F> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Sealed([REDACTED])")
     }
@@ -340,12 +340,12 @@ impl<F: Field> fmt::Debug for Sealed<F> {
 /// zeroize arbitrary values; use [`Secret`] when the value supports [`Zeroize`].
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Plain, Utf8};
+/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Plain, Utf8};
 ///
 /// struct UserEmail;
 ///
-/// impl Field for UserEmail {
-///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// impl Seal for UserEmail {
+///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -361,12 +361,12 @@ impl<F: Field> fmt::Debug for Sealed<F> {
 /// A bound field is rejected:
 ///
 /// ```compile_fail,E0271
-/// use cryptbox::{Field, FieldId, Padding, Plain, Tenant, Utf8};
+/// use cryptbox::{Seal, SealId, Padding, Plain, Tenant, Utf8};
 ///
 /// struct CustomerEmail;
 ///
-/// impl Field for CustomerEmail {
-///     const ID: FieldId = cryptbox::field_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
+/// impl Seal for CustomerEmail {
+///     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -382,14 +382,14 @@ impl<F: Field> fmt::Debug for Sealed<F> {
 ///
 /// ```compile_fail,E0271
 /// use cryptbox::{
-///     BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Plain, Utf8,
+///     BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Plain, Utf8,
 /// };
 /// use zeroize::Zeroizing;
 ///
 /// struct UserEmail;
 ///
-/// impl Field for UserEmail {
-///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// impl Seal for UserEmail {
+///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = false;
 ///     type Value = String;
@@ -401,7 +401,7 @@ impl<F: Field> fmt::Debug for Sealed<F> {
 /// struct EmailLookup;
 ///
 /// impl BlindIndexSpec for EmailLookup {
-///     type Field = UserEmail;
+///     type Seal = UserEmail;
 ///     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -422,11 +422,11 @@ impl<F: Field> fmt::Debug for Sealed<F> {
 /// And a field that binds a record fails the build:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{Field, FieldId, FieldOnly, Padding, Plain, Utf8};
+/// # use cryptbox::{Seal, SealId, FieldOnly, Padding, Plain, Utf8};
 /// struct RowNote;
 ///
-/// impl Field for RowNote {
-///     const ID: FieldId = cryptbox::field_id!("9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24");
+/// impl Seal for RowNote {
+///     const ID: SealId = cryptbox::seal_id!("9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24");
 ///     const PADDING: Padding = Padding::NONE;
 ///     const RECORD: bool = true;
 ///     type Value = String;
@@ -441,10 +441,10 @@ impl<F: Field> fmt::Debug for Sealed<F> {
 /// Plaintext comparison must also be explicit:
 ///
 /// ```compile_fail,E0369
-/// # use cryptbox::{Field, FieldId, FieldOnly, Padding, Plain, Utf8};
+/// # use cryptbox::{Seal, SealId, FieldOnly, Padding, Plain, Utf8};
 /// # struct UserEmail;
-/// # impl Field for UserEmail {
-/// #     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// # impl Seal for UserEmail {
+/// #     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     const RECORD: bool = false;
 /// #     type Value = String;
@@ -461,14 +461,14 @@ impl<F: Field> fmt::Debug for Sealed<F> {
     "See the [ownership reference].\n\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub struct Plain<F: Field, K = GlobalKeys> {
+pub struct Plain<F: Seal, K = GlobalKeys> {
     value: F::Value,
     marker: PhantomData<fn() -> (F, K)>,
 }
 
 impl<F, K> Plain<F, K>
 where
-    F: Field<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Binding = FieldOnly, Indexes = ()>,
 {
     /// Wraps a plaintext value.
     ///
@@ -511,7 +511,7 @@ where
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 impl<F, K> Plain<F, K>
 where
-    F: Field<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Binding = FieldOnly, Indexes = ()>,
     K: crate::ColumnKeys,
 {
     pub(crate) fn seal_for_column(&self) -> Result<Sealed<F>, Error> {
@@ -527,7 +527,7 @@ where
 
 impl<F, K> Clone for Plain<F, K>
 where
-    F: Field,
+    F: Seal,
     F::Value: Clone,
 {
     fn clone(&self) -> Self {
@@ -538,7 +538,7 @@ where
     }
 }
 
-impl<F: Field, K> fmt::Debug for Plain<F, K> {
+impl<F: Seal, K> fmt::Debug for Plain<F, K> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Plain([REDACTED])")
     }

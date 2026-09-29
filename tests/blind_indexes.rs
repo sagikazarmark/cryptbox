@@ -2,9 +2,9 @@
 
 use cryptbox::{
     Binding, BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec,
-    EncryptionKey, EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding,
-    PartKind, PartSpec, PartValue, PartValues, RecordId, Sealed, Utf8, field_id, index_id,
-    index_key_id, inspect_blind_index, key_id, part_id,
+    EncryptionKey, EncryptionKeyring, Error, FieldOnly, IndexId, IndexKeyId, KeyId, Padding,
+    PartKind, PartSpec, PartValue, PartValues, RecordId, Seal, Sealed, Utf8, index_id,
+    index_key_id, inspect_blind_index, key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -14,8 +14,8 @@ const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("70000000-0000-4000-8000-
 
 struct EmailField;
 
-impl Field for EmailField {
-    const ID: cryptbox::FieldId = field_id!("80000000-0000-4000-8000-000000000008");
+impl Seal for EmailField {
+    const ID: cryptbox::SealId = seal_id!("80000000-0000-4000-8000-000000000008");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -26,8 +26,8 @@ impl Field for EmailField {
 
 struct PhoneField;
 
-impl Field for PhoneField {
-    const ID: cryptbox::FieldId = field_id!("90000000-0000-4000-8000-000000000009");
+impl Seal for PhoneField {
+    const ID: cryptbox::SealId = seal_id!("90000000-0000-4000-8000-000000000009");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -43,7 +43,7 @@ fn normalize_email(input: &str) -> Zeroizing<Vec<u8>> {
 struct EmailExact;
 
 impl BlindIndexSpec for EmailExact {
-    type Field = EmailField;
+    type Seal = EmailField;
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 13;
     const NORMALIZER: &'static str = "email/1";
@@ -62,7 +62,7 @@ impl BlindIndexSpec for EmailExact {
 struct PhoneExact;
 
 impl BlindIndexSpec for PhoneExact {
-    type Field = PhoneField;
+    type Seal = PhoneField;
     const ID: IndexId = EmailExact::ID;
     const BITS: u16 = EmailExact::BITS;
     const NORMALIZER: &'static str = "email/1";
@@ -183,7 +183,7 @@ fn prepared_values_derive_the_sealed_value_and_indexes_from_one_source() {
 struct EmailDomain;
 
 impl BlindIndexSpec for EmailDomain {
-    type Field = EmailField;
+    type Seal = EmailField;
     const ID: IndexId = index_id!("c0000000-0000-4000-8000-00000000000c");
     const BITS: u16 = 16;
     const NORMALIZER: &'static str = "email-domain/1";
@@ -220,8 +220,8 @@ struct Person {
 
 struct PersonField;
 
-impl Field for PersonField {
-    const ID: cryptbox::FieldId = field_id!("d0000000-0000-4000-8000-00000000000d");
+impl Seal for PersonField {
+    const ID: cryptbox::SealId = seal_id!("d0000000-0000-4000-8000-00000000000d");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Person;
@@ -250,7 +250,7 @@ impl cryptbox::Codec<Person> for PersonCodec {
 struct NameAndPostalCode;
 
 impl BlindIndexSpec for NameAndPostalCode {
-    type Field = PersonField;
+    type Seal = PersonField;
     const ID: IndexId = index_id!("b0000000-0000-4000-8000-00000000000b");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "name-postal-code/1";
@@ -315,7 +315,7 @@ macro_rules! truncation_spec {
         struct $name;
 
         impl BlindIndexSpec for $name {
-            type Field = EmailField;
+            type Seal = EmailField;
             const ID: IndexId = IndexId::from_bytes([$id_byte; 16]);
             const BITS: u16 = $bits;
             const NORMALIZER: &'static str = "exact/1";
@@ -340,7 +340,7 @@ truncation_spec!(TwoHundredFiftySixBits, 256, 5);
 
 fn assert_canonical_truncation<Spec>(expected_bytes: usize)
 where
-    Spec: BlindIndexSpec<Field = EmailField>,
+    Spec: BlindIndexSpec<Seal = EmailField>,
 {
     let index = Spec::derive_with(&email("truncation vector"), &(), &index_keys()).unwrap();
 
@@ -499,8 +499,8 @@ impl Binding for OrgWorkspace {
 
 struct TicketEmail;
 
-impl Field for TicketEmail {
-    const ID: cryptbox::FieldId = field_id!("c0000000-0000-4000-8000-00000000000c");
+impl Seal for TicketEmail {
+    const ID: cryptbox::SealId = seal_id!("c0000000-0000-4000-8000-00000000000c");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = true;
     type Value = String;
@@ -512,7 +512,7 @@ impl Field for TicketEmail {
 struct TicketEmailExact;
 
 impl BlindIndexSpec for TicketEmailExact {
-    type Field = TicketEmail;
+    type Seal = TicketEmail;
     const ID: IndexId = index_id!("d0000000-0000-4000-8000-00000000000d");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "email/1";
@@ -663,8 +663,8 @@ impl Binding for Team {
 
 struct TeamEmail;
 
-impl Field for TeamEmail {
-    const ID: cryptbox::FieldId = field_id!("e0000000-0000-4000-8000-00000000000e");
+impl Seal for TeamEmail {
+    const ID: cryptbox::SealId = seal_id!("e0000000-0000-4000-8000-00000000000e");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -676,7 +676,7 @@ impl Field for TeamEmail {
 struct TeamEmailExact;
 
 impl BlindIndexSpec for TeamEmailExact {
-    type Field = TeamEmail;
+    type Seal = TeamEmail;
     const ID: IndexId = index_id!("f0000000-0000-4000-8000-00000000000f");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "email/1";

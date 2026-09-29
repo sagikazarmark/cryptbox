@@ -1,4 +1,4 @@
-//! Expands `#[derive(Field)]`.
+//! Expands `#[derive(Seal)]`.
 
 use proc_macro2::TokenStream;
 use quote::{quote, quote_spanned};
@@ -64,8 +64,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
-            impl #impl_generics #krate::Field for #name #type_generics #where_clause {
-                const ID: #krate::FieldId = #krate::FieldId::from_u128(#id);
+            impl #impl_generics #krate::Seal for #name #type_generics #where_clause {
+                const ID: #krate::SealId = #krate::SealId::from_u128(#id);
                 const PADDING: #krate::Padding = #padding;
                 const RECORD: bool = #record;
                 type Value = #value;

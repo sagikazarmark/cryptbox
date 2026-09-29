@@ -7,9 +7,9 @@ use std::{
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId, FieldOnly,
-    IndexId, IndexKeyId, KeyError, KeyId, KeyScope, Keys, Padding, Raw, Sealed, Tenant, TenantId,
-    field_id, index_id, index_key_id, inspect_blind_index, key_id, testing::assert_sealed_under,
+    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldOnly, IndexId, IndexKeyId,
+    KeyError, KeyId, KeyScope, Keys, Padding, Raw, Seal, SealId, Sealed, Tenant, TenantId,
+    index_id, index_key_id, inspect_blind_index, key_id, seal_id, testing::assert_sealed_under,
 };
 use zeroize::Zeroizing;
 
@@ -21,8 +21,8 @@ const PAYMENTS_INDEX_KEY_ID: IndexKeyId = index_key_id!("70000000-0000-4000-8000
 
 struct Email;
 
-impl Field for Email {
-    const ID: FieldId = field_id!("40000000-0000-4000-8000-000000000004");
+impl Seal for Email {
+    const ID: SealId = seal_id!("40000000-0000-4000-8000-000000000004");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -33,8 +33,8 @@ impl Field for Email {
 
 struct Iban;
 
-impl Field for Iban {
-    const ID: FieldId = field_id!("50000000-0000-4000-8000-000000000005");
+impl Seal for Iban {
+    const ID: SealId = seal_id!("50000000-0000-4000-8000-000000000005");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -45,8 +45,8 @@ impl Field for Iban {
 
 struct TenantNote;
 
-impl Field for TenantNote {
-    const ID: FieldId = field_id!("80000000-0000-4000-8000-000000000008");
+impl Seal for TenantNote {
+    const ID: SealId = seal_id!("80000000-0000-4000-8000-000000000008");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -58,7 +58,7 @@ impl Field for TenantNote {
 struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
-    type Field = Email;
+    type Seal = Email;
     const ID: IndexId = index_id!("90000000-0000-4000-8000-000000000009");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "exact/1";
@@ -76,7 +76,7 @@ impl BlindIndexSpec for EmailLookup {
 struct IbanLookup;
 
 impl BlindIndexSpec for IbanLookup {
-    type Field = Iban;
+    type Seal = Iban;
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "exact/1";
@@ -171,14 +171,14 @@ fn a_blind_index_keyring_lists_its_current_key_first() {
 }
 
 /// An application source that keeps payment fields under their own keyring.
-struct ByField {
+struct BySeal {
     general: EncryptionKeyring,
     payments: EncryptionKeyring,
 }
 
-impl EncryptionKeySource for ByField {
-    fn encryption_keyring(&self, field: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
-        Ok(if field == Iban::ID {
+impl EncryptionKeySource for BySeal {
+    fn encryption_keyring(&self, seal: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+        Ok(if seal == Iban::ID {
             self.payments.clone()
         } else {
             self.general.clone()
@@ -187,8 +187,8 @@ impl EncryptionKeySource for ByField {
 }
 
 #[test]
-fn a_custom_source_chooses_keyrings_by_field() {
-    let keys = ByField {
+fn a_custom_source_chooses_keyrings_by_seal() {
+    let keys = BySeal {
         general: keyring(GENERAL_KEY_ID, 1),
         payments: keyring(PAYMENTS_KEY_ID, 2),
     };
@@ -210,7 +210,7 @@ fn a_custom_source_chooses_keyrings_by_field() {
 fn a_keyring_test_accepts_values_sealed_under_the_expected_keyring() {
     let previous = EncryptionKey::new(PREVIOUS_KEY_ID, [3; 32]);
     let payments = keyring(PAYMENTS_KEY_ID, 2);
-    let keys = ByField {
+    let keys = BySeal {
         general: keyring(GENERAL_KEY_ID, 1),
         payments: EncryptionKeyring::new(previous.clone(), []).unwrap(),
     };
@@ -225,12 +225,12 @@ fn a_keyring_test_accepts_values_sealed_under_the_expected_keyring() {
 
 #[test]
 #[should_panic(
-    expected = "field 50000000-0000-4000-8000-000000000005 is sealed under key \
+    expected = "seal 50000000-0000-4000-8000-000000000005 is sealed under key \
                 10000000-0000-4000-8000-000000000001, which the keyring does not hold"
 )]
 fn a_keyring_test_fails_for_a_value_sealed_under_another_keyring() {
     // The wrong choice: the IBAN goes to the general keyring.
-    let keys = ByField {
+    let keys = BySeal {
         general: keyring(GENERAL_KEY_ID, 1),
         payments: keyring(PAYMENTS_KEY_ID, 2),
     };
@@ -244,7 +244,7 @@ fn a_keyring_test_fails_for_a_value_sealed_under_another_keyring() {
 struct ByTenant(HashMap<KeyScope, EncryptionKeyring>);
 
 impl EncryptionKeySource for ByTenant {
-    fn encryption_keyring(&self, _: FieldId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
         self.0.get(scope).cloned().ok_or(Error::KeysUnavailable)
     }
 }
@@ -291,7 +291,7 @@ impl LazyTenants {
 }
 
 impl EncryptionKeySource for LazyTenants {
-    fn encryption_keyring(&self, _: FieldId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
         if let Some(keyring) = self.cache.read().unwrap().get(scope) {
             return Ok(keyring.clone());
         }
@@ -334,7 +334,7 @@ fn a_field_only_binding_passes_the_empty_key_scope() {
     impl EncryptionKeySource for SeenScopes {
         fn encryption_keyring(
             &self,
-            _: FieldId,
+            _: SealId,
             scope: &KeyScope,
         ) -> Result<EncryptionKeyring, Error> {
             self.0.lock().unwrap().push(scope.clone());
@@ -439,7 +439,7 @@ fn references_and_shared_encryption_sources_are_sources() {
     }
 
     let general = keyring(GENERAL_KEY_ID, 1);
-    let dynamic: Arc<dyn EncryptionKeySource> = Arc::new(ByField {
+    let dynamic: Arc<dyn EncryptionKeySource> = Arc::new(BySeal {
         general: keyring(GENERAL_KEY_ID, 1),
         payments: keyring(PAYMENTS_KEY_ID, 2),
     });
@@ -472,7 +472,7 @@ fn references_and_shared_blind_index_sources_are_sources() {
 struct TenantNoteLookup;
 
 impl BlindIndexSpec for TenantNoteLookup {
-    type Field = TenantNote;
+    type Seal = TenantNote;
     const ID: IndexId = index_id!("b0000000-0000-4000-8000-00000000000b");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "exact/1";

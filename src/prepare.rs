@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    BindingDomain, BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Field, FieldOnly,
+    BindingDomain, BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, FieldOnly, Seal,
     Sealed, blind::derive_value, keys,
 };
 
@@ -23,7 +23,7 @@ struct PreparedIndex {
 )]
 pub struct Prepared<'a, F>
 where
-    F: Field,
+    F: Seal,
 {
     source: &'a F::Value,
     sealed: Sealed<F>,
@@ -33,7 +33,7 @@ where
 
 impl<F> fmt::Debug for Prepared<'_, F>
 where
-    F: Field,
+    F: Seal,
 {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -47,7 +47,7 @@ where
 
 impl<'a, F> Prepared<'a, F>
 where
-    F: Field,
+    F: Seal,
 {
     pub(crate) const fn new(
         source: &'a F::Value,
@@ -88,15 +88,15 @@ where
     ///
     /// ```compile_fail,E0271
     /// use cryptbox::{
-    ///     BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId,
+    ///     BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId,
     ///     BlindIndexKeyring, EncryptionKeyring, Padding, Sealed, Utf8,
     /// };
     /// use zeroize::Zeroizing;
     ///
     /// struct UserEmail;
     ///
-    /// impl Field for UserEmail {
-    ///     const ID: FieldId = FieldId::from_bytes([1; 16]);
+    /// impl Seal for UserEmail {
+    ///     const ID: SealId = SealId::from_bytes([1; 16]);
     ///     const PADDING: Padding = Padding::NONE;
     ///     const RECORD: bool = false;
     ///     type Value = String;
@@ -107,8 +107,8 @@ where
     ///
     /// struct InviteEmail;
     ///
-    /// impl Field for InviteEmail {
-    ///     const ID: FieldId = FieldId::from_bytes([2; 16]);
+    /// impl Seal for InviteEmail {
+    ///     const ID: SealId = SealId::from_bytes([2; 16]);
     ///     const PADDING: Padding = Padding::NONE;
     ///     const RECORD: bool = false;
     ///     type Value = String;
@@ -120,7 +120,7 @@ where
     /// struct InviteEmailLookup;
     ///
     /// impl BlindIndexSpec for InviteEmailLookup {
-    ///     type Field = InviteEmail;
+    ///     type Seal = InviteEmail;
     ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
     ///     const BITS: u16 = 32;
     ///     const NORMALIZER: &'static str = "exact/1";
@@ -155,7 +155,7 @@ where
         keys: &(impl BlindIndexKeySource + ?Sized),
     ) -> Result<Self, Error>
     where
-        Spec: BlindIndexSpec<Field = F>,
+        Spec: BlindIndexSpec<Seal = F>,
     {
         if self.indexes.iter().any(|index| index.id == Spec::ID) {
             return Err(Error::DuplicatePreparedIndex(Spec::ID));
@@ -181,8 +181,8 @@ where
     /// duplicate index IDs, unavailable keys, or failed index derivation.
     pub fn with_index<Spec>(self) -> Result<Self, Error>
     where
-        F: Field<Binding = FieldOnly>,
-        Spec: BlindIndexSpec<Field = F>,
+        F: Seal<Binding = FieldOnly>,
+        Spec: BlindIndexSpec<Seal = F>,
     {
         self.with_index_with::<Spec>(keys::installed()?)
     }
@@ -194,7 +194,7 @@ where
     /// Returns [`Error::BlindIndexNotPrepared`] when the index was not added.
     pub fn index<Spec>(&self) -> Result<BlindIndexRef<'_, Spec>, Error>
     where
-        Spec: BlindIndexSpec<Field = F>,
+        Spec: BlindIndexSpec<Seal = F>,
     {
         self.indexes
             .iter()

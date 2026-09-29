@@ -1,8 +1,8 @@
 //! Public-boundary tests for field padding policies.
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Error, Field, FieldId, FieldOnly, KeyId, Padding, Raw,
-    Sealed, Utf8, field_id, inspect_ciphertext, key_id,
+    EncryptionKey, EncryptionKeyring, Error, FieldOnly, KeyId, Padding, Raw, Seal, SealId, Sealed,
+    Utf8, inspect_ciphertext, key_id, seal_id,
 };
 
 const KEY_ID: KeyId = key_id!("50000000-0000-4000-8000-000000000005");
@@ -11,12 +11,12 @@ fn keyring() -> EncryptionKeyring {
     EncryptionKeyring::new(EncryptionKey::new(KEY_ID, [47; 32]), []).unwrap()
 }
 
-const SHARED_FIELD: FieldId = field_id!("60000000-0000-4000-8000-000000000006");
+const SHARED_FIELD: SealId = seal_id!("60000000-0000-4000-8000-000000000006");
 
 struct Unpadded;
 
-impl Field for Unpadded {
-    const ID: FieldId = SHARED_FIELD;
+impl Seal for Unpadded {
+    const ID: SealId = SHARED_FIELD;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -27,8 +27,8 @@ impl Field for Unpadded {
 
 struct SharedFieldPadded;
 
-impl Field for SharedFieldPadded {
-    const ID: FieldId = SHARED_FIELD;
+impl Seal for SharedFieldPadded {
+    const ID: SealId = SHARED_FIELD;
     const PADDING: Padding = Padding::block(16);
     const RECORD: bool = false;
     type Value = String;
@@ -39,8 +39,8 @@ impl Field for SharedFieldPadded {
 
 struct FixedLength;
 
-impl Field for FixedLength {
-    const ID: FieldId = SHARED_FIELD;
+impl Seal for FixedLength {
+    const ID: SealId = SHARED_FIELD;
     const PADDING: Padding = Padding::length(16);
     const RECORD: bool = false;
     type Value = String;
@@ -51,8 +51,8 @@ impl Field for FixedLength {
 
 struct WiderBlockPadded;
 
-impl Field for WiderBlockPadded {
-    const ID: FieldId = SHARED_FIELD;
+impl Seal for WiderBlockPadded {
+    const ID: SealId = SHARED_FIELD;
     const PADDING: Padding = Padding::block(32);
     const RECORD: bool = false;
     type Value = String;
@@ -63,8 +63,8 @@ impl Field for WiderBlockPadded {
 
 struct BlockPadded;
 
-impl Field for BlockPadded {
-    const ID: FieldId = SHARED_FIELD;
+impl Seal for BlockPadded {
+    const ID: SealId = SHARED_FIELD;
     const PADDING: Padding = Padding::block(16);
     const RECORD: bool = false;
     type Value = String;
@@ -75,8 +75,8 @@ impl Field for BlockPadded {
 
 struct PolicyFixedLength;
 
-impl Field for PolicyFixedLength {
-    const ID: FieldId = SHARED_FIELD;
+impl Seal for PolicyFixedLength {
+    const ID: SealId = SHARED_FIELD;
     const PADDING: Padding = Padding::length(1_048_576);
     const RECORD: bool = false;
     type Value = String;
@@ -87,7 +87,7 @@ impl Field for PolicyFixedLength {
 
 // Padding/envelope arithmetic from docs/wire-format.md#size-semantics-and-enforcement.
 // The 1 MiB cases test size boundaries, not an enforced operational cap.
-fn assert_stored_sizes<P: Field<Value = String, Binding = FieldOnly>>(cases: &[(usize, usize)]) {
+fn assert_stored_sizes<P: Seal<Value = String, Binding = FieldOnly>>(cases: &[(usize, usize)]) {
     let keys = keyring();
     for &(encoded_bytes, envelope_bytes) in cases {
         let input = "x".repeat(encoded_bytes);
@@ -155,8 +155,8 @@ fn a_field_that_enables_padding_reads_old_and_new_values() {
 
 struct RawUnpadded;
 
-impl Field for RawUnpadded {
-    const ID: FieldId = SHARED_FIELD;
+impl Seal for RawUnpadded {
+    const ID: SealId = SHARED_FIELD;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -167,8 +167,8 @@ impl Field for RawUnpadded {
 
 struct RawPadded;
 
-impl Field for RawPadded {
-    const ID: FieldId = SHARED_FIELD;
+impl Seal for RawPadded {
+    const ID: SealId = SHARED_FIELD;
     const PADDING: Padding = Padding::block(16);
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -216,7 +216,7 @@ fn a_sweep_converges_values_to_the_current_padding_policy() {
     assert_swept(&unpadded, false);
 }
 
-fn sweep<F: Field<Binding = FieldOnly>>(bytes: Vec<u8>) -> Sealed<F> {
+fn sweep<F: Seal<Binding = FieldOnly>>(bytes: Vec<u8>) -> Sealed<F> {
     let keys = keyring();
     let ciphertext = Sealed::<F>::from_bytes(bytes).unwrap();
 
@@ -227,7 +227,7 @@ fn sweep<F: Field<Binding = FieldOnly>>(bytes: Vec<u8>) -> Sealed<F> {
     }
 }
 
-fn assert_swept<F: Field<Value = String, Binding = FieldOnly>>(
+fn assert_swept<F: Seal<Value = String, Binding = FieldOnly>>(
     swept: &[Sealed<F>; 2],
     padded: bool,
 ) {

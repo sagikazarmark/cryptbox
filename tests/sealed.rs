@@ -1,8 +1,8 @@
 //! Public-boundary tests for sealing and opening values under their runtime binding.
 
 use cryptbox::{
-    Binding, EncryptionKey, EncryptionKeyring, Error, Field, FieldId, FieldOnly, Padding, PartKind,
-    PartSpec, PartValue, PartValues, RecordId, Sealed, Tenant, TenantId, Utf8, key_id, part_id,
+    Binding, EncryptionKey, EncryptionKeyring, Error, FieldOnly, Padding, PartKind, PartSpec,
+    PartValue, PartValues, RecordId, Seal, SealId, Sealed, Tenant, TenantId, Utf8, key_id, part_id,
 };
 
 /// An org scopes keys; a workspace is only bound.
@@ -43,8 +43,8 @@ macro_rules! field {
     ($name:ident, $id:literal, $binding:ty, $record:literal) => {
         struct $name;
 
-        impl Field for $name {
-            const ID: FieldId = cryptbox::field_id!($id);
+        impl Seal for $name {
+            const ID: SealId = cryptbox::seal_id!($id);
             const PADDING: Padding = Padding::NONE;
             const RECORD: bool = $record;
             type Value = String;

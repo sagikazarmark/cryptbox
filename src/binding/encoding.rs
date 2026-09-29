@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use super::{PartKind, PartRole, PartSpec, PartValue};
-use crate::{Error, FieldId};
+use crate::{Error, SealId};
 
 // A persistent domain separator, not a display string.
 // See ../../docs/wire-format.md#binding-fingerprint.
@@ -15,7 +15,7 @@ const NO_RECORD: u8 = 0;
 /// The field, record, and part bytes are persistent KDF/AAD inputs,
 /// independent of Rust names. See ../../docs/wire-format.md#binding.
 pub(super) fn encode<'v>(
-    field: FieldId,
+    seal: SealId,
     record: Option<PartValue<'_>>,
     parts: impl IntoIterator<Item = (&'v PartSpec, &'v PartValue<'v>)>,
 ) -> Result<Vec<u8>, Error> {
@@ -24,7 +24,7 @@ pub(super) fn encode<'v>(
     let count = u16::try_from(parts.len()).map_err(|_| Error::InvalidBinding)?;
 
     let mut encoded = Vec::new();
-    encoded.extend_from_slice(field.as_bytes());
+    encoded.extend_from_slice(seal.as_bytes());
     match record {
         Some(record) => encode_value(&record, &mut encoded)?,
         None => encoded.push(NO_RECORD),

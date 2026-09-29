@@ -2,14 +2,14 @@
 use std::collections::HashMap;
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId, KeyScope,
+    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId, KeyScope,
     Padding, RecordId, Sealed, Tenant, TenantId, Utf8,
 };
 
 struct CustomerEmail;
 
-impl Field for CustomerEmail {
-    const ID: FieldId = cryptbox::field_id!("38fc9e4b-f1c5-4d9b-b90a-50f53fe6c792");
+impl Seal for CustomerEmail {
+    const ID: SealId = cryptbox::seal_id!("38fc9e4b-f1c5-4d9b-b90a-50f53fe6c792");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = true;
     type Value = String;
@@ -22,7 +22,7 @@ impl Field for CustomerEmail {
 struct TenantKeyrings(HashMap<KeyScope, EncryptionKeyring>);
 
 impl EncryptionKeySource for TenantKeyrings {
-    fn encryption_keyring(&self, _: FieldId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
         // Cloning a keyring shares its keys. An unknown scope fails closed.
         self.0.get(scope).cloned().ok_or(Error::KeysUnavailable)
     }

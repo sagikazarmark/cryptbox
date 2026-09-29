@@ -118,9 +118,9 @@ impl fmt::Debug for TenantId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BindingDomain, FieldId, RecordId, field_id};
+    use crate::{BindingDomain, RecordId, SealId, seal_id};
 
-    const FIELD: FieldId = field_id!("12345678-1234-4234-8234-1234567890ab");
+    const FIELD: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
 
     #[test]
     fn field_only_is_the_empty_binding() {
