@@ -133,6 +133,14 @@
   `UnsupportedFormatVersion(1)` for them, and no code path reads their padding
   with the field's policy any more. Values stored by 0.5.0 are deliberately
   unreadable by this release.
+- **Breaking:** the byte-level `encrypt`, `decrypt`, `reencrypt`, and
+  `needs_reencryption` are removed. For opaque bytes, declare a field whose
+  value is `Vec<u8>` (codec `Raw`): `Sealed::seal`, `open`, `reseal`, and
+  `needs_reseal` write and read the same envelopes. `is_ciphertext`,
+  `inspect_ciphertext`, `CiphertextInfo`, and `EXPERIMENTAL_XCHACHA20_POLY1305`
+  stay. Internally, the envelope no longer knows about bindings or key sources:
+  it takes the binding's bytes and fingerprint and a keyring the typed layer
+  chose, and `Sealed` and the migration planner share one reseal path.
 
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new

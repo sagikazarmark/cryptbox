@@ -342,8 +342,6 @@ marker, and an unpadded value ending in `80` or `80 00` never loses those bytes.
 A field's padding policy therefore describes only how new values are written: it
 can be enabled, disabled, or resized without making stored values unreadable.
 Re-encryption rewrites the payload and flag with the field's current policy.
-The byte-level `encrypt` function takes the policy to apply; `decrypt` removes
-recorded padding.
 
 The block size or fixed length is not recorded. Changing only those parameters
 is not visible in the envelope, so re-encryption applies them only to values it

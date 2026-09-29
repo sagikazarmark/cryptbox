@@ -172,6 +172,7 @@ pub struct FirstFieldDoctests;
 
 mod binding;
 mod blind;
+mod bound;
 mod codec;
 mod crypto;
 mod envelope;
@@ -213,8 +214,7 @@ pub use codec::{Codec, Plaintext, Raw, Utf8};
 #[cfg(feature = "derive")]
 pub use cryptbox_derive::{Binding, BlindIndexSpec, Field, Plaintext, Record};
 pub use envelope::{
-    CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, decrypt, encrypt, inspect_ciphertext,
-    is_ciphertext, needs_reencryption, reencrypt,
+    CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, inspect_ciphertext, is_ciphertext,
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use field::Field;

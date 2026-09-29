@@ -134,13 +134,6 @@ fn field_only_values_carry_no_shape_fingerprint() {
 
     let info = cryptbox::inspect_ciphertext(sealed.as_bytes()).unwrap();
     assert_eq!(info.shape_fingerprint(), None);
-    // Byte-identical to the field-only byte-level functions.
-    assert_eq!(
-        cryptbox::decrypt(Nickname::ID, sealed.as_bytes(), &keys)
-            .unwrap()
-            .as_slice(),
-        email().as_bytes()
-    );
 }
 
 #[test]

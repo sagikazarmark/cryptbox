@@ -3,7 +3,7 @@
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Raw, Sealed,
-    Tenant, TenantId, Utf8, decrypt, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
+    Tenant, TenantId, Utf8, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -56,12 +56,7 @@ fn experimental_envelope_vectors_record_their_padding() {
         assert_eq!(info.format_version(), 2);
         assert_eq!(info.padded(), padded);
         assert_eq!(info.shape_fingerprint(), None);
-        assert_eq!(
-            decrypt(VectorField::ID, &envelope, &keys())
-                .unwrap()
-                .as_slice(),
-            b"cryptbox vector"
-        );
+        assert_eq!(read::<VectorField>(vector).unwrap(), b"cryptbox vector");
     }
 }
 

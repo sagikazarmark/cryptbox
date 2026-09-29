@@ -7,8 +7,7 @@ use crate::{
     EncryptionKeySource, Error, Field, FieldOnly, IndexKeyId, KeyScope, RecordId, ShapeFingerprint,
     binding::shape_fingerprint,
     blind::{current_key_id, derive_value},
-    envelope::{decrypt_bound, encrypt_bound, needs_reencryption_bound},
-    inspect_blind_index, inspect_ciphertext,
+    bound, inspect_blind_index, inspect_ciphertext,
 };
 
 use super::{LegacyFormat, legacy};
@@ -431,7 +430,7 @@ where
             Err(error) => return Err(error),
         }
 
-        if needs_reencryption_bound(&binding.domain, F::PADDING, ciphertext, self.keys)? {
+        if bound::needs_reseal(&binding.domain, F::PADDING, ciphertext, self.keys)? {
             return Ok(RowState::Stale);
         }
 
@@ -481,7 +480,7 @@ where
         }
 
         let envelope_is_stale =
-            needs_reencryption_bound(&binding.domain, F::PADDING, ciphertext, self.keys)?;
+            bound::needs_reseal(&binding.domain, F::PADDING, ciphertext, self.keys)?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
         for (column, bytes) in self.indexes.iter().zip(indexes) {
             stale_columns.push(column.is_stale(bytes, &binding.index_domain)?);
@@ -492,11 +491,14 @@ where
             return Ok(RowOutcome::unchanged(RowState::Current));
         }
 
-        let plaintext = decrypt_bound(&binding.domain, ciphertext, self.keys)?;
-        let ciphertext = if envelope_is_stale {
-            encrypt_bound(&binding.domain, F::PADDING, &plaintext, self.keys)?
+        let current = (&binding.domain, self.keys);
+        let (plaintext, ciphertext) = if envelope_is_stale {
+            bound::reseal(current, current, F::PADDING, ciphertext)?
         } else {
-            ciphertext.to_vec()
+            (
+                bound::open(&binding.domain, ciphertext, self.keys)?,
+                ciphertext.to_vec(),
+            )
         };
 
         let indexes = if indexes_are_stale {
@@ -575,8 +577,12 @@ where
     ) -> Result<RowOutcome, Error> {
         let record = if recorded { args.record } else { None };
         let old = (legacy.domain)(&args.binding, record)?;
-        let plaintext = decrypt_bound(&old, ciphertext, legacy.keys)?;
-        let ciphertext = encrypt_bound(&binding.domain, F::PADDING, &plaintext, self.keys)?;
+        let (plaintext, ciphertext) = bound::reseal(
+            (&old, legacy.keys),
+            (&binding.domain, self.keys),
+            F::PADDING,
+            ciphertext,
+        )?;
         // The index binding may have changed with the shape, so every index
         // is derived again.
         let indexes = if self.indexes.is_empty() {
@@ -598,7 +604,7 @@ where
         let plaintext = legacy::recover(bytes, self.legacy)?;
         let value = F::Codec::decode(&plaintext)?;
         let plaintext: Zeroizing<Vec<u8>> = F::Codec::encode(&value)?;
-        let ciphertext = encrypt_bound(&binding.domain, F::PADDING, &plaintext, self.keys)?;
+        let ciphertext = bound::seal(&binding.domain, F::PADDING, &plaintext, self.keys)?;
 
         Ok(RowOutcome {
             state: RowState::Legacy,

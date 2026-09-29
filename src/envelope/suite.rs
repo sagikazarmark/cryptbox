@@ -208,14 +208,14 @@ mod xchacha20_poly1305 {
 pub(super) fn seal_with_nonce(
     plaintext: &[u8],
     padding: crate::Padding,
-    domain: &crate::BindingDomain,
+    binding: super::EnvelopeBinding<'_>,
     key: &EncryptionKey,
     nonce: [u8; crypto::NONCE_LEN],
 ) -> Result<Vec<u8>, Error> {
     xchacha20_poly1305::seal_with_nonce(
         &padding.pad(plaintext)?,
-        domain.fingerprint(),
-        domain.as_bytes(),
+        binding.fingerprint,
+        binding.bytes,
         key,
         nonce,
     )
