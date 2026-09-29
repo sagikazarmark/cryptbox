@@ -1,22 +1,14 @@
-//! Cryptographic primitives: HKDF-SHA-256, HMAC-SHA-256, and XChaCha20-Poly1305.
+//! Primitives shared by the envelope's suites and blind indexes: HKDF-SHA-256,
+//! HMAC-SHA-256, and operating-system randomness.
 //!
-//! This module depends on no other module of the crate, so every use of a
-//! primitive, and every way one can fail, is reviewable in one place. Callers
-//! own the recipes: which labels, key material, and AAD go in.
+//! This module depends on no other module of the crate. Callers own the recipes:
+//! which labels, key material, and inputs go in. Each envelope suite owns its
+//! AEAD, next to the recipe that calls it.
 
-use chacha20poly1305::aead::array::typenum::Unsigned;
-use chacha20poly1305::aead::{AeadCore, AeadInOut, inout::InOutBuf};
-use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
 use hkdf::Hkdf;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use zeroize::{Zeroize, Zeroizing};
-
-pub(crate) const NONCE_LEN: usize = <XChaCha20Poly1305 as AeadCore>::NonceSize::USIZE;
-pub(crate) const TAG_LEN: usize = <XChaCha20Poly1305 as AeadCore>::TagSize::USIZE;
-// One byte below RFC 8439's `(2^32 - 1) * 64`: chacha20poly1305 rejects a message of
-// exactly that length, which would otherwise surface as Error::Internal.
-const MAX_MESSAGE_LEN: u64 = 274_877_906_879;
 
 // Labels, including NULs, are persistent domain separators, not display strings.
 // See ../docs/wire-format.md#encryption-recipe.
@@ -26,83 +18,15 @@ const HKDF_SALT: &[u8] = b"cryptbox/hkdf-sha256/v1\0";
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Error {
     Internal,
-    MessageTooLong,
-    AuthenticationFailed,
     RandomnessUnavailable,
 }
 
-/// Returns a fresh nonce from the operating-system random source.
-pub(crate) fn random_nonce() -> Result<[u8; NONCE_LEN], Error> {
-    // Fresh OS randomness avoids caller-managed nonce reuse; failure must stop encryption.
-    // See ../docs/wire-format.md#encryption-recipe.
-    let mut nonce = [0_u8; NONCE_LEN];
-    getrandom::fill(&mut nonce).map_err(|_| Error::RandomnessUnavailable)?;
+/// Returns `N` bytes from the operating-system random source.
+pub(crate) fn random_bytes<const N: usize>() -> Result<[u8; N], Error> {
+    let mut bytes = [0_u8; N];
+    getrandom::fill(&mut bytes).map_err(|_| Error::RandomnessUnavailable)?;
 
-    Ok(nonce)
-}
-
-/// Rejects a message longer than XChaCha20-Poly1305 can encrypt under one nonce.
-pub(crate) fn check_message_len(len: usize) -> Result<(), Error> {
-    let len = u64::try_from(len).map_err(|_| Error::MessageTooLong)?;
-
-    if len > MAX_MESSAGE_LEN {
-        return Err(Error::MessageTooLong);
-    }
-
-    Ok(())
-}
-
-/// Encrypts `plaintext` and appends the ciphertext and its tag to `out`.
-///
-/// The AEAD reads `plaintext` and writes ciphertext straight into `out`, so no
-/// working copy of the plaintext is made.
-pub(crate) fn seal_into(
-    key: &[u8; 32],
-    nonce: &[u8; NONCE_LEN],
-    aad: &[u8],
-    plaintext: &[u8],
-    out: &mut Vec<u8>,
-) -> Result<(), Error> {
-    check_message_len(plaintext.len())?;
-
-    let cipher = XChaCha20Poly1305::new(key.into());
-    let start = out.len();
-    let end = start
-        .checked_add(plaintext.len())
-        .ok_or(Error::MessageTooLong)?;
-    out.resize(end, 0);
-    let buffer = InOutBuf::new(plaintext, &mut out[start..]).map_err(|_| Error::Internal)?;
-    let tag = cipher
-        .encrypt_inout_detached(nonce.into(), aad, buffer)
-        .map_err(|_| Error::Internal)?;
-    out.extend_from_slice(&tag);
-
-    Ok(())
-}
-
-/// Authenticates `ciphertext`, which ends with its tag, and returns the plaintext.
-///
-/// The AEAD verifies the tag before it writes any plaintext, so a failure
-/// returns no bytes.
-pub(crate) fn open(
-    key: &[u8; 32],
-    nonce: &[u8; NONCE_LEN],
-    aad: &[u8],
-    ciphertext: &[u8],
-) -> Result<Zeroizing<Vec<u8>>, Error> {
-    let (ciphertext, tag) = ciphertext
-        .split_last_chunk::<TAG_LEN>()
-        .ok_or(Error::AuthenticationFailed)?;
-    let cipher = XChaCha20Poly1305::new(key.into());
-    // Plaintext is only ever written here; erase it on drop.
-    // See ../docs/wire-format.md#key-and-buffer-lifetime.
-    let mut plaintext = Zeroizing::new(vec![0_u8; ciphertext.len()]);
-    let buffer = InOutBuf::new(ciphertext, &mut plaintext[..]).map_err(|_| Error::Internal)?;
-    cipher
-        .decrypt_inout_detached(nonce.into(), aad, buffer, tag.into())
-        .map_err(|_| Error::AuthenticationFailed)?;
-
-    Ok(plaintext)
+    Ok(bytes)
 }
 
 /// Derives 32 bytes with HKDF-SHA-256 under the crate's fixed salt, with the
@@ -148,7 +72,7 @@ pub(crate) fn hmac_sha256(key: &[u8], input: &[&[u8]]) -> Result<Zeroizing<[u8; 
 
 #[cfg(test)]
 mod tests {
-    use super::{Error, NONCE_LEN, check_message_len, hkdf_sha256_32_with_salt, open, seal_into};
+    use super::hkdf_sha256_32_with_salt;
 
     #[test]
     fn hkdf_matches_rfc_5869_case_one() {
@@ -161,33 +85,6 @@ mod tests {
         assert_eq!(
             hex::encode(output.as_slice()),
             "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf"
-        );
-    }
-
-    #[test]
-    #[cfg(target_pointer_width = "64")]
-    fn message_len_limit_matches_the_aead() {
-        assert_eq!(check_message_len(274_877_906_879), Ok(()));
-        assert_eq!(
-            check_message_len(274_877_906_880),
-            Err(Error::MessageTooLong)
-        );
-    }
-
-    #[test]
-    fn open_rejects_a_changed_aad() {
-        let key = [0x11; 32];
-        let nonce = [0x22; NONCE_LEN];
-        let mut sealed = Vec::new();
-        seal_into(&key, &nonce, b"aad", b"secret", &mut sealed).unwrap();
-
-        assert_eq!(
-            open(&key, &nonce, b"aad", &sealed).unwrap().as_slice(),
-            b"secret"
-        );
-        assert_eq!(
-            open(&key, &nonce, b"other", &sealed).unwrap_err(),
-            Error::AuthenticationFailed
         );
     }
 }

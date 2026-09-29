@@ -5,11 +5,11 @@ The expected cryptographic domain of a value, independent of where its stored
 bytes are found. Every sealed value is bound at runtime to its field ID, to the
 values of its field's declared scope, and, when the field declares `RECORD`, to a
 record ID. A field-only binding (`FieldOnly`) identifies a logical field, not a
-row or tenant. The binding's *shape* (its parts and whether it binds a record) is
+row or tenant. The binding's *declaration* (its parts and whether it binds a record) is
 persistent schema, declared by the field; its values are supplied at each call as
 the field's binding arguments (`Args`). Opening under other values fails
-authentication; opening under another shape reports a binding mismatch.
-<!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “key scope” is only the `keys` parts. Avoid “context” for any of them. -->
+authentication; opening under another declaration reports a binding mismatch.
+<!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “key scope” is only the `keys` parts. Avoid “context” for any of them: it names only the envelope's input (see Context), and a user-authored context was rejected in ADR-0005. -->
 
 **Binding arguments**:
 The binding values of one seal or open, typed by the field (`Args<F>`): `()` for
@@ -17,6 +17,15 @@ a `FieldOnly` field, `RecordId` for a `FieldOnly` field that binds a record,
 `&F::Binding`, or `(&F::Binding, RecordId)`. A missing or extra record fails the
 build. Within a record, `InRecord(&F::Binding, RecordId)` binds the record
 exactly when the field declares one.
+
+**Binding fingerprint**:
+A public 8-byte summary of a binding's declaration: truncated SHA-256 over its
+part IDs, kinds, and roles and whether it binds a record, never its values.
+Every envelope header stores the fingerprint of the binding it was sealed
+under, and opening compares it with the reader's before any key lookup,
+reporting a binding mismatch. Equal fingerprints do not imply equal bindings,
+and security never depends on the fingerprint.
+<!-- Agent guidance: “shape” is the retired name for a binding's declaration, and “shape fingerprint” for this; do not reintroduce them. -->
 
 **Binding part**:
 One declared value of a binding scope, with a part ID, a value kind (uuid, i64,
@@ -40,6 +49,21 @@ normalized plaintext comparison before acceptance as a match.
 The encrypted bytes of a value: the envelope that a sealed value wraps.
 Structurally valid ciphertext has not necessarily been authenticated.
 <!-- Agent guidance: in the typed API, say “sealed value” (`Sealed<F>`); “ciphertext” is the byte-level envelope. Avoid “encrypted value” for plaintext-bearing types. -->
+
+**Column keys**:
+The key source of an automatic SQLx column, named in its type as
+`Plain<F, K>` (`ColumnKeys`): the installed keys (`GlobalKeys`, the default) or
+an application-owned static `Keys`. It belongs to the column type, not to a
+field.
+<!-- Agent guidance: “key context” is the retired name; do not reintroduce it. -->
+
+**Context**:
+What an envelope binds a value to: bytes that key derivation and the AAD both
+take, which are never stored, and a context fingerprint that the header
+stores. The envelope interprets neither. For a sealed value, the context is
+its binding's encoding and binding fingerprint;
+`CiphertextInfo::context_fingerprint` reports the stored fingerprint.
+<!-- Agent guidance: “context” is the envelope-level term only. For what a value is bound to, say “binding”; applications never write context bytes. -->
 
 **Current generation**:
 The generation selected for new encryption or new stored blind indexes.
@@ -81,13 +105,7 @@ serve only `FieldOnly` fields without a record. The global conveniences
 (`seal_global()`, `open_global()`, `with_index()`, `probes()`) and the automatic
 column read them and fail with `KeysNotInstalled` before installation; every
 other operation takes keys explicitly.
-<!-- Agent guidance: avoid “global key context” or “global keyring”; the global is the installed keys. -->
-
-**Key context**:
-The key source of an automatic SQLx column, named in its type as
-`Plain<F, K>`: the installed keys (`GlobalKeys`, the default) or an
-application-owned static `Keys`. It belongs to the column type, not to a field.
-<!-- Agent guidance: avoid “binding context” as a synonym. -->
+<!-- Agent guidance: avoid “global column keys” or “global keyring”; the global is the installed keys. -->
 
 **Key generation**:
 An immutable pairing of a generation identifier and root key material. Encryption
@@ -113,11 +131,11 @@ never shared across keyrings, so opening with the wrong keyring fails loudly.
 
 **Legacy-binding window**:
 The bounded period in which a field's values may still be sealed with the
-binding shape it had before a shape change. Readers open both shapes and probe
-both index bindings, and a sweep reseals the old shape, recognized by the shape
-fingerprint in each header. The window closes once a complete verification pass
-counts no such rows.
-<!-- Agent guidance: distinct from legacy data, which is not a CryptBox envelope at all (`RowState::Legacy`); a legacy-binding row is a valid envelope of an older shape (`RowState::LegacyBinding`). -->
+binding declaration it had before a declaration change. Readers open both
+declarations and probe both index bindings, and a sweep reseals the old
+declaration, recognized by the binding fingerprint in each header. The window
+closes once a complete verification pass counts no such rows.
+<!-- Agent guidance: distinct from legacy data, which is not a CryptBox envelope at all (`RowState::Legacy`); a legacy-binding row is a valid envelope of an older declaration (`RowState::LegacyBinding`). -->
 
 **Migration-state verification**:
 Inspection of stored structure and generation convergence. It is distinct from
@@ -174,7 +192,7 @@ its field declares; `#[derive(Record)]` rejects a record that omits one.
 
 **Schema manifest**:
 A reviewable listing of registered fields and blind indexes with their
-persistent schema: field ID, codec ID, padding, record flag, binding shape
+persistent schema: field ID, codec ID, padding, record flag, binding declaration
 (fingerprint, parts, kinds, and roles), shred unit, index ID, precision, and
 normalizer name. It names IDs, never Rust types, so its output is the same on
 every toolchain. A field may carry a custody label, a declarative note of which

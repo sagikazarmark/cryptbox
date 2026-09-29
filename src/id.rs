@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::fmt;
 
 macro_rules! identifier {
     ($name:ident, $description:literal) => {
@@ -29,14 +29,14 @@ macro_rules! identifier {
             }
         }
 
-        impl fmt::Display for $name {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                fmt::Display::fmt(&uuid::Uuid::from_bytes(self.0).hyphenated(), formatter)
+        impl ::std::fmt::Display for $name {
+            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                ::std::fmt::Display::fmt(&::uuid::Uuid::from_bytes(self.0).hyphenated(), formatter)
             }
         }
 
-        impl fmt::Debug for $name {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        impl ::std::fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 formatter
                     .debug_tuple(stringify!($name))
                     .field(&format_args!("{}", self))
@@ -44,96 +44,25 @@ macro_rules! identifier {
             }
         }
 
-        impl FromStr for $name {
-            type Err = InvalidIdentifier;
+        impl ::std::str::FromStr for $name {
+            type Err = $crate::InvalidIdentifier;
 
             fn from_str(value: &str) -> Result<Self, Self::Err> {
-                parse_uuid(value).map(Self)
+                $crate::id::parse_uuid(value).map(Self)
             }
         }
     };
 }
 
+// Shared with `key`, which declares its key-generation IDs next to the keys.
+pub(crate) use identifier;
+
 identifier!(FieldId, "A stable logical encrypted-field identifier.");
-identifier!(KeyId, "An opaque encryption-key generation identifier.");
 identifier!(IndexId, "A stable logical blind-index identifier.");
 identifier!(
     PartId,
     "A stable binding-part identifier, independent of Rust names."
 );
-identifier!(
-    IndexKeyId,
-    "An opaque blind-index-key generation identifier."
-);
-
-/// Identifies a complete encryption-suite construction.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SuiteId(u8);
-
-impl SuiteId {
-    /// Creates a suite identifier from its wire value.
-    #[must_use]
-    pub const fn new(value: u8) -> Self {
-        Self(value)
-    }
-
-    /// Returns the suite's wire value.
-    #[must_use]
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
-
-impl fmt::Display for SuiteId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
-/// A 64-bit fingerprint of a binding's shape: its part IDs, kinds, and roles,
-/// and whether it binds a record.
-///
-/// Every ciphertext header carries the fingerprint of the shape it was sealed
-/// with; a field-only binding has the empty shape. It is diagnostic only: a reader always takes the expected shape
-/// from its own field, and reports [`Error::BindingMismatch`](crate::Error::BindingMismatch) when the stored
-/// fingerprint disagrees. See the [wire format].
-///
-#[doc = concat!(
-    "[wire format]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#shape-fingerprint",
-)]
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
-pub struct ShapeFingerprint([u8; 8]);
-
-impl ShapeFingerprint {
-    /// Creates a fingerprint from its stored 8-byte representation.
-    #[must_use]
-    pub const fn from_bytes(bytes: [u8; 8]) -> Self {
-        Self(bytes)
-    }
-
-    /// Returns the stored 8-byte representation.
-    #[must_use]
-    pub const fn as_bytes(&self) -> &[u8; 8] {
-        &self.0
-    }
-}
-
-impl fmt::Display for ShapeFingerprint {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0
-            .iter()
-            .try_for_each(|byte| write!(formatter, "{byte:02x}"))
-    }
-}
-
-impl fmt::Debug for ShapeFingerprint {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_tuple("ShapeFingerprint")
-            .field(&format_args!("{self}"))
-            .finish()
-    }
-}
 
 /// The supplied text is not a canonical hyphenated UUID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -150,7 +79,7 @@ impl std::error::Error for InvalidIdentifier {}
 
 // Accepts only the hyphenated form: `try_parse` also takes simple, braced, and URN
 // forms, which all differ from it in length.
-fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
+pub(crate) fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
     if value.len() != 36 {
         return Err(InvalidIdentifier);
     }
@@ -170,32 +99,12 @@ macro_rules! field_id {
     }};
 }
 
-/// Creates a [`KeyId`](crate::KeyId) from a UUID literal.
-#[macro_export]
-macro_rules! key_id {
-    ($value:literal) => {{
-        const ID: $crate::KeyId =
-            $crate::KeyId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
-        ID
-    }};
-}
-
 /// Creates an [`IndexId`](crate::IndexId) from a UUID literal.
 #[macro_export]
 macro_rules! index_id {
     ($value:literal) => {{
         const ID: $crate::IndexId =
             $crate::IndexId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
-        ID
-    }};
-}
-
-/// Creates an [`IndexKeyId`](crate::IndexKeyId) from a UUID literal.
-#[macro_export]
-macro_rules! index_key_id {
-    ($value:literal) => {{
-        const ID: $crate::IndexKeyId =
-            $crate::IndexKeyId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
         ID
     }};
 }

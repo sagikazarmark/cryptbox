@@ -29,7 +29,7 @@ compromised storage. Trust the application, key sources, dependencies, and opera
 system: root keys must be cryptographically random, encryption and index roots
 independently generated, and each generation ID permanently paired with the same
 material. IDs are public metadata; generate them independently of key bytes.
-Fields supply persistent schema, including their binding shape. Binding values and
+Fields supply persistent schema, including their binding declaration. Binding values and
 record IDs are only as trustworthy as their source: take them from verified claims
 or an authorized request, never from the stored row. The exception is a
 `Record`'s record ID, which is read from the row and checked by opening every
@@ -42,7 +42,7 @@ Secure OS randomness and a compatible target are required; see [platform constra
 | --- | --- |
 | Read dumps, snapshots, backups, or detached volumes | Selected values remain confidential under the assumptions above. Other columns, IDs, and metadata remain visible. |
 | Modify stored ciphertext | Authenticated decryption rejects tampering. Parsing alone does not authenticate; malformed formats or unknown keys may fail earlier. |
-| Copy ciphertext to another logical field | Authentication rejects a field with a different field ID. A different binding shape reports `BindingMismatch`. |
+| Copy ciphertext to another logical field | Authentication rejects a field with a different field ID. A different binding declaration reports `BindingMismatch`. |
 | Copy ciphertext to another scope, such as another tenant | Authentication rejects other binding values of a field that declares them. A `FieldOnly` field has no scope. |
 | Copy ciphertext between rows of the same field | Authentication rejects another record of a field that binds one. For a field without a record, substitution within the same scope can succeed. |
 | Return a whole row in place of another | Every value in it opens, because each is bound to that row's own record ID. A `Record` opens as the record it is: when you asked for one record by ID, compare the opened ID with it. |

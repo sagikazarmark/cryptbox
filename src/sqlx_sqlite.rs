@@ -8,7 +8,7 @@ use sqlx::{
 };
 
 use crate::{
-    BlindIndex, BlindIndexRef, BlindIndexSpec, Field, FieldOnly, KeyContext, Plain, Sealed,
+    BlindIndex, BlindIndexRef, BlindIndexSpec, ColumnKeys, Field, FieldOnly, Plain, Sealed,
 };
 
 fn blob_type_info() -> SqliteTypeInfo {
@@ -22,7 +22,7 @@ fn blob_compatible(ty: &SqliteTypeInfo) -> bool {
 impl<F, K> Type<Sqlite> for Plain<F, K>
 where
     F: Field<Binding = FieldOnly, Indexes = ()>,
-    K: KeyContext,
+    K: ColumnKeys,
 {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
@@ -66,7 +66,7 @@ impl<Spec> Type<Sqlite> for BlindIndexRef<'_, Spec> {
 impl<'q, F, K> Encode<'q, Sqlite> for Plain<F, K>
 where
     F: Field<Binding = FieldOnly, Indexes = ()>,
-    K: KeyContext,
+    K: ColumnKeys,
 {
     fn encode_by_ref(
         &self,
@@ -137,7 +137,7 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
 impl<'row, F, K> Decode<'row, Sqlite> for Plain<F, K>
 where
     F: Field<Binding = FieldOnly, Indexes = ()>,
-    K: KeyContext,
+    K: ColumnKeys,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;

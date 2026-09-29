@@ -1,4 +1,4 @@
-use crate::{IndexId, IndexKeyId, KeyId, SuiteId, crypto};
+use crate::{IndexId, IndexKeyId, KeyError, KeyId, crypto};
 
 /// The non-sensitive category of a codec failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,7 +78,7 @@ pub enum Error {
     UnsupportedFormatVersion(u8),
     /// The envelope uses an unavailable suite.
     #[error("unsupported encryption suite {0}")]
-    UnsupportedSuite(SuiteId),
+    UnsupportedSuite(u8),
     /// The envelope names a key that the keyring does not hold.
     #[error("unknown encryption key {0}")]
     UnknownEncryptionKey(KeyId),
@@ -88,14 +88,14 @@ pub enum Error {
     /// Ciphertext authentication failed.
     #[error("ciphertext authentication failed")]
     AuthenticationFailed,
-    /// The envelope was sealed with a different binding shape than the
+    /// The envelope was sealed with a different binding declaration than the
     /// reader's field declares.
     ///
-    /// Reported from the envelope's shape fingerprint before any key lookup or
+    /// Reported from the envelope's binding fingerprint before any key lookup or
     /// authentication, so the value was likely written before a binding
     /// migration, or read as the wrong field. Different binding values under
-    /// the same shape report [`Error::AuthenticationFailed`].
-    #[error("ciphertext binding shape does not match the field")]
+    /// the same declaration report [`Error::AuthenticationFailed`].
+    #[error("ciphertext binding declaration does not match the field")]
     BindingMismatch,
     /// Encoding or decoding the typed value failed.
     #[error("codec failed: {0}")]
@@ -188,9 +188,18 @@ impl From<crypto::Error> for Error {
     fn from(error: crypto::Error) -> Self {
         match error {
             crypto::Error::Internal => Self::Internal,
-            crypto::Error::MessageTooLong => Self::MessageTooLong,
-            crypto::Error::AuthenticationFailed => Self::AuthenticationFailed,
             crypto::Error::RandomnessUnavailable => Self::RandomnessUnavailable,
+        }
+    }
+}
+
+impl From<KeyError> for Error {
+    fn from(error: KeyError) -> Self {
+        match error {
+            KeyError::RandomnessUnavailable => Self::RandomnessUnavailable,
+            KeyError::InvalidKeyEncoding => Self::InvalidKeyEncoding,
+            KeyError::DuplicateEncryptionKey(id) => Self::DuplicateEncryptionKey(id),
+            KeyError::DuplicateBlindIndexKey(id) => Self::DuplicateBlindIndexKey(id),
         }
     }
 }

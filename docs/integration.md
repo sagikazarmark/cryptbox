@@ -11,7 +11,7 @@ This page explains those choices and their consequences. It builds on
 Encrypted storage is not entirely self-describing. An envelope identifies its
 format, suite, encryption-key generation, and whether its payload is padded, but
 the application supplies the expected field ID, binding, and codec. An
-envelope also carries a fingerprint of its binding shape, which only names a
+envelope also carries a fingerprint of its binding declaration, which only names a
 mismatch. A blind index
 additionally depends on a logical index ID and normalization rule that are not
 stored with it.
@@ -22,7 +22,7 @@ These choices form persistent schema just as database column types do:
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
 | Field ID | Every value is bound to its field ID; a different ID fails authentication. |
-| Binding shape and record flag | Every value is bound to its binding's part IDs, kinds, and roles, and to its record when the field binds one; a different shape reports `BindingMismatch`. |
+| Binding declaration and record flag | Every value is bound to its binding's part IDs, kinds, and roles, and to its record when the field binds one; a different declaration reports `BindingMismatch`. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
@@ -66,7 +66,7 @@ Stored bytes do not describe this schema, so check it in tests:
   derives and attributes. A failure means stored values would change; plan a
   migration or revert.
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered field
-  (ID, codec ID, padding, whether it binds a record, the binding's shape
+  (ID, codec ID, padding, whether it binds a record, the binding
   fingerprint and parts with their kinds and roles, and the shred unit) and
   index (ID, field, bits, normalizer). `Manifest::custody::<F>("…")` adds a
   custody label to a field, such as `"payments KMS, one key per org"`, so
@@ -110,7 +110,7 @@ keys are needed and where plaintext becomes available:
 | --- | --- |
 | Explicit sealing or preparation | Produce a sealed value before calling storage. Key failures happen at that explicit step; the stored representation can then cross a database or serialization boundary. |
 | Read as `Sealed<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to open it, with the binding values of the row. Useful when only some loaded values need plaintext. |
-| Automatic SQLx `Plain<F>` | The adapter seals on encode and opens on decode. It reads keys from its key context: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Plain<F, K>`. |
+| Automatic SQLx `Plain<F>` | The adapter seals on encode and opens on decode. It reads keys from its `ColumnKeys` type `K`: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Plain<F, K>`. |
 
 The automatic `Plain<F>` column serves only `FieldOnly` fields without a record or
 blind indexes: a column decoder sees neither the row nor its scope, and would not
@@ -135,7 +135,7 @@ A **keyring** holds one current key generation and the previous generations
 that stored data still needs: `EncryptionKeyring` for values and
 `BlindIndexKeyring` for blind indexes. `Keys` pairs an encryption keyring with an
 optional blind-index keyring. The **installed keys** back the process-wide forms,
-and a **key context** selects the keys of an automatic SQLx column.
+and a **`ColumnKeys`** type selects the keys of an automatic SQLx column.
 
 Which keyring protects which field and scope is the decision with the most
 silent failure modes; [choosing keyrings](choosing-keyrings.md) covers it in
@@ -171,9 +171,9 @@ spawned outside a scope would silently use other keys
 
 The automatic SQLx column `Plain<F, K>` takes its key source as a type,
 because SQLx decoding receives no context. The default `K`, `GlobalKeys`, reads
-the installed keys. Implement `KeyContext` over an application-owned static
+the installed keys. Implement `ColumnKeys` over an application-owned static
 `Keys` to use a second keyring or a test fixture without the global.
-`Plain::with_key_context::<K>()` moves a value into another column type without
+`Plain::with_column_keys::<K>()` moves a value into another column type without
 resealing it. A field does not choose its keys.
 
 Teams that forbid the global can deny `keys::install` and the process-wide forms with

@@ -119,10 +119,10 @@
 //!
 //! # Persistent schema
 //!
-//! Codec compatibility, field/index/part IDs, the binding shape (part kinds and
+//! Codec compatibility, field/index/part IDs, the binding declaration (part kinds and
 //! roles, and whether the field binds a record), normalization, and index
 //! precision are persistent schema. Stored bytes do not describe them, beyond a
-//! diagnostic fingerprint of the binding shape; changing them requires a
+//! diagnostic fingerprint of the binding declaration; changing them requires a
 //! migration plan. Padding is not schema: the envelope records it.
 //! Guard them in CI with [`testing::assert_encoding`] fixtures, a
 //! [`schema::Manifest`] snapshot, and [`assert_unique_ids!`]; see [schema rules].
@@ -180,6 +180,7 @@ mod error;
 mod field;
 mod id;
 mod key;
+mod key_source;
 pub mod keys;
 #[cfg(feature = "migrate")]
 pub mod migrate;
@@ -214,17 +215,16 @@ pub use codec::{Codec, Plaintext, Raw, Utf8};
 #[cfg(feature = "derive")]
 pub use cryptbox_derive::{Binding, BlindIndexSpec, Field, Plaintext, Record};
 pub use envelope::{
-    CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, inspect_ciphertext, is_ciphertext,
+    CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, SuiteId, inspect_ciphertext, is_ciphertext,
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use field::Field;
-pub use id::{
-    FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, PartId, ShapeFingerprint, SuiteId,
-};
+pub use id::{FieldId, IndexId, InvalidIdentifier, PartId};
 pub use key::{
-    BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, EncryptionKey, EncryptionKeySource,
-    EncryptionKeyring, GlobalKeys, KeyContext, Keys,
+    BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyError,
+    KeyId, Keys,
 };
+pub use key_source::{BlindIndexKeySource, ColumnKeys, EncryptionKeySource, GlobalKeys};
 pub use padding::Padding;
 pub use prepare::Prepared;
 pub use record::{IndexedBy, Record, open_matching};

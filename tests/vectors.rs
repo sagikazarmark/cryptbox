@@ -9,8 +9,8 @@ use cryptbox::{
 use zeroize::Zeroizing;
 
 // docs/wire-format.md#provisional-envelope-vectors
-const UNPADDED: &str = "4342580002010011111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da141a9d8eb6678b1f3feec1eacbbb1dc56de";
-const PADDED: &str = "4342580002010111111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1419a655dbd3c41cbc407272faca1c37acec7";
+const UNPADDED: &str = "43425800020100111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1415b33cbc7bfb19bc11afc1b31e3f3075b";
+const PADDED: &str = "43425800020101111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1419a17b89c9d88cb6cca540c1c17f5917f44";
 
 fn keys() -> EncryptionKeyring {
     let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
@@ -56,8 +56,8 @@ fn experimental_envelope_vectors_record_their_padding() {
 
         assert_eq!(info.format_version(), 2);
         assert_eq!(info.padded(), padded);
-        // The empty shape's fingerprint: docs/wire-format.md#shape-fingerprint
-        assert_eq!(info.shape_fingerprint().to_string(), "ff670aba047d77fa");
+        // The empty declaration's fingerprint: docs/wire-format.md#binding-fingerprint
+        assert_eq!(hex::encode(info.context_fingerprint()), "5d86321261d64380");
         assert_eq!(read::<VectorField>(vector).unwrap(), b"cryptbox vector");
     }
 }

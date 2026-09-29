@@ -145,6 +145,21 @@
   `Error::InvalidBlindIndex` instead of silently matching nothing, and must be
   derived again from their values.
 
+- **Breaking:** key and keyring constructors return `KeyError` instead of
+  `Error`: `EncryptionKey::generate`, `from_hex`, and `from_base64`, the same on
+  `BlindIndexKey`, and `EncryptionKeyring::new` and `BlindIndexKeyring::new`.
+  `KeyError` converts into the `Error` variant of the same name, so `?` in a
+  function returning `Error` is unchanged; only code that names or matches the
+  constructor's error type changes.
+
+- **Breaking:** `Error::UnsupportedSuite` carries the suite byte read from the
+  header, as `Error::UnsupportedFormatVersion` does, instead of a `SuiteId`.
+  `SuiteId` itself is unchanged and still exported at the crate root.
+
+- **Breaking:** `KeyContext`, the key source an automatic SQLx column names in
+  its type, is renamed `ColumnKeys`, and `Plain::with_key_context` is renamed
+  `Plain::with_column_keys`. "Context" now names only the envelope's context.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls
@@ -176,13 +191,14 @@
   `Display`.
 - Define the wire format for scoped binding (ADR-0005): every binding is
   `field_id ‖ record ‖ count ‖ parts`, with sorted, kind-tagged parts, an
-  optional record, and no tag, and every envelope carries a 64-bit shape
+  optional record, and no tag, and every envelope carries a 64-bit binding
   fingerprint after the `KeyId`, in a fixed 31-byte header, so `W = P + 71`. A
-  field-only binding is the empty shape, with no parts and no record, and
-  carries that shape's fingerprint.
-  `CiphertextInfo::shape_fingerprint` reports the fingerprint as a
-  `ShapeFingerprint`, not an `Option`. Reading an envelope sealed with a different binding shape
-  fails with the new `Error::BindingMismatch` before any key lookup. The new
+  field-only binding is the empty declaration, with no parts and no record, and
+  carries that declaration's fingerprint.
+  `CiphertextInfo::context_fingerprint` reports it as a `[u8; 8]`, not an
+  `Option`, and the `ShapeFingerprint` type is removed. Reading an envelope
+  sealed with a different binding declaration fails with the new
+  `Error::BindingMismatch` before any key lookup. The new
   `Error::InvalidBinding` rejects malformed binding declarations or values.
   Only flag bit `01` is defined; every other bit stays reserved.
 - Add the `Binding` trait for declaring a scope (ADR-0005). It is unrelated to
@@ -207,7 +223,7 @@
   `reseal_across(from, from_keys, to, to_keys)`, plus `key_id()`. `open` returns
   the bare `F::Value`. A binding of another type is a type error, and a missing
   or extra record fails the build. Opening under other binding values, another
-  record, or as another field fails authentication; another binding shape
+  record, or as another field fails authentication; another binding declaration
   reports `Error::BindingMismatch`.
 - **Breaking:** the `Encrypted<F, K>` plaintext carrier is removed. The
   automatic SQLx column is now `Plain<F, K = GlobalKeys>`, whose constructors
@@ -292,7 +308,7 @@
 - Add `InRecord(&binding, record)` binding arguments, which bind the record
   exactly when the field declares one, and `RecordId::of`, which makes a record
   ID from any `PartType`.
-- **Breaking:** sweeps serve bound fields and migrate binding shapes
+- **Breaking:** sweeps serve bound fields and migrate binding declarations
   (ADR-0005). `RowPlanner<'_, F, R = ()>` and `Sweep<'_, F, R = ()>` take the
   type of a row's columns: `RowPlanner::for_key_scope(key_scope, keys, row_args)`
   plans the rows of one `KeyScope`, building each row's `RowArgs` (binding and record
@@ -303,12 +319,12 @@
   name another key scope is `RowState::OutOfScope`, counted in
   `SweepReport::out_of_scope` and left alone rather than failing the sweep.
   `RowPlanner::legacy_binding::<Old>(old_keys)` opens a legacy-binding window:
-  rows whose header names the older shape `Old` are `RowState::LegacyBinding`,
+  rows whose header names the older declaration `Old` are `RowState::LegacyBinding`,
   counted in `SweepReport::legacy_binding`, opened under `Old` with its parts
   taken from the current binding by part ID (and the row's record when
   the header names `Old` with one), and resealed with every index
   derived again. `migrate::probes_across` and `migrate::open_across` keep
-  lookups working over both shapes during the window. `is_terminal` also
+  lookups working over both declarations during the window. `is_terminal` also
   requires zero legacy-binding and out-of-scope rows.
 
   | Before | Now |
@@ -337,7 +353,7 @@
   scope's prefix for admin queries. See `docs/restate.md` for what the journal
   exposes and the org-shredding runbook.
 - **Breaking:** the schema manifest shows bindings and custody instead of Rust
-  types. Each field lists whether it binds a record, its binding's shape
+  types. Each field lists whether it binds a record, its binding
   fingerprint, each part's ID, kind, and role, and its shred
   unit: its `keys` parts, or `keyring` when it has none. The marker and value
   type names, which `std::any::type_name` did not keep stable across
@@ -384,7 +400,7 @@
   two tiers: a `FieldOnly` field with one keyring, then a tenant- and
   record-bound field with one keyring per tenant, backed by the new
   `tenant_field` example. Three guides are new: `docs/bindings.md` (part roles,
-  authorized binding values, record IDs, moving a record, shape migrations),
+  authorized binding values, record IDs, moving a record, declaration migrations),
   `docs/choosing-keyrings.md` (the failure modes that are silent at write time,
   key-ID rules, recording and testing custody, refreshing a key source), and
   `docs/shredding.md` (prerequisites, in-memory caches, backups, verification).

@@ -4,8 +4,8 @@ use zeroize::Zeroizing;
 
 use crate::{
     Binding, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, Field, FieldOnly, IndexKeyId, KeyScope, RecordId, ShapeFingerprint,
-    binding::shape_fingerprint,
+    EncryptionKeySource, Error, Field, FieldOnly, IndexKeyId, KeyScope, RecordId,
+    binding::declaration_fingerprint,
     blind::{current_key_id, derive_value},
     bound, inspect_blind_index, inspect_ciphertext,
 };
@@ -13,7 +13,7 @@ use crate::{
 use super::{LegacyFormat, legacy};
 
 /// The classification of one stored row against the current key generations
-/// and binding shape.
+/// and binding declaration.
 ///
 /// Malformed rows are not a state: classification returns an error for them.
 /// Classification inspects unauthenticated structure and generation metadata,
@@ -29,10 +29,10 @@ pub enum RowState {
     /// The stored bytes are legacy data rather than a `CryptBox` envelope.
     #[doc(alias = "Plaintext")]
     Legacy,
-    /// The envelope's header names an older binding shape registered with
+    /// The envelope's header names an older binding declaration registered with
     /// [`RowPlanner::legacy_binding`].
     ///
-    /// Only the unauthenticated shape fingerprint is compared.
+    /// Only the unauthenticated binding fingerprint is compared.
     LegacyBinding,
     /// The row's binding arguments name another key scope than the planner's.
     ///
@@ -166,15 +166,15 @@ where
     keys: &'a dyn BlindIndexKeySource,
 }
 
-/// An older binding shape whose rows the planner reseals, and its keys.
-struct LegacyShape<'a, F>
+/// An older binding declaration whose rows the planner reseals, and its keys.
+struct LegacyDeclaration<'a, F>
 where
     F: Field,
 {
-    /// The shape's fingerprint without a record.
-    unrecorded: ShapeFingerprint,
-    /// The shape's fingerprint with a record, for a field that binds one.
-    recorded: Option<ShapeFingerprint>,
+    /// The declaration's fingerprint without a record.
+    unrecorded: [u8; 8],
+    /// The declaration's fingerprint with a record, for a field that binds one.
+    recorded: Option<[u8; 8]>,
     domain: fn(&F::Binding, Option<RecordId<'_>>) -> Result<BindingDomain, Error>,
     keys: &'a dyn EncryptionKeySource,
 }
@@ -215,8 +215,8 @@ const fn check_no_record(record: bool) {
 /// scope is reported as [`RowState::OutOfScope`] and left alone. [`Self::new`]
 /// serves a [`FieldOnly`] field without a record, whose rows need no columns.
 ///
-/// To change a field's binding shape, register the shape it had before with
-/// [`Self::legacy_binding`]: rows whose header still names that shape are
+/// To change a field's binding declaration, register the declaration it had before with
+/// [`Self::legacy_binding`]: rows whose header still names that declaration are
 /// opened under it and resealed under the current one.
 pub struct RowPlanner<'a, F, R = ()>
 where
@@ -226,7 +226,7 @@ where
     scope: KeyScope,
     row_args: RowArgsFn<'a, F, R>,
     legacy: Option<&'a dyn LegacyFormat>,
-    legacy_shapes: Vec<LegacyShape<'a, F>>,
+    legacy_declarations: Vec<LegacyDeclaration<'a, F>>,
     indexes: Vec<IndexColumn<'a, F>>,
 }
 
@@ -266,7 +266,7 @@ where
             scope: key_scope,
             row_args: Box::new(row_args),
             legacy: None,
-            legacy_shapes: Vec::new(),
+            legacy_declarations: Vec::new(),
             indexes: Vec::new(),
         }
     }
@@ -281,7 +281,7 @@ where
         self
     }
 
-    /// Opens a legacy-binding window: rows sealed with the older binding shape
+    /// Opens a legacy-binding window: rows sealed with the older binding declaration
     /// `Old` are opened under it with `keys` and resealed under the field's
     /// current binding.
     ///
@@ -294,13 +294,13 @@ where
     /// [`Error::InvalidBinding`].
     ///
     /// Such rows are classified as [`RowState::LegacyBinding`] by their header's
-    /// shape fingerprint, and every blind index is derived again under the
+    /// binding fingerprint, and every blind index is derived again under the
     /// current binding. Close the window once a verification pass counts none.
     #[must_use]
     pub fn legacy_binding<Old: Binding>(mut self, keys: &'a dyn EncryptionKeySource) -> Self {
-        self.legacy_shapes.push(LegacyShape {
-            unrecorded: shape_fingerprint::<Old>(false),
-            recorded: F::RECORD.then(|| shape_fingerprint::<Old>(true)),
+        self.legacy_declarations.push(LegacyDeclaration {
+            unrecorded: declaration_fingerprint::<Old>(false),
+            recorded: F::RECORD.then(|| declaration_fingerprint::<Old>(true)),
             domain: |binding, record| {
                 BindingDomain::projected::<Old, F::Binding>(F::ID, binding, record)
             },
@@ -393,7 +393,7 @@ where
     ///
     /// `row` holds the columns the row's binding arguments are built from.
     /// Checks the row's key scope and structure, and compares unauthenticated
-    /// shape fingerprints and generation IDs. It does not decrypt, decode,
+    /// binding fingerprints and generation IDs. It does not decrypt, decode,
     /// recover legacy data, or recompute indexes. Index parsing
     /// checks the stored format, not agreement with the registered specification's
     /// precision or logical ID. Classification may stop at the first legacy or
@@ -403,7 +403,7 @@ where
     /// # Errors
     ///
     /// Returns an error for malformed envelopes or blind indexes, an envelope
-    /// of an unregistered binding shape, an index column arity mismatch,
+    /// of an unregistered binding declaration, an index column arity mismatch,
     /// invalid binding arguments, or unavailable keys.
     pub fn classify_row(
         &self,
@@ -420,7 +420,7 @@ where
         match inspect_ciphertext(ciphertext) {
             Ok(info)
                 if self
-                    .legacy_shape(&binding, info.shape_fingerprint())
+                    .legacy_declaration(&binding, info.context_fingerprint())
                     .is_some() =>
             {
                 return Ok(RowState::LegacyBinding);
@@ -449,8 +449,8 @@ where
     /// index columns keep their bytes even when another component is
     /// rewritten. Re-encryption alone authenticates and checks padding but does
     /// not decode with the codec; stale-index derivation also decrypts and
-    /// decodes the value. A row of a legacy binding shape is opened under that
-    /// shape and every index is derived again.
+    /// decodes the value. A row of a legacy binding declaration is opened under that
+    /// declaration and every index is derived again.
     ///
     /// # Errors
     ///
@@ -471,7 +471,8 @@ where
 
         match inspect_ciphertext(ciphertext) {
             Ok(info) => {
-                if let Some(legacy) = self.legacy_shape(&binding, info.shape_fingerprint()) {
+                if let Some(legacy) = self.legacy_declaration(&binding, info.context_fingerprint())
+                {
                     return self.plan_legacy_binding_row(legacy, &args, &binding, ciphertext);
                 }
             }
@@ -545,19 +546,19 @@ where
         }))
     }
 
-    /// Returns the registered legacy shape an envelope's header names, and
-    /// whether it names that shape with a record, unless it names the current
-    /// shape.
-    fn legacy_shape(
+    /// Returns the registered legacy declaration an envelope's header names, and
+    /// whether it names that declaration with a record, unless it names the current
+    /// declaration.
+    fn legacy_declaration(
         &self,
         binding: &RowBinding,
-        stored: ShapeFingerprint,
-    ) -> Option<(&LegacyShape<'a, F>, bool)> {
+        stored: [u8; 8],
+    ) -> Option<(&LegacyDeclaration<'a, F>, bool)> {
         if stored == binding.domain.fingerprint() {
             return None;
         }
 
-        self.legacy_shapes.iter().find_map(|legacy| {
+        self.legacy_declarations.iter().find_map(|legacy| {
             if stored == legacy.unrecorded {
                 Some((legacy, false))
             } else if legacy.recorded == Some(stored) {
@@ -570,7 +571,7 @@ where
 
     fn plan_legacy_binding_row(
         &self,
-        (legacy, recorded): (&LegacyShape<'a, F>, bool),
+        (legacy, recorded): (&LegacyDeclaration<'a, F>, bool),
         args: &RowArgs<'_, F::Binding>,
         binding: &RowBinding,
         ciphertext: &[u8],
@@ -583,7 +584,7 @@ where
             F::PADDING,
             ciphertext,
         )?;
-        // The index binding may have changed with the shape, so every index
+        // The index binding may have changed with the declaration, so every index
         // is derived again.
         let indexes = if self.indexes.is_empty() {
             Vec::new()
@@ -660,7 +661,7 @@ where
             .debug_struct("RowPlanner")
             .field("scope", &self.scope)
             .field("legacy", &self.legacy.is_some())
-            .field("legacy_shapes", &self.legacy_shapes.len())
+            .field("legacy_declarations", &self.legacy_declarations.len())
             .field("indexes", &self.indexes.len())
             .finish_non_exhaustive()
     }

@@ -137,7 +137,7 @@ Migrate only over columns the application already trusts, and establish their
 provenance with the same evidence this guide requires for legacy bytes. The
 packaged stores load no columns, so a bound field needs an application-owned
 `SweepStore`. See
-[binding-shape changes](reencryption-sweep.md#binding-shape-changes) and
+[binding-declaration changes](reencryption-sweep.md#binding-declaration-changes) and
 [bound values come from an authorized source](bindings.md#bound-values-come-from-an-authorized-source).
 
 The packaged planner repairs missing indexes on **legacy** bytes by deriving them,

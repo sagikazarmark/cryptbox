@@ -10,19 +10,19 @@ Start from [encrypt your first field](first-field.md), whose field binds values
 to its field ID alone. Add a scope when values of different tenants, orgs, or
 residencies must not be interchangeable, or when their keys must differ.
 
-## Shape is schema, values are arguments
+## Declarations are schema, values are arguments
 
 A binding has two halves, and they change on different schedules:
 
 | Half | Where it is declared | When it changes |
 | --- | --- | --- |
-| **Shape**: part IDs, kinds, roles, and the record flag | The field and its `Binding` type | Only through a [shape migration](#change-a-binding-shape) |
+| **Declaration**: part IDs, kinds, roles, and the record flag | The field and its `Binding` type | Only through a [declaration migration](#change-a-binding-declaration) |
 | **Values**: this org, this workspace, this record | The binding arguments of each call | Every call |
 
 One field never seals with different part sets on different calls: that would
-give one value two valid encodings. The shape is persistent schema exactly as a
+give one value two valid encodings. The declaration is persistent schema exactly as a
 field ID or codec is, and every envelope carries a fingerprint of it so a
-reader that expects another shape reports `Error::BindingMismatch` instead of an
+reader that expects another declaration reports `Error::BindingMismatch` instead of an
 authentication failure.
 
 ## Declare a scope
@@ -66,7 +66,7 @@ implementing `PartType`. Every part ID is a generated UUID: see
 `FieldOnly` and `Tenant` are ready-made presets. `FieldOnly` has no parts: unless
 the field also binds a record, it is the
 [empty binding](wire-format.md#binding), bound to the field ID alone. `Tenant` has one
-bytes `keys` part. Use a preset until its shape is too coarse, then declare a
+bytes `keys` part. Use a preset until its declaration is too coarse, then declare a
 scope.
 
 ## Choose a role for each part
@@ -91,7 +91,7 @@ Three consequences follow from the table:
   parts, because a query knows neither. A value that a lookup cannot know must
   not scope indexes.
 - **A role change is a migration** even though the binding bytes do not change,
-  because it changes index derivation and custody. The shape fingerprint covers
+  because it changes index derivation and custody. The binding fingerprint covers
   roles for exactly that reason.
 
 A record ID is never a part: declare `record` on the field. It is always bound
@@ -118,11 +118,11 @@ another one, so a value copied from another row is rejected. Storage can still
 return a whole authentic row in place of another, which no binding prevents:
 when you asked for one record, compare the opened ID with the one you asked for.
 
-A [migration sweep](reencryption-sweep.md#binding-shape-changes) has no request
+A [migration sweep](reencryption-sweep.md#binding-declaration-changes) has no request
 to take a binding from, so it builds each row's binding from the row's own
 columns. Its key scope still comes from the job, and a row whose `keys` columns
 name another key scope is reported out of scope and left alone. Resealing a
-value from a shape that did not bind those columns trusts them once, so sweep
+value from a declaration that did not bind those columns trusts them once, so sweep
 such a change only over columns the application already trusts.
 
 ## Record IDs
@@ -190,13 +190,13 @@ codec:
 - **Nothing rewrites values in place by itself.** Reads never reseal, and a
   bounded [sweep](reencryption-sweep.md) is the tool for a whole population.
 
-## Change a binding shape
+## Change a binding declaration
 
 Adding a part, adding a record, or changing a role is a migration, not a
 deployment. The procedure is a legacy-binding window, a reseal sweep, and
-lookups over both index bindings until the window closes; rows of the old shape
+lookups over both index bindings until the window closes; rows of the old declaration
 are recognized by the fingerprint in their header. Follow
-[binding-shape changes](reencryption-sweep.md#binding-shape-changes), and close
+[binding-declaration changes](reencryption-sweep.md#binding-declaration-changes), and close
 the window only after a complete verification pass counts no legacy-binding
 rows.
 
@@ -230,7 +230,7 @@ because the Rust name is not the identity.
 
 Each check covers a different set: `#[derive(Binding)]` rejects a nil or
 repeated part ID when it expands, and a hand-written binding fails the build on
-the same shape; `assert_unique_ids!` rejects field and index IDs shared by
+the same declaration; `assert_unique_ids!` rejects field and index IDs shared by
 listed markers; and a
 [manifest snapshot](integration.md#guarding-the-schema-in-ci) makes any change
 to the IDs you have chosen a reviewable diff.
@@ -246,5 +246,5 @@ Key IDs follow separate rules, in [choosing keyrings](choosing-keyrings.md).
 - [Integration design](integration.md): persistent schema, storage boundaries,
   and search.
 - [Wire format](wire-format.md#binding): the exact binding bytes and the
-  shape fingerprint.
+  binding fingerprint.
 - [Glossary](glossary.md): binding, scope, key scope, shred unit.

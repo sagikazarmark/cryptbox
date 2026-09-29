@@ -2,8 +2,8 @@
 
 use cryptbox::EncryptionKey;
 use cryptbox::{
-    EncryptionKeyring, Error, Field, FieldOnly, KeyId, Padding, Raw, Sealed, Utf8, field_id,
-    inspect_ciphertext, is_ciphertext, key_id,
+    EncryptionKeyring, Error, Field, FieldOnly, KeyError, KeyId, Padding, Raw, Sealed, Utf8,
+    field_id, inspect_ciphertext, is_ciphertext, key_id,
 };
 
 const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
@@ -158,17 +158,18 @@ fn reserved_flag_bits_are_rejected_before_authentication() {
 }
 
 #[test]
-fn field_only_envelopes_carry_the_empty_shape_fingerprint() {
+fn field_only_envelopes_carry_the_empty_declaration_fingerprint() {
     let keys = keyring(CURRENT_KEY_ID, 9);
     let ciphertext = encrypt::<EmailField>(b"field only", &keys);
 
-    // docs/wire-format.md#shape-fingerprint
+    // docs/wire-format.md#binding-fingerprint
     assert_eq!(
-        inspect_ciphertext(&ciphertext)
-            .unwrap()
-            .shape_fingerprint()
-            .to_string(),
-        "ff670aba047d77fa"
+        hex::encode(
+            inspect_ciphertext(&ciphertext)
+                .unwrap()
+                .context_fingerprint()
+        ),
+        "5d86321261d64380"
     );
 }
 
@@ -309,11 +310,11 @@ fn malformed_and_unknown_envelopes_fail_strictly() {
     unsupported[5] = 0xff;
     assert_eq!(
         inspect_ciphertext(&unsupported),
-        Err(Error::UnsupportedSuite(cryptbox::SuiteId::new(0xff)))
+        Err(Error::UnsupportedSuite(0xff))
     );
     assert_eq!(
         decrypt::<EmailField>(&unsupported, &keys),
-        Err(Error::UnsupportedSuite(cryptbox::SuiteId::new(0xff)))
+        Err(Error::UnsupportedSuite(0xff))
     );
 }
 
@@ -323,7 +324,7 @@ fn keyrings_reject_duplicate_generation_ids() {
 
     assert!(matches!(
         EncryptionKeyring::new(key(CURRENT_KEY_ID, 43), [duplicate]),
-        Err(Error::DuplicateEncryptionKey(id)) if id == CURRENT_KEY_ID
+        Err(KeyError::DuplicateEncryptionKey(id)) if id == CURRENT_KEY_ID
     ));
 }
 

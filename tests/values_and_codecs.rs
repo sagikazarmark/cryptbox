@@ -28,8 +28,8 @@ fn plain_values_require_explicit_plaintext_access() {
     assert_eq!(format!("{value:?}"), "Plain([REDACTED])");
 }
 
-/// Generic over the key context without bounding it: only the `SQLx` column
-/// needs `K: KeyContext`.
+/// Generic over the column keys without bounding them: only the `SQLx` column
+/// needs `K: ColumnKeys`.
 struct Record<K> {
     email: Plain<ExampleField, K>,
 }
@@ -41,18 +41,18 @@ impl<K> Record<K> {
         }
     }
 
-    fn with_key_context<K2>(self) -> Record<K2> {
+    fn with_column_keys<K2>(self) -> Record<K2> {
         Record {
-            email: self.email.with_key_context(),
+            email: self.email.with_column_keys(),
         }
     }
 }
 
 #[test]
-fn key_context_bounds_do_not_spread_into_user_generics() {
+fn column_keys_bounds_do_not_spread_into_user_generics() {
     struct Unrelated;
 
-    let record = Record::<()>::new("mark@example.com").with_key_context::<Unrelated>();
+    let record = Record::<()>::new("mark@example.com").with_column_keys::<Unrelated>();
 
     assert_eq!(record.email.clone().expose_secret(), "mark@example.com");
     assert_eq!(format!("{:?}", record.email), "Plain([REDACTED])");

@@ -7,7 +7,7 @@ Rotation selects keys for future writes; a later sweep converges existing
 ciphertext and indexes. The same sweep rewrites ciphertext whose padding flag
 disagrees with the field's current policy, so it also applies a padding change. The `migrate` feature supplies
 `RowPlanner`, `Sweep` and `SweepStore`, which also reseal values after a
-[binding-shape change](#binding-shape-changes); the
+[binding-declaration change](#binding-declaration-changes); the
 [manual SQLite example](../examples/reencryption_sweep.rs) demonstrates the same
 concurrency rules without the driver.
 
@@ -141,11 +141,11 @@ without recomputation even when another component changes. Re-encryption alone
 authenticates and checks padding but does not decode through the field codec.
 These behaviors make the following separate audit necessary.
 
-## Binding-shape changes
+## Binding-declaration changes
 
-A field's binding shape (its parts, their roles and whether it binds a record) is
+A field's binding declaration (its parts, their roles and whether it binds a record) is
 persistent schema, so changing it is a migration: an explicit legacy-binding
-window, a reseal sweep, and lookups over both index shapes until the window
+window, a reseal sweep, and lookups over both index declarations until the window
 closes ([ADR-0005](adr/0005-runtime-binding-is-the-core.md)).
 
 A bound field's sweep is **partitioned by key scope**, because its keys are.
@@ -163,18 +163,18 @@ is the binding the field had before, such as `FieldOnly`. Its parts take their
 values from each row's current binding by part ID, and a row whose header
 names `Old` with a record keeps the row's record. The window covers adding parts
 or a record and changing a role, not removing a part or changing its kind. Rows
-are classified by the shape fingerprint in their header: a row of the old shape is
+are classified by the binding fingerprint in their header: a row of the old declaration is
 opened under it with `old_keys`, resealed under the current binding, and every
 index derived again, since the index binding may have changed. Rows of any
-other shape still fail with `Error::BindingMismatch`.
+other declaration still fail with `Error::BindingMismatch`.
 
 While the window is open, readers use `migrate::probes_across::<Old, S>` for
 probes over both [index bindings](wire-format.md#index-binding) and
-`migrate::open_across::<Old, _>` to open a candidate of either shape. Close the
+`migrate::open_across::<Old, _>` to open a candidate of either declaration. Close the
 window, and drop the old keys from the readers,
 only after a complete verification pass counts zero `legacy_binding` rows.
 
-To move a value to other binding values or keys under the same shape, such as a
+To move a value to other binding values or keys under the same declaration, such as a
 record moving between workspaces or data changing residency, use
 `Sealed::reseal_across`.
 
@@ -182,7 +182,7 @@ record moving between workspaces or data changing residency, use
 
 This is the canonical whole-store audit procedure. The
 [assurance reference](security.md#what-each-check-establishes) explains what each
-check establishes. Fix the intended field ID, binding shape, value type,
+check establishes. Fix the intended field ID, binding declaration, value type,
 codec, index specifications, normalization, precision and allowed generations
 from trusted application schema, not stored metadata.
 

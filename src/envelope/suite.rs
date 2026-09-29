@@ -1,84 +1,136 @@
+pub(super) mod xchacha20_poly1305;
+
+use xchacha20_poly1305::XChaCha20Poly1305;
+
 use zeroize::Zeroizing;
 
-use super::format::{FORMAT_VERSION, ParsedEnvelope, envelope_header};
+use super::format::{FORMAT_VERSION, ParsedEnvelope, SuiteId, envelope_header};
 use crate::crypto;
 use crate::padding::AeadPlaintext;
-use crate::{EncryptionKey, Error, ShapeFingerprint, SuiteId};
+use crate::{EncryptionKey, Error};
 
 // Labels, including NULs, are persistent domain separators, not display strings.
 // See ../../docs/wire-format.md#encryption-recipe.
 const ENCRYPTION_KEY_LABEL: &[u8] = b"cryptbox/encryption-key/v1\0";
 const ENVELOPE_AAD_LABEL: &[u8] = b"cryptbox/envelope-aad/v1\0";
 
-/// The provisional suite ID for HKDF-SHA-256 plus XChaCha20-Poly1305.
+/// What an envelope binds a value to: opaque bytes and their fingerprint.
 ///
-/// This construction and its wire format are experimental pending focused
-/// cryptographic review and independently verified test vectors.
-pub const EXPERIMENTAL_XCHACHA20_POLY1305: SuiteId = SuiteId::new(1);
+/// Key derivation and the AAD both take the bytes, which are never stored; the
+/// header stores the fingerprint, and opening compares it before any key
+/// lookup. The envelope interprets neither: the layer above encodes them, and
+/// for a sealed value they are its binding's encoding and fingerprint.
+///
+/// The header is stored in plaintext, so the fingerprint must name only what
+/// kind of context this is, never the values in its bytes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Context<'a> {
+    bytes: &'a [u8],
+    fingerprint: [u8; 8],
+}
 
-/// The encryption suites this library reads and writes.
+impl<'a> Context<'a> {
+    pub(crate) const fn new(bytes: &'a [u8], fingerprint: [u8; 8]) -> Self {
+        Self { bytes, fingerprint }
+    }
+
+    /// The fingerprint a reader compares with the one stored in the header.
+    pub(crate) const fn fingerprint(&self) -> [u8; 8] {
+        self.fingerprint
+    }
+}
+
+/// A complete encryption construction over the envelope format: how it derives
+/// its key, what it authenticates, and which AEAD seals the payload.
+///
+/// Suites carry no state, so every operation is an associated function and
+/// dispatch is static. A suite's parameters, such as its nonce size, are its own.
+pub(super) trait Suite {
+    /// The suite ID the envelope header records.
+    const ID: SuiteId;
+
+    /// Checks that `payload`, everything after the header, can be this suite's.
+    fn validate_payload(payload: &[u8]) -> Result<(), Error>;
+
+    /// Seals `plaintext` into a complete envelope.
+    ///
+    /// The header is built from [`Self::ID`] and the key's ID, so neither can
+    /// disagree with the key it seals under.
+    fn seal(
+        context: Context<'_>,
+        plaintext: &AeadPlaintext<'_>,
+        key: &EncryptionKey,
+    ) -> Result<Vec<u8>, Error>;
+
+    /// Authenticates `envelope` under `context` and `key` and returns its payload.
+    ///
+    /// The envelope has already matched `context`'s fingerprint; only the bytes
+    /// are used here.
+    fn open(
+        context: Context<'_>,
+        envelope: &ParsedEnvelope<'_>,
+        key: &EncryptionKey,
+    ) -> Result<Zeroizing<Vec<u8>>, Error>;
+}
+
+/// The suites this library reads and writes, chosen by the header's suite ID.
 ///
 /// The set is closed: suites are built in and applications cannot add one. A
 /// new variant fails to compile until every dispatch below handles it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Suite {
+pub(super) enum SupportedSuite {
     XChaCha20Poly1305,
 }
 
-impl Suite {
+impl SupportedSuite {
     /// The suite new values are sealed with.
     pub(super) const ACTIVE: Self = Self::XChaCha20Poly1305;
 
     pub(super) fn from_id(id: SuiteId) -> Result<Self, Error> {
         match id {
-            EXPERIMENTAL_XCHACHA20_POLY1305 => Ok(Self::XChaCha20Poly1305),
-            _ => Err(Error::UnsupportedSuite(id)),
+            XChaCha20Poly1305::ID => Ok(Self::XChaCha20Poly1305),
+            _ => Err(Error::UnsupportedSuite(id.get())),
         }
     }
 
     pub(super) const fn id(self) -> SuiteId {
         match self {
-            Self::XChaCha20Poly1305 => EXPERIMENTAL_XCHACHA20_POLY1305,
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::ID,
         }
     }
 
     pub(super) fn validate_payload(self, payload: &[u8]) -> Result<(), Error> {
         match self {
-            Self::XChaCha20Poly1305 => xchacha20_poly1305::validate_payload(payload),
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::validate_payload(payload),
         }
     }
 
-    // Builds the header from its own suite ID and the key's ID, so neither can
-    // disagree with the key it seals under.
     pub(super) fn seal(
         self,
+        context: Context<'_>,
         plaintext: &AeadPlaintext<'_>,
-        fingerprint: ShapeFingerprint,
-        binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Vec<u8>, Error> {
         match self {
-            Self::XChaCha20Poly1305 => {
-                xchacha20_poly1305::seal(plaintext, fingerprint, binding, key)
-            }
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::seal(context, plaintext, key),
         }
     }
 
     pub(super) fn open(
         self,
+        context: Context<'_>,
         envelope: &ParsedEnvelope<'_>,
-        binding: &[u8],
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
         match self {
-            Self::XChaCha20Poly1305 => xchacha20_poly1305::open(envelope, binding, key),
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::open(context, envelope, key),
         }
     }
 }
 
 fn derive_encryption_key(
     root: &EncryptionKey,
-    binding: &[u8],
+    context: &[u8],
     format_version: u8,
     suite_id: SuiteId,
 ) -> Result<Zeroizing<[u8; 32]>, Error> {
@@ -90,133 +142,20 @@ fn derive_encryption_key(
             ENCRYPTION_KEY_LABEL,
             &[format_version, suite_id.get()],
             root.id().as_bytes(),
-            binding,
+            context,
         ],
     )?;
 
     Ok(key)
 }
 
-fn envelope_aad(prefix: &[u8], binding: &[u8]) -> Vec<u8> {
-    // Authenticate the exact stored prefix together with the caller's expected binding.
-    // The envelope must not choose its own binding: ../../docs/wire-format.md#encryption-recipe.
-    let mut aad = Vec::with_capacity(ENVELOPE_AAD_LABEL.len() + prefix.len() + binding.len());
+fn envelope_aad(prefix: &[u8], context: &[u8]) -> Vec<u8> {
+    // Authenticate the exact stored prefix together with the caller's expected context.
+    // The envelope must not choose its own context: ../../docs/wire-format.md#encryption-recipe.
+    let mut aad = Vec::with_capacity(ENVELOPE_AAD_LABEL.len() + prefix.len() + context.len());
     aad.extend_from_slice(ENVELOPE_AAD_LABEL);
     aad.extend_from_slice(prefix);
-    aad.extend_from_slice(binding);
+    aad.extend_from_slice(context);
 
     aad
-}
-
-/// Suite 1: HKDF-SHA-256 and XChaCha20-Poly1305 over the format 2 envelope.
-// See ../../docs/wire-format.md#encryption-suite-1.
-mod xchacha20_poly1305 {
-    use zeroize::Zeroizing;
-
-    use super::{
-        EXPERIMENTAL_XCHACHA20_POLY1305, FORMAT_VERSION, ParsedEnvelope, derive_encryption_key,
-        envelope_aad, envelope_header,
-    };
-    use crate::crypto::{self, NONCE_LEN, TAG_LEN};
-    use crate::padding::AeadPlaintext;
-    use crate::{EncryptionKey, Error, ShapeFingerprint};
-
-    pub(super) fn validate_payload(payload: &[u8]) -> Result<(), Error> {
-        let minimum_len = NONCE_LEN
-            .checked_add(TAG_LEN)
-            .ok_or(Error::InvalidEnvelope)?;
-
-        if payload.len() < minimum_len {
-            return Err(Error::InvalidEnvelope);
-        }
-
-        Ok(crypto::check_message_len(payload.len() - minimum_len)?)
-    }
-
-    pub(super) fn seal(
-        plaintext: &AeadPlaintext<'_>,
-        fingerprint: ShapeFingerprint,
-        binding: &[u8],
-        key: &EncryptionKey,
-    ) -> Result<Vec<u8>, Error> {
-        seal_with_nonce(
-            plaintext,
-            fingerprint,
-            binding,
-            key,
-            crypto::random_nonce()?,
-        )
-    }
-
-    pub(super) fn seal_with_nonce(
-        plaintext: &AeadPlaintext<'_>,
-        fingerprint: ShapeFingerprint,
-        binding: &[u8],
-        key: &EncryptionKey,
-        nonce: [u8; NONCE_LEN],
-    ) -> Result<Vec<u8>, Error> {
-        let suite = EXPERIMENTAL_XCHACHA20_POLY1305;
-        let header = envelope_header(suite, plaintext.is_padded(), key.id(), fingerprint);
-        let capacity = (header.len() + NONCE_LEN + TAG_LEN)
-            .checked_add(plaintext.bytes().len())
-            .ok_or(Error::MessageTooLong)?;
-        let mut envelope = Vec::with_capacity(capacity);
-        envelope.extend_from_slice(&header);
-        envelope.extend_from_slice(&nonce);
-
-        let operational_key = derive_encryption_key(key, binding, FORMAT_VERSION, suite)?;
-        let aad = envelope_aad(&envelope, binding);
-        crypto::seal_into(
-            &operational_key,
-            &nonce,
-            &aad,
-            plaintext.bytes(),
-            &mut envelope,
-        )?;
-
-        Ok(envelope)
-    }
-
-    pub(super) fn open(
-        envelope: &ParsedEnvelope<'_>,
-        binding: &[u8],
-        key: &EncryptionKey,
-    ) -> Result<Zeroizing<Vec<u8>>, Error> {
-        // The AAD covers the stored header and nonce exactly as they were read.
-        let prefix_len = envelope.header.len() + NONCE_LEN;
-        let (prefix, ciphertext) = envelope
-            .bytes
-            .split_at_checked(prefix_len)
-            .ok_or(Error::InvalidEnvelope)?;
-        let nonce = prefix
-            .last_chunk::<NONCE_LEN>()
-            .ok_or(Error::InvalidEnvelope)?;
-
-        let operational_key = derive_encryption_key(
-            key,
-            binding,
-            envelope.info.format_version(),
-            EXPERIMENTAL_XCHACHA20_POLY1305,
-        )?;
-        let aad = envelope_aad(prefix, binding);
-
-        Ok(crypto::open(&operational_key, nonce, &aad, ciphertext)?)
-    }
-}
-
-#[cfg(test)]
-pub(super) fn seal_with_nonce(
-    plaintext: &[u8],
-    padding: crate::Padding,
-    binding: super::EnvelopeBinding<'_>,
-    key: &EncryptionKey,
-    nonce: [u8; crypto::NONCE_LEN],
-) -> Result<Vec<u8>, Error> {
-    xchacha20_poly1305::seal_with_nonce(
-        &padding.pad(plaintext)?,
-        binding.fingerprint,
-        binding.bytes,
-        key,
-        nonce,
-    )
 }

@@ -34,6 +34,10 @@ status: accepted
 > migration-window routing, never security. The binding bytes change for every
 > field, so blind indexes move to format 2 and format 1 indexes are rejected;
 > 0.5.0 values and indexes are not read.
+>
+> Amended for terminology. A binding's *shape* is now its *declaration*, and the
+> shape fingerprint is the *binding fingerprint*, stored as 8 plain bytes. The
+> rest of this record keeps the original terms.
 
 Every seal and open binds the ciphertext to a runtime **binding**: the field ID,
 a declared scope (for example tenant, or org plus workspace), and optionally a
