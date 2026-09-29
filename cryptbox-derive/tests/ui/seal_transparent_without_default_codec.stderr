@@ -1,0 +1,26 @@
+error[E0277]: `Address` has no default codec
+ --> tests/ui/seal_transparent_without_default_codec.rs:8:20
+  |
+8 | struct HomeAddress(Address);
+  |                    ^^^^^^^ `Address` does not implement `cryptbox::Plaintext`
+  |
+help: the trait `Plaintext` is not implemented for `Address`
+ --> tests/ui/seal_transparent_without_default_codec.rs:2:1
+  |
+2 | struct Address {
+  | ^^^^^^^^^^^^^^
+  = note: implement `cryptbox::Plaintext` for `Address`, or name an explicit codec such as `cryptbox::Json`; the codec is persistent schema
+help: the following other types implement trait `Plaintext`
+ --> $WORKSPACE/src/codec.rs
+  |
+  | impl Plaintext for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^ `String`
+...
+  | impl Plaintext for Vec<u8> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
+...
+  | impl Plaintext for Secret<String> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Secret<String>`
+...
+  | impl Plaintext for Secret<Vec<u8>> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Secret<Vec<u8>>`

@@ -21,23 +21,35 @@ mod seal;
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
-/// Derives `cryptbox::Seal` for a seal marker type.
+/// Derives `cryptbox::Seal`, for a marker or for a type that is its own value.
 ///
 /// | Key | Required | Meaning |
 /// | --- | --- | --- |
 /// | `id = "…"` | yes | The seal ID, a hyphenated UUID string literal. |
-/// | `value = Type` | yes | The value type the seal seals. |
-/// | `codec = Type` | no | The codec. Defaults to `<Value as Plaintext>::Codec`. |
+/// | `value = Type` | on a unit struct | The value type a marker seals. A type with fields is its own value and rejects it. |
+/// | `codec = Type` | on a type with fields, unless `transparent` | The codec. See below for its defaults. |
+/// | `transparent` | no | Stores a type's single field alone. |
 /// | `padding = …` | no | `none` (the default), `block(size)`, or `length(len)`. |
 /// | `binding = Type` | no | The binding scope. Defaults to `FieldOnly`. |
 /// | `record` | no | Also binds every value to a record ID (`RECORD = true`). |
 /// | `indexes(Type, …)` | no | The seal's blind indexes (`Indexes`). Defaults to none. |
 ///
 /// The ID is validated when the macro expands and is never derived from the
-/// type's name: generate a fresh UUID for every seal. A codec is never
-/// inferred from a type's shape. Without `codec`, a value type that does not
-/// implement `Plaintext` reports that it has no default codec. Padding
-/// parameters are validated when the macro expands.
+/// type's name: generate a fresh UUID for every seal. Padding parameters are
+/// validated when the macro expands too.
+///
+/// The type's shape decides only whether it is its own value; its codec is
+/// always stated or a built-in default, never inferred from the shape:
+///
+/// - A **unit struct** is a marker over a separate `value` type, which several
+///   seals can share. Without `codec`, the value type's `Plaintext` codec applies,
+///   and a value type without one reports that it has no default codec.
+/// - **Any other type** is its own value (`Value = Self`). With `codec`, that codec
+///   encodes the whole type. With `transparent`, the type must be a struct with
+///   exactly one field, and the seal stores that field alone: with `codec` if
+///   given, or else with the field type's `Plaintext` codec. A transparent seal
+///   stores exactly the bytes of a marker over the field's type with the same
+///   ID and codec, so the two read each other's values.
 ///
 /// Without `binding`, `record`, and `indexes`, values are bound to their seal
 /// ID alone: `Binding = FieldOnly`, no record, and no declared blind indexes.
@@ -130,6 +142,70 @@ use syn::{DeriveInput, parse_macro_input};
 ///         type Codec = <String as ::cryptbox::Plaintext>::Codec;
 ///         type Binding = cryptbox::Tenant;
 ///         type Indexes = (EmailLookup,);
+///     }
+/// };
+/// ```
+///
+/// A seal that is its own value, such as a whole response sealed as JSON:
+///
+/// ```
+/// #[derive(serde::Serialize, serde::Deserialize, cryptbox::Seal)]
+/// #[cryptbox(id = "5d2f8a61-3c4e-4b7a-9e10-6f8b2c4d1a93", codec = cryptbox::Json)]
+/// pub struct ProfileResponse {
+///     pub name: String,
+///     pub email: String,
+/// }
+/// ```
+///
+/// sets `type Value = Self;` and `type Codec = cryptbox::Json;`, with the other
+/// items as for a marker.
+///
+/// A transparent seal stores its single field:
+///
+/// ```
+/// #[derive(cryptbox::Seal)]
+/// #[cryptbox(id = "7a1c3e5f-9b2d-4f60-8a4c-1e3b5d7f9a2c", transparent)]
+/// pub struct UserEmail(String);
+/// ```
+///
+/// It is its own codec, since no crate-provided adapter can wrap or unwrap it
+/// without `From` or `Deref`. The derive expands to exactly the manual impls,
+/// with `Result`, `Vec`, and `Zeroizing` spelled as absolute paths in the real
+/// expansion:
+///
+/// ```
+/// # use zeroize::Zeroizing;
+/// # pub struct UserEmail(String);
+/// const _: () = {
+///     #[automatically_derived]
+///     impl ::cryptbox::Seal for UserEmail {
+///         const ID: ::cryptbox::SealId =
+///             ::cryptbox::SealId::from_u128(0x7a1c3e5f_9b2d_4f60_8a4c_1e3b5d7f9a2c);
+///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
+///         const RECORD: bool = false;
+///         type Value = Self;
+///         type Codec = Self;
+///         type Binding = ::cryptbox::FieldOnly;
+///         type Indexes = ();
+///     }
+///
+///     #[automatically_derived]
+///     impl ::cryptbox::Codec<Self> for UserEmail {
+///         const ID: &'static str =
+///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::ID;
+///
+///         fn encode(value: &Self) -> Result<Zeroizing<Vec<u8>>, ::cryptbox::CodecError> {
+///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::encode(
+///                 &value.0,
+///             )
+///         }
+///
+///         fn decode(bytes: &[u8]) -> Result<Self, ::cryptbox::CodecError> {
+///             <<String as ::cryptbox::Plaintext>::Codec as ::cryptbox::Codec<String>>::decode(
+///                 bytes,
+///             )
+///             .map(Self)
+///         }
 ///     }
 /// };
 /// ```

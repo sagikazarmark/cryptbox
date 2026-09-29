@@ -56,6 +56,89 @@ fn a_derived_seal_opens_values_of_its_manual_equivalent() {
     assert_eq!(derived.open((), &keys).unwrap(), "mark@example.com");
 }
 
+/// [`UserEmail`] as its own value: the same ID, stored as its inner `String`.
+#[derive(Debug, PartialEq, Seal)]
+#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent)]
+struct SelfValuedEmail(String);
+
+#[test]
+fn a_transparent_seal_is_its_own_value_stored_as_its_field() {
+    assert_value::<SelfValuedEmail, SelfValuedEmail>();
+    assert_codec::<SelfValuedEmail, SelfValuedEmail>();
+    assert_eq!(
+        <SelfValuedEmail as Codec<SelfValuedEmail>>::ID,
+        <Utf8 as Codec<String>>::ID
+    );
+}
+
+#[test]
+fn a_transparent_seal_and_a_marker_read_each_other_s_values() {
+    let keys = keyring();
+    let email = SelfValuedEmail("mark@example.com".to_owned());
+
+    let marker = Sealed::<UserEmail>::seal(&email.0, (), &keys).unwrap();
+    let as_self_valued = Sealed::<SelfValuedEmail>::from_bytes(marker.into_bytes()).unwrap();
+    assert_eq!(as_self_valued.open((), &keys).unwrap(), email);
+
+    let self_valued = Sealed::<SelfValuedEmail>::seal(&email, (), &keys).unwrap();
+    let as_marker = Sealed::<UserEmail>::from_bytes(self_valued.into_bytes()).unwrap();
+    assert_eq!(as_marker.open((), &keys).unwrap(), email.0);
+}
+
+/// A transparent seal over a named field, with an explicit codec.
+#[derive(Debug, PartialEq, Seal)]
+#[cryptbox(id = "3f5b7d91-2a4c-4e6f-8b1d-5c7e9f1a3b5d", transparent, codec = Utf8)]
+struct Nickname {
+    nickname: String,
+}
+
+#[test]
+fn a_transparent_seal_stores_a_named_field_with_its_codec() {
+    let keys = keyring();
+    let nickname = Nickname {
+        nickname: "ada".to_owned(),
+    };
+
+    let sealed = Sealed::<Nickname>::seal(&nickname, (), &keys).unwrap();
+
+    assert_eq!(sealed.open((), &keys).unwrap(), nickname);
+    assert_eq!(
+        <Nickname as Codec<Nickname>>::ID,
+        <Utf8 as Codec<String>>::ID
+    );
+}
+
+#[cfg(feature = "json")]
+mod self_valued_json {
+    use cryptbox::{Json, Seal, Sealed};
+    use serde::{Deserialize, Serialize};
+
+    use super::{assert_codec, assert_value, keyring};
+
+    /// A whole response sealed as one JSON document.
+    #[derive(Debug, PartialEq, Serialize, Deserialize, Seal)]
+    #[cryptbox(id = "8c0e2a46-5b7d-4f91-a3c5-7e9b1d3f5a70", codec = Json)]
+    struct Profile {
+        name: String,
+        email: String,
+    }
+
+    #[test]
+    fn a_self_valued_seal_encodes_the_whole_type_with_its_codec() {
+        assert_value::<Profile, Profile>();
+        assert_codec::<Profile, Json>();
+
+        let keys = keyring();
+        let profile = Profile {
+            name: "Ada".to_owned(),
+            email: "ada@example.com".to_owned(),
+        };
+        let sealed = Sealed::<Profile>::seal(&profile, (), &keys).unwrap();
+
+        assert_eq!(sealed.open((), &keys).unwrap(), profile);
+    }
+}
+
 /// An application value type with a hand-written codec, stored as `street\0city`.
 #[derive(Clone, Debug, PartialEq)]
 struct Address {

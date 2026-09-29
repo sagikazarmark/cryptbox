@@ -78,9 +78,10 @@ the wrong keyring succeeds. Record it per seal and key scope, and test it; see
 **Seal**:
 A type that declares how its values are sealed (`Seal`): its seal ID, value
 type, codec, padding, binding scope, whether it binds a record, and its blind
-indexes. A value sealed with one seal does not open as another. A seal is a
-marker over a separate value type, so one value type can back several seals,
-such as a home and a billing address, each with its own seal ID. Seals serve
+indexes. A value sealed with one seal does not open as another. A seal is
+either a marker over a separate value type, so one value type can back several
+seals, such as a home and a billing address, each with its own seal ID; or its
+own value (a self-valued seal), such as `struct UserEmail(String)`. Seals serve
 any sealed value: a database column, a message, or a whole response.
 <!-- Agent guidance: “field” is the retired name for a seal (ADR-0007) and now means only a member of a struct or record; “profile” is older still. Do not reintroduce either. Avoid “column”, “key”, or “cipher suite” as synonyms: a seal is independent of database names. -->
 
@@ -230,5 +231,6 @@ derivation, authenticated encryption, and how metadata and binding are authentic
 
 **Value type**:
 The application's own type whose values a seal seals. It says how it encodes,
-never where it is stored: identity belongs to the seal.
+never where it is stored: identity belongs to the seal. A self-valued seal is
+both at once, so it is never shared by another seal.
 <!-- Agent guidance: avoid giving a shared value type a seal ID; the same value type routinely backs several seals. -->

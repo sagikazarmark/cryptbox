@@ -170,6 +170,14 @@
   committed manifest snapshots change once without a schema change. IDs and
   stored bytes are unchanged.
 
+- `#[derive(Seal)]` accepts a type that is its own value (ADR-0007). A unit
+  struct stays a marker over its `value` type. Any other type is its own value:
+  `codec = …` encodes it whole, such as a response sealed with `Json`, and
+  `transparent` stores a struct's single field with `codec` or that field
+  type's default codec, as `struct UserEmail(String)`. A transparent seal and a
+  marker with the same ID and codec read each other's values. A type with fields
+  rejects `value`.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

@@ -33,10 +33,11 @@ pub(crate) enum Key {
     Attr,
     IndexColumns,
     Plaintext,
+    Transparent,
 }
 
 impl Key {
-    const ALL: [Self; 23] = [
+    const ALL: [Self; 24] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -60,6 +61,7 @@ impl Key {
         Self::Attr,
         Self::IndexColumns,
         Self::Plaintext,
+        Self::Transparent,
     ];
 
     fn name(self) -> &'static str {
@@ -86,6 +88,7 @@ impl Key {
             Self::Sealed => "sealed",
             Self::Attr => "attr",
             Self::Plaintext => "plaintext",
+            Self::Transparent => "transparent",
         }
     }
 
@@ -93,7 +96,7 @@ impl Key {
     fn is_flag(self) -> bool {
         matches!(
             self,
-            Self::Record | Self::Keys | Self::Index | Self::Plaintext
+            Self::Record | Self::Keys | Self::Index | Self::Plaintext | Self::Transparent
         )
     }
 }
@@ -177,6 +180,7 @@ pub(crate) struct Attrs {
     pub(crate) attr: Option<Vec<Meta>>,
     pub(crate) index_columns: Option<Vec<IndexColumn>>,
     pub(crate) plaintext: Option<Span>,
+    pub(crate) transparent: Option<Span>,
     seen: Vec<Key>,
 }
 
@@ -288,6 +292,7 @@ impl Attrs {
             | Key::Keys
             | Key::Index
             | Key::Plaintext
+            | Key::Transparent
             | Key::Indexes
             | Key::IndexColumns
             | Key::Attr => {
@@ -309,6 +314,7 @@ impl Attrs {
             Key::Keys => self.keys = Some(span),
             Key::Index => self.index = Some(span),
             Key::Plaintext => self.plaintext = Some(span),
+            Key::Transparent => self.transparent = Some(span),
             _ => unreachable!("only flags are parsed here"),
         }
 

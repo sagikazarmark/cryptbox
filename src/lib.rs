@@ -16,7 +16,8 @@
 //!   opening authenticates. Sealing borrows the source value.
 //! - [`Seal`] declares how values are sealed: its seal ID, value type, codec,
 //!   [`Padding`], [`Binding`], whether values bind a record, and its blind
-//!   indexes. A seal is a marker type, so several seals can share one value type.
+//!   indexes. A seal is a marker over a value type that several seals can share,
+//!   or its own value, such as a whole response.
 //! - [`Args<F>`](Args) are the binding values of one call: `()` for a
 //!   [`FieldOnly`] seal, or the seal's binding, with a [`RecordId`] when the
 //!   seal binds a record.

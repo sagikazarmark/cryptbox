@@ -3,12 +3,14 @@ use crate::{Binding, Codec, IndexList, Padding, SealId};
 /// Declares how values are sealed: their identity, value type, codec,
 /// padding, binding, and blind indexes.
 ///
-/// A seal is a marker type, separate from the application's value type. The
-/// value type (`String`, `Address`, `Secret<String>`) says how it encodes; the
-/// seal gives its values an identity. One value type can back several seals, such
-/// as `HomeAddress` and `BillingAddress` over one `Address`, and each seal has
-/// its own ID so their sealed values cannot be swapped. A seal is not tied to
-/// storage: its values may be database columns, messages, or whole responses.
+/// A seal is either a marker over a separate value type or its own value
+/// (`type Value = Self`). A value type (`String`, `Address`, `Secret<String>`)
+/// says how it encodes; the seal gives its values an identity. One value type
+/// can back several markers, such as `HomeAddress` and `BillingAddress` over one
+/// `Address`, and each seal has its own ID so their sealed values cannot be
+/// swapped. A seal is not tied to storage: its values may be database columns,
+/// messages, or whole responses. A marker and a self-valued seal with the same
+/// ID and codec read each other's values.
 ///
 /// Every sealed value is bound at runtime to its seal ID, to the values of the
 /// seal's [`Binding`] (such as a tenant), and, when [`Self::RECORD`] is set, to
@@ -56,7 +58,9 @@ use crate::{Binding, Codec, IndexList, Padding, SealId};
 /// With the `derive` feature, `#[derive(Seal)]` writes exactly this impl from
 /// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`.
 /// Add `binding = Tenant`, `record`, or `indexes(EmailLookup)` to set
-/// [`Self::Binding`], [`Self::RECORD`], or [`Self::Indexes`].
+/// [`Self::Binding`], [`Self::RECORD`], or [`Self::Indexes`]. On a type with
+/// fields, the derive makes the type its own value: `codec = Json` encodes it
+/// whole, and `transparent` stores its single field.
 ///
 /// A value type without a [`Plaintext`](crate::Plaintext) implementation has no
 /// default codec; implement `Plaintext` for it or name an explicit codec:
