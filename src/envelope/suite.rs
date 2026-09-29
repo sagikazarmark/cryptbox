@@ -1,5 +1,7 @@
 mod xchacha20_poly1305;
 
+use xchacha20_poly1305::XChaCha20Poly1305;
+
 #[cfg(test)]
 pub(super) use xchacha20_poly1305::NONCE_LEN;
 
@@ -21,40 +23,69 @@ const ENVELOPE_AAD_LABEL: &[u8] = b"cryptbox/envelope-aad/v1\0";
 /// cryptographic review and independently verified test vectors.
 pub const EXPERIMENTAL_XCHACHA20_POLY1305: SuiteId = SuiteId::new(1);
 
-/// The encryption suites this library reads and writes.
+/// A complete encryption construction over the envelope format: how it derives
+/// its key, what it authenticates, and which AEAD seals the payload.
+///
+/// Suites carry no state, so every operation is an associated function and
+/// dispatch is static. A suite's parameters, such as its nonce size, are its own.
+pub(super) trait Suite {
+    /// The suite ID the envelope header records.
+    const ID: SuiteId;
+
+    /// Checks that `payload`, everything after the header, can be this suite's.
+    fn validate_payload(payload: &[u8]) -> Result<(), Error>;
+
+    /// Seals `plaintext` into a complete envelope.
+    ///
+    /// The header is built from [`Self::ID`] and the key's ID, so neither can
+    /// disagree with the key it seals under.
+    fn seal(
+        plaintext: &AeadPlaintext<'_>,
+        fingerprint: ShapeFingerprint,
+        binding: &[u8],
+        key: &EncryptionKey,
+    ) -> Result<Vec<u8>, Error>;
+
+    /// Authenticates `envelope` under `binding` and `key` and returns its payload.
+    fn open(
+        envelope: &ParsedEnvelope<'_>,
+        binding: &[u8],
+        key: &EncryptionKey,
+    ) -> Result<Zeroizing<Vec<u8>>, Error>;
+}
+
+/// The suites this library reads and writes, chosen by the header's suite ID.
 ///
 /// The set is closed: suites are built in and applications cannot add one. A
 /// new variant fails to compile until every dispatch below handles it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Suite {
+pub(super) enum SupportedSuite {
     XChaCha20Poly1305,
 }
 
-impl Suite {
+impl SupportedSuite {
     /// The suite new values are sealed with.
     pub(super) const ACTIVE: Self = Self::XChaCha20Poly1305;
 
     pub(super) fn from_id(id: SuiteId) -> Result<Self, Error> {
         match id {
-            EXPERIMENTAL_XCHACHA20_POLY1305 => Ok(Self::XChaCha20Poly1305),
+            XChaCha20Poly1305::ID => Ok(Self::XChaCha20Poly1305),
             _ => Err(Error::UnsupportedSuite(id)),
         }
     }
 
     pub(super) const fn id(self) -> SuiteId {
         match self {
-            Self::XChaCha20Poly1305 => EXPERIMENTAL_XCHACHA20_POLY1305,
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::ID,
         }
     }
 
     pub(super) fn validate_payload(self, payload: &[u8]) -> Result<(), Error> {
         match self {
-            Self::XChaCha20Poly1305 => xchacha20_poly1305::validate_payload(payload),
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::validate_payload(payload),
         }
     }
 
-    // Builds the header from its own suite ID and the key's ID, so neither can
-    // disagree with the key it seals under.
     pub(super) fn seal(
         self,
         plaintext: &AeadPlaintext<'_>,
@@ -64,7 +95,7 @@ impl Suite {
     ) -> Result<Vec<u8>, Error> {
         match self {
             Self::XChaCha20Poly1305 => {
-                xchacha20_poly1305::seal(plaintext, fingerprint, binding, key)
+                XChaCha20Poly1305::seal(plaintext, fingerprint, binding, key)
             }
         }
     }
@@ -76,7 +107,7 @@ impl Suite {
         key: &EncryptionKey,
     ) -> Result<Zeroizing<Vec<u8>>, Error> {
         match self {
-            Self::XChaCha20Poly1305 => xchacha20_poly1305::open(envelope, binding, key),
+            Self::XChaCha20Poly1305 => XChaCha20Poly1305::open(envelope, binding, key),
         }
     }
 }
@@ -121,7 +152,7 @@ pub(super) fn seal_with_nonce(
     key: &EncryptionKey,
     nonce: [u8; xchacha20_poly1305::NONCE_LEN],
 ) -> Result<Vec<u8>, Error> {
-    xchacha20_poly1305::seal_with_nonce(
+    XChaCha20Poly1305::seal_with_nonce(
         &padding.pad(plaintext)?,
         binding.fingerprint,
         binding.bytes,

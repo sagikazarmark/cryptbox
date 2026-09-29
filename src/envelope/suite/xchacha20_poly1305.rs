@@ -6,101 +6,108 @@
 
 use chacha20poly1305::aead::array::typenum::Unsigned;
 use chacha20poly1305::aead::{AeadCore, AeadInOut, inout::InOutBuf};
-use chacha20poly1305::{KeyInit, XChaCha20Poly1305};
+use chacha20poly1305::{KeyInit, XChaCha20Poly1305 as Cipher};
 use zeroize::Zeroizing;
 
 use super::{
-    EXPERIMENTAL_XCHACHA20_POLY1305, FORMAT_VERSION, ParsedEnvelope, derive_encryption_key,
+    EXPERIMENTAL_XCHACHA20_POLY1305, FORMAT_VERSION, ParsedEnvelope, Suite, derive_encryption_key,
     envelope_aad, envelope_header,
 };
 use crate::crypto;
 use crate::padding::AeadPlaintext;
-use crate::{EncryptionKey, Error, ShapeFingerprint};
+use crate::{EncryptionKey, Error, ShapeFingerprint, SuiteId};
 
-pub(in crate::envelope) const NONCE_LEN: usize = <XChaCha20Poly1305 as AeadCore>::NonceSize::USIZE;
-const TAG_LEN: usize = <XChaCha20Poly1305 as AeadCore>::TagSize::USIZE;
+pub(in crate::envelope) const NONCE_LEN: usize = <Cipher as AeadCore>::NonceSize::USIZE;
+const TAG_LEN: usize = <Cipher as AeadCore>::TagSize::USIZE;
 // One byte below RFC 8439's `(2^32 - 1) * 64`: chacha20poly1305 rejects a message of
 // exactly that length, which would otherwise surface as Error::Internal.
 const MAX_MESSAGE_LEN: u64 = 274_877_906_879;
 
-pub(super) fn validate_payload(payload: &[u8]) -> Result<(), Error> {
-    let minimum_len = NONCE_LEN
-        .checked_add(TAG_LEN)
-        .ok_or(Error::InvalidEnvelope)?;
+/// Suite 1: HKDF-SHA-256 and XChaCha20-Poly1305 over the format 2 envelope.
+pub(super) struct XChaCha20Poly1305;
 
-    if payload.len() < minimum_len {
-        return Err(Error::InvalidEnvelope);
+impl Suite for XChaCha20Poly1305 {
+    const ID: SuiteId = EXPERIMENTAL_XCHACHA20_POLY1305;
+
+    fn validate_payload(payload: &[u8]) -> Result<(), Error> {
+        let minimum_len = NONCE_LEN
+            .checked_add(TAG_LEN)
+            .ok_or(Error::InvalidEnvelope)?;
+
+        if payload.len() < minimum_len {
+            return Err(Error::InvalidEnvelope);
+        }
+
+        check_message_len(payload.len() - minimum_len)
     }
 
-    check_message_len(payload.len() - minimum_len)
+    fn seal(
+        plaintext: &AeadPlaintext<'_>,
+        fingerprint: ShapeFingerprint,
+        binding: &[u8],
+        key: &EncryptionKey,
+    ) -> Result<Vec<u8>, Error> {
+        // Fresh OS randomness avoids caller-managed nonce reuse; failure must stop encryption.
+        // See ../../../docs/wire-format.md#encryption-recipe.
+        let nonce = crypto::random_bytes()?;
+
+        Self::seal_with_nonce(plaintext, fingerprint, binding, key, nonce)
+    }
+
+    fn open(
+        envelope: &ParsedEnvelope<'_>,
+        binding: &[u8],
+        key: &EncryptionKey,
+    ) -> Result<Zeroizing<Vec<u8>>, Error> {
+        // The AAD covers the stored header and nonce exactly as they were read.
+        let prefix_len = envelope.header.len() + NONCE_LEN;
+        let (prefix, ciphertext) = envelope
+            .bytes
+            .split_at_checked(prefix_len)
+            .ok_or(Error::InvalidEnvelope)?;
+        let nonce = prefix
+            .last_chunk::<NONCE_LEN>()
+            .ok_or(Error::InvalidEnvelope)?;
+
+        let operational_key =
+            derive_encryption_key(key, binding, envelope.info.format_version(), Self::ID)?;
+        let aad = envelope_aad(prefix, binding);
+
+        decrypt(&operational_key, nonce, &aad, ciphertext)
+    }
 }
 
-pub(super) fn seal(
-    plaintext: &AeadPlaintext<'_>,
-    fingerprint: ShapeFingerprint,
-    binding: &[u8],
-    key: &EncryptionKey,
-) -> Result<Vec<u8>, Error> {
-    // Fresh OS randomness avoids caller-managed nonce reuse; failure must stop encryption.
-    // See ../../../docs/wire-format.md#encryption-recipe.
-    let nonce = crypto::random_bytes()?;
+impl XChaCha20Poly1305 {
+    /// Seals with `nonce` instead of a fresh random one; [`Suite::seal`] and
+    /// the known-answer tests call this.
+    pub(super) fn seal_with_nonce(
+        plaintext: &AeadPlaintext<'_>,
+        fingerprint: ShapeFingerprint,
+        binding: &[u8],
+        key: &EncryptionKey,
+        nonce: [u8; NONCE_LEN],
+    ) -> Result<Vec<u8>, Error> {
+        let suite = Self::ID;
+        let header = envelope_header(suite, plaintext.is_padded(), key.id(), fingerprint);
+        let capacity = (header.len() + NONCE_LEN + TAG_LEN)
+            .checked_add(plaintext.bytes().len())
+            .ok_or(Error::MessageTooLong)?;
+        let mut envelope = Vec::with_capacity(capacity);
+        envelope.extend_from_slice(&header);
+        envelope.extend_from_slice(&nonce);
 
-    seal_with_nonce(plaintext, fingerprint, binding, key, nonce)
-}
+        let operational_key = derive_encryption_key(key, binding, FORMAT_VERSION, suite)?;
+        let aad = envelope_aad(&envelope, binding);
+        encrypt_into(
+            &operational_key,
+            &nonce,
+            &aad,
+            plaintext.bytes(),
+            &mut envelope,
+        )?;
 
-pub(super) fn seal_with_nonce(
-    plaintext: &AeadPlaintext<'_>,
-    fingerprint: ShapeFingerprint,
-    binding: &[u8],
-    key: &EncryptionKey,
-    nonce: [u8; NONCE_LEN],
-) -> Result<Vec<u8>, Error> {
-    let suite = EXPERIMENTAL_XCHACHA20_POLY1305;
-    let header = envelope_header(suite, plaintext.is_padded(), key.id(), fingerprint);
-    let capacity = (header.len() + NONCE_LEN + TAG_LEN)
-        .checked_add(plaintext.bytes().len())
-        .ok_or(Error::MessageTooLong)?;
-    let mut envelope = Vec::with_capacity(capacity);
-    envelope.extend_from_slice(&header);
-    envelope.extend_from_slice(&nonce);
-
-    let operational_key = derive_encryption_key(key, binding, FORMAT_VERSION, suite)?;
-    let aad = envelope_aad(&envelope, binding);
-    encrypt_into(
-        &operational_key,
-        &nonce,
-        &aad,
-        plaintext.bytes(),
-        &mut envelope,
-    )?;
-
-    Ok(envelope)
-}
-
-pub(super) fn open(
-    envelope: &ParsedEnvelope<'_>,
-    binding: &[u8],
-    key: &EncryptionKey,
-) -> Result<Zeroizing<Vec<u8>>, Error> {
-    // The AAD covers the stored header and nonce exactly as they were read.
-    let prefix_len = envelope.header.len() + NONCE_LEN;
-    let (prefix, ciphertext) = envelope
-        .bytes
-        .split_at_checked(prefix_len)
-        .ok_or(Error::InvalidEnvelope)?;
-    let nonce = prefix
-        .last_chunk::<NONCE_LEN>()
-        .ok_or(Error::InvalidEnvelope)?;
-
-    let operational_key = derive_encryption_key(
-        key,
-        binding,
-        envelope.info.format_version(),
-        EXPERIMENTAL_XCHACHA20_POLY1305,
-    )?;
-    let aad = envelope_aad(prefix, binding);
-
-    decrypt(&operational_key, nonce, &aad, ciphertext)
+        Ok(envelope)
+    }
 }
 
 /// Rejects a message longer than XChaCha20-Poly1305 can encrypt under one nonce.
@@ -127,7 +134,7 @@ fn encrypt_into(
 ) -> Result<(), Error> {
     check_message_len(plaintext.len())?;
 
-    let cipher = XChaCha20Poly1305::new(key.into());
+    let cipher = Cipher::new(key.into());
     let start = out.len();
     let end = start
         .checked_add(plaintext.len())
@@ -155,7 +162,7 @@ fn decrypt(
     let (ciphertext, tag) = ciphertext
         .split_last_chunk::<TAG_LEN>()
         .ok_or(Error::AuthenticationFailed)?;
-    let cipher = XChaCha20Poly1305::new(key.into());
+    let cipher = Cipher::new(key.into());
     // Plaintext is only ever written here; erase it on drop.
     // See ../../../docs/wire-format.md#key-and-buffer-lifetime.
     let mut plaintext = Zeroizing::new(vec![0_u8; ciphertext.len()]);

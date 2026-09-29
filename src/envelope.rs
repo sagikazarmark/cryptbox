@@ -10,7 +10,7 @@ pub(crate) use format::validated_key_id;
 pub use format::{CiphertextInfo, is_ciphertext};
 use format::{ParsedEnvelope, parse_envelope};
 pub use suite::EXPERIMENTAL_XCHACHA20_POLY1305;
-use suite::Suite;
+use suite::SupportedSuite;
 
 /// Parses supported envelope metadata without authenticating it.
 ///
@@ -25,9 +25,9 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
 }
 
 /// Parses an envelope whose suite is supported and whose payload fits that suite.
-fn parse_supported(bytes: &[u8]) -> Result<(Suite, ParsedEnvelope<'_>), Error> {
+fn parse_supported(bytes: &[u8]) -> Result<(SupportedSuite, ParsedEnvelope<'_>), Error> {
     let envelope = parse_envelope(bytes)?;
-    let suite = Suite::from_id(envelope.info.suite_id())?;
+    let suite = SupportedSuite::from_id(envelope.info.suite_id())?;
     suite.validate_payload(envelope.suite_payload)?;
 
     Ok((suite, envelope))
@@ -63,7 +63,7 @@ pub(crate) fn seal(
 ) -> Result<Vec<u8>, Error> {
     let plaintext = padding.pad(plaintext)?;
 
-    Suite::ACTIVE.seal(
+    SupportedSuite::ACTIVE.seal(
         &plaintext,
         binding.fingerprint,
         binding.bytes,
@@ -74,7 +74,7 @@ pub(crate) fn seal(
 /// An envelope that parsed and whose fingerprint matches the binding a reader
 /// expects, before any key is looked up.
 pub(crate) struct CheckedEnvelope<'a> {
-    suite: Suite,
+    suite: SupportedSuite,
     parsed: ParsedEnvelope<'a>,
     binding: EnvelopeBinding<'a>,
 }
@@ -127,7 +127,7 @@ impl CheckedEnvelope<'_> {
     pub(crate) fn needs_reseal(&self, padding: Padding, keyring: &EncryptionKeyring) -> bool {
         let info = self.parsed.info;
 
-        info.suite_id() != Suite::ACTIVE.id()
+        info.suite_id() != SupportedSuite::ACTIVE.id()
             || info.key_id() != keyring.current().id()
             || info.padded() != padding.is_padded()
     }
