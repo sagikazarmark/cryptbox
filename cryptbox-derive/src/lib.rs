@@ -430,6 +430,7 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 /// | Field key | Meaning |
 /// | --- | --- |
 /// | `seal = F` | Sealed with seal `F`: the sealed struct holds a `Sealed<F>`. |
+/// | `seal` | Sealed as its own type, which must be a seal, such as a transparent one: the sealed struct holds a `Sealed<Type>`. |
 /// | `index(S as column, …)` | With `seal`: the blind indexes it writes, each in a `BlindIndex<S>` field named `column`. |
 /// | `plaintext` | Stored as it is. The record ID must be `plaintext`. |
 ///

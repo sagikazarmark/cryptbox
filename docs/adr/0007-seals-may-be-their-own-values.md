@@ -50,10 +50,13 @@ struct ProfileResponse { … }
   use raw bytes. `Plaintext` leaves the public API: it becomes a private, sealed
   lookup that only the derive uses, and `derive(Plaintext)` is removed. A
   hand-written `Seal` impl names its codec.
-- **In `#[derive(Record)]`, `seal =` becomes optional.** Without it, the member's
-  type is its own seal (`email: UserEmail` is stored as `Sealed<UserEmail>`). A
-  member whose type is not self-valued fails to compile on the type mismatch;
-  nothing is inferred from names.
+- **In `#[derive(Record)]`, the seal's name becomes optional.** A member marked
+  just `seal` is sealed as its own type (`#[cryptbox(seal)] email: UserEmail` is
+  stored as `Sealed<UserEmail>`). A member whose type is not a seal fails to
+  compile on the type mismatch; nothing is inferred from names. Every member
+  still says how it is stored: treating an unmarked member as its own seal would
+  report a forgotten `plaintext` as a cascade of type errors in generated code
+  instead of one message.
 - **Blind indexes over a self-valued seal** map the stored value to the query type
   with the existing `project = fn` key (`project = UserEmail::as_str`).
 
@@ -123,7 +126,7 @@ struct ProfileResponse { … }
   1. the renames;
   2. `derive(Seal)` for both forms, with `transparent`;
   3. `Plaintext` closed and `derive(Plaintext)` removed;
-  4. `seal =` made optional in `derive(Record)`;
+  4. a bare `seal` in `derive(Record)`;
   5. the examples and guides: `key_rotation`'s `Email` plus its `UserEmail`
      marker become one self-valued seal, and `custom_field`'s `Handle` becomes
      `Handle(Secret<String>)` with `codec = HandleCodec`.

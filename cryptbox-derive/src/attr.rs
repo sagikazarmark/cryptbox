@@ -163,6 +163,8 @@ pub(crate) struct Attrs {
     pub(crate) codec: Option<Type>,
     pub(crate) padding: Option<Padding>,
     pub(crate) seal: Option<Type>,
+    /// A bare `seal`, without `= Type`.
+    pub(crate) seal_own: Option<Span>,
     pub(crate) bits: Option<LitInt>,
     pub(crate) query: Option<Type>,
     pub(crate) normalize: Option<Path>,
@@ -247,6 +249,11 @@ impl Attrs {
                     parse_index_columns(meta.input).map(|list| parsed.index_columns = Some(list))
                 } else if key == Key::Attr {
                     parse_attr(meta.input).map(|list| parsed.attr = Some(list))
+                } else if key == Key::Seal && (meta.input.is_empty() || meta.input.peek(Token![,]))
+                {
+                    // Each derive decides whether a bare `seal` means anything.
+                    parsed.seal_own = Some(meta.path.span());
+                    Ok(())
                 } else {
                     meta.value()
                         .and_then(|input| parsed.parse_value(key, input))

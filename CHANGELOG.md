@@ -187,6 +187,11 @@
   codec, such as `Utf8`, instead of `<String as Plaintext>::Codec`. Stored bytes
   are unchanged.
 
+- `#[derive(Record)]` accepts a bare `seal` on a field whose type is its own
+  seal, such as `#[cryptbox(seal, index(EmailLookup as email_lookup))] email:
+  UserEmail`, stored as `Sealed<UserEmail>`. `#[derive(BlindIndexSpec)]` rejects
+  a bare `seal`. A type that is not a seal reports that it is not one.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

@@ -383,6 +383,87 @@ mod derived {
     }
 }
 
+#[cfg(feature = "derive")]
+mod self_valued {
+    use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Record, Tenant};
+    use zeroize::Zeroizing;
+
+    use super::{Customer, CustomerNote, EmailLookup, SealedCustomer, customer, keys, tenant};
+
+    /// [`super::CustomerEmail`] as its own value: the same ID, bytes, and index.
+    #[derive(Clone, Debug, PartialEq, cryptbox::Seal)]
+    #[cryptbox(
+        id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
+        transparent,
+        binding = Tenant,
+        record,
+        indexes(OwnEmailLookup),
+    )]
+    struct OwnEmail(String);
+
+    impl OwnEmail {
+        fn as_str(&self) -> &str {
+            &self.0
+        }
+    }
+
+    fn normalize_email(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        EmailLookup::normalize_query(query)
+    }
+
+    /// [`EmailLookup`] over [`OwnEmail`].
+    #[derive(cryptbox::BlindIndexSpec)]
+    #[cryptbox(
+        id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
+        seal = OwnEmail,
+        bits = 1,
+        query = str,
+        normalize = normalize_email,
+        normalizer = "email/1",
+        project = OwnEmail::as_str,
+    )]
+    struct OwnEmailLookup;
+
+    /// [`Customer`] with a field whose type is its own seal.
+    #[derive(Clone, Debug, PartialEq, cryptbox::Record)]
+    #[cryptbox(record = id, sealed = SealedOwnCustomer)]
+    struct OwnCustomer {
+        #[cryptbox(plaintext)]
+        id: i64,
+        #[cryptbox(seal, index(OwnEmailLookup as email_lookup))]
+        email: OwnEmail,
+        #[cryptbox(seal = CustomerNote)]
+        note: String,
+    }
+
+    #[test]
+    fn a_field_sealed_as_its_own_type_reads_as_its_marker_equivalent() {
+        let keys = keys();
+        let acme = tenant(b"acme");
+        let own = OwnCustomer {
+            id: 7,
+            email: OwnEmail("ada@example.com".to_owned()),
+            note: "note 7".to_owned(),
+        };
+        let row = own.seal(&acme, &keys).unwrap();
+        let manual = customer(7, "ada@example.com").seal(&acme, &keys).unwrap();
+        // Blind indexes are deterministic: both write the same one.
+        assert_eq!(row.email_lookup.as_bytes(), manual.email_lookup.as_bytes());
+
+        let sealed = SealedCustomer {
+            id: row.id,
+            email: cryptbox::Sealed::from_bytes(row.email.into_bytes()).unwrap(),
+            email_lookup: BlindIndex::from_bytes(row.email_lookup.into_bytes()).unwrap(),
+            note: row.note,
+        };
+
+        assert_eq!(
+            Customer::open(sealed, &acme, &keys).unwrap(),
+            customer(7, "ada@example.com")
+        );
+    }
+}
+
 #[cfg(all(feature = "derive", feature = "sqlx-sqlite"))]
 mod sqlite {
     use sqlx::{Connection, sqlite::SqliteConnection};

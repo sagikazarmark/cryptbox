@@ -39,6 +39,9 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         "Seal",
         &mut errors,
     );
+    if let Some(span) = attrs.seal_own {
+        errors.push(syn::Error::new(span, "`seal` needs a value: `seal = Seal`"));
+    }
     let bits = required(
         attrs.bits.take(),
         &attrs,

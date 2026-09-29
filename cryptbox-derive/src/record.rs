@@ -160,7 +160,13 @@ fn parse_members<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Memb
         let Some(ident) = &decl.ident else { continue };
         let mut attrs = Attrs::parse(&decl.attrs, MEMBER_KEYS, errors);
 
-        let sealing = match (attrs.seal.take(), attrs.plaintext) {
+        // A bare `seal` seals the field as its own type. Nothing is inferred from
+        // names: a type that is not a seal fails to compile where it is named.
+        let seal = attrs
+            .seal
+            .take()
+            .or_else(|| attrs.seal_own.map(|_| decl.ty.clone()));
+        let sealing = match (seal, attrs.plaintext) {
             (Some(seal), None) => Some(Sealing {
                 seal,
                 indexes: attrs.index_columns.take().unwrap_or_default(),
@@ -169,7 +175,7 @@ fn parse_members<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Memb
                 if attrs.seen(Key::IndexColumns) {
                     errors.push(syn::Error::new(
                         span,
-                        "a `plaintext` field has no blind indexes: seal it with `seal = F` to index it",
+                        "a `plaintext` field has no blind indexes: seal it with `seal` to index it",
                     ));
                 }
                 None
@@ -177,7 +183,7 @@ fn parse_members<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Memb
             (Some(_), Some(span)) => {
                 errors.push(syn::Error::new(
                     span,
-                    "a field is either sealed with `seal = F` or `plaintext`, not both",
+                    "a field is either sealed with `seal` or `plaintext`, not both",
                 ));
                 continue;
             }
@@ -187,8 +193,9 @@ fn parse_members<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Memb
                 errors.push(syn::Error::new(
                     ident.span(),
                     format!(
-                        "`{ident}` must say how it is stored: add `#[cryptbox(seal = F)]` to seal it, \
-                         or `#[cryptbox(plaintext)]` to store it as it is"
+                        "`{ident}` must say how it is stored: add `#[cryptbox(seal)]` if its type is \
+                         a seal, `#[cryptbox(seal = F)]` to seal it with `F`, or \
+                         `#[cryptbox(plaintext)]` to store it as it is"
                     ),
                 ));
                 continue;
@@ -228,7 +235,7 @@ fn check_members(name: &Ident, record: &Ident, members: &[Member<'_>], errors: &
     if members.iter().all(|member| member.sealing.is_none()) {
         errors.push(syn::Error::new(
             name.span(),
-            "a record needs at least one sealed field: add `#[cryptbox(seal = F)]` to one",
+            "a record needs at least one sealed field: add `#[cryptbox(seal)]` or `#[cryptbox(seal = F)]` to one",
         ));
     }
 

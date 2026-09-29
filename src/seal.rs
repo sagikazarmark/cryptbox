@@ -74,6 +74,11 @@ use crate::{Binding, Codec, IndexList, Padding, SealId};
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not a seal",
+    label = "not a seal",
+    note = "declare one with `#[derive(cryptbox::Seal)]`; in a `#[derive(Record)]`, mark a field stored as it is `#[cryptbox(plaintext)]`, or name its seal with `#[cryptbox(seal = …)]`"
+)]
 pub trait Seal: 'static {
     /// The stable identifier, independent of Rust and database names.
     const ID: SealId;

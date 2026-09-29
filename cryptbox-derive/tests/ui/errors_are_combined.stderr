@@ -22,11 +22,11 @@ error: duplicate `cryptbox` key `bits`
 3 | #[cryptbox(bits = 32, seal, query = str, normalize = normalize)]
   |            ^^^^
 
-error: expected `=`
- --> tests/ui/errors_are_combined.rs:3:27
+error: `seal` needs a value: `seal = Seal`
+ --> tests/ui/errors_are_combined.rs:3:23
   |
 3 | #[cryptbox(bits = 32, seal, query = str, normalize = normalize)]
-  |                           ^
+  |                       ^^^^
 
 error: missing `normalizer`: add `#[cryptbox(normalizer = "email/1")]`
  --> tests/ui/errors_are_combined.rs:4:8
