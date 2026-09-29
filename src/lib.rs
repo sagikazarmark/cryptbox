@@ -180,6 +180,7 @@ mod error;
 mod field;
 mod id;
 mod key;
+mod key_source;
 pub mod keys;
 #[cfg(feature = "migrate")]
 pub mod migrate;
@@ -221,10 +222,8 @@ pub use field::Field;
 pub use id::{
     FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, PartId, ShapeFingerprint, SuiteId,
 };
-pub use key::{
-    BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, EncryptionKey, EncryptionKeySource,
-    EncryptionKeyring, GlobalKeys, KeyContext, Keys,
-};
+pub use key::{BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, Keys};
+pub use key_source::{BlindIndexKeySource, EncryptionKeySource, GlobalKeys, KeyContext};
 pub use padding::Padding;
 pub use prepare::Prepared;
 pub use record::{IndexedBy, Record, open_matching};
