@@ -1,9 +1,6 @@
-mod xchacha20_poly1305;
+pub(super) mod xchacha20_poly1305;
 
 use xchacha20_poly1305::XChaCha20Poly1305;
-
-#[cfg(test)]
-pub(super) use xchacha20_poly1305::NONCE_LEN;
 
 use zeroize::Zeroizing;
 
@@ -142,21 +139,4 @@ fn envelope_aad(prefix: &[u8], binding: &[u8]) -> Vec<u8> {
     aad.extend_from_slice(binding);
 
     aad
-}
-
-#[cfg(test)]
-pub(super) fn seal_with_nonce(
-    plaintext: &[u8],
-    padding: crate::Padding,
-    binding: super::EnvelopeBinding<'_>,
-    key: &EncryptionKey,
-    nonce: [u8; xchacha20_poly1305::NONCE_LEN],
-) -> Result<Vec<u8>, Error> {
-    XChaCha20Poly1305::seal_with_nonce(
-        &padding.pad(plaintext)?,
-        binding.fingerprint,
-        binding.bytes,
-        key,
-        nonce,
-    )
 }

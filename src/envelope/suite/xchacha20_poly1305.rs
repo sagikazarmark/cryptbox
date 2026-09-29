@@ -24,7 +24,7 @@ const TAG_LEN: usize = <Cipher as AeadCore>::TagSize::USIZE;
 const MAX_MESSAGE_LEN: u64 = 274_877_906_879;
 
 /// Suite 1: HKDF-SHA-256 and XChaCha20-Poly1305 over the format 2 envelope.
-pub(super) struct XChaCha20Poly1305;
+pub(in crate::envelope) struct XChaCha20Poly1305;
 
 impl Suite for XChaCha20Poly1305 {
     const ID: SuiteId = EXPERIMENTAL_XCHACHA20_POLY1305;
@@ -80,7 +80,7 @@ impl Suite for XChaCha20Poly1305 {
 impl XChaCha20Poly1305 {
     /// Seals with `nonce` instead of a fresh random one; [`Suite::seal`] and
     /// the known-answer tests call this.
-    pub(super) fn seal_with_nonce(
+    pub(in crate::envelope) fn seal_with_nonce(
         plaintext: &AeadPlaintext<'_>,
         fingerprint: ShapeFingerprint,
         binding: &[u8],

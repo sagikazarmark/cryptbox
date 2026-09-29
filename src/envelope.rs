@@ -137,10 +137,26 @@ impl CheckedEnvelope<'_> {
 mod tests {
     use zeroize::Zeroizing;
 
-    use super::suite::NONCE_LEN;
-    use super::suite::seal_with_nonce;
+    use super::suite::xchacha20_poly1305::{NONCE_LEN, XChaCha20Poly1305};
     use super::{EnvelopeBinding, check, inspect_ciphertext, seal};
     use crate::{EncryptionKey, EncryptionKeyring, Error, Padding, ShapeFingerprint};
+
+    // Seals under suite 1 with a fixed nonce, as the known-answer vectors need.
+    fn seal_with_nonce(
+        plaintext: &[u8],
+        padding: Padding,
+        binding: EnvelopeBinding<'_>,
+        key: &EncryptionKey,
+        nonce: [u8; NONCE_LEN],
+    ) -> Result<Vec<u8>, Error> {
+        XChaCha20Poly1305::seal_with_nonce(
+            &padding.pad(plaintext)?,
+            binding.fingerprint,
+            binding.bytes,
+            key,
+            nonce,
+        )
+    }
 
     // Fixed inputs make the known-answer vectors in docs/wire-format.md reproducible.
     // Sealing outside tests always draws a fresh nonce from `crypto::random_bytes`.
