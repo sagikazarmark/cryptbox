@@ -130,7 +130,7 @@ mod tests {
             hex::encode(domain.as_bytes()),
             "123456781234423482341234567890ab000000"
         );
-        assert_eq!(domain.fingerprint(), hex_array("ff670aba047d77fa"));
+        assert_eq!(domain.fingerprint(), hex_array("5d86321261d64380"));
     }
 
     #[test]
@@ -141,7 +141,7 @@ mod tests {
             hex::encode(domain.as_bytes()),
             "123456781234423482341234567890ab020000000800000000000000010000"
         );
-        assert_eq!(domain.fingerprint(), hex_array("8a2f3d5f4bb04af5"));
+        assert_eq!(domain.fingerprint(), hex_array("4e56863e564d3de9"));
     }
 
     #[test]
@@ -162,7 +162,7 @@ mod tests {
                 "61636d65",
             )
         );
-        assert_eq!(domain.fingerprint(), hex_array("f8311e0a178867bc"));
+        assert_eq!(domain.fingerprint(), hex_array("4bca2676fab96fae"));
     }
 
     #[test]

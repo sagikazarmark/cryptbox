@@ -890,11 +890,11 @@ mod tests {
         // Independently computed with shasum over the documented declaration bytes.
         assert_eq!(
             BindingDeclaration::new(&[SEQUENCE, TENANT], false).fingerprint(),
-            hex_array("f93e3f05d673ab72"),
+            hex_array("25500d33d815ecf7"),
         );
         assert_eq!(
             BindingDeclaration::new(&[TENANT], true).fingerprint(),
-            hex_array("f99c70ac24ad8a9a"),
+            hex_array("b1ac6721fe4155c8"),
         );
     }
 
@@ -926,7 +926,7 @@ mod tests {
         // Independently computed with shasum over the documented empty declaration.
         assert_eq!(
             scoped(&[], false, &[], None).unwrap().fingerprint(),
-            hex_array("ff670aba047d77fa")
+            hex_array("5d86321261d64380")
         );
     }
 
@@ -994,7 +994,7 @@ mod tests {
             hex::encode(domain.as_bytes()),
             "123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31"
         );
-        assert_eq!(domain.fingerprint(), hex_array("cda083fe6eae1bf1"));
+        assert_eq!(domain.fingerprint(), hex_array("81f8614d4eacb5fb"));
     }
 
     #[test]
@@ -1005,7 +1005,7 @@ mod tests {
             hex::encode(domain.as_bytes()),
             "123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31"
         );
-        assert_eq!(domain.fingerprint(), hex_array("505a9cd2bc286636"));
+        assert_eq!(domain.fingerprint(), hex_array("58bfd20ea23bac14"));
     }
 
     const LOW: [u8; 16] = [0x11; 16];

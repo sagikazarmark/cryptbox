@@ -66,7 +66,7 @@ use crate::{
 ///   codec: utf8
 ///   padding: block(16)
 ///   record: yes
-///   binding: d15ae034a90d7270
+///   binding: a28551bd5fbddbb1
 ///     part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
 ///   shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
 ///   custody: general KMS, one key per tenant

@@ -131,7 +131,7 @@ carries it. It covers the part IDs, kinds, and roles, and the record flag, but
 never values, because the header is stored in plaintext:
 
 ```text
-fingerprint label: "cryptbox/binding-shape/v1\0"
+fingerprint label: "cryptbox/binding-fingerprint/v1\0"
 
 fingerprint = SHA-256(fingerprint_label
                       || record_flag[1]
@@ -151,7 +151,7 @@ the fingerprint.
 
 Roles are included because a role change alters index derivation and custody,
 so it is a migration even though the binding bytes don't change. The empty
-declaration's fingerprint is `ff670aba047d77fa`. A record's kind is a runtime value, not part of
+declaration's fingerprint is `5d86321261d64380`. A record's kind is a runtime value, not part of
 the declaration: a record of another kind fails authentication rather than reporting
 `BindingMismatch`.
 
@@ -161,10 +161,10 @@ Two ready-made bindings fix their declarations permanently:
 
 - `FieldOnly` has no parts. Without a record it is the empty declaration, so its
   binding is `field_id || 00 || 0000`. With a record, it binds the record and
-  no parts; that declaration's fingerprint is `8a2f3d5f4bb04af5`.
+  no parts; that declaration's fingerprint is `4e56863e564d3de9`.
 - `Tenant` has one part: part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
   bytes, role `keys`. A tenant ID is non-empty opaque bytes; a UUID tenant is
-  its 16 bytes. Without a record, its binding fingerprint is `f8311e0a178867bc`.
+  its 16 bytes. Without a record, its binding fingerprint is `4bca2676fab96fae`.
   For field `12345678-1234-4234-8234-1234567890ab` and tenant `acme`, the
   binding is:
 
@@ -377,10 +377,10 @@ empty declaration's fingerprint:
 root key:    1111111111111111111111111111111111111111111111111111111111111111
 KeyId:       11111111-2222-4333-8444-555555555555
 binding:     123456781234423482341234567890ab000000
-fingerprint: ff670aba047d77fa
+fingerprint: 5d86321261d64380
 plaintext:   6372797074626f7820766563746f72 ("cryptbox vector")
 nonce:       000102030405060708090a0b0c0d0e0f1011121314151617
-envelope:    4342580002010011111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da141a9d8eb6678b1f3feec1eacbbb1dc56de
+envelope:    43425800020100111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1415b33cbc7bfb19bc11afc1b31e3f3075b
 ```
 
 The padded vector uses the same root key, `KeyId`, binding, declaration, and nonce as the
@@ -389,7 +389,7 @@ flags `01`:
 
 ```text
 padded plaintext: 6372797074626f7820766563746f7280
-envelope:         4342580002010111111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1419a655dbd3c41cbc407272faca1c37acec7
+envelope:         43425800020101111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1419a17b89c9d88cb6cca540c1c17f5917f44
 ```
 
 Both decrypt to `"cryptbox vector"` whatever the reader's padding policy. The
@@ -406,18 +406,18 @@ part 11111111-1111-1111-1111-111111111111  uuid   keys        33333333-3333-3333
 part 22222222-2222-2222-2222-222222222222  bytes  bound only  77732d31 ("ws-1")
 ```
 
-Without a record, the binding fingerprint is `cda083fe6eae1bf1`:
+Without a record, the binding fingerprint is `81f8614d4eacb5fb`:
 
 ```text
 binding:  123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
-envelope: 4342580002010011111111222243338444555555555555cda083fe6eae1bf1000102030405060708090a0b0c0d0e0f1011121314151617b887bad9f184f35041b40c3cce0d453d235fc5e3c3a7b03064c94b159a0d82
+envelope: 434258000201001111111122224333844455555555555581f8614d4eacb5fb000102030405060708090a0b0c0d0e0f1011121314151617b887bad9f184f35041b40c3cce0d45ba321676cb9f5d3c39db8f90751b842f
 ```
 
-With the `i64` record `7`, the binding fingerprint is `505a9cd2bc286636`:
+With the `i64` record `7`, the binding fingerprint is `58bfd20ea23bac14`:
 
 ```text
 binding:  123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
-envelope: 4342580002010011111111222243338444555555555555505a9cd2bc286636000102030405060708090a0b0c0d0e0f1011121314151617663bba5e4bb37a3df899258809ff5637620bf6006b8c5685cd2419c6a90e28
+envelope: 434258000201001111111122224333844455555555555558bfd20ea23bac14000102030405060708090a0b0c0d0e0f1011121314151617663bba5e4bb37a3df899258809ff56a6b4a7041d51f117d26698875eb9f262
 ```
 
 The fingerprints, bindings, and all four envelopes above were computed

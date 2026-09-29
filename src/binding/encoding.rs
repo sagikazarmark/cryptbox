@@ -5,7 +5,7 @@ use crate::{Error, FieldId};
 
 // A persistent domain separator, not a display string.
 // See ../../docs/wire-format.md#binding-fingerprint.
-const FINGERPRINT_LABEL: &[u8] = b"cryptbox/binding-shape/v1\0";
+const FINGERPRINT_LABEL: &[u8] = b"cryptbox/binding-fingerprint/v1\0";
 // No kind code is 0, so an empty record differs from no record.
 const NO_RECORD: u8 = 0;
 

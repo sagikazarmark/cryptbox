@@ -169,7 +169,7 @@ fn field_only_envelopes_carry_the_empty_declaration_fingerprint() {
                 .unwrap()
                 .binding_fingerprint()
         ),
-        "ff670aba047d77fa"
+        "5d86321261d64380"
     );
 }
 

@@ -249,7 +249,7 @@ field dcaa3c69-1767-49a1-8476-36555eaf54bf
   codec: handle/1
   padding: none
   record: no
-  binding: ff670aba047d77fa
+  binding: 5d86321261d64380
   shred unit: keyring
 index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
   field: dcaa3c69-1767-49a1-8476-36555eaf54bf
