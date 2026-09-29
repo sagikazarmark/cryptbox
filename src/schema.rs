@@ -198,7 +198,7 @@ impl Manifest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Duplicate {
-    /// Several seal markers declare one seal ID.
+    /// Several seal types declare one seal ID.
     Seal {
         /// The shared ID.
         id: SealId,
@@ -329,9 +329,9 @@ const fn role_name(role: PartRole) -> &'static str {
     }
 }
 
-/// Fails compilation when two of the listed markers declare the same ID.
+/// Fails compilation when two of the listed types declare the same ID.
 ///
-/// List seal markers to check their seal IDs, or `indexes:` followed by
+/// List seals to check their seal IDs, or `indexes:` followed by
 /// blind-index markers to check their index IDs. The check is a constant
 /// assertion, so it works with manual impls and derives alike and needs no test
 /// to run. Markers that deliberately share a seal ID are one seal;

@@ -1,7 +1,7 @@
 # Declare a custom seal with explicit plaintext ownership
 
-[The example](main.rs) declares a `Handle` seal over `Secret<String>` for a 1–64
-character ASCII account handle, with a validating codec, normalizer and synchronous
+[The example](main.rs) declares `Handle(Secret<String>)`, a seal that is its own
+value, for a 1–64 character ASCII account handle, with a validating codec, normalizer and synchronous
 key source.
 [Examples](../README.md) · [Documentation](../../docs/README.md).
 
@@ -22,21 +22,24 @@ before persisting data.
 
 ## Why these implementations?
 
-- **`HandleCodec: Codec<Secret<String>>`** validates letters, digits and hyphens,
-  preserving case. It returns zeroizing encoded bytes and an owned `Secret<String>`
-  on decode. `Utf8` also encodes `Secret<String>` (it is the wrapper's default
-  codec, with the same bytes), but it would not enforce the handle policy, so the
-  seal names `HandleCodec` explicitly.
-  It also declares `type Indexes = (HandleEquality,)`, so storage helpers that
-  would not write the index, such as the automatic `Plain` column, reject it.
+- **`Handle`** is its own value (`type Value = Self`): a handle is stored nowhere
+  else, so it needs no separate value type, and callers cannot pass another
+  string where a handle belongs. It declares `type Indexes = (HandleEquality,)`,
+  so storage helpers that would not write the index, such as the automatic
+  `Plain` column, reject it.
+- **`HandleCodec: Codec<Handle>`** validates letters, digits and hyphens,
+  preserving case. It returns zeroizing encoded bytes and an owned `Handle` on
+  decode. It stores exactly the bytes `Utf8` would store for the inner
+  `Secret<String>`, but `Utf8` would not enforce the handle policy.
 - **`HandleEquality`** validates the same alphabet and lowercases inside a
-  zeroizing buffer. Writes, probes and candidate comparison share that rule.
+  zeroizing buffer. Queries are bare `Secret<String>`s; stored values are handles. Writes, probes and candidate comparison share that rule.
   The 128-bit index leaks equality/frequency and is not a uniqueness constraint.
 - **`CachedEncryptionKeys`** is a key source that serves a local keyring snapshot
   without I/O on the encryption path. The application owns loading, refresh, synchronization and failure policy.
-- **`Secret<String>`** zeroizes its owned string on drop. Preparation still borrows
-  the plaintext; dropping `Prepared` does not erase it. `open` returns the
-  decoded type—it does not add zeroization to a seal over an ordinary `String`.
+- **`Secret<String>`** zeroizes the handle's string on drop, and its redacting
+  `Debug` lets `Handle` derive `Debug` safely. Preparation still borrows the
+  plaintext; dropping `Prepared` does not erase it. `open` returns the decoded
+  type—it does not add zeroization to a seal over an ordinary `String`.
 
 ### Implementor obligations
 
@@ -53,7 +56,11 @@ copy into a new zeroizing allocation, then wipe the old allocation before releas
 Protect failure paths too. See the [ownership contracts](../../docs/ownership.md).
 
 [`Seal`](https://docs.rs/cryptbox/latest/cryptbox/trait.Seal.html) ties these
-together: `Handle` names its ID, value type, codec and padding.
+together: `Handle` names its ID, value type (itself), codec and padding. With
+the `derive` feature, `#[derive(Seal)]` on `Handle` with
+`#[cryptbox(id = …, codec = HandleCodec)]` writes the same impl, since a type
+with fields is its own value; `transparent` would instead take a codec for the
+inner `Secret<String>`. This example writes its impls by hand.
 **`Padding` is a closed set**: choose `Padding::NONE`, `Padding::block(n)` or
 `Padding::length(n)`. Every seal binds its ciphertext to its seal ID. A codec or
 normalizer cannot add row/tenant authentication. Preserve the

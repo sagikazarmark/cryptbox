@@ -53,8 +53,8 @@ A seal can also store `Secret<String>` or `Secret<Vec<u8>>` directly. `Utf8`
 and `Raw` encode them with exactly the same bytes as `String` and `Vec<u8>`, and
 they are the wrappers' default codecs. Other wrapper types need their own
 codec. Normalizers also require an implementation for the exact input type. The
-[custom-field example](../examples/custom_field/README.md) demonstrates a validating codec that decodes
-directly into `Secret<String>`.
+[custom-field example](../examples/custom_field/README.md) demonstrates a validating codec for a seal that is
+its own value and wraps a `Secret<String>`.
 
 ## Temporary buffers and erasure limits
 

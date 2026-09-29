@@ -40,8 +40,8 @@ structure; only successful opening authenticates them.
 ## A seal gives a value its policy
 
 A `UserEmail` **seal** says how an email should be handled every time it is
-written or read. It is a marker type, separate from the value it stores, so the
-same choices are not repeated at each call site. A seal declares:
+written or read, so the same choices are not repeated at each call site. A seal
+declares:
 
 - A **seal ID**, the stable identity of the seal. Every sealed value and
   blind index is bound to it.
@@ -59,10 +59,21 @@ and any other part is bound only. [Bind values to a scope](bindings.md) covers
 choosing them.
 
 The value type is your application's own type: it says how it encodes, never
-where it is stored. One `Address` type can back both a `HomeAddress` and a
-`BillingAddress` seal, each with its own seal ID. Only `String`, `Vec<u8>`, and
-their `Secret` wrappers have a default codec; a seal over any other value type
-names its codec.
+where it is stored. Only `String`, `Vec<u8>`, and their `Secret` wrappers have a
+default codec; a seal over any other value type names its codec. A seal takes
+one of two forms, and both store the same bytes for the same ID and codec, so a
+seal can change form without a migration:
+
+- A **marker** is a unit struct over a separate value type. One `Address` type
+  can back both a `HomeAddress` and a `BillingAddress` marker, each with its own
+  seal ID. Prefer it for values that arrive as plain types, such as a `String`
+  in a request body: sealing borrows it as it is.
+- A **self-valued seal** is its own value, such as `struct UserEmail(String)`
+  or a whole `ProfileResponse`. The type says where the value belongs, so it
+  cannot be passed where another seal's value is expected, but callers wrap
+  values before sealing and unwrap them after opening. Prefer it for whole
+  payloads, such as responses and messages, and for types that are already
+  newtypes.
 
 Sealing and opening bind the value at runtime to its seal ID, to the values of
 the seal's binding, and to its record when the seal binds one. The binding's
