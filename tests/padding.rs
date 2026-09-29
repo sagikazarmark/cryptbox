@@ -99,23 +99,23 @@ fn assert_stored_sizes<P: Field<Value = String, Binding = FieldOnly>>(cases: &[(
 
 #[test]
 fn documented_unpadded_policy_sizes_match_stored_values() {
-    assert_stored_sizes::<Unpadded>(&[(0, 63), (1_048_576, 1_048_639), (1_048_577, 1_048_640)]);
+    assert_stored_sizes::<Unpadded>(&[(0, 71), (1_048_576, 1_048_647), (1_048_577, 1_048_648)]);
 }
 
 #[test]
 fn documented_block_padding_sizes_include_the_marker_at_boundaries() {
     assert_stored_sizes::<BlockPadded>(&[
-        (0, 79),
-        (15, 79),
-        (16, 95),
-        (1_048_575, 1_048_639),
-        (1_048_576, 1_048_655),
+        (0, 87),
+        (15, 87),
+        (16, 103),
+        (1_048_575, 1_048_647),
+        (1_048_576, 1_048_663),
     ]);
 }
 
 #[test]
 fn documented_fixed_padding_sizes_reserve_room_for_the_marker() {
-    assert_stored_sizes::<PolicyFixedLength>(&[(0, 1_048_639), (1_048_575, 1_048_639)]);
+    assert_stored_sizes::<PolicyFixedLength>(&[(0, 1_048_647), (1_048_575, 1_048_647)]);
     let value = "x".repeat(1_048_576);
     assert!(matches!(
         Sealed::<PolicyFixedLength>::seal(&value, (), &keyring()),
@@ -177,7 +177,7 @@ impl Field for RawPadded {
     type Indexes = ();
 }
 
-// Format 1 misread these silently under a changed policy (ADR-0002); `Raw` accepts any bytes.
+// A policy-based reader would misread these silently (ADR-0002); `Raw` accepts any bytes.
 #[test]
 fn padded_values_read_after_disabling_padding_keep_no_padding_bytes() {
     let keys = keyring();
@@ -210,10 +210,10 @@ fn a_sweep_converges_values_to_the_current_padding_policy() {
         padded[1], new,
         "a value in the current form is not rewritten"
     );
-    assert_swept(&padded, Some(true));
+    assert_swept(&padded, true);
 
     let unpadded = padded.map(|ciphertext| sweep::<Unpadded>(ciphertext.into_bytes()));
-    assert_swept(&unpadded, Some(false));
+    assert_swept(&unpadded, false);
 }
 
 fn sweep<F: Field<Binding = FieldOnly>>(bytes: Vec<u8>) -> Sealed<F> {
@@ -229,7 +229,7 @@ fn sweep<F: Field<Binding = FieldOnly>>(bytes: Vec<u8>) -> Sealed<F> {
 
 fn assert_swept<F: Field<Value = String, Binding = FieldOnly>>(
     swept: &[Sealed<F>; 2],
-    padded: Option<bool>,
+    padded: bool,
 ) {
     let keys = keyring();
 
@@ -261,6 +261,6 @@ fn resealing_normalizes_plaintext_to_the_current_padding_parameters() {
 
     let rewritten = current.reseal((), &keys).unwrap();
 
-    assert_eq!(rewritten.as_bytes().len(), 63 + 32);
+    assert_eq!(rewritten.as_bytes().len(), 71 + 32);
     assert_eq!(rewritten.open((), &keys).unwrap(), "short");
 }

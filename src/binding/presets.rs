@@ -5,9 +5,9 @@ use crate::Error;
 
 /// A binding with no parts: values are bound to their field ID only.
 ///
-/// Its encoding is byte-identical to the field-only binding of earlier releases
-/// (tag `01`), unless the field also binds a record. Blind indexes take no
-/// arguments, and every value shares one [`KeyScope`](crate::KeyScope).
+/// It is the empty binding: no parts and, unless the field also binds a
+/// record, no record. Blind indexes take no arguments, and every value shares
+/// one [`KeyScope`](crate::KeyScope).
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct FieldOnly;
 
@@ -123,14 +123,17 @@ mod tests {
     const FIELD: FieldId = field_id!("12345678-1234-4234-8234-1234567890ab");
 
     #[test]
-    fn field_only_is_byte_identical_to_field_binding() {
+    fn field_only_is_the_empty_binding() {
         let domain = BindingDomain::of(FIELD, &FieldOnly, None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
-            "01123456781234423482341234567890ab"
+            "123456781234423482341234567890ab000000"
         );
-        assert_eq!(domain.fingerprint(), None);
+        assert_eq!(
+            domain.fingerprint(),
+            ShapeFingerprint::from_bytes(hex_array("ff670aba047d77fa"))
+        );
     }
 
     #[test]
@@ -139,7 +142,11 @@ mod tests {
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
-            "02123456781234423482341234567890ab020000000800000000000000010000"
+            "123456781234423482341234567890ab020000000800000000000000010000"
+        );
+        assert_eq!(
+            domain.fingerprint(),
+            ShapeFingerprint::from_bytes(hex_array("8a2f3d5f4bb04af5"))
         );
     }
 
@@ -152,7 +159,6 @@ mod tests {
         assert_eq!(
             hex::encode(domain.as_bytes()),
             concat!(
-                "02",
                 "123456781234423482341234567890ab",
                 "00",
                 "0001",
@@ -164,7 +170,7 @@ mod tests {
         );
         assert_eq!(
             domain.fingerprint(),
-            Some(ShapeFingerprint::from_bytes(hex_array("f8311e0a178867bc")))
+            ShapeFingerprint::from_bytes(hex_array("f8311e0a178867bc"))
         );
     }
 

@@ -15,8 +15,6 @@ use crate::Error;
 /// remove padding only when that authenticated flag is set. A field can enable or
 /// disable padding, or change its parameters, without making values unreadable;
 /// re-encryption rewrites a value whose flag disagrees with the current policy.
-/// Format 1 ciphertext does not record padding and is read with the current
-/// policy, so re-encrypt it before changing the policy; see the [format 1 rules].
 ///
 /// Padded values use ISO/IEC 7816-4 padding: a `0x80` marker followed by zero
 /// bytes. See the [custom-field example] and [ownership reference].
@@ -29,8 +27,7 @@ use crate::Error;
 ///
 #[doc = concat!(
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
-    "[format 1 rules]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#format-1",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Padding(Policy);
@@ -107,17 +104,6 @@ impl Padding {
             }
         }
     }
-
-    /// Removes padding as this policy would have written it.
-    ///
-    /// Only format 1 ciphertext, which does not record padding, is read this way.
-    pub(crate) fn unpad(self, plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u8>>, Error> {
-        if self.is_padded() {
-            unpad(plaintext)
-        } else {
-            Ok(plaintext)
-        }
-    }
 }
 
 /// Encoded plaintext as the AEAD seals it: the codec's bytes, or those bytes padded.
@@ -180,7 +166,7 @@ pub(crate) fn unpad(mut plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u
 mod tests {
     use zeroize::Zeroizing;
 
-    use super::{AeadPlaintext, Padding};
+    use super::{AeadPlaintext, Padding, unpad};
     use crate::Error;
 
     fn padded(plaintext: AeadPlaintext<'_>) -> Zeroizing<Vec<u8>> {
@@ -192,14 +178,9 @@ mod tests {
 
     #[test]
     fn no_padding_preserves_plaintext() {
-        let plaintext = Zeroizing::new(b"exact bytes".to_vec());
-        let unpadded = Padding::NONE.pad(&plaintext).unwrap();
+        let unpadded = Padding::NONE.pad(b"exact bytes").unwrap();
         assert!(!unpadded.is_padded());
         assert_eq!(unpadded.bytes(), b"exact bytes");
-        assert_eq!(
-            Padding::NONE.unpad(plaintext).unwrap().as_slice(),
-            b"exact bytes"
-        );
     }
 
     #[test]
@@ -228,10 +209,7 @@ mod tests {
             let padded = padded(Padding::block(16).pad(&plaintext).unwrap());
 
             assert_eq!(padded.len(), (length / 16 + 1) * 16);
-            assert_eq!(
-                Padding::block(16).unpad(padded).unwrap().as_slice(),
-                plaintext
-            );
+            assert_eq!(unpad(padded).unwrap().as_slice(), plaintext);
         }
     }
 
@@ -242,10 +220,7 @@ mod tests {
             let padded = padded(Padding::length(32).pad(&plaintext).unwrap());
 
             assert_eq!(padded.len(), 32);
-            assert_eq!(
-                Padding::length(32).unpad(padded).unwrap().as_slice(),
-                plaintext
-            );
+            assert_eq!(unpad(padded).unwrap().as_slice(), plaintext);
         }
 
         assert!(matches!(
@@ -255,26 +230,9 @@ mod tests {
     }
 
     #[test]
-    fn padded_plaintext_can_be_unpadded_with_different_parameters() {
-        let padded = padded(Padding::block(16).pad(b"portable").unwrap());
-
-        assert_eq!(
-            Padding::block(64).unpad(padded.clone()).unwrap().as_slice(),
-            b"portable"
-        );
-        assert_eq!(
-            Padding::length(256).unpad(padded).unwrap().as_slice(),
-            b"portable"
-        );
-    }
-
-    #[test]
     fn malformed_padding_is_rejected() {
         for plaintext in [Vec::new(), vec![0; 16], b"missing marker".to_vec()] {
-            assert_eq!(
-                Padding::block(16).unpad(Zeroizing::new(plaintext)),
-                Err(Error::InvalidPadding)
-            );
+            assert_eq!(unpad(Zeroizing::new(plaintext)), Err(Error::InvalidPadding));
         }
     }
 

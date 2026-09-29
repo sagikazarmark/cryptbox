@@ -21,9 +21,9 @@ use crate::{
 ///
 /// - its field ID, codec ID, and padding;
 /// - `record`: whether it binds a record;
-/// - `binding`: the [shape fingerprint](crate::ShapeFingerprint) its scoped
-///   headers carry, or `field-only`, followed by each part's ID, kind, and role
-///   in part-ID order;
+/// - `binding`: the [shape fingerprint](crate::ShapeFingerprint) its
+///   headers carry, followed by each part's ID, kind, and role in part-ID
+///   order;
 /// - `shred unit`: the finest unit that destroying root keys can shred, if the
 ///   application stores root keys per [key scope](crate::KeyScope): the
 ///   [`keys`](crate::PartRole::Keys) parts, joined by `+`, or `keyring` when
@@ -97,7 +97,7 @@ struct FieldEntry {
     padding: Padding,
     record: bool,
     parts: &'static [PartSpec],
-    fingerprint: Option<ShapeFingerprint>,
+    fingerprint: ShapeFingerprint,
     custody: Option<String>,
 }
 
@@ -250,10 +250,7 @@ impl fmt::Display for Manifest {
             writeln!(formatter, "  codec: {}", field.codec)?;
             writeln!(formatter, "  padding: {}", field.padding)?;
             writeln!(formatter, "  record: {}", yes_no(field.record))?;
-            match field.fingerprint {
-                Some(fingerprint) => writeln!(formatter, "  binding: {fingerprint}")?,
-                None => writeln!(formatter, "  binding: field-only")?,
-            }
+            writeln!(formatter, "  binding: {}", field.fingerprint)?;
             for part in field.parts {
                 writeln!(
                     formatter,

@@ -4,6 +4,14 @@ status: accepted
 
 # Record padding in the authenticated envelope header
 
+> Amended when format 1 was dropped (#78). Format 1 is no longer read, so the
+> last consequence below, which kept it readable under the field's current
+> policy, no longer holds: parsing rejects it with `UnsupportedFormatVersion`,
+> and only the authenticated flag decides unpadding. The crate is pre-1.0 and
+> its wire formats are experimental, so a reader that could silently misread
+> values cost more than the 0.5.0 data it served. 0.5.0 values are
+> deliberately unreadable.
+
 Ciphertext format 2 records whether the AEAD plaintext is padded, as a flag in
 the envelope header. The header is already authenticated (the AAD covers
 `envelope[0..46]` today), so the flag cannot be altered. Readers remove padding

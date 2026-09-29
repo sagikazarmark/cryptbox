@@ -15,10 +15,8 @@
   binding context argument is dropped from every `*_with` method and from
   `RowPlanner::new`. Implicit forms (`encrypt()`, `decrypt()`, `prepare()`, and
   the automatic SQLx adapters) read the keys installed with `keys::install`; a field
-  can no longer name its own key context. Stored field-bound ciphertext and blind
-  indexes are unchanged and need no data migration.
-  Binding tag `00` is reserved, so data written with `Unbound` is no longer
-  readable.
+  can no longer name its own key context. Data written with `Unbound` is no
+  longer readable.
 - **Breaking:** `Padding` is a const value instead of a sealed trait:
   `Padding::NONE`, `Padding::block(n)`, and `Padding::length(n)` replace
   `NoPadding`, `PadToBlock<N>`, and `PadToLength<N>`, with byte-identical
@@ -121,15 +119,31 @@
   Readers remove padding only when that flag is set, so `Field::PADDING` is
   write policy rather than persistent schema: a field can enable, disable, or
   resize padding without making stored values unreadable, and re-encryption
-  rewrites them with the current policy. The header gains a flags byte, so
-  envelopes are one byte longer (`W = P + 63`). `encrypt`, `reencrypt`, and
+  rewrites them with the current policy. The header gains a flags byte. `encrypt`, `reencrypt`, and
   `needs_reencryption` take the field's `Padding` after its ID
   (`encrypt(F::ID, F::PADDING, bytes, &keys)`); `decrypt` removes recorded
-  padding. `needs_reencryption` also reports a format 1 envelope or a padding
-  flag that disagrees with the policy, so a sweep converges both.
-  `CiphertextInfo::padded` reports the flag. Format 1 stays readable, with
-  padding interpreted by the field's current policy as before; sweep it to
-  format 2 before changing a field's padding policy.
+  padding. `needs_reencryption` also reports a padding flag that disagrees
+  with the policy, so a sweep converges it. `CiphertextInfo::padded` reports
+  the flag as a `bool`.
+- **Breaking:** format 1 envelopes, which 0.5.0 wrote, are no longer read.
+  Parsing, `inspect_ciphertext`, and every open report
+  `UnsupportedFormatVersion(1)` for them, and no code path reads their padding
+  with the field's policy any more. Values stored by 0.5.0 are deliberately
+  unreadable by this release.
+- **Breaking:** the byte-level `encrypt`, `decrypt`, `reencrypt`, and
+  `needs_reencryption` are removed. For opaque bytes, declare a field whose
+  value is `Vec<u8>` (codec `Raw`): `Sealed::seal`, `open`, `reseal`, and
+  `needs_reseal` write and read the same envelopes. `is_ciphertext`,
+  `inspect_ciphertext`, `CiphertextInfo`, and `EXPERIMENTAL_XCHACHA20_POLY1305`
+  stay. Internally, the envelope no longer knows about bindings or key sources:
+  it takes the binding's bytes and fingerprint and a keyring the typed layer
+  chose, and `Sealed` and the migration planner share one reseal path.
+- **Breaking:** bindings have one layout, `field_id ‖ record ‖ count ‖ parts`,
+  with no tag, so the binding bytes of every field change, `FieldOnly`
+  included. Blind indexes move to format 2: 0.5.0 blind indexes, and any
+  derived under the earlier encoding, fail to parse with
+  `Error::InvalidBlindIndex` instead of silently matching nothing, and must be
+  derived again from their values.
 
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
@@ -160,15 +174,17 @@
   `routing(field) -> Routing`, which defaults to `Routing::Direct`; `Router`, `Keys`,
   and `Arc<P>` report `Routed`, `Fallback`, or `Unrouted`. `Padding` implements
   `Display`.
-- Define the wire format for scoped binding (ADR-0005): binding tag `02`
-  frames sorted, kind-tagged scope parts and an optional record, and a scoped
-  envelope sets flag bit `02` and carries a 64-bit shape fingerprint after the
-  `KeyId`. Field-only envelopes and blind indexes are byte-identical.
+- Define the wire format for scoped binding (ADR-0005): every binding is
+  `field_id ‖ record ‖ count ‖ parts`, with sorted, kind-tagged parts, an
+  optional record, and no tag, and every envelope carries a 64-bit shape
+  fingerprint after the `KeyId`, in a fixed 31-byte header, so `W = P + 71`. A
+  field-only binding is the empty shape, with no parts and no record, and
+  carries that shape's fingerprint.
   `CiphertextInfo::shape_fingerprint` reports the fingerprint as a
-  `ShapeFingerprint`. Reading an envelope sealed with a different binding shape
+  `ShapeFingerprint`, not an `Option`. Reading an envelope sealed with a different binding shape
   fails with the new `Error::BindingMismatch` before any key lookup. The new
   `Error::InvalidBinding` rejects malformed binding declarations or values.
-  Flag bit `02` is no longer reserved.
+  Only flag bit `01` is defined; every other bit stays reserved.
 - Add the `Binding` trait for declaring a scope (ADR-0005). It is unrelated to
   the 0.5 `Binding` trait removed above. A binding lists its parts as
   `const PARTS: &[PartSpec]`, each with a `PartId` (`part_id!`), a `PartKind`
@@ -177,8 +193,7 @@
   must be sorted by part ID with no duplicates or nil IDs. A violation fails the
   build when the binding is used, and `Error::InvalidBinding` rejects missing
   parts, wrong kinds, and empty `keys` values. There are two presets: `FieldOnly`,
-  byte-identical to field-only binding, and `Tenant(TenantId)`, one bytes `keys`
-  part. `RecordId` is a kind-tagged record ID, and `KeyScope::of` and
+  the empty binding, and `Tenant(TenantId)`, one bytes `keys` part. `RecordId` is a kind-tagged record ID, and `KeyScope::of` and
   `KeyScope::of_index` return the owned, hashable `keys` parts of a binding.
 - **Breaking:** values are sealed under a runtime binding (ADR-0005). `Field`
   gains `const RECORD: bool`, `type Binding: Binding`, and
@@ -193,8 +208,7 @@
   the bare `F::Value`. A binding of another type is a type error, and a missing
   or extra record fails the build. Opening under other binding values, another
   record, or as another field fails authentication; another binding shape
-  reports `Error::BindingMismatch`. FieldOnly values are byte-identical to
-  earlier releases.
+  reports `Error::BindingMismatch`.
 - **Breaking:** the `Encrypted<F, K>` plaintext carrier is removed. The
   automatic SQLx column is now `Plain<F, K = GlobalKeys>`, whose constructors
   and column impls accept only `FieldOnly` fields with `Indexes = ()`;
@@ -245,8 +259,8 @@
   that binding's `KeyScope`. `derive_with`, `probes_with`, and
   `is_consistent_with` take the field binding's `IndexArgs` before the keys;
   `Prepared::with_index_with` takes the scope from the binding the value was
-  sealed with. Indexes of `FieldOnly` fields, and of bindings without `keys` or
-  `index` parts, are byte-identical to earlier releases.
+  sealed with. Bindings without `keys` or `index` parts, such as `FieldOnly`,
+  index under the empty binding.
 
   | Before | Now |
   | --- | --- |
@@ -324,7 +338,7 @@
   exposes and the org-shredding runbook.
 - **Breaking:** the schema manifest shows bindings and custody instead of Rust
   types. Each field lists whether it binds a record, its binding's shape
-  fingerprint (or `field-only`), each part's ID, kind, and role, and its shred
+  fingerprint, each part's ID, kind, and role, and its shred
   unit: its `keys` parts, or `keyring` when it has none. The marker and value
   type names, which `std::any::type_name` did not keep stable across
   compilers, are removed, so snapshots are the same on every toolchain; update

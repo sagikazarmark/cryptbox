@@ -94,8 +94,7 @@ pub trait Field: 'static {
     ///
     /// This describes how values are written, not how they are read: the
     /// envelope records whether its payload is padded. Changing the policy keeps
-    /// format 2 values readable, and resealing rewrites them with it. Format 1
-    /// values are read with the current policy, so reseal them first; see
+    /// stored values readable, and resealing rewrites them with it; see
     /// [`Padding`].
     const PADDING: Padding;
 

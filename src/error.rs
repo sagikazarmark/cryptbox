@@ -138,10 +138,8 @@ pub enum Error {
     PaddingOverflow,
     /// Authenticated plaintext does not carry valid padding.
     ///
-    /// Format 2 records padding, so this indicates a defective writer. A format 1
-    /// value, which does not record padding, reports it when read under a field
-    /// whose padding policy changed before the value was re-encrypted. Padding
-    /// is checked only after successful authenticated decryption.
+    /// The envelope records padding, so this indicates a defective writer.
+    /// Padding is checked only after successful authenticated decryption.
     #[error("plaintext padding is invalid")]
     InvalidPadding,
     /// A binding's declared parts or supplied values are invalid.

@@ -2,8 +2,8 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, Field, FieldId, FieldOnly, IndexId, Padding, Raw, decrypt, encrypt,
-    index_id, index_key_id, key_id,
+    EncryptionKeyring, Error, Field, FieldId, FieldOnly, IndexId, Padding, Raw, Sealed, index_id,
+    index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
@@ -44,14 +44,9 @@ fn encryption_keys_can_be_generated_for_immediate_use() {
     assert_ne!(first.id(), second.id());
 
     let keys = EncryptionKeyring::new(first, []).unwrap();
-    let ciphertext = encrypt(TestField::ID, TestField::PADDING, b"generated key", &keys).unwrap();
+    let sealed = Sealed::<TestField>::seal(&b"generated key".to_vec(), (), &keys).unwrap();
 
-    assert_eq!(
-        decrypt(TestField::ID, &ciphertext, &keys)
-            .unwrap()
-            .as_slice(),
-        b"generated key"
-    );
+    assert_eq!(sealed.open((), &keys).unwrap(), b"generated key");
 }
 
 #[test]
@@ -79,20 +74,9 @@ fn encryption_keys_load_from_hex_and_base64() {
 
     let writing_keys = EncryptionKeyring::new(hex_key, []).unwrap();
     let reading_keys = EncryptionKeyring::new(base64_key, []).unwrap();
-    let ciphertext = encrypt(
-        TestField::ID,
-        TestField::PADDING,
-        b"loaded key",
-        &writing_keys,
-    )
-    .unwrap();
+    let sealed = Sealed::<TestField>::seal(&b"loaded key".to_vec(), (), &writing_keys).unwrap();
 
-    assert_eq!(
-        decrypt(TestField::ID, &ciphertext, &reading_keys)
-            .unwrap()
-            .as_slice(),
-        b"loaded key"
-    );
+    assert_eq!(sealed.open((), &reading_keys).unwrap(), b"loaded key");
 }
 
 #[test]

@@ -3,16 +3,14 @@
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Raw, Sealed,
-    Tenant, TenantId, Utf8, decrypt, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
+    Tenant, TenantId, Utf8, field_id, index_id, index_key_id, inspect_blind_index,
+    inspect_ciphertext, key_id,
 };
 use zeroize::Zeroizing;
 
 // docs/wire-format.md#provisional-envelope-vectors
-const UNPADDED: &str = "4342580002010011111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd4f8e9c4e8454cd34732e7966a50994cd";
-const PADDED: &str = "4342580002010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd489a56ec6e125f07deaa76f7502ad2613f";
-// docs/wire-format.md#format-1
-const FORMAT_1_UNPADDED: &str = "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d";
-const FORMAT_1_PADDED: &str = "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6";
+const UNPADDED: &str = "4342580002010011111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da141a9d8eb6678b1f3feec1eacbbb1dc56de";
+const PADDED: &str = "4342580002010111111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1419a655dbd3c41cbc407272faca1c37acec7";
 
 fn keys() -> EncryptionKeyring {
     let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
@@ -57,14 +55,10 @@ fn experimental_envelope_vectors_record_their_padding() {
         let info = inspect_ciphertext(&envelope).unwrap();
 
         assert_eq!(info.format_version(), 2);
-        assert_eq!(info.padded(), Some(padded));
-        assert_eq!(info.shape_fingerprint(), None);
-        assert_eq!(
-            decrypt(VectorField::ID, &envelope, &keys())
-                .unwrap()
-                .as_slice(),
-            b"cryptbox vector"
-        );
+        assert_eq!(info.padded(), padded);
+        // The empty shape's fingerprint: docs/wire-format.md#shape-fingerprint
+        assert_eq!(info.shape_fingerprint().to_string(), "ff670aba047d77fa");
+        assert_eq!(read::<VectorField>(vector).unwrap(), b"cryptbox vector");
     }
 }
 
@@ -80,40 +74,14 @@ fn experimental_envelope_vectors_decrypt_under_either_padding_policy() {
 }
 
 #[test]
-fn format_1_vectors_are_read_with_the_field_padding_policy() {
-    assert_eq!(
-        read::<VectorField>(FORMAT_1_UNPADDED).unwrap(),
-        b"cryptbox vector"
-    );
-    assert_eq!(
-        read::<PaddedVectorField>(FORMAT_1_PADDED).unwrap(),
-        "cryptbox vector"
-    );
-    // Format 1 does not record padding: a policy change before a sweep misreads it.
-    assert_eq!(
-        read::<VectorField>(FORMAT_1_PADDED).unwrap(),
-        b"cryptbox vector\x80"
-    );
-    assert_eq!(
-        read::<PaddedVectorField>(FORMAT_1_UNPADDED),
-        Err(Error::InvalidPadding)
-    );
-}
+fn format_1_envelopes_are_not_read() {
+    let mut envelope = hex::decode(UNPADDED).unwrap();
+    envelope[4] = 1;
 
-#[test]
-fn format_1_vectors_are_stale_and_reseal_to_format_2() {
-    let keys = keys();
-    let legacy =
-        Sealed::<PaddedVectorField>::from_bytes(hex::decode(FORMAT_1_PADDED).unwrap()).unwrap();
-
-    assert!(legacy.needs_reseal((), &keys).unwrap());
-
-    let current = legacy.reseal((), &keys).unwrap();
-    let info = inspect_ciphertext(current.as_bytes()).unwrap();
-    assert_eq!(info.format_version(), 2);
-    assert_eq!(info.padded(), Some(true));
-    assert!(!current.needs_reseal((), &keys).unwrap());
-    assert_eq!(current.open((), &keys).unwrap(), "cryptbox vector");
+    assert_eq!(
+        inspect_ciphertext(&envelope).unwrap_err(),
+        Error::UnsupportedFormatVersion(1)
+    );
 }
 
 struct VectorIndex;
@@ -136,7 +104,7 @@ impl BlindIndexSpec for VectorIndex {
 
 #[test]
 fn experimental_blind_index_vector_is_stable() {
-    const VECTOR: &str = "01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d71e0";
+    const VECTOR: &str = "02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000df040";
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
 
@@ -146,6 +114,18 @@ fn experimental_blind_index_vector_is_stable() {
     assert_eq!(hex::encode(index.as_bytes()), VECTOR);
     assert_eq!(probes.len(), 1);
     assert_eq!(hex::encode(probes[0].as_bytes()), VECTOR);
+}
+
+#[test]
+fn format_1_blind_indexes_are_rejected() {
+    // The format 1 vector: derived under the tagged binding layout, so it is
+    // rejected rather than silently matching nothing.
+    let format_1 = hex::decode("01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d71e0").unwrap();
+
+    assert_eq!(
+        inspect_blind_index(&format_1).unwrap_err(),
+        Error::InvalidBlindIndex
+    );
 }
 
 struct TenantVectorField;
@@ -181,7 +161,7 @@ impl BlindIndexSpec for TenantVectorIndex {
 #[test]
 fn experimental_scoped_blind_index_vector_is_stable() {
     // docs/wire-format.md#scoped-blind-index-vector
-    const VECTOR: &str = "01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d35b8";
+    const VECTOR: &str = "02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d28c0";
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
     let acme = Tenant(TenantId::new(b"acme".to_vec()).unwrap());

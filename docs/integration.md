@@ -10,7 +10,7 @@ This page explains those choices and their consequences. It builds on
 
 Encrypted storage is not entirely self-describing. An envelope identifies its
 format, suite, encryption-key generation, and whether its payload is padded, but
-the application supplies the expected field ID, binding, and codec. A scoped
+the application supplies the expected field ID, binding, and codec. An
 envelope also carries a fingerprint of its binding shape, which only names a
 mismatch. A blind index
 additionally depends on a logical index ID and normalization rule that are not
@@ -100,9 +100,6 @@ disabling, or resizing it keeps existing values readable, and a
 [re-encryption sweep](reencryption-sweep.md) rewrites them with the current
 policy. Current padding parameters also do not impose a limit on historical
 reads. See the [size and padding contracts](wire-format.md#plaintext-padding).
-
-Sweep [format 1](wire-format.md#format-1) values, which predate the flag, before
-changing a field's padding policy.
 
 ## Storage boundaries
 

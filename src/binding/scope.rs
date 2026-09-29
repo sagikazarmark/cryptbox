@@ -101,6 +101,7 @@ impl KeyScope {
     }
 
     /// The key scope of a binding without `keys` parts.
+    #[cfg(any(feature = "migrate", test))]
     pub(crate) fn empty() -> Self {
         Self(Box::new([]))
     }

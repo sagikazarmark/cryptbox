@@ -6,7 +6,8 @@ use crate::{
     Args, BindingDomain, Codec, EncryptionKeySource, Error, Field, FieldOnly, GlobalKeys, KeyId,
     Prepared,
     binding::{domain, domains},
-    envelope::{decrypt_bound, encrypt_bound, needs_reencryption_bound, validated_key_id},
+    bound,
+    envelope::validated_key_id,
     keys,
 };
 
@@ -117,7 +118,7 @@ impl<F: Field> Sealed<F> {
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
         let plaintext = F::Codec::encode(value)?;
-        let sealed = encrypt_bound(domain, F::PADDING, &plaintext, keys)?;
+        let sealed = bound::seal(domain, F::PADDING, &plaintext, keys)?;
 
         Ok(Self::from_validated_bytes(sealed))
     }
@@ -142,7 +143,7 @@ impl<F: Field> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<F::Value, Error> {
-        let plaintext = decrypt_bound(&domain(args)?, F::PADDING, &self.bytes, keys)?;
+        let plaintext = bound::open(&domain(args)?, &self.bytes, keys)?;
 
         Ok(F::Codec::decode(&plaintext)?)
     }
@@ -172,8 +173,8 @@ impl<F: Field> Sealed<F> {
 
     /// Reports whether this envelope differs from what `F` currently writes.
     ///
-    /// That is an older format, a non-current suite or key, or a padding flag
-    /// that disagrees with [`Field::PADDING`].
+    /// That is a non-current suite or key, or a padding flag that disagrees
+    /// with [`Field::PADDING`].
     ///
     /// Envelope metadata is unauthenticated until the value is opened. A `false`
     /// result does not establish authenticated readability or codec validity.
@@ -193,13 +194,13 @@ impl<F: Field> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<bool, Error> {
-        needs_reencryption_bound(&domain(args)?, F::PADDING, &self.bytes, keys)
+        bound::needs_reseal(&domain(args)?, F::PADDING, &self.bytes, keys)
     }
 
     /// Opens and reseals this value as `F` currently writes it, under the same
     /// binding and keys.
     ///
-    /// The rewrite uses the current format, suite, key, and [`Field::PADDING`],
+    /// The rewrite uses the current suite, key, and [`Field::PADDING`],
     /// so a sweep can enable or disable padding. This authenticates the value
     /// and checks padding, but does not decode it with the field's codec or
     /// check any stored blind indexes. Use [`Self::open`] when decoded-value
@@ -214,9 +215,9 @@ impl<F: Field> Sealed<F> {
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
         let domain = domain(args)?;
-        let plaintext = decrypt_bound(&domain, F::PADDING, &self.bytes, keys)?;
+        let (_, sealed) = bound::reseal((&domain, keys), (&domain, keys), F::PADDING, &self.bytes)?;
 
-        encrypt_bound(&domain, F::PADDING, &plaintext, keys).map(Self::from_validated_bytes)
+        Ok(Self::from_validated_bytes(sealed))
     }
 
     /// Opens this value under `from` and reseals it under `to`.
@@ -237,9 +238,14 @@ impl<F: Field> Sealed<F> {
         to: impl Args<F>,
         to_keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
-        let plaintext = decrypt_bound(&domain(from)?, F::PADDING, &self.bytes, from_keys)?;
+        let (_, sealed) = bound::reseal(
+            (&domain(from)?, from_keys),
+            (&domain(to)?, to_keys),
+            F::PADDING,
+            &self.bytes,
+        )?;
 
-        encrypt_bound(&domain(to)?, F::PADDING, &plaintext, to_keys).map(Self::from_validated_bytes)
+        Ok(Self::from_validated_bytes(sealed))
     }
 }
 

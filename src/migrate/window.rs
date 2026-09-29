@@ -3,8 +3,7 @@ use crate::{
     EncryptionKeySource, Error, Field, Sealed,
     binding::{shape_fingerprint, with_domain},
     blind::{IndexArgs, probes_in},
-    envelope::decrypt_bound,
-    inspect_ciphertext,
+    bound, inspect_ciphertext,
 };
 
 /// Opens a value during a legacy-binding window, whichever binding shape it is
@@ -40,13 +39,13 @@ where
     let stored = inspect_ciphertext(bytes)?.shape_fingerprint();
     let plaintext = with_domain::<F, _, _>(args, |domain, binding, record| {
         if stored == domain.fingerprint() {
-            return decrypt_bound(&domain, F::PADDING, bytes, keys);
+            return bound::open(&domain, bytes, keys);
         }
 
         let recorded = record.is_some() && stored == shape_fingerprint::<Old>(true);
         let record = if recorded { record } else { None };
         let old = BindingDomain::projected::<Old, F::Binding>(F::ID, binding, record)?;
-        decrypt_bound(&old, F::PADDING, bytes, old_keys)
+        bound::open(&old, bytes, old_keys)
     })?;
 
     Ok(F::Codec::decode(&plaintext)?)

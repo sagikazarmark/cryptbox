@@ -128,19 +128,13 @@ fn every_argument_form_round_trips() {
 }
 
 #[test]
-fn field_only_values_carry_no_shape_fingerprint() {
+fn field_only_values_carry_the_empty_shape_fingerprint() {
     let keys = keys();
     let sealed = Sealed::<Nickname>::seal(&email(), (), &keys).unwrap();
 
     let info = cryptbox::inspect_ciphertext(sealed.as_bytes()).unwrap();
-    assert_eq!(info.shape_fingerprint(), None);
-    // Byte-identical to the field-only byte-level functions.
-    assert_eq!(
-        cryptbox::decrypt(Nickname::ID, sealed.as_bytes(), &keys)
-            .unwrap()
-            .as_slice(),
-        email().as_bytes()
-    );
+    // docs/wire-format.md#shape-fingerprint
+    assert_eq!(info.shape_fingerprint().to_string(), "ff670aba047d77fa");
 }
 
 #[test]

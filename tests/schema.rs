@@ -43,13 +43,13 @@ field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   codec: utf8
   padding: none
   record: no
-  binding: field-only
+  binding: ff670aba047d77fa
   shred unit: keyring
 field 9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e
   codec: raw
   padding: block(64)
   record: no
-  binding: field-only
+  binding: ff670aba047d77fa
   shred unit: keyring
 "
     );
@@ -106,7 +106,7 @@ field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   codec: utf8
   padding: none
   record: no
-  binding: field-only
+  binding: ff670aba047d77fa
   shred unit: keyring
 "
     );
@@ -130,7 +130,7 @@ field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   codec: utf8
   padding: none
   record: no
-  binding: field-only
+  binding: ff670aba047d77fa
   shred unit: keyring
   custody: general KMS
 "
@@ -236,10 +236,7 @@ field 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
     let sealed =
         Sealed::<WorkspaceNote>::seal(&"hi".to_owned(), (&scope, RecordId::I64(1)), &keys).unwrap();
     let header = inspect_ciphertext(sealed.as_bytes()).unwrap();
-    assert!(snapshot.contains(&format!(
-        "  binding: {}\n",
-        header.shape_fingerprint().unwrap()
-    )));
+    assert!(snapshot.contains(&format!("  binding: {}\n", header.shape_fingerprint())));
 }
 
 struct NicknameLookup;
@@ -386,7 +383,7 @@ field 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
   codec: json/1
   padding: length(256)
   record: no
-  binding: field-only
+  binding: ff670aba047d77fa
   shred unit: keyring
 "
         );
@@ -416,7 +413,7 @@ field 7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13
   codec: postcard/1
   padding: none
   record: no
-  binding: field-only
+  binding: ff670aba047d77fa
   shred unit: keyring
 "
         );

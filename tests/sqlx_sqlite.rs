@@ -7,7 +7,7 @@ use std::sync::LazyLock;
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, EncryptionKey, EncryptionKeyring,
     Error, Field, FieldOnly, IndexId, KeyContext, KeyId, Keys, Padding, Plain, Sealed, Utf8,
-    encrypt, index_id, key_id, keys,
+    index_id, key_id, keys,
 };
 use sqlx::{
     Connection, Decode, Encode, Row, Sqlite, Type,
@@ -119,7 +119,9 @@ fn sqlite_encode_encrypts_plaintext_into_an_owned_blob() {
 #[test]
 fn sqlite_sealed_encoding_preserves_the_binary_envelope() {
     let keys = TestKeys::keys().unwrap();
-    let bytes = encrypt(TestField::ID, TestField::PADDING, b"value", keys).unwrap();
+    let bytes = Sealed::<TestField>::seal(&"value".to_owned(), (), keys)
+        .unwrap()
+        .into_bytes();
     let ciphertext = Sealed::<TestField>::from_bytes(bytes.clone()).unwrap();
     let mut buffer = Vec::new();
 

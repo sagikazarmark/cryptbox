@@ -1,6 +1,8 @@
 use crate::{Error, IndexKeyId};
 
-const INDEX_FORMAT_VERSION: u8 = 1;
+// Format 2 frames the single binding layout; format 1 indexes are rejected, not
+// silently unmatched. See ../../docs/wire-format.md#blind-index-format-2.
+const INDEX_FORMAT_VERSION: u8 = 2;
 const MAX_INDEX_BITS: usize = 256;
 // The stored layout: ../../docs/wire-format.md#stored-layout. The version byte, the
 // index key ID, then the retained bit count as a big-endian u16.

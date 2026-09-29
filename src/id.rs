@@ -93,8 +93,8 @@ impl fmt::Display for SuiteId {
 /// A 64-bit fingerprint of a binding's shape: its part IDs, kinds, and roles,
 /// and whether it binds a record.
 ///
-/// A scoped ciphertext header carries the fingerprint of the shape it was
-/// sealed with. It is diagnostic only: a reader always takes the expected shape
+/// Every ciphertext header carries the fingerprint of the shape it was sealed
+/// with; a field-only binding has the empty shape. It is diagnostic only: a reader always takes the expected shape
 /// from its own field, and reports [`Error::BindingMismatch`](crate::Error::BindingMismatch) when the stored
 /// fingerprint disagrees. See the [wire format].
 ///

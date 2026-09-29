@@ -21,7 +21,7 @@ A binding has two halves, and they change on different schedules:
 
 One field never seals with different part sets on different calls: that would
 give one value two valid encodings. The shape is persistent schema exactly as a
-field ID or codec is, and a scoped envelope carries a fingerprint of it so a
+field ID or codec is, and every envelope carries a fingerprint of it so a
 reader that expects another shape reports `Error::BindingMismatch` instead of an
 authentication failure.
 
@@ -64,8 +64,8 @@ implementing `PartType`. Every part ID is a generated UUID: see
 [ID hygiene](#id-hygiene).
 
 `FieldOnly` and `Tenant` are ready-made presets. `FieldOnly` has no parts: unless
-the field also binds a record, its encoding is
-[binding tag `01`](wire-format.md#binding), the field ID alone. `Tenant` has one
+the field also binds a record, it is the
+[empty binding](wire-format.md#binding), bound to the field ID alone. `Tenant` has one
 bytes `keys` part. Use a preset until its shape is too coarse, then declare a
 scope.
 
@@ -245,6 +245,6 @@ Key IDs follow separate rules, in [choosing keyrings](choosing-keyrings.md).
   does not remove.
 - [Integration design](integration.md): persistent schema, storage boundaries,
   and search.
-- [Wire format](wire-format.md#scoped-binding): the exact binding bytes and the
+- [Wire format](wire-format.md#binding): the exact binding bytes and the
   shape fingerprint.
 - [Glossary](glossary.md): binding, scope, key scope, shred unit.
