@@ -492,7 +492,7 @@ where
             return Ok(RowOutcome::unchanged(RowState::Current));
         }
 
-        let plaintext = decrypt_bound(&binding.domain, F::PADDING, ciphertext, self.keys)?;
+        let plaintext = decrypt_bound(&binding.domain, ciphertext, self.keys)?;
         let ciphertext = if envelope_is_stale {
             encrypt_bound(&binding.domain, F::PADDING, &plaintext, self.keys)?
         } else {
@@ -575,7 +575,7 @@ where
     ) -> Result<RowOutcome, Error> {
         let record = if recorded { args.record } else { None };
         let old = (legacy.domain)(&args.binding, record)?;
-        let plaintext = decrypt_bound(&old, F::PADDING, ciphertext, legacy.keys)?;
+        let plaintext = decrypt_bound(&old, ciphertext, legacy.keys)?;
         let ciphertext = encrypt_bound(&binding.domain, F::PADDING, &plaintext, self.keys)?;
         // The index binding may have changed with the shape, so every index
         // is derived again.

@@ -40,13 +40,13 @@ where
     let stored = inspect_ciphertext(bytes)?.shape_fingerprint();
     let plaintext = with_domain::<F, _, _>(args, |domain, binding, record| {
         if stored == domain.fingerprint() {
-            return decrypt_bound(&domain, F::PADDING, bytes, keys);
+            return decrypt_bound(&domain, bytes, keys);
         }
 
         let recorded = record.is_some() && stored == shape_fingerprint::<Old>(true);
         let record = if recorded { record } else { None };
         let old = BindingDomain::projected::<Old, F::Binding>(F::ID, binding, record)?;
-        decrypt_bound(&old, F::PADDING, bytes, old_keys)
+        decrypt_bound(&old, bytes, old_keys)
     })?;
 
     Ok(F::Codec::decode(&plaintext)?)

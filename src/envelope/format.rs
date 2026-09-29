@@ -2,22 +2,18 @@ use crate::{Error, KeyId, ShapeFingerprint, SuiteId};
 
 const MAGIC: &[u8; 4] = b"CBX\0";
 pub(super) const FORMAT_VERSION: u8 = 2;
-// Format 1 did not record padding; it stays readable until stored data is swept.
-// See ../../docs/wire-format.md#format-1.
-const FORMAT_1_VERSION: u8 = 1;
 const FLAG_PADDED: u8 = 0x01;
 const FLAG_SCOPED: u8 = 0x02;
 
 // The layout table: ../../docs/wire-format.md#envelope. A header is the magic,
-// then one byte each of version, suite ID, and flags, then the key ID; format 1
-// has no flags byte.
+// then one byte each of version, suite ID, and flags, then the key ID.
 const KEY_ID_LEN: usize = 16;
 const FINGERPRINT_LEN: usize = 8;
 const FORMAT_VERSION_OFFSET: usize = MAGIC.len();
 const SUITE_ID_OFFSET: usize = FORMAT_VERSION_OFFSET + 1;
 const FLAGS_OFFSET: usize = SUITE_ID_OFFSET + 1;
-const HEADER_LEN: usize = FLAGS_OFFSET + 1 + KEY_ID_LEN;
-const FORMAT_1_HEADER_LEN: usize = FLAGS_OFFSET + KEY_ID_LEN;
+const KEY_ID_OFFSET: usize = FLAGS_OFFSET + 1;
+const HEADER_LEN: usize = KEY_ID_OFFSET + KEY_ID_LEN;
 // A scoped binding extends the header with its shape fingerprint.
 // See ../../docs/wire-format.md#shape-fingerprint.
 const SCOPED_HEADER_LEN: usize = HEADER_LEN + FINGERPRINT_LEN;
@@ -27,7 +23,7 @@ const SCOPED_HEADER_LEN: usize = HEADER_LEN + FINGERPRINT_LEN;
 pub struct CiphertextInfo {
     format_version: u8,
     suite_id: SuiteId,
-    padded: Option<bool>,
+    padded: bool,
     key_id: KeyId,
     shape_fingerprint: Option<ShapeFingerprint>,
 }
@@ -46,11 +42,8 @@ impl CiphertextInfo {
     }
 
     /// Returns whether the envelope records a padded payload.
-    ///
-    /// Format 1 envelopes do not record padding and return `None`; the field's
-    /// padding policy describes them.
     #[must_use]
-    pub const fn padded(self) -> Option<bool> {
+    pub const fn padded(self) -> bool {
         self.padded
     }
 
@@ -62,7 +55,7 @@ impl CiphertextInfo {
 
     /// Returns the shape fingerprint of a scoped binding.
     ///
-    /// Field-only and format 1 envelopes carry none and return `None`. The
+    /// Field-only envelopes carry none and return `None`. The
     /// fingerprint is diagnostic: a reader compares it with its own field's
     /// shape, so it can count values written with an older shape.
     #[must_use]
@@ -90,7 +83,7 @@ pub fn is_ciphertext(bytes: &[u8]) -> bool {
 /// Returns the key ID of an envelope that already passed structural validation.
 // Offsets follow the layout table: ../../docs/wire-format.md#envelope.
 pub(crate) fn validated_key_id(bytes: &[u8]) -> KeyId {
-    KeyId::from_bytes(field(bytes, key_id_offset(bytes[FORMAT_VERSION_OFFSET])))
+    KeyId::from_bytes(field(bytes, KEY_ID_OFFSET))
 }
 
 pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> {
@@ -98,28 +91,27 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
         return Err(Error::NotCiphertext);
     }
 
-    // Too short for any format's header: malformed, whatever byte 4 claims.
-    if bytes.len() < FORMAT_1_HEADER_LEN {
+    // Too short for a header: malformed, whatever byte 4 claims.
+    if bytes.len() < HEADER_LEN {
         return Err(Error::InvalidEnvelope);
     }
 
     // Offsets follow the layout table: ../../docs/wire-format.md#envelope.
     let format_version = bytes[FORMAT_VERSION_OFFSET];
-    let flags = match format_version {
-        FORMAT_VERSION => bytes[FLAGS_OFFSET],
-        FORMAT_1_VERSION => 0,
-        _ => return Err(Error::UnsupportedFormatVersion(format_version)),
-    };
+    if format_version != FORMAT_VERSION {
+        return Err(Error::UnsupportedFormatVersion(format_version));
+    }
+    let flags = bytes[FLAGS_OFFSET];
 
     // Reject reserved bits so a flag this reader does not know is never ignored.
     if flags & !(FLAG_PADDED | FLAG_SCOPED) != 0 {
         return Err(Error::InvalidEnvelope);
     }
 
-    let header_len = match format_version {
-        FORMAT_1_VERSION => FORMAT_1_HEADER_LEN,
-        _ if flags & FLAG_SCOPED != 0 => SCOPED_HEADER_LEN,
-        _ => HEADER_LEN,
+    let header_len = if flags & FLAG_SCOPED == 0 {
+        HEADER_LEN
+    } else {
+        SCOPED_HEADER_LEN
     };
     if bytes.len() < header_len {
         return Err(Error::InvalidEnvelope);
@@ -127,8 +119,8 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
 
     let suite_id = SuiteId::new(bytes[SUITE_ID_OFFSET]);
 
-    let padded = (format_version == FORMAT_VERSION).then_some(flags & FLAG_PADDED != 0);
-    let key_id = KeyId::from_bytes(field(bytes, key_id_offset(format_version)));
+    let padded = flags & FLAG_PADDED != 0;
+    let key_id = KeyId::from_bytes(field(bytes, KEY_ID_OFFSET));
     let shape_fingerprint =
         (flags & FLAG_SCOPED != 0).then(|| ShapeFingerprint::from_bytes(field(bytes, HEADER_LEN)));
 
@@ -174,13 +166,4 @@ fn field<const N: usize>(bytes: &[u8], offset: usize) -> [u8; N] {
     field.copy_from_slice(&bytes[offset..offset + N]);
 
     field
-}
-
-// Format 1 has no flags byte, so its key ID starts one byte earlier.
-const fn key_id_offset(format_version: u8) -> usize {
-    if format_version == FORMAT_1_VERSION {
-        FLAGS_OFFSET
-    } else {
-        FLAGS_OFFSET + 1
-    }
 }

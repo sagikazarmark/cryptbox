@@ -123,8 +123,7 @@
 //! roles, and whether the field binds a record), normalization, and index
 //! precision are persistent schema. Stored bytes do not describe them, beyond a
 //! diagnostic fingerprint of the binding shape; changing them requires a
-//! migration plan. Padding is not schema: the envelope records it
-//! (except in format 1, which is read with the current policy).
+//! migration plan. Padding is not schema: the envelope records it.
 //! Guard them in CI with [`testing::assert_encoding`] fixtures, a
 //! [`schema::Manifest`] snapshot, and [`assert_unique_ids!`]; see [schema rules].
 //!

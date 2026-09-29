@@ -469,10 +469,7 @@ fn planner_rewrites_current_key_envelopes_when_the_padding_policy_changes() {
         .unwrap()
         .into_write()
         .unwrap();
-    assert_eq!(
-        inspect_ciphertext(write.ciphertext()).unwrap().padded(),
-        Some(true)
-    );
+    assert!(inspect_ciphertext(write.ciphertext()).unwrap().padded());
     assert_eq!(
         planner.classify_row(&(), write.ciphertext(), &[]).unwrap(),
         RowState::Current

@@ -125,11 +125,14 @@
   envelopes are one byte longer (`W = P + 63`). `encrypt`, `reencrypt`, and
   `needs_reencryption` take the field's `Padding` after its ID
   (`encrypt(F::ID, F::PADDING, bytes, &keys)`); `decrypt` removes recorded
-  padding. `needs_reencryption` also reports a format 1 envelope or a padding
-  flag that disagrees with the policy, so a sweep converges both.
-  `CiphertextInfo::padded` reports the flag. Format 1 stays readable, with
-  padding interpreted by the field's current policy as before; sweep it to
-  format 2 before changing a field's padding policy.
+  padding. `needs_reencryption` also reports a padding flag that disagrees
+  with the policy, so a sweep converges it. `CiphertextInfo::padded` reports
+  the flag as a `bool`.
+- **Breaking:** format 1 envelopes, which 0.5.0 wrote, are no longer read.
+  Parsing, `inspect_ciphertext`, and every open report
+  `UnsupportedFormatVersion(1)` for them, and no code path reads their padding
+  with the field's policy any more. Values stored by 0.5.0 are deliberately
+  unreadable by this release.
 
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new

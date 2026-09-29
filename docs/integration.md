@@ -101,9 +101,6 @@ disabling, or resizing it keeps existing values readable, and a
 policy. Current padding parameters also do not impose a limit on historical
 reads. See the [size and padding contracts](wire-format.md#plaintext-padding).
 
-Sweep [format 1](wire-format.md#format-1) values, which predate the flag, before
-changing a field's padding policy.
-
 ## Storage boundaries
 
 The choice between explicit operations and automatic adapters determines where

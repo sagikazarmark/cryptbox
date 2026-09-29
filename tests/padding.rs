@@ -177,7 +177,7 @@ impl Field for RawPadded {
     type Indexes = ();
 }
 
-// Format 1 misread these silently under a changed policy (ADR-0002); `Raw` accepts any bytes.
+// A policy-based reader would misread these silently (ADR-0002); `Raw` accepts any bytes.
 #[test]
 fn padded_values_read_after_disabling_padding_keep_no_padding_bytes() {
     let keys = keyring();
@@ -210,10 +210,10 @@ fn a_sweep_converges_values_to_the_current_padding_policy() {
         padded[1], new,
         "a value in the current form is not rewritten"
     );
-    assert_swept(&padded, Some(true));
+    assert_swept(&padded, true);
 
     let unpadded = padded.map(|ciphertext| sweep::<Unpadded>(ciphertext.into_bytes()));
-    assert_swept(&unpadded, Some(false));
+    assert_swept(&unpadded, false);
 }
 
 fn sweep<F: Field<Binding = FieldOnly>>(bytes: Vec<u8>) -> Sealed<F> {
@@ -229,7 +229,7 @@ fn sweep<F: Field<Binding = FieldOnly>>(bytes: Vec<u8>) -> Sealed<F> {
 
 fn assert_swept<F: Field<Value = String, Binding = FieldOnly>>(
     swept: &[Sealed<F>; 2],
-    padded: Option<bool>,
+    padded: bool,
 ) {
     let keys = keyring();
 

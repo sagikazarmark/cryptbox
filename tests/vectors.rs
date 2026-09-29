@@ -10,9 +10,6 @@ use zeroize::Zeroizing;
 // docs/wire-format.md#provisional-envelope-vectors
 const UNPADDED: &str = "4342580002010011111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd4f8e9c4e8454cd34732e7966a50994cd";
 const PADDED: &str = "4342580002010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd489a56ec6e125f07deaa76f7502ad2613f";
-// docs/wire-format.md#format-1
-const FORMAT_1_UNPADDED: &str = "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d";
-const FORMAT_1_PADDED: &str = "43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6";
 
 fn keys() -> EncryptionKeyring {
     let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
@@ -57,7 +54,7 @@ fn experimental_envelope_vectors_record_their_padding() {
         let info = inspect_ciphertext(&envelope).unwrap();
 
         assert_eq!(info.format_version(), 2);
-        assert_eq!(info.padded(), Some(padded));
+        assert_eq!(info.padded(), padded);
         assert_eq!(info.shape_fingerprint(), None);
         assert_eq!(
             decrypt(VectorField::ID, &envelope, &keys())
@@ -80,40 +77,14 @@ fn experimental_envelope_vectors_decrypt_under_either_padding_policy() {
 }
 
 #[test]
-fn format_1_vectors_are_read_with_the_field_padding_policy() {
-    assert_eq!(
-        read::<VectorField>(FORMAT_1_UNPADDED).unwrap(),
-        b"cryptbox vector"
-    );
-    assert_eq!(
-        read::<PaddedVectorField>(FORMAT_1_PADDED).unwrap(),
-        "cryptbox vector"
-    );
-    // Format 1 does not record padding: a policy change before a sweep misreads it.
-    assert_eq!(
-        read::<VectorField>(FORMAT_1_PADDED).unwrap(),
-        b"cryptbox vector\x80"
-    );
-    assert_eq!(
-        read::<PaddedVectorField>(FORMAT_1_UNPADDED),
-        Err(Error::InvalidPadding)
-    );
-}
+fn format_1_envelopes_are_not_read() {
+    let mut envelope = hex::decode(UNPADDED).unwrap();
+    envelope[4] = 1;
 
-#[test]
-fn format_1_vectors_are_stale_and_reseal_to_format_2() {
-    let keys = keys();
-    let legacy =
-        Sealed::<PaddedVectorField>::from_bytes(hex::decode(FORMAT_1_PADDED).unwrap()).unwrap();
-
-    assert!(legacy.needs_reseal((), &keys).unwrap());
-
-    let current = legacy.reseal((), &keys).unwrap();
-    let info = inspect_ciphertext(current.as_bytes()).unwrap();
-    assert_eq!(info.format_version(), 2);
-    assert_eq!(info.padded(), Some(true));
-    assert!(!current.needs_reseal((), &keys).unwrap());
-    assert_eq!(current.open((), &keys).unwrap(), "cryptbox vector");
+    assert_eq!(
+        inspect_ciphertext(&envelope).unwrap_err(),
+        Error::UnsupportedFormatVersion(1)
+    );
 }
 
 struct VectorIndex;

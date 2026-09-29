@@ -8,7 +8,7 @@ use crate::{BindingDomain, EncryptionKeySource, EncryptionKeyring, Error, FieldI
 
 pub(crate) use format::validated_key_id;
 pub use format::{CiphertextInfo, is_ciphertext};
-use format::{FORMAT_VERSION, ParsedEnvelope, parse_envelope};
+use format::{ParsedEnvelope, parse_envelope};
 pub use suite::EXPERIMENTAL_XCHACHA20_POLY1305;
 use suite::Suite;
 
@@ -71,8 +71,7 @@ pub(crate) fn encrypt_bound(
 /// The keyring is asked only for the exact key ID named by the envelope.
 /// Success authenticates the envelope under the supplied key and `field`;
 /// it does not establish freshness, row identity, or codec validity.
-/// Padding recorded by the envelope is removed. A format 1 envelope does not
-/// record padding, so its payload is returned as stored.
+/// Padding recorded by the envelope is removed.
 /// Use [`crate::Sealed::open`] to also decode a typed value.
 ///
 /// # Errors
@@ -86,23 +85,12 @@ pub fn decrypt(
     ciphertext: &[u8],
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
-    decrypt_with_policy(field, Padding::NONE, ciphertext, keys)
+    decrypt_bound(&BindingDomain::field(field), ciphertext, keys)
 }
 
-/// Decrypts and unpads, reading a format 1 payload with the field's `padding`.
-pub(crate) fn decrypt_with_policy(
-    field: FieldId,
-    padding: Padding,
-    ciphertext: &[u8],
-    keys: &(impl EncryptionKeySource + ?Sized),
-) -> Result<Zeroizing<Vec<u8>>, Error> {
-    decrypt_bound(&BindingDomain::field(field), padding, ciphertext, keys)
-}
-
-/// Decrypts under the expected `domain`, reading a format 1 payload with `padding`.
+/// Decrypts under the expected `domain` and removes recorded padding.
 pub(crate) fn decrypt_bound(
     domain: &BindingDomain,
-    padding: Padding,
     ciphertext: &[u8],
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
@@ -117,10 +105,10 @@ pub(crate) fn decrypt_bound(
     // Only the authenticated flag decides unpadding; the current policy must not,
     // or policy changes would silently misread stored values.
     // See ../docs/adr/0002-authenticated-padding-flag.md.
-    match parsed.info.padded() {
-        Some(true) => unpad(plaintext),
-        Some(false) => Ok(plaintext),
-        None => padding.unpad(plaintext),
+    if parsed.info.padded() {
+        unpad(plaintext)
+    } else {
+        Ok(plaintext)
     }
 }
 
@@ -145,8 +133,8 @@ fn check_shape(info: CiphertextInfo, domain: &BindingDomain) -> Result<(), Error
 
 /// Reports whether an envelope differs from what `field` currently writes.
 ///
-/// That is an older format, a non-active suite, a non-current key, or a padding
-/// flag that disagrees with `padding`. Padding parameters are not recorded, so
+/// That is a non-active suite, a non-current key, or a padding flag that
+/// disagrees with `padding`. Padding parameters are not recorded, so
 /// changing only a block size or fixed length is not reported.
 ///
 /// This reads unauthenticated metadata and does not decrypt the payload.
@@ -179,17 +167,15 @@ pub(crate) fn needs_reencryption_bound(
     check_shape(info, domain)?;
     let current = keyring(keys, domain)?.current().clone();
 
-    Ok(info.format_version() != FORMAT_VERSION
-        || info.suite_id() != Suite::ACTIVE.id()
+    Ok(info.suite_id() != Suite::ACTIVE.id()
         || info.key_id() != current.id()
-        || info.padded() != Some(padding.is_padded()))
+        || info.padded() != padding.is_padded())
 }
 
 /// Decrypts an envelope and encrypts it as `field` currently writes it.
 ///
-/// The value is rewritten with the current format, active suite, current key,
-/// and `padding`, so a sweep can enable or disable padding. A format 1 payload,
-/// which does not record padding, is read with `padding`.
+/// The value is rewritten with the active suite, current key, and `padding`,
+/// so a sweep can enable or disable padding.
 ///
 /// # Errors
 ///
@@ -200,7 +186,7 @@ pub fn reencrypt(
     ciphertext: &[u8],
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Vec<u8>, Error> {
-    let plaintext = decrypt_with_policy(field, padding, ciphertext, keys)?;
+    let plaintext = decrypt(field, ciphertext, keys)?;
 
     encrypt(field, padding, &plaintext, keys)
 }
@@ -315,7 +301,7 @@ mod tests {
             let envelope = hex::decode(vector).unwrap();
 
             assert_eq!(
-                decrypt_bound(&domain, Padding::NONE, &envelope, &keyring())
+                decrypt_bound(&domain, &envelope, &keyring())
                     .unwrap()
                     .as_slice(),
                 b"cryptbox vector"
@@ -333,7 +319,7 @@ mod tests {
             domain.fingerprint()
         );
         assert_eq!(
-            decrypt_bound(&domain, Padding::NONE, &envelope, &keyring())
+            decrypt_bound(&domain, &envelope, &keyring())
                 .unwrap()
                 .as_slice(),
             b"secret"
@@ -371,7 +357,7 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                decrypt_bound(&reader, Padding::NONE, &envelope, &keyring()).unwrap_err(),
+                decrypt_bound(&reader, &envelope, &keyring()).unwrap_err(),
                 Error::AuthenticationFailed,
                 "{case}"
             );
@@ -393,7 +379,7 @@ mod tests {
             ("record flag", &with_record, &scoped_envelope),
         ] {
             assert_eq!(
-                decrypt_bound(reader, Padding::NONE, envelope, &keyring()).unwrap_err(),
+                decrypt_bound(reader, envelope, &keyring()).unwrap_err(),
                 Error::BindingMismatch,
                 "{case}"
             );
@@ -419,7 +405,7 @@ mod tests {
         envelope[23] ^= 1;
 
         assert_eq!(
-            decrypt_bound(&domain, Padding::NONE, &envelope, &NoKeys).unwrap_err(),
+            decrypt_bound(&domain, &envelope, &NoKeys).unwrap_err(),
             Error::BindingMismatch
         );
     }
@@ -443,7 +429,7 @@ mod tests {
         envelope[23..31].copy_from_slice(reader.fingerprint().unwrap().as_bytes());
 
         assert_eq!(
-            decrypt_bound(&reader, Padding::NONE, &envelope, &keyring()).unwrap_err(),
+            decrypt_bound(&reader, &envelope, &keyring()).unwrap_err(),
             Error::AuthenticationFailed
         );
     }

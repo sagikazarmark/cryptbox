@@ -56,7 +56,7 @@ fn encryption_is_randomized_and_authenticates_the_envelope() {
 
     let info = inspect_ciphertext(&first).unwrap();
     assert_eq!(info.format_version(), 2);
-    assert_eq!(info.padded(), Some(false));
+    assert!(!info.padded());
     assert_eq!(info.suite_id().get(), 1);
     assert_eq!(info.key_id(), CURRENT_KEY_ID);
 
@@ -88,10 +88,7 @@ fn padded_encryption_records_the_flag_and_decryption_removes_the_padding() {
     let ciphertext = encrypt(EmailField::ID, Padding::block(16), b"padded", &keys).unwrap();
 
     assert_eq!(ciphertext.len(), 63 + 16);
-    assert_eq!(
-        inspect_ciphertext(&ciphertext).unwrap().padded(),
-        Some(true)
-    );
+    assert!(inspect_ciphertext(&ciphertext).unwrap().padded());
     assert_eq!(
         decrypt(EmailField::ID, &ciphertext, &keys)
             .unwrap()

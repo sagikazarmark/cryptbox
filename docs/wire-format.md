@@ -387,8 +387,7 @@ For an application-selected padded cap `L`, `Padding::NONE` permits `E <= L`;
 padded size with checked arithmetic before allocating/encrypting. Bound incoming
 binary envelopes to `W <= L + 63` (`L + 71` for a scoped field) before
 copying/decrypting, and bound decoding
-expansion separately; a [format 1](#format-1) envelope is one byte shorter, so
-the same bound admits it. Current padding parameters do not cap historical reads:
+expansion separately. Current padding parameters do not cap historical reads:
 unpadding accepts a valid marker independently of the original block/target size.
 A size check is not authentication.
 
@@ -452,31 +451,6 @@ envelope: 4342580002010211111111222243338444555555555555505a9cd2bc28663600010203
 Both fingerprints and bindings were computed independently of the
 implementation from the recipes above. The envelopes have not yet been
 cross-checked against an independent implementation.
-
-### Format 1
-
-Ciphertext format 1 is the previous envelope. It is still read, but no longer
-written. It has no flags byte: a 22-byte header (magic, `01`, suite ID, `KeyId`)
-and, for suite 1, a 46-byte prefix, so `W = P + 62`. Key derivation uses
-`format_version = 01`, and the AAD covers `envelope[0..46]`; otherwise the
-recipe is unchanged.
-
-Format 1 does not record whether its payload is padded. A reader removes padding
-exactly when the field's **current** padding policy pads, which is how format 1
-was written. This is correct only while the policy is unchanged: a padded value
-read without padding keeps its `80 00…` bytes, and an unpadded value read with
-padding fails with `InvalidPadding` or loses trailing `80`/`80 00` bytes. The
-byte-level `decrypt` function has no policy and returns a format 1 payload as
-stored.
-
-A format 1 envelope always needs re-encryption, which rewrites it as format 2
-using the current policy. Sweep stored format 1 values before changing a field's
-padding policy. These format 1 vectors use the inputs above:
-
-```text
-unpadded envelope: 43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfceb1074e9691ed9f65c6b1ee8ddf1219d
-padded envelope:   43425800010111111111222243338444555555555555000102030405060708090a0b0c0d0e0f101112131415161790fc94db1267819912c4b5abc48bfce28615aa60f3cc8e8475dbf73c2d43d9f6
-```
 
 ## Blind-index format 1
 

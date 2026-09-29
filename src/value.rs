@@ -142,7 +142,7 @@ impl<F: Field> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<F::Value, Error> {
-        let plaintext = decrypt_bound(&domain(args)?, F::PADDING, &self.bytes, keys)?;
+        let plaintext = decrypt_bound(&domain(args)?, &self.bytes, keys)?;
 
         Ok(F::Codec::decode(&plaintext)?)
     }
@@ -214,7 +214,7 @@ impl<F: Field> Sealed<F> {
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
         let domain = domain(args)?;
-        let plaintext = decrypt_bound(&domain, F::PADDING, &self.bytes, keys)?;
+        let plaintext = decrypt_bound(&domain, &self.bytes, keys)?;
 
         encrypt_bound(&domain, F::PADDING, &plaintext, keys).map(Self::from_validated_bytes)
     }
@@ -237,7 +237,7 @@ impl<F: Field> Sealed<F> {
         to: impl Args<F>,
         to_keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
-        let plaintext = decrypt_bound(&domain(from)?, F::PADDING, &self.bytes, from_keys)?;
+        let plaintext = decrypt_bound(&domain(from)?, &self.bytes, from_keys)?;
 
         encrypt_bound(&domain(to)?, F::PADDING, &plaintext, to_keys).map(Self::from_validated_bytes)
     }

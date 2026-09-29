@@ -4,9 +4,8 @@ Rewrite stored values in bounded, resumable batches.
 [Documentation](README.md) · [Key lifecycle](key-rotation.md) · [Legacy adoption](legacy-migration.md).
 
 Rotation selects keys for future writes; a later sweep converges existing
-ciphertext and indexes. The same sweep rewrites ciphertext in an older format or
-whose padding flag disagrees with the field's current policy, so it also upgrades
-format 1 values and applies a padding change. The `migrate` feature supplies
+ciphertext and indexes. The same sweep rewrites ciphertext whose padding flag
+disagrees with the field's current policy, so it also applies a padding change. The `migrate` feature supplies
 `RowPlanner`, `Sweep` and `SweepStore`, which also reseal values after a
 [binding-shape change](#binding-shape-changes); the
 [manual SQLite example](../examples/reencryption_sweep.rs) demonstrates the same
