@@ -9,7 +9,7 @@ needed to reproduce them.
 | Format | Format version | Suite ID |
 | --- | --- | --- |
 | [Ciphertext](#envelope) | 2 | [1](#encryption-suite-1) |
-| [Blind index](#blind-index-format-1) | 1 | — |
+| [Blind index](#blind-index-format-2) | 2 | — |
 
 > [!WARNING]
 > **These wire formats are experimental.** They may change without backward
@@ -80,48 +80,37 @@ authentication because the reader has no construction with which to verify it.
 
 A binding identifies the expected cryptographic domain of a value. Every value is
 bound to a stable `FieldId`, so an email field's ciphertext is not accepted under
-a different field, even when both use the same root key. A field-only binding
-identifies a logical field, not a particular row or tenant. A
-[scoped binding](#scoped-binding) also binds declared scope parts, such as a
-tenant, and optionally a record ID. See
-[ADR-0005](adr/0005-runtime-binding-is-the-core.md).
+a different field, even when both use the same root key. A field declares its
+binding **shape**: a fixed set of parts, each with a part ID (a UUID), a value
+kind, and a role, plus whether it binds a record. The shape is persistent
+schema. The **values**, such as a tenant ID and a record ID, are supplied at
+each call. See [ADR-0005](adr/0005-runtime-binding-is-the-core.md).
 
-A field-only binding is encoded as:
-
-```text
-Field(FieldId): 01 || field_id[16]
-```
-
-Tag `00` is reserved: earlier releases used it for unbound values, and current
-releases neither write nor read it.
-
-The field supplies the expected binding; it is not stored in the envelope.
-This makes the application decide where a value belongs, rather than allowing
-stored bytes to select their own binding.
-
-#### Scoped binding
-
-A field declares its binding **shape**: a fixed set of parts, each with a part
-ID (a UUID), a value kind, and a role, plus whether it binds a record. The shape
-is persistent schema. The **values** are supplied at each call. A scoped binding
-is encoded as:
+Every binding uses one layout:
 
 ```text
-Scoped: 02 || field_id[16] || record || count[2] || part*
+binding = field_id[16] || record || count[2] || part*
 
-record = 00                                (no record)
-       | kind[1] || len[4] || value[len]   (record present)
-part   = part_id[16] || kind[1] || len[4] || value[len]
+record  = 00                                (no record)
+        | kind[1] || len[4] || value[len]   (record present)
+part    = part_id[16] || kind[1] || len[4] || value[len]
 ```
 
 - `count` is the number of parts, as an unsigned 16-bit integer.
 - Parts are sorted by part ID in ascending byte order, whatever order the field
   declares them in. Part IDs are unique and never the nil UUID.
-- There is at least one part or a record. With neither, the binding is
-  field-only and uses tag `01`.
 - `len` is an unsigned 32-bit byte count. Every value is length-prefixed, so
   `"ab", "c"` and `"a", "bc"` encode differently.
 - A record's kind code is never `00`, so an empty record differs from no record.
+- There is no leading tag or type byte: the binding starts with the field ID.
+
+The **empty shape** has no parts and no record. Its binding is the field ID
+followed by `00 0000`: a field-only binding, which identifies a logical field,
+not a particular row or tenant.
+
+The field supplies the expected binding; it is not stored in the envelope.
+This makes the application decide where a value belongs, rather than allowing
+stored bytes to select their own binding.
 
 Value kinds are fixed and canonical. There is no text kind:
 
@@ -137,9 +126,9 @@ A `keys` part value can't be empty.
 
 #### Shape fingerprint
 
-Every envelope's header carries a 64-bit **shape fingerprint**. It covers
-the part IDs, kinds, and roles, and the record flag, but no values, because
-the header is stored in plaintext:
+Every binding has a 64-bit **shape fingerprint**, and every envelope's header
+carries it. It covers the part IDs, kinds, and roles, and the record flag, but
+never values, because the header is stored in plaintext:
 
 ```text
 shape label: "cryptbox/binding-shape/v1\0"
@@ -161,9 +150,8 @@ the fingerprint.
 | bound only | `03` | the ciphertext only |
 
 Roles are included because a role change alters index derivation and custody,
-so it is a migration even though the binding bytes don't change. A field-only
-binding has the empty shape, with no parts and no record, whose fingerprint is
-`ff670aba047d77fa`. A record's kind is a runtime value, not part of
+so it is a migration even though the binding bytes don't change. The empty
+shape's fingerprint is `ff670aba047d77fa`. A record's kind is a runtime value, not part of
 the shape: a record of another kind fails authentication rather than reporting
 `BindingMismatch`.
 
@@ -171,9 +159,9 @@ the shape: a record of another kind fails authentication rather than reporting
 
 Two ready-made bindings fix their shapes permanently:
 
-- `FieldOnly` has no parts. Without a record it is the field-only binding (tag
-  `01`), with the empty shape's fingerprint. With a record, it is a scoped
-  binding with the record and no parts.
+- `FieldOnly` has no parts. Without a record it is the empty shape, so its
+  binding is `field_id || 00 || 0000`. With a record, it binds the record and
+  no parts; that shape's fingerprint is `8a2f3d5f4bb04af5`.
 - `Tenant` has one part: part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
   bytes, role `keys`. A tenant ID is non-empty opaque bytes; a UUID tenant is
   its 16 bytes. Without a record, its shape fingerprint is `f8311e0a178867bc`.
@@ -181,7 +169,7 @@ Two ready-made bindings fix their shapes permanently:
   binding is:
 
   ```text
-  02123456781234423482341234567890ab0000011e8306bf31354570831c6732f92550e9030000000461636d65
+  123456781234423482341234567890ab0000011e8306bf31354570831c6732f92550e9030000000461636d65
   ```
 
 #### Reader rules
@@ -388,11 +376,11 @@ empty shape's fingerprint:
 ```text
 root key:   1111111111111111111111111111111111111111111111111111111111111111
 KeyId:      11111111-2222-4333-8444-555555555555
-binding:    01123456781234423482341234567890ab
+binding:    123456781234423482341234567890ab000000
 shape:      ff670aba047d77fa
 plaintext:  6372797074626f7820766563746f72 ("cryptbox vector")
 nonce:      000102030405060708090a0b0c0d0e0f1011121314151617
-envelope:   4342580002010011111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fdcb03d10799ab94530c780554ccfb8d05
+envelope:   4342580002010011111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da141a9d8eb6678b1f3feec1eacbbb1dc56de
 ```
 
 The padded vector uses the same root key, `KeyId`, binding, shape, and nonce as the
@@ -401,7 +389,7 @@ flags `01`:
 
 ```text
 padded plaintext: 6372797074626f7820766563746f7280
-envelope:         4342580002010111111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd48fc08a3b4d7223429153e158cff27228e
+envelope:         4342580002010111111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1419a655dbd3c41cbc407272faca1c37acec7
 ```
 
 Both decrypt to `"cryptbox vector"` whatever the reader's padding policy. The
@@ -411,7 +399,7 @@ independently as described under the scoped vectors below.
 ### Provisional scoped vectors
 
 These vectors use the root key, `KeyId`, `FieldId`, plaintext, and nonce above,
-unpadded, with a [scoped binding](#scoped-binding) of two parts:
+unpadded, with a [binding](#binding) of two parts:
 
 ```text
 part 11111111-1111-1111-1111-111111111111  uuid   keys        33333333-3333-3333-3333-333333333333
@@ -421,15 +409,15 @@ part 22222222-2222-2222-2222-222222222222  bytes  bound only  77732d31 ("ws-1")
 Without a record, the shape fingerprint is `cda083fe6eae1bf1`:
 
 ```text
-binding:  02123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
-envelope: 4342580002010011111111222243338444555555555555cda083fe6eae1bf1000102030405060708090a0b0c0d0e0f1011121314151617b51d411fdf173c5725d9000dae571d0907d4e42fe05a9f0eec3fd60ffd70b5
+binding:  123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
+envelope: 4342580002010011111111222243338444555555555555cda083fe6eae1bf1000102030405060708090a0b0c0d0e0f1011121314151617b887bad9f184f35041b40c3cce0d453d235fc5e3c3a7b03064c94b159a0d82
 ```
 
 With the `i64` record `7`, the shape fingerprint is `505a9cd2bc286636`:
 
 ```text
-binding:  02123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
-envelope: 4342580002010011111111222243338444555555555555505a9cd2bc286636000102030405060708090a0b0c0d0e0f10111213141516172619b76ce657aac8910c65d99b49a0825f127f4fbbd3c2920c03eaadb38d1b
+binding:  123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
+envelope: 4342580002010011111111222243338444555555555555505a9cd2bc286636000102030405060708090a0b0c0d0e0f1011121314151617663bba5e4bb37a3df899258809ff5637620bf6006b8c5685cd2419c6a90e28
 ```
 
 The fingerprints, bindings, and all four envelopes above were computed
@@ -437,7 +425,7 @@ independently of the implementation from the recipes above, with a separate
 HKDF, HChaCha20, and ChaCha20-Poly1305 construction. They have not yet been
 cross-checked against a third-party implementation.
 
-## Blind-index format 1
+## Blind-index format 2
 
 A blind index supports equality-style lookup without decrypting every stored
 value. Normalization gives values the application considers equivalent the same
@@ -446,7 +434,7 @@ index policy and key generation, the same normalized bytes produce the same
 index bytes. Unlike randomized ciphertext, this deliberately reveals equality
 and frequency information.
 
-Format `1` defines both the stored layout and the derivation recipe:
+Format `2` defines both the stored layout and the derivation recipe:
 HKDF-SHA-256 derives an index-specific key, HMAC-SHA-256 computes a keyed digest
 of the normalized value and its context, and truncation retains only the selected
 number of most-significant bits. Fewer retained bits mean more false candidates.
@@ -456,7 +444,7 @@ Root blind-index keys must be independent from encryption keys.
 
 ```text
 offset  size          field
-0       1             format version = 01
+0       1             format version = 02
 1       16            IndexKeyId
 17      2             retained bit count
 19      ceil(bits/8)  truncated HMAC
@@ -497,10 +485,8 @@ restricted to its `keys` and `index` parts. Bound-only parts and the record are
 left out, because a query knows its scope but not the row. The index binding
 uses the [binding](#binding) encoding:
 
-- With no `keys` or `index` parts, it is the field-only binding (tag `01`), as
-  for `FieldOnly`. Such indexes are byte-identical to earlier releases.
-- Otherwise it is a [scoped binding](#scoped-binding) of those parts, with no
-  record: tag `02`, the field ID, `00`, then the parts sorted by part ID.
+- It is the field ID, `00` for no record, then those parts sorted by part ID.
+- With no `keys` or `index` parts, it is the empty binding, as for `FieldOnly`.
 
 Two bindings that agree on their `keys` and `index` values share the index
 binding, so their indexes of the same value are equal. The key source receives
@@ -512,7 +498,7 @@ Inputs are an independent 32-byte blind-index root (never an encryption root),
 its immutable `IndexKeyId`, the expected [index binding](#index-binding),
 logical `IndexId`, retained bit count, and normalized bytes. `IndexKeyId`,
 `IndexId`, and any `FieldId` are encoded using the UUID convention above, and
-`binding` is the encoded index binding. The version is one byte `01`; `bits_be`
+`binding` is the encoded index binding. The version is one byte `02`; `bits_be`
 is a two-byte unsigned big-endian count in `1..=256`.
 
 1. Run the application's deterministic normalizer for this logical index.
@@ -537,6 +523,9 @@ is a two-byte unsigned big-endian count in `1..=256`.
 
 Structural parsing rejects unsupported versions, precision outside `1..=256`,
 incorrect total length (including trailing bytes), or nonzero unused low bits.
+Format `1` indexes were derived under an earlier binding encoding, so they are
+rejected as unsupported rather than silently matching nothing; derive them
+again.
 A typed `BlindIndex<Spec>` additionally requires the stored precision to equal
 `Spec::BITS`. Parsing checks structure only; it does not authenticate the stored
 metadata or prove consistency with ciphertext. Because truncation allows different
@@ -551,14 +540,13 @@ root key:     2222222222222222222222222222222222222222222222222222222222222222
 IndexKeyId:   aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
 IndexId:      abcdefab-cdef-4def-8def-abcdefabcdef
 FieldId:      12345678-1234-4234-8234-1234567890ab
-binding:      01123456781234423482341234567890ab
+binding:      123456781234423482341234567890ab000000
 bits:         13
 normalized:   6e6f726d616c697a6564406578616d706c652e636f6d ("normalized@example.com")
-stored value: 01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d71e0
+stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000df040
 ```
 
-The final byte `e0` has its three unused low bits cleared. This vector has not
-yet been cross-checked against an independent implementation.
+The final byte `40` has its three unused low bits cleared.
 
 ### Scoped blind-index vector
 
@@ -566,8 +554,10 @@ The same inputs, for a field bound to the `Tenant` preset with tenant `acme`.
 The index binding is the field's `Tenant` binding without a record:
 
 ```text
-binding:      02123456781234423482341234567890ab0000011e8306bf31354570831c6732f92550e9030000000461636d65
-stored value: 01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d35b8
+binding:      123456781234423482341234567890ab0000011e8306bf31354570831c6732f92550e9030000000461636d65
+stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d28c0
 ```
 
-This vector was computed from the recipe above with OpenSSL's HKDF and HMAC.
+Both blind-index vectors were computed from the recipe above independently of
+the implementation, with a separate HKDF and HMAC construction. They have not
+yet been cross-checked against a third-party implementation.

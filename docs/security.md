@@ -2,7 +2,7 @@
 
 CryptBox encrypts selected application values before storage.
 **It is not production-ready.** Ciphertext format 2,
-blind-index format 1, and suite 1 remain experimental; version numbers and passing
+blind-index format 2, and suite 1 remain experimental; version numbers and passing
 tests do not indicate security approval. [Documentation](README.md).
 
 ## Trust boundary and assumptions

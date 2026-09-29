@@ -19,6 +19,21 @@ status: accepted
 > those parts is checked when it opens, but resealing a value from a shape that
 > did not bind them (such as `FieldOnly`) trusts the row's columns once. Sweep
 > such a change only over columns the application already trusts.
+>
+> Amended for a single binding layout. The tagged layouts below are replaced
+> by one, `field_id ‖ record ‖ count ‖ (part_id ‖ kind ‖ lp(value))*`, with no
+> tag. `FieldOnly` is the empty binding, with no parts and no record, rather
+> than a separate field-only layout, so a shape with neither is valid and the
+> encoding has one writer (`binding/encoding.rs`) and no special case. Every
+> envelope header now carries the shape fingerprint, in a fixed 31-byte header;
+> a field-only binding carries the empty shape's. The envelope then never
+> interprets binding kinds: it compares the fingerprint bytes its reader
+> expects, and the typed layer chooses the keyring. The fingerprint stays 8
+> bytes and covers the shape only, never values, because the header is stored
+> in plaintext and the fingerprint drives only `BindingMismatch` and
+> migration-window routing, never security. The binding bytes change for every
+> field, so blind indexes move to format 2 and format 1 indexes are rejected;
+> 0.5.0 values and indexes are not read.
 
 Every seal and open binds the ciphertext to a runtime **binding**: the field ID,
 a declared scope (for example tenant, or org plus workspace), and optionally a

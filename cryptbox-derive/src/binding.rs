@@ -55,7 +55,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     errors.finish()?;
 
     // The derive sorts the parts, so fields can be declared in any order.
-    // See ../../docs/wire-format.md#scoped-binding.
+    // See ../../docs/wire-format.md#binding.
     let index_fields: Vec<_> = parts
         .iter()
         .filter(|part| part.role.scopes_index())

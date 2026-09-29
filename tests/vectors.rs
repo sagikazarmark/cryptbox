@@ -3,13 +3,14 @@
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Raw, Sealed,
-    Tenant, TenantId, Utf8, field_id, index_id, index_key_id, inspect_ciphertext, key_id,
+    Tenant, TenantId, Utf8, field_id, index_id, index_key_id, inspect_blind_index,
+    inspect_ciphertext, key_id,
 };
 use zeroize::Zeroizing;
 
 // docs/wire-format.md#provisional-envelope-vectors
-const UNPADDED: &str = "4342580002010011111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fdcb03d10799ab94530c780554ccfb8d05";
-const PADDED: &str = "4342580002010111111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f10111213141516173f7195595232290da92d72b42bb6fd48fc08a3b4d7223429153e158cff27228e";
+const UNPADDED: &str = "4342580002010011111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da141a9d8eb6678b1f3feec1eacbbb1dc56de";
+const PADDED: &str = "4342580002010111111111222243338444555555555555ff670aba047d77fa000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1419a655dbd3c41cbc407272faca1c37acec7";
 
 fn keys() -> EncryptionKeyring {
     let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
@@ -103,7 +104,7 @@ impl BlindIndexSpec for VectorIndex {
 
 #[test]
 fn experimental_blind_index_vector_is_stable() {
-    const VECTOR: &str = "01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d71e0";
+    const VECTOR: &str = "02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000df040";
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
 
@@ -113,6 +114,18 @@ fn experimental_blind_index_vector_is_stable() {
     assert_eq!(hex::encode(index.as_bytes()), VECTOR);
     assert_eq!(probes.len(), 1);
     assert_eq!(hex::encode(probes[0].as_bytes()), VECTOR);
+}
+
+#[test]
+fn format_1_blind_indexes_are_rejected() {
+    // The format 1 vector: derived under the tagged binding layout, so it is
+    // rejected rather than silently matching nothing.
+    let format_1 = hex::decode("01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d71e0").unwrap();
+
+    assert_eq!(
+        inspect_blind_index(&format_1).unwrap_err(),
+        Error::InvalidBlindIndex
+    );
 }
 
 struct TenantVectorField;
@@ -148,7 +161,7 @@ impl BlindIndexSpec for TenantVectorIndex {
 #[test]
 fn experimental_scoped_blind_index_vector_is_stable() {
     // docs/wire-format.md#scoped-blind-index-vector
-    const VECTOR: &str = "01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d35b8";
+    const VECTOR: &str = "02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d28c0";
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
     let acme = Tenant(TenantId::new(b"acme".to_vec()).unwrap());

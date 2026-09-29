@@ -1,10 +1,9 @@
 use std::hash::Hash;
 
-use sha2::{Digest, Sha256};
-
 use crate::{Error, FieldId, PartId, ShapeFingerprint};
 
 mod args;
+mod encoding;
 mod part;
 mod presets;
 mod scope;
@@ -16,9 +15,6 @@ pub(crate) use args::{domain, domains};
 pub use part::PartType;
 pub use presets::{FieldOnly, Tenant, TenantId};
 pub use scope::KeyScope;
-
-// A persistent domain separator, not a display string. See ../docs/wire-format.md#shape-fingerprint.
-const SHAPE_LABEL: &[u8] = b"cryptbox/binding-shape/v1\0";
 
 /// The declared scope a field's values are bound to, such as a tenant, or an
 /// org plus a workspace.
@@ -158,7 +154,7 @@ const SHAPE_LABEL: &[u8] = b"cryptbox/binding-shape/v1\0";
 ///
 #[doc = concat!(
     "[ADR-0005]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0005-runtime-binding-is-the-core.md\n",
-    "[wire format]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#scoped-binding",
+    "[wire format]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#binding",
 )]
 pub trait Binding: Clone + Hash + Eq + Send + Sync + 'static {
     /// The declared parts, sorted by part ID.
@@ -293,17 +289,6 @@ pub enum PartKind {
     Bytes,
 }
 
-impl PartKind {
-    // Kind codes are persistent binding bytes. See ../docs/wire-format.md#scoped-binding.
-    const fn code(self) -> u8 {
-        match self {
-            Self::Uuid => 1,
-            Self::I64 => 2,
-            Self::Bytes => 3,
-        }
-    }
-}
-
 /// What a part scopes beyond the ciphertext itself.
 ///
 /// Every part is bound into the ciphertext. The role is persistent schema:
@@ -321,15 +306,6 @@ pub enum PartRole {
 }
 
 impl PartRole {
-    // Role codes are persistent fingerprint input. See ../docs/wire-format.md#shape-fingerprint.
-    const fn code(self) -> u8 {
-        match self {
-            Self::Keys => 1,
-            Self::Index => 2,
-            Self::Bound => 3,
-        }
-    }
-
     const fn scopes_index(self) -> bool {
         matches!(self, Self::Keys | Self::Index)
     }
@@ -403,26 +379,6 @@ impl PartValue<'_> {
             Self::I64(_) => PartKind::I64,
             Self::Bytes(_) => PartKind::Bytes,
         }
-    }
-
-    // Kind-tagged and length-prefixed, so no two values of any kinds share bytes.
-    fn encode_into(&self, output: &mut Vec<u8>) -> Result<(), Error> {
-        let i64_bytes;
-        let bytes: &[u8] = match self {
-            Self::Uuid(uuid) => uuid,
-            Self::I64(value) => {
-                i64_bytes = value.to_be_bytes();
-                &i64_bytes
-            }
-            Self::Bytes(bytes) => bytes,
-        };
-        let len = u32::try_from(bytes.len()).map_err(|_| Error::InvalidBinding)?;
-
-        output.push(self.kind().code());
-        output.extend_from_slice(&len.to_be_bytes());
-        output.extend_from_slice(bytes);
-
-        Ok(())
     }
 }
 
@@ -532,16 +488,16 @@ impl<'a> BindingShape<'a> {
         Self { parts, record }
     }
 
-    /// Checks the shape's own invariants: at least one part or a record, and
-    /// unique, non-nil part IDs.
+    /// Checks the shape's own invariants: unique, non-nil part IDs.
     ///
-    /// Without parts or a record, the binding is field-only and uses tag `01`.
+    /// Without parts or a record, the shape is empty: the binding is
+    /// field-only.
     pub(crate) fn validate(&self) -> Result<(), Error> {
         let mut ids: Vec<_> = self.parts.iter().map(|spec| spec.id).collect();
         ids.sort_unstable();
         let duplicate = ids.windows(2).any(|pair| pair[0] == pair[1]);
 
-        if (ids.is_empty() && !self.record) || ids.contains(&[0; 16]) || duplicate {
+        if ids.contains(&[0; 16]) || duplicate {
             return Err(Error::InvalidBinding);
         }
 
@@ -550,27 +506,7 @@ impl<'a> BindingShape<'a> {
 
     /// Fingerprints the shape; declaration order does not matter.
     pub(crate) fn fingerprint(&self) -> ShapeFingerprint {
-        let mut parts = self.parts.to_vec();
-        parts.sort_by_key(|spec| spec.id);
-        // A count that does not fit is rejected when the binding is encoded.
-        let count = u16::try_from(parts.len()).unwrap_or(u16::MAX);
-
-        // Preserve this canonical order: stored headers carry the result.
-        // See ../docs/wire-format.md#shape-fingerprint.
-        let mut hasher = Sha256::new();
-        hasher.update(SHAPE_LABEL);
-        hasher.update([u8::from(self.record)]);
-        hasher.update(count.to_be_bytes());
-        for spec in parts {
-            hasher.update(spec.id);
-            hasher.update([spec.kind.code(), spec.role.code()]);
-        }
-
-        let digest = hasher.finalize();
-        let mut fingerprint = [0_u8; 8];
-        fingerprint.copy_from_slice(&digest[..8]);
-
-        ShapeFingerprint::from_bytes(fingerprint)
+        encoding::fingerprint(self.parts, self.record)
     }
 }
 
@@ -589,27 +525,10 @@ pub(crate) struct BindingDomain {
 }
 
 impl BindingDomain {
-    // The tag and UUID bytes are persistent KDF/AAD inputs, independent of
-    // Rust names. Tag `00` is reserved. See ../docs/wire-format.md#binding.
-    const FIELD_TAG: u8 = 1;
-    const SCOPED_TAG: u8 = 2;
-    const NO_RECORD: u8 = 0;
-
-    pub(crate) fn field(id: FieldId) -> Self {
-        let mut encoded = Vec::with_capacity(17);
-        encoded.push(Self::FIELD_TAG);
-        encoded.extend_from_slice(id.as_bytes());
-
-        Self {
-            field: id,
-            encoded,
-            // The empty shape: no parts and no record.
-            fingerprint: BindingShape::new(&[], false).fingerprint(),
-            key_scope: KeyScope::empty(),
-        }
-    }
-
     /// Encodes a field's declared parts, in any order, with their values.
+    ///
+    /// Without parts or a record, the shape is empty and the binding is
+    /// field-only.
     ///
     /// `values` follows the order of `shape`'s parts.
     pub(crate) fn scoped(
@@ -625,35 +544,19 @@ impl BindingDomain {
         check_values(shape.parts, values)?;
 
         let mut parts: Vec<_> = shape.parts.iter().zip(values).collect();
-        // Sorting makes the bytes independent of declaration order.
-        // See ../docs/wire-format.md#scoped-binding.
+        // The key scope lists its parts in part-ID order, as `PARTS` does.
         parts.sort_by_key(|(spec, _)| spec.id);
-        let count = u16::try_from(parts.len()).map_err(|_| Error::InvalidBinding)?;
         let key_scope = KeyScope::keys_of(parts.iter().copied());
-
-        let mut encoded = Vec::new();
-        encoded.push(Self::SCOPED_TAG);
-        encoded.extend_from_slice(id.as_bytes());
-        match record {
-            Some(record) => record.encode_into(&mut encoded)?,
-            None => encoded.push(Self::NO_RECORD),
-        }
-        encoded.extend_from_slice(&count.to_be_bytes());
-        for (spec, value) in parts {
-            encoded.extend_from_slice(&spec.id);
-            value.encode_into(&mut encoded)?;
-        }
 
         Ok(Self {
             field: id,
-            encoded,
+            encoded: encoding::encode(id, record, parts)?,
             fingerprint: shape.fingerprint(),
             key_scope,
         })
     }
 
-    /// Encodes `binding` for field `id`: field-only when it has no parts and
-    /// no record, scoped otherwise.
+    /// Encodes `binding` for field `id`, with `record` if any.
     pub(crate) fn of<B: Binding>(
         id: FieldId,
         binding: &B,
@@ -662,14 +565,6 @@ impl BindingDomain {
         const { check_parts(B::PARTS) };
 
         let values = binding.values();
-        if B::PARTS.is_empty() && record.is_none() {
-            return if values.0.is_empty() {
-                Ok(Self::field(id))
-            } else {
-                Err(Error::InvalidBinding)
-            };
-        }
-
         Self::scoped(
             id,
             BindingShape::new(B::PARTS, record.is_some()),
@@ -681,7 +576,7 @@ impl BindingDomain {
     /// Encodes the blind-index domain of field `id` under a query's arguments.
     ///
     /// The domain is the binding restricted to its `keys` and `index` parts,
-    /// without a record: field-only when the binding has no such parts.
+    /// without a record: the empty binding when it has no such parts.
     // See ../docs/wire-format.md#index-binding.
     pub(crate) fn index<B: Binding>(id: FieldId, args: &B::IndexArgs) -> Result<Self, Error> {
         const { check_parts(B::PARTS) };
@@ -766,21 +661,12 @@ impl BindingDomain {
         Self::index_parts(id, &old, &values)
     }
 
-    // Encodes `specs` with `values`: field-only without parts, scoped without a
-    // record otherwise.
+    // Encodes `specs` with `values`, without a record.
     fn index_parts(
         id: FieldId,
         specs: &[PartSpec],
         values: &[PartValue<'_>],
     ) -> Result<Self, Error> {
-        if specs.is_empty() {
-            return if values.is_empty() {
-                Ok(Self::field(id))
-            } else {
-                Err(Error::InvalidBinding)
-            };
-        }
-
         Self::scoped(id, BindingShape::new(specs, false), values, None)
     }
 
@@ -811,11 +697,15 @@ mod tests {
     const FIELD: FieldId = field_id!("12345678-1234-4234-8234-1234567890ab");
 
     #[test]
-    fn field_only_binding_keeps_tag_01() {
+    fn the_empty_binding_is_the_field_id_without_record_or_parts() {
+        let domain = scoped(&[], false, &[], None).unwrap();
+
+        // docs/wire-format.md#binding
         assert_eq!(
-            hex::encode(BindingDomain::field(FIELD).as_bytes()),
-            "01123456781234423482341234567890ab"
+            hex::encode(domain.as_bytes()),
+            "123456781234423482341234567890ab000000"
         );
+        assert_eq!(domain.key_scope(), &KeyScope::empty());
     }
 
     const TENANT: PartSpec = PartSpec::new([0x11; 16], PartKind::Uuid, PartRole::Keys);
@@ -835,7 +725,6 @@ mod tests {
         assert_eq!(
             hex::encode(domain.as_bytes()),
             concat!(
-                "02",
                 "123456781234423482341234567890ab",
                 "00",
                 "0002",
@@ -864,7 +753,6 @@ mod tests {
         assert_eq!(
             hex::encode(domain.as_bytes()),
             concat!(
-                "02",
                 "123456781234423482341234567890ab",
                 "03",
                 "00000005",
@@ -969,7 +857,7 @@ mod tests {
         let nil = PartSpec::new([0; 16], PartKind::Uuid, PartRole::Bound);
         let empty_keys = PartSpec::new([0x21; 16], PartKind::Bytes, PartRole::Keys);
         let cases: [(&str, Result<BindingDomain, Error>); 9] = [
-            ("no parts and no record", scoped(&[], false, &[], None)),
+            ("value without a part", scoped(&[], false, &[uuid], None)),
             (
                 "duplicate part ID",
                 scoped(&[TENANT, TENANT], false, &[uuid, uuid], None),
@@ -1037,7 +925,7 @@ mod tests {
         assert_eq!(domain.fingerprint(), shape.fingerprint());
         // Independently computed with shasum over the documented empty shape.
         assert_eq!(
-            BindingDomain::field(FIELD).fingerprint(),
+            scoped(&[], false, &[], None).unwrap().fingerprint(),
             ShapeFingerprint::from_bytes(hex_array("ff670aba047d77fa"))
         );
     }
@@ -1047,12 +935,12 @@ mod tests {
     }
 
     #[test]
-    fn a_record_alone_is_a_scoped_binding() {
+    fn a_record_alone_binds_the_record_without_parts() {
         let domain = scoped(&[], true, &[], Some(PartValue::I64(1))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
-            "02123456781234423482341234567890ab02000000080000000000000001 0000".replace(' ', "")
+            "123456781234423482341234567890ab02000000080000000000000001 0000".replace(' ', "")
         );
     }
 
@@ -1104,7 +992,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
-            "02123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31"
+            "123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31"
         );
         assert_eq!(
             domain.fingerprint(),
@@ -1118,7 +1006,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
-            "02123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31"
+            "123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31"
         );
         assert_eq!(
             domain.fingerprint(),
