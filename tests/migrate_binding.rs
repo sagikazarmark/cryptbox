@@ -349,6 +349,60 @@ fn a_legacy_binding_takes_its_parts_from_the_rows_binding() {
     assert_eq!(write.indexes(), [index]);
 }
 
+#[test]
+fn a_legacy_binding_moves_rows_out_of_their_record() {
+    let keys = acme_keys();
+    let row = row(b"acme", 7);
+    // Sealed while the seal bound its record.
+    let (ciphertext, _) = seal_current(&row, "ada@example.com");
+    let planner = RowPlanner::<TenantEmail, Columns>::for_key_scope(acme_scope(), &keys, row_args)
+        .legacy_binding::<Recorded<Tenant, i64>>(&keys);
+
+    assert_eq!(
+        planner.classify_row(&row, &ciphertext, &[]).unwrap(),
+        RowState::LegacyBinding
+    );
+    let write = planner
+        .plan_row(&row, &ciphertext, &[])
+        .unwrap()
+        .into_write()
+        .unwrap();
+    assert_eq!(
+        Sealed::<TenantEmail>::from_bytes(write.ciphertext())
+            .unwrap()
+            .open(&tenant(b"acme"), &keys)
+            .unwrap(),
+        "ada@example.com"
+    );
+
+    // The old declaration binds the record, so its rows must still pass it.
+    let without_record =
+        RowPlanner::<TenantEmail, Columns>::for_key_scope(acme_scope(), &keys, |row| {
+            Ok(RowArgs::new(tenant(&row.tenant)))
+        })
+        .legacy_binding::<Recorded<Tenant, i64>>(&keys);
+    assert_eq!(
+        without_record.plan_row(&row, &ciphertext, &[]).unwrap_err(),
+        Error::InvalidBinding
+    );
+}
+
+#[test]
+fn a_record_for_a_seal_that_binds_none_is_invalid_without_a_window_that_does() {
+    let keys = acme_keys();
+    let row = row(b"acme", 7);
+    let ciphertext =
+        Sealed::<TenantEmail>::seal(&"ada@example.com".into(), &tenant(b"acme"), &keys)
+            .unwrap()
+            .into_bytes();
+    let planner = RowPlanner::<TenantEmail, Columns>::for_key_scope(acme_scope(), &keys, row_args);
+
+    assert_eq!(
+        planner.classify_row(&row, &ciphertext, &[]).unwrap_err(),
+        Error::InvalidBinding
+    );
+}
+
 /// A binding whose one part the current binding does not have.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct Region;
