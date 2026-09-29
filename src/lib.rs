@@ -215,11 +215,11 @@ pub use codec::{Codec, Plaintext, Raw, Utf8};
 #[cfg(feature = "derive")]
 pub use cryptbox_derive::{Binding, BlindIndexSpec, Field, Plaintext, Record};
 pub use envelope::{
-    CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, inspect_ciphertext, is_ciphertext,
+    CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, SuiteId, inspect_ciphertext, is_ciphertext,
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use field::Field;
-pub use id::{FieldId, IndexId, InvalidIdentifier, PartId, ShapeFingerprint, SuiteId};
+pub use id::{FieldId, IndexId, InvalidIdentifier, PartId, ShapeFingerprint};
 pub use key::{
     BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyError,
     KeyId, Keys,

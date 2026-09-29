@@ -10,12 +10,12 @@ use chacha20poly1305::{KeyInit, XChaCha20Poly1305 as Cipher};
 use zeroize::Zeroizing;
 
 use super::{
-    EXPERIMENTAL_XCHACHA20_POLY1305, FORMAT_VERSION, ParsedEnvelope, Suite, derive_encryption_key,
-    envelope_aad, envelope_header,
+    EXPERIMENTAL_XCHACHA20_POLY1305, FORMAT_VERSION, ParsedEnvelope, Suite, SuiteId,
+    derive_encryption_key, envelope_aad, envelope_header,
 };
 use crate::crypto;
 use crate::padding::AeadPlaintext;
-use crate::{EncryptionKey, Error, ShapeFingerprint, SuiteId};
+use crate::{EncryptionKey, Error, ShapeFingerprint};
 
 pub(in crate::envelope) const NONCE_LEN: usize = <Cipher as AeadCore>::NonceSize::USIZE;
 const TAG_LEN: usize = <Cipher as AeadCore>::TagSize::USIZE;

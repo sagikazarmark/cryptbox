@@ -64,30 +64,6 @@ identifier!(
     "A stable binding-part identifier, independent of Rust names."
 );
 
-/// Identifies a complete encryption-suite construction.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SuiteId(u8);
-
-impl SuiteId {
-    /// Creates a suite identifier from its wire value.
-    #[must_use]
-    pub const fn new(value: u8) -> Self {
-        Self(value)
-    }
-
-    /// Returns the suite's wire value.
-    #[must_use]
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
-
-impl fmt::Display for SuiteId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
-    }
-}
-
 /// A 64-bit fingerprint of a binding's shape: its part IDs, kinds, and roles,
 /// and whether it binds a record.
 ///

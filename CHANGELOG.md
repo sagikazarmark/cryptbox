@@ -152,6 +152,10 @@
   function returning `Error` is unchanged; only code that names or matches the
   constructor's error type changes.
 
+- **Breaking:** `Error::UnsupportedSuite` carries the suite byte read from the
+  header, as `Error::UnsupportedFormatVersion` does, instead of a `SuiteId`.
+  `SuiteId` itself is unchanged and still exported at the crate root.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

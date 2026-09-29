@@ -1,4 +1,4 @@
-use crate::{IndexId, IndexKeyId, KeyError, KeyId, SuiteId, crypto};
+use crate::{IndexId, IndexKeyId, KeyError, KeyId, crypto};
 
 /// The non-sensitive category of a codec failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,7 +78,7 @@ pub enum Error {
     UnsupportedFormatVersion(u8),
     /// The envelope uses an unavailable suite.
     #[error("unsupported encryption suite {0}")]
-    UnsupportedSuite(SuiteId),
+    UnsupportedSuite(u8),
     /// The envelope names a key that the keyring does not hold.
     #[error("unknown encryption key {0}")]
     UnknownEncryptionKey(KeyId),

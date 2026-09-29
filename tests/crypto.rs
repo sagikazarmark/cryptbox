@@ -309,11 +309,11 @@ fn malformed_and_unknown_envelopes_fail_strictly() {
     unsupported[5] = 0xff;
     assert_eq!(
         inspect_ciphertext(&unsupported),
-        Err(Error::UnsupportedSuite(cryptbox::SuiteId::new(0xff)))
+        Err(Error::UnsupportedSuite(0xff))
     );
     assert_eq!(
         decrypt::<EmailField>(&unsupported, &keys),
-        Err(Error::UnsupportedSuite(cryptbox::SuiteId::new(0xff)))
+        Err(Error::UnsupportedSuite(0xff))
     );
 }
 

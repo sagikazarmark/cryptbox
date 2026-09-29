@@ -7,10 +7,10 @@ pub(super) use xchacha20_poly1305::NONCE_LEN;
 
 use zeroize::Zeroizing;
 
-use super::format::{FORMAT_VERSION, ParsedEnvelope, envelope_header};
+use super::format::{FORMAT_VERSION, ParsedEnvelope, SuiteId, envelope_header};
 use crate::crypto;
 use crate::padding::AeadPlaintext;
-use crate::{EncryptionKey, Error, ShapeFingerprint, SuiteId};
+use crate::{EncryptionKey, Error, ShapeFingerprint};
 
 // Labels, including NULs, are persistent domain separators, not display strings.
 // See ../../docs/wire-format.md#encryption-recipe.
@@ -70,7 +70,7 @@ impl SupportedSuite {
     pub(super) fn from_id(id: SuiteId) -> Result<Self, Error> {
         match id {
             XChaCha20Poly1305::ID => Ok(Self::XChaCha20Poly1305),
-            _ => Err(Error::UnsupportedSuite(id)),
+            _ => Err(Error::UnsupportedSuite(id.get())),
         }
     }
 

@@ -1,4 +1,6 @@
-use crate::{Error, KeyId, ShapeFingerprint, SuiteId};
+use std::fmt;
+
+use crate::{Error, KeyId, ShapeFingerprint};
 
 const MAGIC: &[u8; 4] = b"CBX\0";
 pub(super) const FORMAT_VERSION: u8 = 2;
@@ -16,6 +18,32 @@ const KEY_ID_OFFSET: usize = FLAGS_OFFSET + 1;
 // See ../../docs/wire-format.md#shape-fingerprint.
 const FINGERPRINT_OFFSET: usize = KEY_ID_OFFSET + KEY_ID_LEN;
 const HEADER_LEN: usize = FINGERPRINT_OFFSET + FINGERPRINT_LEN;
+
+/// Identifies a complete encryption-suite construction.
+///
+/// The envelope header records it; the suites define what each value means.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SuiteId(u8);
+
+impl SuiteId {
+    /// Creates a suite identifier from its wire value.
+    #[must_use]
+    pub const fn new(value: u8) -> Self {
+        Self(value)
+    }
+
+    /// Returns the suite's wire value.
+    #[must_use]
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl fmt::Display for SuiteId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
 
 /// Structurally parsed, unauthenticated ciphertext metadata.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
