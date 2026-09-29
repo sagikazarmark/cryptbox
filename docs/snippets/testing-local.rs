@@ -3,7 +3,7 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, FieldOnly, Padding, Seal, SealId, Sealed, Utf8,
+    EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8,
 };
 use zeroize::Zeroizing;
 
@@ -15,7 +15,7 @@ impl Seal for UserEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = (EmailLookup,);
 }
 

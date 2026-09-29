@@ -19,7 +19,7 @@ const _: () = {
         const RECORD: bool = false;
         type Value = Address;
         type Codec = AddressCodec;
-        type Binding = ::cryptbox::FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
 };
@@ -36,7 +36,7 @@ const _: () = {
         const RECORD: bool = false;
         type Value = Address;
         type Codec = AddressCodec;
-        type Binding = ::cryptbox::FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
 };

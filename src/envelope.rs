@@ -214,7 +214,7 @@ mod tests {
 
     // docs/wire-format.md#provisional-scoped-vectors
     const FIELD_CONTEXT: &str = "123456781234423482341234567890ab000000";
-    // The empty declaration's fingerprint, which a field-only binding carries.
+    // The empty declaration's fingerprint, which an unscoped binding carries.
     const FIELD_FINGERPRINT: &str = "5d86321261d64380";
     const SCOPED_CONTEXT: &str = "123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
     const SCOPED_RECORD_CONTEXT: &str = "123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
@@ -314,16 +314,16 @@ mod tests {
     fn a_different_fingerprint_reports_binding_mismatch_before_any_key() {
         let field_bytes = hex::decode(FIELD_CONTEXT).unwrap();
         let scoped_bytes = hex::decode(SCOPED_CONTEXT).unwrap();
-        let field_only = context(&field_bytes, fingerprint(FIELD_FINGERPRINT));
+        let unscoped = context(&field_bytes, fingerprint(FIELD_FINGERPRINT));
         let scoped = context(&scoped_bytes, fingerprint(SCOPED_FINGERPRINT));
         let with_record = context(&scoped_bytes, fingerprint(SCOPED_RECORD_FINGERPRINT));
-        let field_only_envelope = seal(field_only, Padding::NONE, b"secret", &keyring()).unwrap();
+        let unscoped_envelope = seal(unscoped, Padding::NONE, b"secret", &keyring()).unwrap();
         let scoped_envelope = seal(scoped, Padding::NONE, b"secret", &keyring()).unwrap();
 
         // `check` takes no keyring: the mismatch is reported before any key is chosen.
         for (case, reader, envelope) in [
-            ("field-only reads scoped", field_only, &scoped_envelope),
-            ("scoped reads field-only", scoped, &field_only_envelope),
+            ("unscoped reads scoped", unscoped, &scoped_envelope),
+            ("scoped reads unscoped", scoped, &unscoped_envelope),
             ("other fingerprint", with_record, &scoped_envelope),
         ] {
             assert_eq!(

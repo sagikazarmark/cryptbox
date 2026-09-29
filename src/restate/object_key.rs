@@ -1,7 +1,7 @@
 use std::{fmt::Write as _, marker::PhantomData};
 
 use crate::{
-    Binding, Error, FromIndexValues, KeyScope, PartKind, PartRole, PartSpec, PartValue,
+    Error, FromIndexValues, KeyScope, PartKind, PartRole, PartSpec, PartValue, Scope,
     binding::check_values,
 };
 
@@ -13,13 +13,13 @@ const UUID_HYPHENS: [usize; 4] = [8, 13, 18, 23];
 const I64_LEN: usize = 20;
 
 /// The Restate object key of binding `B`: a strict, canonical text encoding of
-/// its [index arguments](Binding::IndexArgs).
+/// its [index arguments](Scope::IndexArgs).
 ///
 /// A Virtual Object keyed by a binding's index arguments, such as one object per
 /// org and workspace, reads them back from its object key with [`Self::parse`].
 /// An object key holds one part per [`keys`](PartRole::Keys) and
 /// [`index`](PartRole::Index) part, separated by `:`. The `keys` parts come
-/// first, then the `index` parts, each in [`PARTS`](Binding::PARTS) order, so
+/// first, then the `index` parts, each in [`PARTS`](Scope::PARTS) order, so
 /// every object key of a key scope starts with that key scope's
 /// [`Self::prefix`]. Bound-only parts are never part of an object key.
 ///
@@ -53,14 +53,14 @@ const I64_LEN: usize = 20;
 /// ```
 pub struct ObjectKey<B>(PhantomData<fn() -> B>);
 
-impl<B: Binding> ObjectKey<B> {
+impl<B: Scope> ObjectKey<B> {
     /// Encodes index arguments as an object key.
     ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidBinding`] when the arguments' values do not
     /// match the binding's `keys` and `index` parts; see
-    /// [`Binding::index_values`].
+    /// [`Scope::index_values`].
     pub fn encode(args: &B::IndexArgs) -> Result<String, Error> {
         let values = B::index_values(args);
         let values = values.as_slice();
@@ -143,14 +143,14 @@ impl<B: Binding> ObjectKey<B> {
 }
 
 /// The `keys` and `index` parts of `B`, in `PARTS` order.
-fn index_specs<B: Binding>() -> impl Iterator<Item = &'static PartSpec> + Clone {
+fn index_specs<B: Scope>() -> impl Iterator<Item = &'static PartSpec> + Clone {
     B::PARTS
         .iter()
         .filter(|spec| matches!(spec.role(), PartRole::Keys | PartRole::Index))
 }
 
 /// The positions among [`index_specs`] in object-key order: `keys` parts first.
-fn key_order<B: Binding>() -> Vec<usize> {
+fn key_order<B: Scope>() -> Vec<usize> {
     let roles: Vec<_> = index_specs::<B>().map(PartSpec::role).collect();
     let positions_of = |role| {
         roles

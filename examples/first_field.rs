@@ -1,7 +1,7 @@
 //! First seal-bound round trip with explicit, ephemeral keys.
 
 // ANCHOR: first-field
-use cryptbox::{EncryptionKey, EncryptionKeyring, FieldOnly, Padding, Seal, SealId, Sealed, Utf8};
+use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8};
 
 struct UserEmail;
 
@@ -11,7 +11,7 @@ impl Seal for UserEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -40,7 +40,7 @@ mod tests {
         const RECORD: bool = false;
         type Value = String;
         type Codec = Utf8;
-        type Binding = FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
 

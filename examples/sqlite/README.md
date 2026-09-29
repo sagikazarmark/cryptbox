@@ -118,7 +118,7 @@ authenticates and decodes, returning the bare `String`. Sealing borrows the
 original plaintext, and no global keys are installed: `keys` supplies the
 key explicitly.
 
-A field-only binding identifies a seal alone, not a row or tenant. Preserve the
+An unscoped binding identifies a seal alone, not a row or tenant. Preserve the
 seal ID, codec compatibility, and binding choices with your stored data; see
 [persistent schema](../../docs/integration.md#persistent-schema).
 

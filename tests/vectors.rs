@@ -2,9 +2,9 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Raw, Seal, Sealed,
-    Tenant, TenantId, Utf8, index_id, index_key_id, inspect_blind_index, inspect_ciphertext,
-    key_id, seal_id,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Raw, Seal, Sealed, Tenant,
+    TenantId, Utf8, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -18,7 +18,7 @@ fn keys() -> EncryptionKeyring {
     EncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap()
 }
 
-fn read<F: Seal<Binding = FieldOnly>>(vector: &str) -> Result<F::Value, Error> {
+fn read<F: Seal<Scope = ()>>(vector: &str) -> Result<F::Value, Error> {
     Sealed::<F>::from_bytes(hex::decode(vector).unwrap())
         .unwrap()
         .open((), &keys())
@@ -32,7 +32,7 @@ impl Seal for VectorSeal {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -44,7 +44,7 @@ impl Seal for PaddedVectorSeal {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -133,7 +133,7 @@ impl Seal for TenantVectorSeal {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = Tenant;
+    type Scope = Tenant;
     type Indexes = ();
 }
 

@@ -105,7 +105,7 @@ part    = part_id[16] || kind[1] || len[4] || value[len]
 - There is no leading tag or type byte: the binding starts with the seal ID.
 
 The **empty declaration** has no parts and no record. Its binding is the seal ID
-followed by `00 0000`: a field-only binding, which identifies a seal alone,
+followed by `00 0000`: an unscoped binding, which identifies a seal alone,
 not a particular row or tenant.
 
 The seal supplies the expected binding; it is not stored in the envelope.
@@ -157,9 +157,9 @@ the declaration: a record of another kind fails authentication rather than repor
 
 #### Presets
 
-Two ready-made bindings fix their declarations permanently:
+Two ready-made scopes fix their declarations permanently:
 
-- `FieldOnly` has no parts. Without a record it is the empty declaration, so its
+- `()`, the empty scope, has no parts. Without a record it is the empty declaration, so its
   binding is `seal_id || 00 || 0000`. With a record, it binds the record and
   no parts; that declaration's fingerprint is `4e56863e564d3de9`.
 - `Tenant` has one part: part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
@@ -179,7 +179,7 @@ from its own seal, never from the envelope:
 
 1. After structural parsing, and before any key lookup or AEAD work, compare the
    envelope's fingerprint with the fingerprint of the reader's declaration. A
-   field-only reader expects the empty declaration's fingerprint. Any difference
+   unscoped reader expects the empty declaration's fingerprint. Any difference
    reports `BindingMismatch`.
 2. Otherwise, decrypt with the binding built from the reader's declaration and the
    caller's values. Different part or record values under a matching declaration fail
@@ -495,7 +495,7 @@ left out, because a query knows its scope but not the row. The index binding
 uses the [binding](#binding) encoding:
 
 - It is the seal ID, `00` for no record, then those parts sorted by part ID.
-- With no `keys` or `index` parts, it is the empty binding, as for `FieldOnly`.
+- With no `keys` or `index` parts, it is the empty binding, as for the empty scope.
 
 Two bindings that agree on their `keys` and `index` values share the index
 binding, so their indexes of the same value are equal. The key source receives

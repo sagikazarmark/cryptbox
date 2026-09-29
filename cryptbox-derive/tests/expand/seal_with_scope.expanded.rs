@@ -1,7 +1,7 @@
 #[cryptbox(
     id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
     value = String,
-    binding = cryptbox::Tenant,
+    scope = cryptbox::Tenant,
     record,
     indexes(EmailLookup, EmailDomainLookup),
 )]
@@ -16,7 +16,7 @@ const _: () = {
         const RECORD: bool = true;
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Binding = cryptbox::Tenant;
+        type Scope = cryptbox::Tenant;
         type Indexes = (EmailLookup, EmailDomainLookup);
     }
 };

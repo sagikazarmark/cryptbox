@@ -110,7 +110,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #[automatically_derived]
             impl #krate::Record for #name {
                 type Sealed = #sealed_name;
-                type Binding = <#binding_seal as #krate::Seal>::Binding;
+                type Scope = <#binding_seal as #krate::Seal>::Scope;
 
                 #seal
 
@@ -396,7 +396,7 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
         #[doc = #doc]
         #vis fn #sealer<K>(
             #value: &<#seal as #krate::Seal>::Value,
-            #binding: &<#seal as #krate::Seal>::Binding,
+            #binding: &<#seal as #krate::Seal>::Scope,
             #record: &#record_ty,
             #keys: &K,
         ) -> ::core::result::Result<#output, #krate::Error>
@@ -451,7 +451,7 @@ fn seal_fn(
     quote! {
         fn seal<K>(
             &self,
-            #binding: &Self::Binding,
+            #binding: &Self::Scope,
             #keys: &K,
         ) -> ::core::result::Result<#sealed_name, #krate::Error>
         where
@@ -483,7 +483,7 @@ fn open_fn(
         // Naming the seal's binding reports a seal of another binding here.
         Some(quote_spanned! {seal.span()=>
             let #ident = #sealed.#ident.open(
-                #krate::InRecord::<<#seal as #krate::Seal>::Binding>(#binding, #record_id),
+                #krate::InRecord::<<#seal as #krate::Seal>::Scope>(#binding, #record_id),
                 #keys,
             )?;
         })
@@ -500,7 +500,7 @@ fn open_fn(
     quote! {
         fn open<K>(
             #sealed: #sealed_name,
-            #binding: &Self::Binding,
+            #binding: &Self::Scope,
             #keys: &K,
         ) -> ::core::result::Result<Self, #krate::Error>
         where

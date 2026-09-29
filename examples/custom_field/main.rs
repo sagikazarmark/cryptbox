@@ -5,8 +5,8 @@ use std::sync::{PoisonError, RwLock};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldOnly,
-    KeyScope, Padding, Seal, SealId, Sealed, Secret,
+    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, KeyScope,
+    Padding, Seal, SealId, Sealed, Secret,
 };
 use zeroize::Zeroizing;
 
@@ -56,7 +56,7 @@ impl Seal for Handle {
     const RECORD: bool = false;
     type Value = Self;
     type Codec = HandleCodec;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = (HandleEquality,);
 }
 
@@ -189,7 +189,7 @@ mod tests {
             current.clone(),
             [old.clone()],
         )?));
-        let snapshot = reader.encryption_keyring(Handle::ID, &KeyScope::of(&FieldOnly)?)?;
+        let snapshot = reader.encryption_keyring(Handle::ID, &KeyScope::of(&())?)?;
         assert_eq!(snapshot.current().id(), current.id());
         assert_eq!(snapshot.get(old.id()).unwrap().id(), old.id());
         assert_eq!(snapshot.get(current.id()).unwrap().id(), current.id());
@@ -274,7 +274,7 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
             const RECORD: bool = false;
             type Value = String;
             type Codec = cryptbox::Utf8;
-            type Binding = FieldOnly;
+            type Scope = ();
             type Indexes = ();
         }
 

@@ -1,8 +1,8 @@
 //! Public-boundary tests for sealing and opening values under their runtime binding.
 
 use cryptbox::{
-    Binding, EncryptionKey, EncryptionKeyring, Error, FieldOnly, Padding, PartKind, PartSpec,
-    PartValue, PartValues, RecordId, Seal, SealId, Sealed, Tenant, TenantId, Utf8, key_id, part_id,
+    EncryptionKey, EncryptionKeyring, Error, Padding, PartKind, PartSpec, PartValue, PartValues,
+    RecordId, Scope, Seal, SealId, Sealed, Tenant, TenantId, Utf8, key_id, part_id,
 };
 
 /// An org scopes keys; a workspace is only bound.
@@ -17,7 +17,7 @@ struct OrgSearch {
     org: [u8; 16],
 }
 
-impl Binding for OrgWorkspace {
+impl Scope for OrgWorkspace {
     const PARTS: &'static [PartSpec] = &[
         PartSpec::keys(
             part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
@@ -49,24 +49,14 @@ macro_rules! seal {
             const RECORD: bool = $record;
             type Value = String;
             type Codec = Utf8;
-            type Binding = $binding;
+            type Scope = $binding;
             type Indexes = ();
         }
     };
 }
 
-seal!(
-    Nickname,
-    "5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01",
-    FieldOnly,
-    false
-);
-seal!(
-    RowNote,
-    "9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24",
-    FieldOnly,
-    true
-);
+seal!(Nickname, "5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01", (), false);
+seal!(RowNote, "9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24", (), true);
 seal!(
     CustomerEmail,
     "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
@@ -113,8 +103,8 @@ fn every_argument_form_round_trips() {
     let scope = scope(1, b"ws-1");
     let record = RecordId::from(7_i64);
 
-    let field_only = Sealed::<Nickname>::seal(&email(), (), &keys).unwrap();
-    assert_eq!(field_only.open((), &keys).unwrap(), email());
+    let unscoped = Sealed::<Nickname>::seal(&email(), (), &keys).unwrap();
+    assert_eq!(unscoped.open((), &keys).unwrap(), email());
 
     let row_note = Sealed::<RowNote>::seal(&email(), record, &keys).unwrap();
     assert_eq!(row_note.open(record, &keys).unwrap(), email());
@@ -128,7 +118,7 @@ fn every_argument_form_round_trips() {
 }
 
 #[test]
-fn field_only_values_carry_the_empty_declaration_fingerprint() {
+fn unscoped_values_carry_the_empty_declaration_fingerprint() {
     let keys = keys();
     let sealed = Sealed::<Nickname>::seal(&email(), (), &keys).unwrap();
 
@@ -199,7 +189,7 @@ fn invalid_binding_values_are_rejected() {
     #[derive(Clone, Hash, PartialEq, Eq)]
     struct Unchecked(Vec<u8>);
 
-    impl Binding for Unchecked {
+    impl Scope for Unchecked {
         const PARTS: &'static [PartSpec] = &[PartSpec::keys(
             part_id!("1d6f0a3c-7e25-4b98-a4c1-5f8e2b0d3a76"),
             PartKind::Bytes,

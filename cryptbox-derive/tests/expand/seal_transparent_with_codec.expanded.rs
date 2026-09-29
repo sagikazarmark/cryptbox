@@ -19,7 +19,7 @@ const _: () = {
         const RECORD: bool = false;
         type Value = Self;
         type Codec = Self;
-        type Binding = ::cryptbox::FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
     #[automatically_derived]

@@ -12,7 +12,7 @@ const KEYS: &[Key] = &[
     Key::Codec,
     Key::Transparent,
     Key::Padding,
-    Key::Binding,
+    Key::Scope,
     Key::Record,
     Key::Indexes,
     Key::Crate,
@@ -57,9 +57,9 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         |padding| padding.to_tokens(&krate),
     );
     let record = attrs.record.is_some();
-    let binding = attrs
-        .binding
-        .map_or_else(|| quote!(#krate::FieldOnly), |binding| quote!(#binding));
+    let scope = attrs
+        .scope
+        .map_or_else(|| quote!(()), |scope| quote!(#scope));
     let indexes = attrs.indexes.unwrap_or_default();
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
@@ -110,7 +110,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
                 const RECORD: bool = #record;
                 type Value = #value;
                 type Codec = #codec;
-                type Binding = #binding;
+                type Scope = #scope;
                 type Indexes = (#(#indexes,)*);
             }
 

@@ -4,8 +4,7 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, FieldOnly, IndexId, Padding, Seal, Sealed, Utf8, index_id, index_key_id,
-    key_id,
+    EncryptionKeyring, IndexId, Padding, Seal, Sealed, Utf8, index_id, index_key_id, key_id,
 };
 #[cfg(feature = "json")]
 use serde_json::Value;
@@ -19,7 +18,7 @@ impl Seal for EmailSeal {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

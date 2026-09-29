@@ -4,18 +4,18 @@
 The expected cryptographic domain of a value, independent of where its stored
 bytes are found. Every sealed value is bound at runtime to its seal ID, to the
 values of its seal's declared scope, and, when the seal declares `RECORD`, to a
-record ID. A field-only binding (`FieldOnly`) identifies a seal alone, not a
-row or tenant. The binding's *declaration* (its parts and whether it binds a record) is
-persistent schema, declared by the seal; its values are supplied at each call as
+record ID. The binding of an unscoped seal identifies the seal alone, not a row
+or tenant. The binding's *declaration* (its parts and whether it binds a record)
+is persistent schema, declared by the seal; its values are supplied at each call as
 the seal's binding arguments (`Args`). Opening under other values fails
 authentication; opening under another declaration reports a binding mismatch.
 <!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “key scope” is only the `keys` parts. Avoid “context” for any of them: it names only the envelope's input (see Context), and a user-authored context was rejected in ADR-0005. -->
 
 **Binding arguments**:
 The binding values of one sealing or opening call, typed by the seal (`Args<F>`):
-`()` for a `FieldOnly` seal, `RecordId` for a `FieldOnly` seal that binds a record,
-`&F::Binding`, or `(&F::Binding, RecordId)`. A missing or extra record fails the
-build. Within a record, `InRecord(&F::Binding, RecordId)` binds the record
+`()` for an unscoped seal, `RecordId` for an unscoped seal that binds a record,
+`&F::Scope`, or `(&F::Scope, RecordId)`. A missing or extra record fails the
+build. Within a record, `InRecord(&F::Scope, RecordId)` binds the record
 exactly when the seal declares one.
 
 **Binding fingerprint**:
@@ -88,7 +88,7 @@ The binding a blind index is derived under: the seal ID and the values of the
 binding's `keys` and `index` parts, without bound-only parts or a record. A
 query supplies it as the index arguments (`IndexArgs`); a prepared value takes
 it from the binding it was sealed with. A seal without `keys` or `index`
-parts has a field-only index binding.
+parts has an unscoped index binding.
 <!-- Agent guidance: code calls the encoded form the index domain (`BindingDomain::index`), as it calls a binding's encoding `BindingDomain`; say “index binding” in prose. Avoid “index scope”, which blurs it with the key scope. -->
 
 **Index precision**:
@@ -97,7 +97,7 @@ and obscure equality more, without eliminating index leakage.
 
 **Installed keys**:
 The process-wide keys set once with `keys::install` and never replaced. They
-serve only `FieldOnly` seals without a record. The global conveniences
+serve only unscoped seals without a record. The global conveniences
 (`seal_global()`, `open_global()`, `with_index()`, `probes()`) and the automatic
 column read them and fail with `KeysNotInstalled` before installation; every
 other operation takes keys explicitly.
@@ -154,7 +154,7 @@ only as far as its caller was authorized for it.
 **Plain value**:
 A plaintext value of a seal held by the automatic SQLx column (`Plain<F, K>`),
 which seals it on encode and opens it on decode. A column decoder sees neither a
-row nor a scope, so it serves only `FieldOnly` seals without a record or blind
+row nor a scope, so it serves only unscoped seals without a record or blind
 indexes.
 <!-- Agent guidance: `Plain` is the only plaintext-typed column; values of bound or indexed seals are sealed explicitly. `Encrypted<F>` is the retired name of the plaintext carrier; do not reintroduce it. -->
 
@@ -192,9 +192,11 @@ Applications compare it with a committed snapshot in CI.
 
 **Scope**:
 The declared parts of a binding, such as a tenant, or an org plus a workspace
-(`Binding`). Parts have roles: `keys` parts form the key scope, `index` parts
+(`Scope`). Parts have roles: `keys` parts form the key scope, `index` parts
 also scope blind indexes, and other parts are bound only. A scope struct owns
-its values; a record is never part of it.
+its values; a record is never part of it. `()` is the empty scope, with no
+parts: a seal with it is *unscoped*, and binds its values to its seal ID alone.
+<!-- Agent guidance: `FieldOnly` is the retired name of the empty scope `()`, and “field-only” of “unscoped”; do not reintroduce them. The `Scope` trait was `Binding`: “binding” still names the whole domain. -->
 
 **Seal**:
 A type that declares how its values are sealed (`Seal`): its seal ID, value

@@ -6,8 +6,8 @@ use std::sync::LazyLock;
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, ColumnKeys, EncryptionKey,
-    EncryptionKeyring, Error, FieldOnly, IndexId, KeyId, Keys, Padding, Plain, Seal, Sealed, Utf8,
-    index_id, key_id, keys,
+    EncryptionKeyring, Error, IndexId, KeyId, Keys, Padding, Plain, Seal, Sealed, Utf8, index_id,
+    key_id, keys,
 };
 use sqlx::{
     Connection, Decode, Encode, Postgres, Row, Type,
@@ -39,7 +39,7 @@ impl Seal for TestSeal {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

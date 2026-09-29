@@ -135,7 +135,7 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
 /// [`keys::install`](crate::keys::install). Implement this trait over your own
 /// static to use other keys (a second deployment, a test fixture) without
 /// installing the global. Like the column, it serves only
-/// [`FieldOnly`](crate::FieldOnly) seals: a value bound to a tenant is sealed
+/// unscoped seals: a value bound to a tenant is sealed
 /// explicitly with that tenant's keys.
 ///
 /// # Examples
@@ -144,7 +144,7 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
 /// use std::sync::LazyLock;
 ///
 /// use cryptbox::{
-///     EncryptionKey, EncryptionKeyring, Error, Seal, SealId, FieldOnly, ColumnKeys, Keys,
+///     EncryptionKey, EncryptionKeyring, Error, Seal, SealId, ColumnKeys, Keys,
 ///     Padding, Plain, Utf8,
 /// };
 ///
@@ -156,7 +156,7 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///

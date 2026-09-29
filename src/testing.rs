@@ -21,7 +21,7 @@ use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Utf8, testing::assert_encoding};
+/// use cryptbox::{Seal, SealId, Padding, Utf8, testing::assert_encoding};
 ///
 /// struct Nickname;
 ///
@@ -31,7 +31,7 @@ use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -86,7 +86,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId, FieldOnly,
+///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId,
 ///     KeyScope, Padding, Sealed, Utf8, testing::assert_sealed_under,
 /// };
 ///
@@ -98,7 +98,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///

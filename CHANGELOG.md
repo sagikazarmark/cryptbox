@@ -192,6 +192,13 @@
   UserEmail`, stored as `Sealed<UserEmail>`. `#[derive(BlindIndexSpec)]` rejects
   a bare `seal`. A type that is not a seal reports that it is not one.
 
+- **Breaking:** the `Binding` trait is renamed `Scope` (ADR-0008), with
+  `#[derive(Scope)]`, `Seal::Scope`, and `Record::Scope`; the derives'
+  `binding = …` key becomes `scope = …`. `FieldOnly` is removed: the empty scope
+  is `()`, which `#[derive(Seal)]` uses when it names no scope, so a seal
+  declares `type Scope = ();` and its values still bind to its seal ID alone.
+  Stored bytes are unchanged.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

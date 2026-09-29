@@ -7,8 +7,7 @@ use std::{future::Future, panic::AssertUnwindSafe};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, FieldOnly, IndexId, Padding, Seal, Sealed, Utf8, index_id,
-    index_key_id, key_id,
+    EncryptionKeyring, Error, IndexId, Padding, Seal, Sealed, Utf8, index_id, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyFormat, MaybeEncrypted, PostgresSweepStore, RowPlanner, Sweep,
         SweepReport, SweepStore, SweepTable,
@@ -26,7 +25,7 @@ impl Seal for UserEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

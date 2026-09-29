@@ -1,4 +1,4 @@
-use crate::{Binding, Codec, IndexList, Padding, SealId};
+use crate::{Codec, IndexList, Padding, Scope, SealId};
 
 /// Declares how values are sealed: their identity, value type, codec,
 /// padding, binding, and blind indexes.
@@ -13,7 +13,7 @@ use crate::{Binding, Codec, IndexList, Padding, SealId};
 /// ID and codec read each other's values.
 ///
 /// Every sealed value is bound at runtime to its seal ID, to the values of the
-/// seal's [`Binding`] (such as a tenant), and, when [`Self::RECORD`] is set, to
+/// seal's [`Scope`] (such as a tenant), and, when [`Self::RECORD`] is set, to
 /// a record ID. Opening it as another seal, or under other binding values or
 /// another record, fails authentication. The binding arguments of each call are
 /// typed by the seal; see [`Args`](crate::Args).
@@ -39,7 +39,7 @@ use crate::{Binding, Codec, IndexList, Padding, SealId};
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{FieldOnly, Padding, Seal, SealId, Utf8};
+/// use cryptbox::{Padding, Seal, SealId, Utf8};
 ///
 /// /// Primary contact address.
 /// pub struct UserEmail;
@@ -50,7 +50,7 @@ use crate::{Binding, Codec, IndexList, Padding, SealId};
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 /// ```
@@ -58,8 +58,8 @@ use crate::{Binding, Codec, IndexList, Padding, SealId};
 /// With the `derive` feature, `#[derive(Seal)]` writes this impl from
 /// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
 /// taking `String`'s built-in default codec, `Utf8`.
-/// Add `binding = Tenant`, `record`, or `indexes(EmailLookup)` to set
-/// [`Self::Binding`], [`Self::RECORD`], or [`Self::Indexes`]. On a type with
+/// Add `scope = Tenant`, `record`, or `indexes(EmailLookup)` to set
+/// [`Self::Scope`], [`Self::RECORD`], or [`Self::Indexes`]. On a type with
 /// fields, the derive makes the type its own value: `codec = Json` encodes it
 /// whole, and `transparent` stores its single field.
 ///
@@ -111,10 +111,10 @@ pub trait Seal: 'static {
 
     /// The declared scope every value is bound to, such as a tenant.
     ///
-    /// [`FieldOnly`](crate::FieldOnly) binds values to the seal ID alone. The
+    /// The empty scope, `()`, binds values to the seal ID alone. The
     /// binding's declaration is persistent schema; its values are supplied at each
-    /// call. See [`Binding`].
-    type Binding: Binding;
+    /// call. See [`Scope`].
+    type Scope: Scope;
 
     /// The blind indexes declared over this seal, as a tuple of
     /// [`BlindIndexSpec`](crate::BlindIndexSpec)s, or `()` for none.

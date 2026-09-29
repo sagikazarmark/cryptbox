@@ -159,7 +159,7 @@ an anomaly to investigate, not a row to rewrite. Packaged stores load no
 columns, so a bound seal needs an application-owned `SweepStore`.
 
 Open the window with `RowPlanner::legacy_binding::<Old>(old_keys)`, where `Old`
-is the binding the seal had before, such as `FieldOnly`. Its parts take their
+is the scope the seal had before, such as `()`. Its parts take their
 values from each row's current binding by part ID, and a row whose header
 names `Old` with a record keeps the row's record. The window covers adding parts
 or a record and changing a role, not removing a part or changing its kind. Rows

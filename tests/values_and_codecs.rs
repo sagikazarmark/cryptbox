@@ -5,7 +5,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use cryptbox::{Codec, FieldOnly, Padding, Plain, Raw, Seal, Secret, Utf8};
+use cryptbox::{Codec, Padding, Plain, Raw, Seal, Secret, Utf8};
 use zeroize::Zeroize;
 
 struct ExampleSeal;
@@ -16,7 +16,7 @@ impl Seal for ExampleSeal {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

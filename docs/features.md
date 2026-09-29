@@ -5,7 +5,7 @@ included in the crate landing documentation.
 
 No features are enabled by default, and all features are additive:
 
-- `derive` adds `#[derive(Seal)]`, `#[derive(Binding)]`,
+- `derive` adds `#[derive(Seal)]`, `#[derive(Scope)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Record)]`
   from the `cryptbox-derive` proc-macro crate. Each expands to exactly the trait
   impls you would write by hand, plus the index-arguments struct a binding names
@@ -34,7 +34,7 @@ No features are enabled by default, and all features are additive:
   `RecordId`. Either binds the UUID's 16 bytes, exactly as a `[u8; 16]` does.
 
 The `SQLx` adapters automatically seal and open `Plain<F>`, the column for a
-`FieldOnly` seal without a record or blind indexes. `Plain<F>` uses the keys
+unscoped seal without a record or blind indexes. `Plain<F>` uses the keys
 installed with `keys::install`; name another key source as `Plain<F, K>` to use
 application-owned keys. Seal values of every other seal explicitly: `Sealed` and
 blind-index storage need no keys. These features do not

@@ -13,7 +13,7 @@ pub(crate) use args::with_domain;
 pub use args::{Args, InRecord};
 pub(crate) use args::{domain, domains};
 pub use part::PartType;
-pub use presets::{FieldOnly, Tenant, TenantId};
+pub use presets::{Tenant, TenantId};
 pub use scope::KeyScope;
 
 /// The declared scope a seal's values are bound to, such as a tenant, or an
@@ -52,7 +52,7 @@ pub use scope::KeyScope;
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Binding, KeyScope, PartKind, PartSpec, PartValue, PartValues};
+/// use cryptbox::{Scope, KeyScope, PartKind, PartSpec, PartValue, PartValues};
 ///
 /// /// An org scopes keys and blind indexes; a workspace is only bound.
 /// #[derive(Clone, Hash, PartialEq, Eq)]
@@ -67,7 +67,7 @@ pub use scope::KeyScope;
 ///     org: [u8; 16],
 /// }
 ///
-/// impl Binding for OrgWorkspace {
+/// impl Scope for OrgWorkspace {
 ///     // Sorted by part ID.
 ///     const PARTS: &'static [PartSpec] = &[
 ///         PartSpec::keys(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::Uuid),
@@ -91,7 +91,7 @@ pub use scope::KeyScope;
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
 ///
-/// With the `derive` feature, `#[derive(Binding)]` writes exactly this impl, and
+/// With the `derive` feature, `#[derive(Scope)]` writes exactly this impl, and
 /// generates `OrgSearch`, from `#[cryptbox(index_args = OrgSearch)]` on the
 /// struct, `#[cryptbox(part = "3a1f0c6e-…", keys)]` on `org`, and
 /// `#[cryptbox(part = "c7d24e19-…")]` on `workspace`. It sorts the parts and
@@ -101,12 +101,12 @@ pub use scope::KeyScope;
 /// Unsorted parts fail the build:
 ///
 /// ```compile_fail,E0080
-/// use cryptbox::{Binding, KeyScope, PartKind, PartSpec, PartValue, PartValues};
+/// use cryptbox::{Scope, KeyScope, PartKind, PartSpec, PartValue, PartValues};
 ///
 /// #[derive(Clone, Hash, PartialEq, Eq)]
 /// struct Unsorted;
 ///
-/// impl Binding for Unsorted {
+/// impl Scope for Unsorted {
 ///     const PARTS: &'static [PartSpec] = &[
 ///         PartSpec::keys(cryptbox::part_id!("c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48"), PartKind::I64),
 ///         PartSpec::bound(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
@@ -128,12 +128,12 @@ pub use scope::KeyScope;
 /// So do duplicate part IDs:
 ///
 /// ```compile_fail,E0080
-/// use cryptbox::{Binding, KeyScope, PartKind, PartSpec, PartValue, PartValues};
+/// use cryptbox::{Scope, KeyScope, PartKind, PartSpec, PartValue, PartValues};
 ///
 /// #[derive(Clone, Hash, PartialEq, Eq)]
 /// struct Duplicate;
 ///
-/// impl Binding for Duplicate {
+/// impl Scope for Duplicate {
 ///     const PARTS: &'static [PartSpec] = &[
 ///         PartSpec::keys(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
 ///         PartSpec::bound(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
@@ -156,7 +156,7 @@ pub use scope::KeyScope;
     "[ADR-0005]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0005-runtime-binding-is-the-core.md\n",
     "[wire format]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#binding",
 )]
-pub trait Binding: Clone + Hash + Eq + Send + Sync + 'static {
+pub trait Scope: Clone + Hash + Eq + Send + Sync + 'static {
     /// The declared parts, sorted by part ID.
     const PARTS: &'static [PartSpec];
 
@@ -179,14 +179,14 @@ pub trait Binding: Clone + Hash + Eq + Send + Sync + 'static {
     fn index_values(args: &Self::IndexArgs) -> PartValues<'_>;
 }
 
-/// A [`Binding`] whose index arguments can be built back from their part values.
+/// A [`Scope`] whose index arguments can be built back from their part values.
 ///
-/// This is the inverse of [`Binding::index_values`]: given one value for each
+/// This is the inverse of [`Scope::index_values`]: given one value for each
 /// [`keys`](PartRole::Keys) and [`index`](PartRole::Index) part, in
-/// [`PARTS`](Binding::PARTS) order, it returns the
-/// [`IndexArgs`](Binding::IndexArgs) that supply them. An adapter that carries
+/// [`PARTS`](Scope::PARTS) order, it returns the
+/// [`IndexArgs`](Scope::IndexArgs) that supply them. An adapter that carries
 /// index arguments as text, such as a Restate object key, parses the values
-/// and builds the arguments through it. `#[derive(Binding)]` implements it; a
+/// and builds the arguments through it. `#[derive(Scope)]` implements it; a
 /// hand-written binding can read each value with
 /// [`PartType::from_part_value`].
 ///
@@ -199,11 +199,11 @@ pub trait Binding: Clone + Hash + Eq + Send + Sync + 'static {
 /// assert_eq!(Tenant::from_index_values(&[]), Err(Error::InvalidBinding));
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
-pub trait FromIndexValues: Binding {
+pub trait FromIndexValues: Scope {
     /// Builds the index arguments from one value per `keys` and `index` part,
     /// in `PARTS` order.
     ///
-    /// Building then reading back with [`Binding::index_values`] must return
+    /// Building then reading back with [`Scope::index_values`] must return
     /// the same values.
     ///
     /// # Errors
@@ -272,7 +272,7 @@ fn project<'v>(
 
 /// The binding fingerprint of binding `B`, with or without a record, as the
 /// envelope header carries it.
-pub(crate) fn declaration_fingerprint<B: Binding>(record: bool) -> [u8; 8] {
+pub(crate) fn declaration_fingerprint<B: Scope>(record: bool) -> [u8; 8] {
     BindingDeclaration::new(B::PARTS, record).fingerprint()
 }
 
@@ -491,7 +491,7 @@ impl<'a> BindingDeclaration<'a> {
     /// Checks the declaration's own invariants: unique, non-nil part IDs.
     ///
     /// Without parts or a record, the declaration is empty: the binding is
-    /// field-only.
+    /// unscoped.
     pub(crate) fn validate(&self) -> Result<(), Error> {
         let mut ids: Vec<_> = self.parts.iter().map(|spec| spec.id).collect();
         ids.sort_unstable();
@@ -528,7 +528,7 @@ impl BindingDomain {
     /// Encodes a seal's declared parts, in any order, with their values.
     ///
     /// Without parts or a record, the declaration is empty and the binding is
-    /// field-only.
+    /// unscoped.
     ///
     /// `values` follows the order of `declaration`'s parts.
     pub(crate) fn scoped(
@@ -557,7 +557,7 @@ impl BindingDomain {
     }
 
     /// Encodes `binding` for seal `id`, with `record` if any.
-    pub(crate) fn of<B: Binding>(
+    pub(crate) fn of<B: Scope>(
         id: SealId,
         binding: &B,
         record: Option<RecordId<'_>>,
@@ -578,7 +578,7 @@ impl BindingDomain {
     /// The domain is the binding restricted to its `keys` and `index` parts,
     /// without a record: the empty binding when it has no such parts.
     // See ../docs/wire-format.md#index-binding.
-    pub(crate) fn index<B: Binding>(id: SealId, args: &B::IndexArgs) -> Result<Self, Error> {
+    pub(crate) fn index<B: Scope>(id: SealId, args: &B::IndexArgs) -> Result<Self, Error> {
         const { check_parts(B::PARTS) };
 
         let specs: Vec<_> = B::PARTS
@@ -593,7 +593,7 @@ impl BindingDomain {
     /// Encodes the blind-index domain of seal `id` under a whole binding: the
     /// same domain as [`Self::index`] under the binding's `keys` and `index`
     /// values.
-    pub(crate) fn index_of<B: Binding>(id: SealId, binding: &B) -> Result<Self, Error> {
+    pub(crate) fn index_of<B: Scope>(id: SealId, binding: &B) -> Result<Self, Error> {
         const { check_parts(B::PARTS) };
 
         let values = binding.values();
@@ -614,7 +614,7 @@ impl BindingDomain {
     /// A part of `Old` that `binding` lacks, or holds with another kind, is
     /// [`Error::InvalidBinding`].
     #[cfg(feature = "migrate")]
-    pub(crate) fn projected<Old: Binding, B: Binding>(
+    pub(crate) fn projected<Old: Scope, B: Scope>(
         id: SealId,
         binding: &B,
         record: Option<RecordId<'_>>,
@@ -641,7 +641,7 @@ impl BindingDomain {
     /// `Old`, taking each of its `keys` and `index` parts from a query's
     /// arguments for binding `B`, by part ID.
     #[cfg(feature = "migrate")]
-    pub(crate) fn index_projected<Old: Binding, B: Binding>(
+    pub(crate) fn index_projected<Old: Scope, B: Scope>(
         id: SealId,
         args: &B::IndexArgs,
     ) -> Result<Self, Error> {
@@ -956,7 +956,7 @@ mod tests {
         org: [u8; 16],
     }
 
-    impl Binding for OrgWorkspace {
+    impl Scope for OrgWorkspace {
         const PARTS: &'static [PartSpec] = &[
             PartSpec::keys(
                 part_id!("11111111-1111-1111-1111-111111111111"),

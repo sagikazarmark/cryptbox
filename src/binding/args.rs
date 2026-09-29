@@ -1,22 +1,22 @@
-use super::{BindingDomain, FieldOnly, RecordId};
+use super::{BindingDomain, RecordId};
 use crate::{Error, Seal};
 
 /// The binding arguments of one sealing or opening call under seal `F`.
 ///
-/// Every value is bound to its seal's [`Binding`](crate::Binding) and, when
+/// Every value is bound to its seal's [`Scope`](crate::Scope) and, when
 /// [`Seal::RECORD`] is set, to a record. The arguments take one of these forms:
 ///
 /// | The seal declares | Arguments |
 /// | --- | --- |
-/// | [`FieldOnly`], no record | `()` |
-/// | [`FieldOnly`], with a record | `RecordId` |
-/// | any binding, no record | `&F::Binding` |
-/// | any binding, with a record | `(&F::Binding, RecordId)` |
-/// | any binding, in a record | [`InRecord(&F::Binding, RecordId)`](InRecord) |
+/// | the empty scope `()`, no record | `()` |
+/// | the empty scope `()`, with a record | `RecordId` |
+/// | any binding, no record | `&F::Scope` |
+/// | any binding, with a record | `(&F::Scope, RecordId)` |
+/// | any binding, in a record | [`InRecord(&F::Scope, RecordId)`](InRecord) |
 ///
 /// Passing a binding of another type is a type error. Passing a record to a
 /// seal that binds none, or omitting it for a seal that binds one, fails the
-/// build when the call is first compiled. Like the [`Binding`](crate::Binding)
+/// build when the call is first compiled. Like the [`Scope`](crate::Scope)
 /// checks, it runs after monomorphization, so `cargo check` does not report it;
 /// `cargo build` and `cargo test` do.
 ///
@@ -42,7 +42,7 @@ use crate::{Error, Seal};
 ///     const RECORD: bool = true;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = Tenant;
+///     type Scope = Tenant;
 ///     type Indexes = ();
 /// }
 ///
@@ -69,7 +69,7 @@ use crate::{Error, Seal};
 /// #     const RECORD: bool = true;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Binding = Tenant;
+/// #     type Scope = Tenant;
 /// #     type Indexes = ();
 /// # }
 /// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
@@ -83,7 +83,7 @@ use crate::{Error, Seal};
 ///
 /// ```compile_fail,E0080
 /// # use cryptbox::{
-/// #     EncryptionKey, Seal, SealId, FieldOnly, EncryptionKeyring, Padding, RecordId,
+/// #     EncryptionKey, Seal, SealId, EncryptionKeyring, Padding, RecordId,
 /// #     Sealed, Utf8,
 /// # };
 /// # struct Nickname;
@@ -93,7 +93,7 @@ use crate::{Error, Seal};
 /// #     const RECORD: bool = false;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
@@ -105,7 +105,7 @@ use crate::{Error, Seal};
 ///
 /// ```compile_fail,E0277
 /// # use cryptbox::{
-/// #     EncryptionKey, Seal, SealId, FieldOnly, EncryptionKeyring, Padding, Sealed, Tenant,
+/// #     EncryptionKey, Seal, SealId, EncryptionKeyring, Padding, Sealed, Tenant,
 /// #     TenantId, Utf8,
 /// # };
 /// # struct Nickname;
@@ -115,7 +115,7 @@ use crate::{Error, Seal};
 /// #     const RECORD: bool = false;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
@@ -136,38 +136,38 @@ pub(crate) mod sealed {
         const RECORD: bool;
 
         /// Passes the binding and record to `f`.
-        fn with_parts<R>(self, f: impl FnOnce(&F::Binding, Option<RecordId<'_>>) -> R) -> R;
+        fn with_parts<R>(self, f: impl FnOnce(&F::Scope, Option<RecordId<'_>>) -> R) -> R;
     }
 }
 
-impl<F: Seal<Binding = FieldOnly>> sealed::Sealed<F> for () {
+impl<F: Seal<Scope = ()>> sealed::Sealed<F> for () {
     const RECORD: bool = false;
 
-    fn with_parts<R>(self, f: impl FnOnce(&FieldOnly, Option<RecordId<'_>>) -> R) -> R {
-        f(&FieldOnly, None)
+    fn with_parts<R>(self, f: impl FnOnce(&(), Option<RecordId<'_>>) -> R) -> R {
+        f(&(), None)
     }
 }
 
-impl<F: Seal<Binding = FieldOnly>> sealed::Sealed<F> for RecordId<'_> {
+impl<F: Seal<Scope = ()>> sealed::Sealed<F> for RecordId<'_> {
     const RECORD: bool = true;
 
-    fn with_parts<R>(self, f: impl FnOnce(&FieldOnly, Option<RecordId<'_>>) -> R) -> R {
-        f(&FieldOnly, Some(self))
+    fn with_parts<R>(self, f: impl FnOnce(&(), Option<RecordId<'_>>) -> R) -> R {
+        f(&(), Some(self))
     }
 }
 
-impl<F: Seal> sealed::Sealed<F> for &F::Binding {
+impl<F: Seal> sealed::Sealed<F> for &F::Scope {
     const RECORD: bool = false;
 
-    fn with_parts<R>(self, f: impl FnOnce(&F::Binding, Option<RecordId<'_>>) -> R) -> R {
+    fn with_parts<R>(self, f: impl FnOnce(&F::Scope, Option<RecordId<'_>>) -> R) -> R {
         f(self, None)
     }
 }
 
-impl<F: Seal> sealed::Sealed<F> for (&F::Binding, RecordId<'_>) {
+impl<F: Seal> sealed::Sealed<F> for (&F::Scope, RecordId<'_>) {
     const RECORD: bool = true;
 
-    fn with_parts<R>(self, f: impl FnOnce(&F::Binding, Option<RecordId<'_>>) -> R) -> R {
+    fn with_parts<R>(self, f: impl FnOnce(&F::Scope, Option<RecordId<'_>>) -> R) -> R {
         f(self.0, Some(self.1))
     }
 }
@@ -196,7 +196,7 @@ impl<F: Seal> sealed::Sealed<F> for (&F::Binding, RecordId<'_>) {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = Tenant;
+///     type Scope = Tenant;
 ///     type Indexes = ();
 /// }
 ///
@@ -221,10 +221,10 @@ impl<B> Clone for InRecord<'_, B> {
 
 impl<B> Copy for InRecord<'_, B> {}
 
-impl<F: Seal> sealed::Sealed<F> for InRecord<'_, F::Binding> {
+impl<F: Seal> sealed::Sealed<F> for InRecord<'_, F::Scope> {
     const RECORD: bool = F::RECORD;
 
-    fn with_parts<R>(self, f: impl FnOnce(&F::Binding, Option<RecordId<'_>>) -> R) -> R {
+    fn with_parts<R>(self, f: impl FnOnce(&F::Scope, Option<RecordId<'_>>) -> R) -> R {
         f(self.0, F::RECORD.then_some(self.1))
     }
 }
@@ -233,11 +233,11 @@ impl<F: Seal> sealed::Sealed<F> for InRecord<'_, F::Binding> {
 const fn check_record(seal: bool, args: bool) {
     assert!(
         !seal || args,
-        "this seal binds a record: pass `(&binding, record)`, or a `RecordId` for a `FieldOnly` seal"
+        "this seal binds a record: pass `(&binding, record)`, or a `RecordId` for a seal with the empty scope"
     );
     assert!(
         seal || !args,
-        "this seal binds no record: pass its binding alone, or `()` for a `FieldOnly` seal"
+        "this seal binds no record: pass its binding alone, or `()` for a seal with the empty scope"
     );
 }
 
@@ -254,7 +254,7 @@ pub(crate) fn domain<F: Seal, A: Args<F>>(args: A) -> Result<BindingDomain, Erro
 #[cfg(feature = "migrate")]
 pub(crate) fn with_domain<F: Seal, A: Args<F>, T>(
     args: A,
-    f: impl FnOnce(BindingDomain, &F::Binding, Option<RecordId<'_>>) -> Result<T, Error>,
+    f: impl FnOnce(BindingDomain, &F::Scope, Option<RecordId<'_>>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     const { check_record(F::RECORD, <A as sealed::Sealed<F>>::RECORD) };
 

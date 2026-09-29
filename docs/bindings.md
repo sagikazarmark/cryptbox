@@ -16,7 +16,7 @@ A binding has two halves, and they change on different schedules:
 
 | Half | Where it is declared | When it changes |
 | --- | --- | --- |
-| **Declaration**: part IDs, kinds, roles, and the record flag | The seal and its `Binding` type | Only through a [declaration migration](#change-a-binding-declaration) |
+| **Declaration**: part IDs, kinds, roles, and the record flag | The seal and its `Scope` type | Only through a [declaration migration](#change-a-binding-declaration) |
 | **Values**: this org, this workspace, this record | The binding arguments of each call | Every call |
 
 One seal never seals with different part sets on different calls: that would
@@ -27,12 +27,12 @@ authentication failure.
 
 ## Declare a scope
 
-A `Binding` is data only: it declares its parts and returns their values. The
+A `Scope` is data only: it declares its parts and returns their values. The
 library sorts, frames, and validates the bytes, so no application writes binding
 bytes. With the `derive` feature, each field of the struct is one part:
 
 ```rust
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 #[cryptbox(index_args = OrgSearch)]
 pub struct OrgWorkspace {
     /// The key scope and shred unit.
@@ -47,7 +47,7 @@ pub struct OrgWorkspace {
 #[cryptbox(
     id = "2cef6a47-3e20-42dc-a319-56022cb4cf30",
     value = String,
-    binding = OrgWorkspace,
+    scope = OrgWorkspace,
     record,
     indexes(EmailLookup),
 )]
@@ -63,8 +63,8 @@ UUID, an `i64`, or bytes; an application's own ID type can hold one by
 implementing `PartType`. Every part ID is a generated UUID: see
 [ID hygiene](#id-hygiene).
 
-`FieldOnly` and `Tenant` are ready-made presets. `FieldOnly` has no parts: unless
-the seal also binds a record, it is the
+`()` and `Tenant` are ready-made scopes. `()`, the empty scope, has no parts:
+unless the seal also binds a record, it is the
 [empty binding](wire-format.md#binding), bound to the seal ID alone. `Tenant` has one
 bytes `keys` part. Use a preset until its declaration is too coarse, then declare a
 scope.
@@ -148,7 +148,7 @@ to every seal and binds it only where the seal declares it.
 
 The binding arguments of a call are typed by the seal
 ([`Args<F>`](https://docs.rs/cryptbox/latest/cryptbox/trait.Args.html)): `()` and
-`RecordId` for a `FieldOnly` seal, `&F::Binding`, or `(&F::Binding, RecordId)`.
+`RecordId` for an unscoped seal, `&F::Scope`, or `(&F::Scope, RecordId)`.
 A missing or extra record fails the build rather than the read.
 
 The [tenant example](../examples/tenant_field.rs) is the complete program: a
@@ -163,7 +163,7 @@ cargo run --locked --example tenant_field
 ```
 
 The crate's [quick start](https://docs.rs/cryptbox/latest/cryptbox/#quick-start)
-shows the same program beside the field-only tier.
+shows the same program beside the unscoped tier.
 
 Whole rows are sealed and opened together through the
 [`Record`](https://docs.rs/cryptbox/latest/cryptbox/trait.Record.html) trait and
@@ -228,7 +228,7 @@ seal, as the SQLite and searchable examples share the tutorial's `UserEmail`; a
 `UserEmail` marker in another example is a different seal with its own ID,
 because the Rust name is not the identity.
 
-Each check covers a different set: `#[derive(Binding)]` rejects a nil or
+Each check covers a different set: `#[derive(Scope)]` rejects a nil or
 repeated part ID when it expands, and a hand-written binding fails the build on
 the same declaration; `assert_unique_ids!` rejects seal and index IDs shared by
 listed markers; and a

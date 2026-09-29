@@ -2,7 +2,7 @@
 
 use cryptbox::EncryptionKey;
 use cryptbox::{
-    EncryptionKeyring, Error, FieldOnly, KeyError, KeyId, Padding, Raw, Seal, Sealed, Utf8,
+    EncryptionKeyring, Error, KeyError, KeyId, Padding, Raw, Seal, Sealed, Utf8,
     inspect_ciphertext, is_ciphertext, key_id, seal_id,
 };
 
@@ -25,7 +25,7 @@ impl Seal for EmailSeal {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -37,12 +37,12 @@ impl Seal for PaddedEmailSeal {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
 // Raw seals carry opaque bytes through `Sealed`, as the byte-level API did.
-fn encrypt<F: Seal<Value = Vec<u8>, Binding = FieldOnly>>(
+fn encrypt<F: Seal<Value = Vec<u8>, Scope = ()>>(
     plaintext: &[u8],
     keys: &EncryptionKeyring,
 ) -> Vec<u8> {
@@ -51,7 +51,7 @@ fn encrypt<F: Seal<Value = Vec<u8>, Binding = FieldOnly>>(
         .into_bytes()
 }
 
-fn decrypt<F: Seal<Value = Vec<u8>, Binding = FieldOnly>>(
+fn decrypt<F: Seal<Value = Vec<u8>, Scope = ()>>(
     ciphertext: &[u8],
     keys: &EncryptionKeyring,
 ) -> Result<Vec<u8>, Error> {
@@ -66,7 +66,7 @@ impl Seal for PhoneSeal {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -151,7 +151,7 @@ fn reserved_flag_bits_are_rejected_before_authentication() {
 }
 
 #[test]
-fn field_only_envelopes_carry_the_empty_declaration_fingerprint() {
+fn unscoped_envelopes_carry_the_empty_declaration_fingerprint() {
     let keys = keyring(CURRENT_KEY_ID, 9);
     let ciphertext = encrypt::<EmailSeal>(b"field only", &keys);
 
@@ -257,7 +257,7 @@ impl Seal for TypedEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

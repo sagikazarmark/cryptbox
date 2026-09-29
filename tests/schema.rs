@@ -1,9 +1,9 @@
 //! Public-boundary tests for the schema manifest and unique-ID checks.
 
 use cryptbox::{
-    Binding, BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, FieldOnly, IndexId,
-    Padding, PartKind, PartSpec, PartValue, PartValues, Raw, RecordId, Seal, SealId, Sealed,
-    Tenant, Utf8, index_id, inspect_ciphertext, part_id,
+    BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, IndexId, Padding, PartKind,
+    PartSpec, PartValue, PartValues, Raw, RecordId, Scope, Seal, SealId, Sealed, Tenant, Utf8,
+    index_id, inspect_ciphertext, part_id,
     schema::{Duplicate, Manifest},
     seal_id,
 };
@@ -17,7 +17,7 @@ impl Seal for Nickname {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -29,7 +29,7 @@ impl Seal for Avatar {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -64,7 +64,7 @@ impl Seal for TenantNote {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = Tenant;
+    type Scope = Tenant;
     type Indexes = ();
 }
 
@@ -158,7 +158,7 @@ struct ProjectScope {
     workspace: [u8; 16],
 }
 
-impl Binding for ProjectScope {
+impl Scope for ProjectScope {
     const PARTS: &'static [PartSpec] = &[
         PartSpec::keys(
             part_id!("1a2b3c4d-0000-4000-8000-000000000001"),
@@ -201,7 +201,7 @@ impl Seal for WorkspaceNote {
     const RECORD: bool = true;
     type Value = String;
     type Codec = Utf8;
-    type Binding = ProjectScope;
+    type Scope = ProjectScope;
     type Indexes = ();
 }
 
@@ -285,7 +285,7 @@ impl Seal for DisplayName {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -355,7 +355,7 @@ cryptbox::assert_unique_ids!(indexes: NicknameLookup);
 
 #[cfg(any(feature = "json", feature = "postcard"))]
 mod serde_codecs {
-    use cryptbox::{FieldOnly, Padding, Seal, SealId, schema::Manifest, seal_id};
+    use cryptbox::{Padding, Seal, SealId, schema::Manifest, seal_id};
     use serde::{Deserialize, Serialize};
 
     #[derive(Serialize, Deserialize)]
@@ -373,7 +373,7 @@ mod serde_codecs {
         const RECORD: bool = false;
         type Value = Address;
         type Codec = cryptbox::Json;
-        type Binding = FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
 
@@ -403,7 +403,7 @@ seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
         const RECORD: bool = false;
         type Value = Address;
         type Codec = cryptbox::Postcard;
-        type Binding = FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
 

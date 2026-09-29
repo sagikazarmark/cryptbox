@@ -1,17 +1,11 @@
 use std::fmt;
 
-use super::{Binding, FromIndexValues, PartKind, PartSpec, PartType, PartValue, PartValues};
+use super::{FromIndexValues, PartKind, PartSpec, PartType, PartValue, PartValues, Scope};
 use crate::Error;
 
-/// A binding with no parts: values are bound to their seal ID only.
-///
-/// It is the empty binding: no parts and, unless the seal also binds a
-/// record, no record. Blind indexes take no arguments, and every value shares
-/// one [`KeyScope`](crate::KeyScope).
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub struct FieldOnly;
-
-impl Binding for FieldOnly {
+// The empty scope: values are bound to their seal ID only. Blind indexes take
+// no arguments, and every value shares one `KeyScope`.
+impl Scope for () {
     const PARTS: &'static [PartSpec] = &[];
     type IndexArgs = ();
 
@@ -24,7 +18,7 @@ impl Binding for FieldOnly {
     }
 }
 
-impl FromIndexValues for FieldOnly {
+impl FromIndexValues for () {
     fn from_index_values(values: &[PartValue<'_>]) -> Result<(), Error> {
         match values {
             [] => Ok(()),
@@ -35,7 +29,7 @@ impl FromIndexValues for FieldOnly {
 
 /// A binding with a single tenant part, which scopes keys and blind indexes.
 ///
-/// The tenant is the [shred unit](Binding#shredding) when each tenant's root
+/// The tenant is the [shred unit](Scope#shredding) when each tenant's root
 /// keys are stored independently. Blind-index queries take the tenant itself as
 /// their arguments. Its one part is persistent schema: part ID
 /// `1e8306bf-3135-4570-831c-6732f92550e9`, kind bytes, role `keys`.
@@ -48,7 +42,7 @@ const TENANT_PART: PartSpec = PartSpec::keys(
     PartKind::Bytes,
 );
 
-impl Binding for Tenant {
+impl Scope for Tenant {
     const PARTS: &'static [PartSpec] = &[TENANT_PART];
     type IndexArgs = Self;
 
@@ -123,8 +117,8 @@ mod tests {
     const SEAL: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
 
     #[test]
-    fn field_only_is_the_empty_binding() {
-        let domain = BindingDomain::of(SEAL, &FieldOnly, None).unwrap();
+    fn unscoped_is_the_empty_binding() {
+        let domain = BindingDomain::of(SEAL, &(), None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -134,8 +128,8 @@ mod tests {
     }
 
     #[test]
-    fn field_only_with_a_record_binds_the_record_alone() {
-        let domain = BindingDomain::of(SEAL, &FieldOnly, Some(RecordId::from(1_i64))).unwrap();
+    fn unscoped_with_a_record_binds_the_record_alone() {
+        let domain = BindingDomain::of(SEAL, &(), Some(RecordId::from(1_i64))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),

@@ -3,8 +3,7 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Args, BindingDomain, Codec, EncryptionKeySource, Error, FieldOnly, GlobalKeys, KeyId, Prepared,
-    Seal,
+    Args, BindingDomain, Codec, EncryptionKeySource, Error, GlobalKeys, KeyId, Prepared, Seal,
     binding::{domain, domains},
     bound,
     envelope::validated_key_id,
@@ -30,7 +29,7 @@ use crate::{
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, Seal, SealId, FieldOnly, EncryptionKeyring, Padding, Sealed, Utf8,
+///     EncryptionKey, Seal, SealId, EncryptionKeyring, Padding, Sealed, Utf8,
 /// };
 ///
 /// struct UserEmail;
@@ -41,7 +40,7 @@ use crate::{
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -258,11 +257,11 @@ const fn check_no_record(record: bool) {
     );
 }
 
-impl<F: Seal<Binding = FieldOnly>> Sealed<F> {
+impl<F: Seal<Scope = ()>> Sealed<F> {
     /// Seals `value` with the [installed keys](keys::installed).
     ///
     /// This is exactly `Self::seal(value, (), keys::installed()?)`. The
-    /// process-wide keys serve only [`FieldOnly`] seals without a record.
+    /// process-wide keys serve only unscoped seals without a record.
     ///
     /// # Errors
     ///
@@ -325,8 +324,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// encode and opens on decode.
 ///
 /// A column decoder sees neither a row nor a scope, so `Plain` serves only
-/// [`FieldOnly`] seals without a record or blind indexes: its constructors
-/// and column impls require `F::Binding = FieldOnly` and `F::Indexes = ()`, and a
+/// unscoped seals without a record or blind indexes: its constructors
+/// and column impls require `F::Scope = ()` and `F::Indexes = ()`, and a
 /// seal that binds a record fails the build.
 /// Use [`Sealed`] explicitly for every other seal.
 ///
@@ -340,7 +339,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// zeroize arbitrary values; use [`Secret`] when the value supports [`Zeroize`].
 ///
 /// ```
-/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Plain, Utf8};
+/// use cryptbox::{Seal, SealId, Padding, Plain, Utf8};
 ///
 /// struct UserEmail;
 ///
@@ -350,7 +349,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -371,7 +370,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = Tenant;
+///     type Scope = Tenant;
 ///     type Indexes = ();
 /// }
 ///
@@ -382,7 +381,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///
 /// ```compile_fail,E0271
 /// use cryptbox::{
-///     BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Plain, Utf8,
+///     BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Plain, Utf8,
 /// };
 /// use zeroize::Zeroizing;
 ///
@@ -394,7 +393,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = (EmailLookup,);
 /// }
 ///
@@ -422,7 +421,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// And a seal that binds a record fails the build:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{Seal, SealId, FieldOnly, Padding, Plain, Utf8};
+/// # use cryptbox::{Seal, SealId, Padding, Plain, Utf8};
 /// struct RowNote;
 ///
 /// impl Seal for RowNote {
@@ -431,7 +430,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const RECORD: bool = true;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -441,7 +440,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// Plaintext comparison must also be explicit:
 ///
 /// ```compile_fail,E0369
-/// # use cryptbox::{Seal, SealId, FieldOnly, Padding, Plain, Utf8};
+/// # use cryptbox::{Seal, SealId, Padding, Plain, Utf8};
 /// # struct UserEmail;
 /// # impl Seal for UserEmail {
 /// #     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
@@ -449,7 +448,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// #     const RECORD: bool = false;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// let left = Plain::<UserEmail>::new("secret");
@@ -468,7 +467,7 @@ pub struct Plain<F: Seal, K = GlobalKeys> {
 
 impl<F, K> Plain<F, K>
 where
-    F: Seal<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
 {
     /// Wraps a plaintext value.
     ///
@@ -511,7 +510,7 @@ where
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 impl<F, K> Plain<F, K>
 where
-    F: Seal<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
     K: crate::ColumnKeys,
 {
     pub(crate) fn seal_for_column(&self) -> Result<Sealed<F>, Error> {

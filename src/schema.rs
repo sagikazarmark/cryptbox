@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    Binding, BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartRole, PartSpec, Seal, SealId,
+    BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartRole, PartSpec, Scope, Seal, SealId,
     binding::declaration_fingerprint,
 };
 
@@ -52,7 +52,7 @@ use crate::{
 ///     const RECORD: bool = true;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = Tenant;
+///     type Scope = Tenant;
 ///     type Indexes = ();
 /// }
 ///
@@ -146,8 +146,8 @@ impl Manifest {
                     codec: <F::Codec as Codec<F::Value>>::ID,
                     padding: F::PADDING,
                     record: F::RECORD,
-                    parts: <F::Binding as Binding>::PARTS,
-                    fingerprint: declaration_fingerprint::<F::Binding>(F::RECORD),
+                    parts: <F::Scope as Scope>::PARTS,
+                    fingerprint: declaration_fingerprint::<F::Scope>(F::RECORD),
                     custody: None,
                 });
                 self.seals.len() - 1
@@ -338,7 +338,7 @@ const fn role_name(role: PartRole) -> &'static str {
 /// leave one of them out.
 ///
 /// ```
-/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Utf8};
+/// use cryptbox::{Seal, SealId, Padding, Utf8};
 ///
 /// struct HomeAddress;
 ///
@@ -348,7 +348,7 @@ const fn role_name(role: PartRole) -> &'static str {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -360,7 +360,7 @@ const fn role_name(role: PartRole) -> &'static str {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -370,7 +370,7 @@ const fn role_name(role: PartRole) -> &'static str {
 /// A copied ID fails to compile:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{Seal, SealId, FieldOnly, Padding, Utf8};
+/// # use cryptbox::{Seal, SealId, Padding, Utf8};
 /// # struct HomeAddress;
 /// # impl Seal for HomeAddress {
 /// #     const ID: SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
@@ -378,7 +378,7 @@ const fn role_name(role: PartRole) -> &'static str {
 /// #     const RECORD: bool = false;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// struct BillingAddress;
@@ -389,7 +389,7 @@ const fn role_name(role: PartRole) -> &'static str {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -399,7 +399,7 @@ const fn role_name(role: PartRole) -> &'static str {
 /// So does a copied index ID:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Raw};
+/// # use cryptbox::{BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Raw};
 /// # use zeroize::Zeroizing;
 /// # struct Bytes;
 /// # impl Seal for Bytes {
@@ -408,7 +408,7 @@ const fn role_name(role: PartRole) -> &'static str {
 /// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// struct Exact;

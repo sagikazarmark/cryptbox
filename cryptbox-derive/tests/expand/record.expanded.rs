@@ -3,7 +3,7 @@ use zeroize::Zeroizing;
 #[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    binding = cryptbox::Tenant,
+    scope = cryptbox::Tenant,
     record,
     indexes(EmailLookup),
 )]
@@ -18,14 +18,14 @@ const _: () = {
         const RECORD: bool = true;
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Binding = cryptbox::Tenant;
+        type Scope = cryptbox::Tenant;
         type Indexes = (EmailLookup,);
     }
 };
 #[cryptbox(
     id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     value = String,
-    binding = cryptbox::Tenant,
+    scope = cryptbox::Tenant,
 )]
 pub struct CustomerNote;
 const _: () = {
@@ -38,7 +38,7 @@ const _: () = {
         const RECORD: bool = false;
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Binding = cryptbox::Tenant;
+        type Scope = cryptbox::Tenant;
         type Indexes = ();
     }
 };
@@ -160,7 +160,7 @@ const _: () = {
         ///Seals `email` alone under `binding` and the record ID `record`, with the blind indexes it stores, for a partial update.
         pub fn seal_email<K>(
             value: &<CustomerEmail as ::cryptbox::Seal>::Value,
-            binding: &<CustomerEmail as ::cryptbox::Seal>::Binding,
+            binding: &<CustomerEmail as ::cryptbox::Seal>::Scope,
             record: &i64,
             keys: &K,
         ) -> ::core::result::Result<
@@ -185,7 +185,7 @@ const _: () = {
         ///Seals `note` alone under `binding` and the record ID `record`, for a partial update.
         fn seal_note<K>(
             value: &<CustomerNote as ::cryptbox::Seal>::Value,
-            binding: &<CustomerNote as ::cryptbox::Seal>::Binding,
+            binding: &<CustomerNote as ::cryptbox::Seal>::Scope,
             record: &i64,
             keys: &K,
         ) -> ::core::result::Result<::cryptbox::Sealed<CustomerNote>, ::cryptbox::Error>
@@ -204,10 +204,10 @@ const _: () = {
     #[automatically_derived]
     impl ::cryptbox::Record for Customer {
         type Sealed = SealedCustomer;
-        type Binding = <CustomerEmail as ::cryptbox::Seal>::Binding;
+        type Scope = <CustomerEmail as ::cryptbox::Seal>::Scope;
         fn seal<K>(
             &self,
-            binding: &Self::Binding,
+            binding: &Self::Scope,
             keys: &K,
         ) -> ::core::result::Result<SealedCustomer, ::cryptbox::Error>
         where
@@ -230,7 +230,7 @@ const _: () = {
         }
         fn open<K>(
             sealed: SealedCustomer,
-            binding: &Self::Binding,
+            binding: &Self::Scope,
             keys: &K,
         ) -> ::core::result::Result<Self, ::cryptbox::Error>
         where
@@ -241,7 +241,7 @@ const _: () = {
                 .email
                 .open(
                     ::cryptbox::InRecord::<
-                        <CustomerEmail as ::cryptbox::Seal>::Binding,
+                        <CustomerEmail as ::cryptbox::Seal>::Scope,
                     >(binding, record_id),
                     keys,
                 )?;
@@ -249,7 +249,7 @@ const _: () = {
                 .note
                 .open(
                     ::cryptbox::InRecord::<
-                        <CustomerNote as ::cryptbox::Seal>::Binding,
+                        <CustomerNote as ::cryptbox::Seal>::Scope,
                     >(binding, record_id),
                     keys,
                 )?;

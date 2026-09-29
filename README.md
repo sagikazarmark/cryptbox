@@ -38,7 +38,7 @@ Seal and open a string with an in-memory key. For setup instructions, follow
 
 ```rust
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Seal, SealId, FieldOnly, Padding, Sealed, Utf8,
+    EncryptionKey, EncryptionKeyring, Seal, SealId, Padding, Sealed, Utf8,
 };
 
 struct UserEmail;
@@ -49,7 +49,7 @@ impl Seal for UserEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

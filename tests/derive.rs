@@ -2,10 +2,10 @@
 #![cfg(feature = "derive")]
 
 use cryptbox::{
-    Binding, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeyring, FieldOnly, FromIndexValues, IndexId,
-    IndexKeyId, IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues,
-    RecordId, Seal, SealId, Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
+    CodecErrorKind, EncryptionKey, EncryptionKeyring, FromIndexValues, IndexId, IndexKeyId,
+    IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues, RecordId,
+    Scope, Seal, SealId, Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -31,7 +31,7 @@ impl Seal for ManualUserEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -386,7 +386,7 @@ fn a_derived_blind_index_names_its_normalizer() {
 
 /// An org scopes keys, a project scopes blind indexes, and a workspace is only
 /// bound. Declared out of part-ID order.
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 #[cryptbox(index_args = OrgProjectSearch)]
 struct OrgProject {
     #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
@@ -411,7 +411,7 @@ struct ManualOrgProjectSearch {
     project: i64,
 }
 
-impl Binding for ManualOrgProject {
+impl Scope for ManualOrgProject {
     const PARTS: &'static [PartSpec] = &[
         PartSpec::keys(
             part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
@@ -450,7 +450,7 @@ fn a_derived_binding_declares_its_parts_sorted_by_part_id() {
 #[cryptbox(
     id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",
     value = String,
-    binding = OrgProject,
+    scope = OrgProject,
     record,
 )]
 struct ProjectNote;
@@ -464,7 +464,7 @@ impl Seal for ManualProjectNote {
     const RECORD: bool = true;
     type Value = String;
     type Codec = Utf8;
-    type Binding = ManualOrgProject;
+    type Scope = ManualOrgProject;
     type Indexes = ();
 }
 
@@ -514,7 +514,7 @@ fn derived_index_args_share_the_bindings_key_scope() {
 #[cryptbox(
     id = "4b8e2d6f-1a3c-4e57-b9d0-6f2a4c8e1b35",
     value = String,
-    binding = OrgProject,
+    scope = OrgProject,
     indexes(ProjectEmailLookup),
 )]
 struct ProjectEmail;
@@ -573,14 +573,14 @@ fn a_derived_blind_index_is_scoped_by_the_generated_index_args() {
 }
 
 /// Every part scopes blind indexes, so a query passes the binding itself.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Binding)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct Org {
     #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
     id: [u8; 16],
 }
 
 /// No part scopes blind indexes, so a query passes `()`.
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct Sequence {
     #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
     number: i64,
@@ -657,7 +657,7 @@ mod uuid_parts {
     use cryptbox::{KeyScope, RecordId};
     use uuid::Uuid;
 
-    #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+    #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
     struct Org {
         #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
         id: Uuid,
@@ -691,7 +691,7 @@ impl PartType for OrgId {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct TypedOrg {
     #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
     id: OrgId,
@@ -725,7 +725,7 @@ impl PartType for Mislabeled {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct MislabeledScope {
     #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
     id: Mislabeled,

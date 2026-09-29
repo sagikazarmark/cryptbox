@@ -1,4 +1,4 @@
-//! Expands `#[derive(Binding)]`.
+//! Expands `#[derive(Scope)]`.
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
@@ -80,7 +80,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
     let (index_args_type, index_args_item) = match index_args {
         IndexArgs::Unit => (quote!(()), None),
-        IndexArgs::Binding => (quote!(Self), None),
+        IndexArgs::Scope => (quote!(Self), None),
         IndexArgs::Generated(args_name) => (
             quote!(#args_name),
             Some(index_args_struct(
@@ -116,7 +116,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
         const _: () = {
             #[automatically_derived]
-            impl #krate::Binding for #name {
+            impl #krate::Scope for #name {
                 const PARTS: &'static [#krate::PartSpec] = &[#(#specs),*];
                 type IndexArgs = #index_args_type;
 
@@ -140,14 +140,14 @@ fn struct_fields<'a>(input: &'a DeriveInput, errors: &mut Errors) -> Vec<&'a syn
     if !input.generics.params.is_empty() {
         errors.push(syn::Error::new_spanned(
             &input.generics,
-            "`Binding` can't be derived for a generic type: its parts are persistent schema",
+            "`Scope` can't be derived for a generic type: its parts are persistent schema",
         ));
     }
 
     let Data::Struct(data) = &input.data else {
         errors.push(syn::Error::new(
             input.ident.span(),
-            "`Binding` can only be derived for a struct",
+            "`Scope` can only be derived for a struct",
         ));
         return Vec::new();
     };
@@ -157,14 +157,14 @@ fn struct_fields<'a>(input: &'a DeriveInput, errors: &mut Errors) -> Vec<&'a syn
         Fields::Named(_) | Fields::Unit => {
             errors.push(syn::Error::new(
                 input.ident.span(),
-                "a binding needs at least one part: use `cryptbox::FieldOnly` for none",
+                "a scope needs at least one part: use `()` for none",
             ));
             Vec::new()
         }
         Fields::Unnamed(fields) => {
             errors.push(syn::Error::new_spanned(
                 fields,
-                "`Binding` needs named fields: each field names one part",
+                "`Scope` needs named fields: each field names one part",
             ));
             Vec::new()
         }
@@ -235,7 +235,7 @@ enum IndexArgs<'a> {
     /// No `keys` or `index` parts: `()`.
     Unit,
     /// Every part is `keys` or `index`: the binding itself.
-    Binding,
+    Scope,
     /// The named struct the derive generates.
     Generated(&'a Ident),
 }
@@ -279,7 +279,7 @@ fn index_args<'a>(
             }
             IndexArgs::Unit
         }
-        None if scoped > 0 => IndexArgs::Binding,
+        None if scoped > 0 => IndexArgs::Scope,
         None => IndexArgs::Unit,
     }
 }
@@ -371,7 +371,7 @@ fn from_index_values(
         .unzip();
     let args = match index_args {
         IndexArgs::Unit => quote!(()),
-        IndexArgs::Binding | IndexArgs::Generated(_) => {
+        IndexArgs::Scope | IndexArgs::Generated(_) => {
             quote!(#index_args_type { #(#fields),* })
         }
     };

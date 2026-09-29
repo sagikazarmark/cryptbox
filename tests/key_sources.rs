@@ -7,9 +7,9 @@ use std::{
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldOnly, IndexId, IndexKeyId,
-    KeyError, KeyId, KeyScope, Keys, Padding, Raw, Seal, SealId, Sealed, Tenant, TenantId,
-    index_id, index_key_id, inspect_blind_index, key_id, seal_id, testing::assert_sealed_under,
+    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, IndexId, IndexKeyId, KeyError,
+    KeyId, KeyScope, Keys, Padding, Raw, Seal, SealId, Sealed, Tenant, TenantId, index_id,
+    index_key_id, inspect_blind_index, key_id, seal_id, testing::assert_sealed_under,
 };
 use zeroize::Zeroizing;
 
@@ -27,7 +27,7 @@ impl Seal for Email {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -39,7 +39,7 @@ impl Seal for Iban {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -51,7 +51,7 @@ impl Seal for TenantNote {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = Tenant;
+    type Scope = Tenant;
     type Indexes = ();
 }
 
@@ -328,7 +328,7 @@ fn a_source_can_hand_out_keyrings_from_behind_a_lock() {
 }
 
 #[test]
-fn a_field_only_binding_passes_the_empty_key_scope() {
+fn an_unscoped_binding_passes_the_empty_key_scope() {
     struct SeenScopes(Mutex<Vec<KeyScope>>, EncryptionKeyring);
 
     impl EncryptionKeySource for SeenScopes {
@@ -345,7 +345,7 @@ fn a_field_only_binding_passes_the_empty_key_scope() {
     let keys = SeenScopes(Mutex::default(), keyring(GENERAL_KEY_ID, 1));
     Sealed::<Email>::seal(&b"ada".to_vec(), (), &keys).unwrap();
 
-    assert_eq!(*keys.0.lock().unwrap(), [KeyScope::of(&FieldOnly).unwrap()]);
+    assert_eq!(*keys.0.lock().unwrap(), [KeyScope::of(&()).unwrap()]);
 }
 
 /// An application source that keeps payment indexes under their own keyring.

@@ -9,9 +9,9 @@ use std::{
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FieldOnly, IndexId, IndexKeyId,
-    KeyId, KeyScope, Padding, Seal, SealId, Sealed, Utf8, index_id, index_key_id,
-    inspect_blind_index, inspect_ciphertext, key_id,
+    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId,
+    KeyScope, Padding, Seal, SealId, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
+    inspect_ciphertext, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
@@ -33,7 +33,7 @@ impl Seal for UserEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -45,7 +45,7 @@ impl Seal for PaddedUserEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

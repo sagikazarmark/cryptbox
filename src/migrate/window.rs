@@ -1,6 +1,6 @@
 use crate::{
-    Args, Binding, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, Seal, Sealed,
+    Args, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
+    EncryptionKeySource, Error, Scope, Seal, Sealed,
     binding::{declaration_fingerprint, with_domain},
     blind::{IndexArgs, probes_in},
     bound, inspect_ciphertext,
@@ -32,7 +32,7 @@ pub fn open_across<Old, F>(
     old_keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<F::Value, Error>
 where
-    Old: Binding,
+    Old: Scope,
     F: Seal,
 {
     let bytes = sealed.as_bytes();
@@ -44,7 +44,7 @@ where
 
         let recorded = record.is_some() && stored == declaration_fingerprint::<Old>(true);
         let record = if recorded { record } else { None };
-        let old = BindingDomain::projected::<Old, F::Binding>(F::ID, binding, record)?;
+        let old = BindingDomain::projected::<Old, F::Scope>(F::ID, binding, record)?;
         bound::open(&old, bytes, old_keys)
     })?;
 
@@ -82,10 +82,10 @@ pub fn probes_across<Old, S>(
 ) -> Result<Vec<BlindIndex<S>>, Error>
 where
     S: BlindIndexSpec,
-    Old: Binding,
+    Old: Scope,
 {
     let mut probes = S::probes_with(query, args, keys)?;
-    let old = BindingDomain::index_projected::<Old, <S::Seal as Seal>::Binding>(
+    let old = BindingDomain::index_projected::<Old, <S::Seal as Seal>::Scope>(
         <S::Seal as Seal>::ID,
         args,
     )?;

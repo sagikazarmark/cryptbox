@@ -1,8 +1,8 @@
 //! Public-boundary tests for seal markers over application value types.
 
 use cryptbox::{
-    Codec, CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, Error, FieldOnly, IndexId,
-    Padding, Raw, Seal, SealId, Sealed, Secret, Utf8, index_id, seal_id,
+    Codec, CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, Error, IndexId, Padding,
+    Raw, Seal, SealId, Sealed, Secret, Utf8, index_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -57,7 +57,7 @@ impl Seal for HomeAddress {
     const RECORD: bool = false;
     type Value = Address;
     type Codec = AddressCodec;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -70,7 +70,7 @@ impl Seal for BillingAddress {
     const RECORD: bool = false;
     type Value = Address;
     type Codec = AddressCodec;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -124,7 +124,7 @@ impl Seal for UserEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -136,7 +136,7 @@ impl Seal for SecretUserEmail {
     const RECORD: bool = false;
     type Value = Secret<String>;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -148,7 +148,7 @@ impl Seal for ApiToken {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -160,7 +160,7 @@ impl Seal for SecretApiToken {
     const RECORD: bool = false;
     type Value = Secret<Vec<u8>>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

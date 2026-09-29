@@ -41,7 +41,7 @@ const JOURNAL_MISMATCH: &str = "[570 Journal mismatch]";
 #[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    binding = Tenant
+    scope = Tenant
 )]
 struct CustomerEmail;
 
@@ -49,7 +49,7 @@ struct CustomerEmail;
 #[cryptbox(
     id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     value = String,
-    binding = Tenant,
+    scope = Tenant,
     record
 )]
 struct CustomerNote;

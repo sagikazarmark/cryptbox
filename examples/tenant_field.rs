@@ -16,7 +16,7 @@ impl Seal for CustomerEmail {
     const RECORD: bool = true;
     type Value = String;
     type Codec = Utf8;
-    type Binding = Tenant;
+    type Scope = Tenant;
     type Indexes = ();
 }
 

@@ -48,7 +48,7 @@ Replace `src/main.rs` with this [example](../examples/first_field.rs).
 
 ```rust
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Seal, SealId, FieldOnly, Padding, Sealed, Utf8,
+    EncryptionKey, EncryptionKeyring, Seal, SealId, Padding, Sealed, Utf8,
 };
 
 struct UserEmail;
@@ -59,7 +59,7 @@ impl Seal for UserEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -91,12 +91,12 @@ Expect `Seal-bound round trip succeeded.` and exit status 0.
   plaintext `String`.
 - `UserEmail` is a seal. Its `ID` binds the sealed value to this seal; it stores
   a `String` value with the `Utf8` codec and no padding.
-- `()` is the binding argument: `Binding = FieldOnly` with no record binds the
+- `()` is the binding argument: `Scope = ()` with no record binds the
   value to its seal ID alone. A seal can declare a binding such as a tenant, and
   a record, and then every call must pass their values; see
   [bind values to a scope](bindings.md).
 - `&keys` supplies keys explicitly, so these calls need no global installation.
-- A field-only value is bound to its seal alone, not a row or tenant, so it does
+- An unscoped value is bound to its seal alone, not a row or tenant, so it does
   not stop substitution between rows of the same seal, or replay. `Padding::NONE` reveals encoded length.
 
 See [how CryptBox works](concepts.md) for the complete picture.

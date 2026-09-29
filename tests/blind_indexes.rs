@@ -1,10 +1,10 @@
 //! Public-boundary tests for blind indexes and prepared storage values.
 
 use cryptbox::{
-    Binding, BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec,
-    EncryptionKey, EncryptionKeyring, Error, FieldOnly, IndexId, IndexKeyId, KeyId, Padding,
-    PartKind, PartSpec, PartValue, PartValues, RecordId, Seal, Sealed, Utf8, index_id,
-    index_key_id, inspect_blind_index, key_id, part_id, seal_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, PartKind, PartSpec, PartValue,
+    PartValues, RecordId, Scope, Seal, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
+    key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -20,7 +20,7 @@ impl Seal for EmailSeal {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -32,7 +32,7 @@ impl Seal for PhoneSeal {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -226,7 +226,7 @@ impl Seal for PersonSeal {
     const RECORD: bool = false;
     type Value = Person;
     type Codec = PersonCodec;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -467,7 +467,7 @@ struct OrgRegion {
     region: i64,
 }
 
-impl Binding for OrgWorkspace {
+impl Scope for OrgWorkspace {
     const PARTS: &'static [PartSpec] = &[
         PartSpec::keys(
             part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
@@ -505,7 +505,7 @@ impl Seal for TicketEmail {
     const RECORD: bool = true;
     type Value = String;
     type Codec = Utf8;
-    type Binding = OrgWorkspace;
+    type Scope = OrgWorkspace;
     type Indexes = (TicketEmailExact,);
 }
 
@@ -645,7 +645,7 @@ fn a_stored_index_is_consistent_only_under_its_own_scope() {
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct Team(Vec<u8>);
 
-impl Binding for Team {
+impl Scope for Team {
     const PARTS: &'static [PartSpec] = &[PartSpec::keys(
         part_id!("5d9a2c41-7e3b-4f80-9b16-c2a4e8d07f53"),
         PartKind::Bytes,
@@ -669,7 +669,7 @@ impl Seal for TeamEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = Team;
+    type Scope = Team;
     type Indexes = (TeamEmailExact,);
 }
 

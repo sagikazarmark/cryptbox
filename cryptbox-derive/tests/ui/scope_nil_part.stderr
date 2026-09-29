@@ -1,5 +1,5 @@
 error: binding part IDs must not be nil
- --> tests/ui/binding_nil_part.rs:3:23
+ --> tests/ui/scope_nil_part.rs:3:23
   |
 3 |     #[cryptbox(part = "00000000-0000-0000-0000-000000000000", keys)]
   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

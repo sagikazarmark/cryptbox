@@ -16,7 +16,7 @@ impl Seal for CustomerEmail {
     const RECORD: bool = true;
     type Value = String;
     type Codec = Utf8;
-    type Binding = Tenant;
+    type Scope = Tenant;
     type Indexes = (EmailLookup,);
 }
 
@@ -29,7 +29,7 @@ impl Seal for CustomerNote {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = Tenant;
+    type Scope = Tenant;
     type Indexes = ();
 }
 
@@ -103,7 +103,7 @@ impl Customer {
 
 impl Record for Customer {
     type Sealed = SealedCustomer;
-    type Binding = Tenant;
+    type Scope = Tenant;
 
     fn seal<K>(&self, binding: &Tenant, keys: &K) -> Result<SealedCustomer, Error>
     where
@@ -395,7 +395,7 @@ mod self_valued {
     #[cryptbox(
         id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
         transparent,
-        binding = Tenant,
+        scope = Tenant,
         record,
         indexes(OwnEmailLookup),
     )]

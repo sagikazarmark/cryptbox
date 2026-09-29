@@ -47,7 +47,7 @@
 //!     const RECORD: bool = false;
 //!     type Value = String;
 //!     type Codec = Utf8;
-//!     type Binding = Tenant;
+//!     type Scope = Tenant;
 //!     type Indexes = ();
 //! }
 //!
@@ -236,7 +236,7 @@ where
 pub fn seal_record<'a, R>(
     ctx: &'a impl RunContext,
     record: &'a R,
-    binding: &'a R::Binding,
+    binding: &'a R::Scope,
     keys: &'a (impl EncryptionKeySource + BlindIndexKeySource + ?Sized),
 ) -> impl RunFuture<Result<Json<R::Sealed>, TerminalError>> + 'a
 where
@@ -255,7 +255,7 @@ where
 pub fn seal_record_with<'a, R, Fut>(
     ctx: &'a impl RunContext,
     fetch: impl FnOnce() -> Fut + Send + 'static,
-    binding: &'a R::Binding,
+    binding: &'a R::Scope,
     keys: &'a (impl EncryptionKeySource + BlindIndexKeySource + ?Sized),
 ) -> impl RunFuture<Result<Json<R::Sealed>, TerminalError>> + 'a
 where

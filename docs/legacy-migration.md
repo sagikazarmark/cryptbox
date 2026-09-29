@@ -126,7 +126,7 @@ plaintext-only data. Recovery decodes through the seal's codec, seals and
 derives every registered index. Stale CryptBox components are rewritten; current
 ones are retained under the [sweep rules](reencryption-sweep.md#sweep-loop).
 
-`RowPlanner::new` serves a [`FieldOnly`](bindings.md) seal without a record. A
+`RowPlanner::new` serves an unscoped seal without a record. A
 bound seal uses `RowPlanner::for_key_scope(key_scope, keys, row_args)`, one
 planner per key scope, because its keys are scoped too. The key scope comes from
 the job's configuration, never from the rows: a row whose `keys` columns name

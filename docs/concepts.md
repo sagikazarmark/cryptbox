@@ -50,8 +50,8 @@ declares:
 - A **padding policy**, which can group different plaintext lengths into the same
   stored size. `Padding::NONE` preserves the encoded length.
 - A **binding**: the declared scope each value is bound to, such as a tenant, and
-  whether it is also bound to its record. `FieldOnly` binds a value to its seal
-  ID alone.
+  whether it is also bound to its record. The empty scope, `()`, binds a value
+  to its seal ID alone.
 
 A binding's parts have roles: a `keys` part scopes key custody and blind
 indexes and is the unit you can shred, an `index` part scopes blind indexes only,
@@ -83,7 +83,7 @@ from the stored row. A `Record` is the one exception for its record ID, which it
 reads from the row: opening checks it for every seal that binds a record. A
 sealed email will not authenticate under a different seal, tenant, or record,
 even if they share a root key. Seals that should read each other's values
-declare the same seal ID and binding. A `FieldOnly` seal without a record
+declare the same seal ID and binding. An unscoped seal without a record
 identifies a seal alone, not a row or tenant: copying its values between rows
 sealed with the same seal can still succeed.
 
@@ -148,7 +148,7 @@ constraints or a guarantee that storage returns every matching row.
 ## Storage adapters carry the representations
 
 SQLx adapters store sealed values in `BYTEA` or `BLOB` columns. You can seal
-explicitly and load `Sealed` for later opening. A `FieldOnly` seal without a
+explicitly and load `Sealed` for later opening. An unscoped seal without a
 record or blind indexes can instead use `Plain<F>`, which seals and opens
 automatically at the SQLx boundary; a column decoder sees neither a row nor a
 scope, so values of bound seals are always sealed explicitly. Serde support serializes

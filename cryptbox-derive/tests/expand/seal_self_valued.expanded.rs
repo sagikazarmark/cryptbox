@@ -13,7 +13,7 @@ const _: () = {
         const RECORD: bool = false;
         type Value = Self;
         type Codec = cryptbox::Json;
-        type Binding = ::cryptbox::FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
 };

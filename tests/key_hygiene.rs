@@ -2,7 +2,7 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, FieldOnly, IndexId, KeyError, Padding, Raw, Seal, SealId, Sealed, index_id,
+    EncryptionKeyring, IndexId, KeyError, Padding, Raw, Seal, SealId, Sealed, index_id,
     index_key_id, key_id,
 };
 use zeroize::Zeroizing;
@@ -15,7 +15,7 @@ impl Seal for TestSeal {
     const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

@@ -1,0 +1,5 @@
+error: a scope needs at least one part: use `()` for none
+ --> tests/ui/scope_without_parts.rs:2:8
+  |
+2 | struct Nothing;
+  |        ^^^^^^^

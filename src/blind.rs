@@ -4,8 +4,8 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
-    Binding, BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring,
-    Error, FieldOnly, IndexId, IndexKeyId, Seal, keys,
+    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, Error,
+    IndexId, IndexKeyId, Scope, Seal, keys,
 };
 
 mod format;
@@ -17,7 +17,7 @@ use recipe::derive_index;
 
 /// The query-time arguments of `Spec`: its seal binding's `keys` and `index` part values.
 pub(crate) type IndexArgs<Spec> =
-    <<<Spec as BlindIndexSpec>::Seal as Seal>::Binding as Binding>::IndexArgs;
+    <<<Spec as BlindIndexSpec>::Seal as Seal>::Scope as Scope>::IndexArgs;
 
 /// A logical blind index over one seal.
 ///
@@ -29,10 +29,10 @@ pub(crate) type IndexArgs<Spec> =
 /// an index can be computed from part of it, such as an email domain, or combine
 /// several of its parts.
 ///
-/// Indexes are scoped by the seal's [`Binding`]. Each operation takes the
-/// binding's [`IndexArgs`](Binding::IndexArgs), the values of its
+/// Indexes are scoped by the seal's [`Scope`]. Each operation takes the
+/// binding's [`IndexArgs`](Scope::IndexArgs), the values of its
 /// [`keys`](crate::PartRole::Keys) and [`index`](crate::PartRole::Index)
-/// parts, and derives in that scope; a [`FieldOnly`] seal passes `&()`. Equal
+/// parts, and derives in that scope; an unscoped seal passes `&()`. Equal
 /// values under other `keys` or `index` values derive unrelated indexes, and
 /// the key source receives the scope's [`KeyScope`](crate::KeyScope).
 /// Bound-only parts and the record never scope an index, since a query cannot
@@ -46,7 +46,7 @@ pub(crate) type IndexArgs<Spec> =
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Utf8};
+/// use cryptbox::{BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Utf8};
 /// use zeroize::Zeroizing;
 ///
 /// struct UserEmail;
@@ -57,7 +57,7 @@ pub(crate) type IndexArgs<Spec> =
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -88,7 +88,7 @@ pub(crate) type IndexArgs<Spec> =
 /// Invalid precision is rejected when the specification is used:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Raw};
+/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Raw};
 /// # use zeroize::Zeroizing;
 /// # struct Bytes;
 /// # impl Seal for Bytes {
@@ -97,7 +97,7 @@ pub(crate) type IndexArgs<Spec> =
 /// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// struct ZeroBits;
@@ -116,7 +116,7 @@ pub(crate) type IndexArgs<Spec> =
 /// ```
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Raw};
+/// # use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Raw};
 /// # use zeroize::Zeroizing;
 /// # struct Bytes;
 /// # impl Seal for Bytes {
@@ -125,7 +125,7 @@ pub(crate) type IndexArgs<Spec> =
 /// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// struct TooManyBits;
@@ -258,7 +258,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// Derives probes with the [installed keys](keys::installed).
     ///
     /// This is exactly `Self::probes_with(query, &(), keys::installed()?)`.
-    /// The installed keys serve only [`FieldOnly`] seals.
+    /// The installed keys serve only unscoped seals.
     ///
     /// # Errors
     ///
@@ -266,7 +266,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// probe derivation fails.
     fn probes(query: &Self::Query) -> Result<Vec<BlindIndex<Self>>, Error>
     where
-        Self::Seal: Seal<Binding = FieldOnly>,
+        Self::Seal: Seal<Scope = ()>,
     {
         Self::probes_with(query, &(), keys::installed()?)
     }
@@ -328,7 +328,7 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///
 /// ```compile_fail,E0271
 /// use cryptbox::{
-///     BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Utf8,
+///     BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Utf8,
 /// };
 /// use zeroize::Zeroizing;
 ///
@@ -340,7 +340,7 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = (InviteEmailLookup,);
 /// }
 ///
@@ -352,7 +352,7 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = (InviteEmailLookup,);
 /// }
 ///
@@ -631,7 +631,7 @@ fn check_consistency<Spec: BlindIndexSpec>(
 // Blind indexes are domain-separated by their seal and the `keys` and `index`
 // parts of its binding, never by bound-only parts or a record.
 fn index_domain<Spec: BlindIndexSpec>(args: &IndexArgs<Spec>) -> Result<BindingDomain, Error> {
-    BindingDomain::index::<<Spec::Seal as Seal>::Binding>(<Spec::Seal as Seal>::ID, args)
+    BindingDomain::index::<<Spec::Seal as Seal>::Scope>(<Spec::Seal as Seal>::ID, args)
 }
 
 // Asks the source for the keyring of the index in the domain's key scope.

@@ -4,7 +4,7 @@ use std::error::Error;
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, FieldOnly, Keys, Padding, Plain, Seal, SealId, Sealed, Utf8, keys,
+    EncryptionKeyring, Keys, Padding, Plain, Seal, SealId, Sealed, Utf8, keys,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -17,7 +17,7 @@ impl Seal for Nickname {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -30,7 +30,7 @@ impl Seal for UserEmail {
     const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = (EmailLookup,);
 }
 
@@ -88,7 +88,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
         .await?;
     let nickname = Plain::<Nickname>::new(plaintext);
 
-    // Binding Plain exercises automatic sealing with the installed keys.
+    // Scope Plain exercises automatic sealing with the installed keys.
     sqlx::query("INSERT INTO users (nickname) VALUES (?)")
         .bind(&nickname)
         .execute(&mut connection)
