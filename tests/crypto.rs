@@ -158,11 +158,11 @@ fn reserved_flag_bits_are_rejected_before_authentication() {
 }
 
 #[test]
-fn field_only_envelopes_carry_the_empty_shape_fingerprint() {
+fn field_only_envelopes_carry_the_empty_declaration_fingerprint() {
     let keys = keyring(CURRENT_KEY_ID, 9);
     let ciphertext = encrypt::<EmailField>(b"field only", &keys);
 
-    // docs/wire-format.md#shape-fingerprint
+    // docs/wire-format.md#binding-fingerprint
     assert_eq!(
         hex::encode(
             inspect_ciphertext(&ciphertext)

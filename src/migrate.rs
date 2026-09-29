@@ -15,12 +15,12 @@
 //! authenticated readability, decoded-value validity, or index consistency.
 //! Obtain those assurances with separate decryption and index recomputation.
 //!
-//! The same sweep changes a field's binding shape. [`RowPlanner::for_key_scope`]
+//! The same sweep changes a field's binding declaration. [`RowPlanner::for_key_scope`]
 //! builds each row's binding arguments from its columns for one key scope, and
 //! [`RowPlanner::legacy_binding`] opens a legacy-binding window in which rows
-//! sealed with the older shape are resealed. Until verification counts none of
+//! sealed with the older declaration are resealed. Until verification counts none of
 //! them, readers use [`probes_across`] and [`open_across`] to find and open
-//! values of either shape.
+//! values of either declaration.
 //!
 //! Reads are permissive; writes never are. [`MaybeEncrypted`] implements no
 //! storage `Encode`, and its only forward path is the opened value, which

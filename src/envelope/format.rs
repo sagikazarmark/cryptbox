@@ -8,14 +8,14 @@ const FLAG_PADDED: u8 = 0x01;
 
 // The layout table: ../../docs/wire-format.md#envelope. A header is the magic,
 // then one byte each of version, suite ID, and flags, then the key ID and the
-// shape fingerprint. Every header has the same fixed length.
+// binding fingerprint. Every header has the same fixed length.
 const KEY_ID_LEN: usize = 16;
 const FINGERPRINT_LEN: usize = 8;
 const FORMAT_VERSION_OFFSET: usize = MAGIC.len();
 const SUITE_ID_OFFSET: usize = FORMAT_VERSION_OFFSET + 1;
 const FLAGS_OFFSET: usize = SUITE_ID_OFFSET + 1;
 const KEY_ID_OFFSET: usize = FLAGS_OFFSET + 1;
-// See ../../docs/wire-format.md#shape-fingerprint.
+// See ../../docs/wire-format.md#binding-fingerprint.
 const FINGERPRINT_OFFSET: usize = KEY_ID_OFFSET + KEY_ID_LEN;
 const HEADER_LEN: usize = FINGERPRINT_OFFSET + FINGERPRINT_LEN;
 

@@ -65,7 +65,7 @@ default codec by implementing `Plaintext`; `String` and `Vec<u8>` already do.
 
 Every seal and open binds the value at runtime to its field ID, to the values of
 the field's binding, and to its record when the field binds one. The binding's
-**shape** is persistent schema; its **values**, such as the tenant of the current
+**declaration** is persistent schema; its **values**, such as the tenant of the current
 request, are passed to each call and must come from an authorized source, never
 from the stored row. A `Record` is the one exception for its record ID, which it
 reads from the row: opening checks it for every field that binds a record. A

@@ -5,10 +5,10 @@ The expected cryptographic domain of a value, independent of where its stored
 bytes are found. Every sealed value is bound at runtime to its field ID, to the
 values of its field's declared scope, and, when the field declares `RECORD`, to a
 record ID. A field-only binding (`FieldOnly`) identifies a logical field, not a
-row or tenant. The binding's *shape* (its parts and whether it binds a record) is
+row or tenant. The binding's *declaration* (its parts and whether it binds a record) is
 persistent schema, declared by the field; its values are supplied at each call as
 the field's binding arguments (`Args`). Opening under other values fails
-authentication; opening under another shape reports a binding mismatch.
+authentication; opening under another declaration reports a binding mismatch.
 <!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “key scope” is only the `keys` parts. Avoid “context” for any of them. -->
 
 **Binding arguments**:
@@ -17,6 +17,15 @@ a `FieldOnly` field, `RecordId` for a `FieldOnly` field that binds a record,
 `&F::Binding`, or `(&F::Binding, RecordId)`. A missing or extra record fails the
 build. Within a record, `InRecord(&F::Binding, RecordId)` binds the record
 exactly when the field declares one.
+
+**Binding fingerprint**:
+A public 8-byte summary of a binding's declaration: truncated SHA-256 over its
+part IDs, kinds, and roles and whether it binds a record, never its values.
+Every envelope header stores the fingerprint of the binding it was sealed
+under, and opening compares it with the reader's before any key lookup,
+reporting a binding mismatch. Equal fingerprints do not imply equal bindings,
+and security never depends on the fingerprint.
+<!-- Agent guidance: “shape” is the retired name for a binding's declaration, and “shape fingerprint” for this; do not reintroduce them. -->
 
 **Binding part**:
 One declared value of a binding scope, with a part ID, a value kind (uuid, i64,
@@ -113,11 +122,11 @@ never shared across keyrings, so opening with the wrong keyring fails loudly.
 
 **Legacy-binding window**:
 The bounded period in which a field's values may still be sealed with the
-binding shape it had before a shape change. Readers open both shapes and probe
-both index bindings, and a sweep reseals the old shape, recognized by the shape
-fingerprint in each header. The window closes once a complete verification pass
-counts no such rows.
-<!-- Agent guidance: distinct from legacy data, which is not a CryptBox envelope at all (`RowState::Legacy`); a legacy-binding row is a valid envelope of an older shape (`RowState::LegacyBinding`). -->
+binding declaration it had before a declaration change. Readers open both
+declarations and probe both index bindings, and a sweep reseals the old
+declaration, recognized by the binding fingerprint in each header. The window
+closes once a complete verification pass counts no such rows.
+<!-- Agent guidance: distinct from legacy data, which is not a CryptBox envelope at all (`RowState::Legacy`); a legacy-binding row is a valid envelope of an older declaration (`RowState::LegacyBinding`). -->
 
 **Migration-state verification**:
 Inspection of stored structure and generation convergence. It is distinct from
@@ -174,7 +183,7 @@ its field declares; `#[derive(Record)]` rejects a record that omits one.
 
 **Schema manifest**:
 A reviewable listing of registered fields and blind indexes with their
-persistent schema: field ID, codec ID, padding, record flag, binding shape
+persistent schema: field ID, codec ID, padding, record flag, binding declaration
 (fingerprint, parts, kinds, and roles), shred unit, index ID, precision, and
 normalizer name. It names IDs, never Rust types, so its output is the same on
 every toolchain. A field may carry a custody label, a declarative note of which

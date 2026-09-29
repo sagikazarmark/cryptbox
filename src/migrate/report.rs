@@ -16,7 +16,7 @@ pub struct SweepReport {
     #[doc(alias = "plaintext")]
     pub legacy: u64,
     /// Rows resealed from (or, during verification, still sealed with) an older
-    /// binding shape, counted by the shape fingerprint in their header.
+    /// binding declaration, counted by the binding fingerprint in their header.
     ///
     /// A legacy-binding window closes only once a verification pass counts none.
     pub legacy_binding: u64,

@@ -11,7 +11,7 @@ This page explains those choices and their consequences. It builds on
 Encrypted storage is not entirely self-describing. An envelope identifies its
 format, suite, encryption-key generation, and whether its payload is padded, but
 the application supplies the expected field ID, binding, and codec. An
-envelope also carries a fingerprint of its binding shape, which only names a
+envelope also carries a fingerprint of its binding declaration, which only names a
 mismatch. A blind index
 additionally depends on a logical index ID and normalization rule that are not
 stored with it.
@@ -22,7 +22,7 @@ These choices form persistent schema just as database column types do:
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
 | Field ID | Every value is bound to its field ID; a different ID fails authentication. |
-| Binding shape and record flag | Every value is bound to its binding's part IDs, kinds, and roles, and to its record when the field binds one; a different shape reports `BindingMismatch`. |
+| Binding declaration and record flag | Every value is bound to its binding's part IDs, kinds, and roles, and to its record when the field binds one; a different declaration reports `BindingMismatch`. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
@@ -66,7 +66,7 @@ Stored bytes do not describe this schema, so check it in tests:
   derives and attributes. A failure means stored values would change; plan a
   migration or revert.
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered field
-  (ID, codec ID, padding, whether it binds a record, the binding's shape
+  (ID, codec ID, padding, whether it binds a record, the binding
   fingerprint and parts with their kinds and roles, and the shred unit) and
   index (ID, field, bits, normalizer). `Manifest::custody::<F>("…")` adds a
   custody label to a field, such as `"payments KMS, one key per org"`, so

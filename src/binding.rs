@@ -19,10 +19,10 @@ pub use scope::KeyScope;
 /// The declared scope a field's values are bound to, such as a tenant, or an
 /// org plus a workspace.
 ///
-/// A binding is data only. [`PARTS`](Self::PARTS) declares the shape: each
+/// A binding is data only. [`PARTS`](Self::PARTS) is its declaration: each
 /// part's ID, value kind, and [role](PartRole). [`values`](Self::values)
 /// supplies the runtime values in the same order. `CryptBox` frames and
-/// validates them; implementations never write bytes. The shape is persistent
+/// validates them; implementations never write bytes. The declaration is persistent
 /// schema: changing a part ID, kind, or role is a migration. See [ADR-0005] and
 /// the [wire format].
 ///
@@ -213,7 +213,7 @@ pub trait FromIndexValues: Binding {
     fn from_index_values(values: &[PartValue<'_>]) -> Result<Self::IndexArgs, Error>;
 }
 
-// Rejects shapes whose bytes or fingerprint would depend on declaration order,
+// Rejects declarations whose bytes or fingerprint would depend on part order,
 // or that could not be encoded. Panics become build errors in `const` context.
 pub(crate) const fn check_parts(parts: &[PartSpec]) {
     let mut index = 0;
@@ -270,10 +270,10 @@ fn project<'v>(
         .collect()
 }
 
-/// The shape fingerprint of binding `B`, with or without a record, as the
+/// The binding fingerprint of binding `B`, with or without a record, as the
 /// envelope header carries it.
-pub(crate) fn shape_fingerprint<B: Binding>(record: bool) -> [u8; 8] {
-    BindingShape::new(B::PARTS, record).fingerprint()
+pub(crate) fn declaration_fingerprint<B: Binding>(record: bool) -> [u8; 8] {
+    BindingDeclaration::new(B::PARTS, record).fingerprint()
 }
 
 /// The canonical kind of a part or record value.
@@ -311,7 +311,7 @@ impl PartRole {
     }
 }
 
-/// One declared part of a binding shape: its ID, value kind, and role.
+/// One declared part of a binding declaration: its ID, value kind, and role.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PartSpec {
     id: [u8; 16],
@@ -476,21 +476,21 @@ impl<'a> RecordId<'a> {
     }
 }
 
-/// The persistent shape of a binding: its declared parts and whether it binds a record.
+/// The persistent declaration of a binding: its declared parts and whether it binds a record.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct BindingShape<'a> {
+pub(crate) struct BindingDeclaration<'a> {
     parts: &'a [PartSpec],
     record: bool,
 }
 
-impl<'a> BindingShape<'a> {
+impl<'a> BindingDeclaration<'a> {
     pub(crate) const fn new(parts: &'a [PartSpec], record: bool) -> Self {
         Self { parts, record }
     }
 
-    /// Checks the shape's own invariants: unique, non-nil part IDs.
+    /// Checks the declaration's own invariants: unique, non-nil part IDs.
     ///
-    /// Without parts or a record, the shape is empty: the binding is
+    /// Without parts or a record, the declaration is empty: the binding is
     /// field-only.
     pub(crate) fn validate(&self) -> Result<(), Error> {
         let mut ids: Vec<_> = self.parts.iter().map(|spec| spec.id).collect();
@@ -504,7 +504,7 @@ impl<'a> BindingShape<'a> {
         Ok(())
     }
 
-    /// Fingerprints the shape; declaration order does not matter.
+    /// Fingerprints the declaration; part order does not matter.
     pub(crate) fn fingerprint(&self) -> [u8; 8] {
         encoding::fingerprint(self.parts, self.record)
     }
@@ -514,7 +514,7 @@ impl<'a> BindingShape<'a> {
 ///
 /// The encoded bytes are the domain separator that encryption mixes into key
 /// derivation and AAD, and that a blind index mixes into its MAC input. The
-/// field and key scope select the keyring; the shape fingerprint is recorded in
+/// field and key scope select the keyring; the binding fingerprint is recorded in
 /// the envelope and checked by readers.
 #[derive(Clone, Debug)]
 pub(crate) struct BindingDomain {
@@ -527,23 +527,23 @@ pub(crate) struct BindingDomain {
 impl BindingDomain {
     /// Encodes a field's declared parts, in any order, with their values.
     ///
-    /// Without parts or a record, the shape is empty and the binding is
+    /// Without parts or a record, the declaration is empty and the binding is
     /// field-only.
     ///
-    /// `values` follows the order of `shape`'s parts.
+    /// `values` follows the order of `declaration`'s parts.
     pub(crate) fn scoped(
         id: FieldId,
-        shape: BindingShape<'_>,
+        declaration: BindingDeclaration<'_>,
         values: &[PartValue<'_>],
         record: Option<PartValue<'_>>,
     ) -> Result<Self, Error> {
-        shape.validate()?;
-        if shape.record != record.is_some() {
+        declaration.validate()?;
+        if declaration.record != record.is_some() {
             return Err(Error::InvalidBinding);
         }
-        check_values(shape.parts, values)?;
+        check_values(declaration.parts, values)?;
 
-        let mut parts: Vec<_> = shape.parts.iter().zip(values).collect();
+        let mut parts: Vec<_> = declaration.parts.iter().zip(values).collect();
         // The key scope lists its parts in part-ID order, as `PARTS` does.
         parts.sort_by_key(|(spec, _)| spec.id);
         let key_scope = KeyScope::keys_of(parts.iter().copied());
@@ -551,7 +551,7 @@ impl BindingDomain {
         Ok(Self {
             field: id,
             encoded: encoding::encode(id, record, parts)?,
-            fingerprint: shape.fingerprint(),
+            fingerprint: declaration.fingerprint(),
             key_scope,
         })
     }
@@ -567,7 +567,7 @@ impl BindingDomain {
         let values = binding.values();
         Self::scoped(
             id,
-            BindingShape::new(B::PARTS, record.is_some()),
+            BindingDeclaration::new(B::PARTS, record.is_some()),
             &values.0,
             record.map(RecordId::part_value),
         )
@@ -608,7 +608,7 @@ impl BindingDomain {
         Self::index_parts(id, &specs, &values)
     }
 
-    /// Encodes the binding of field `id` under the older shape `Old`, taking each
+    /// Encodes the binding of field `id` under the older declaration `Old`, taking each
     /// of `Old`'s parts from `binding` by part ID, and binding `record` if any.
     ///
     /// A part of `Old` that `binding` lacks, or holds with another kind, is
@@ -629,7 +629,7 @@ impl BindingDomain {
         match record {
             Some(record) => Self::scoped(
                 id,
-                BindingShape::new(Old::PARTS, true),
+                BindingDeclaration::new(Old::PARTS, true),
                 &values,
                 Some(record.part_value()),
             ),
@@ -637,7 +637,7 @@ impl BindingDomain {
         }
     }
 
-    /// Encodes the blind-index domain of field `id` under the older shape
+    /// Encodes the blind-index domain of field `id` under the older declaration
     /// `Old`, taking each of its `keys` and `index` parts from a query's
     /// arguments for binding `B`, by part ID.
     #[cfg(feature = "migrate")]
@@ -667,14 +667,14 @@ impl BindingDomain {
         specs: &[PartSpec],
         values: &[PartValue<'_>],
     ) -> Result<Self, Error> {
-        Self::scoped(id, BindingShape::new(specs, false), values, None)
+        Self::scoped(id, BindingDeclaration::new(specs, false), values, None)
     }
 
     pub(crate) fn field_id(&self) -> FieldId {
         self.field
     }
 
-    /// The shape fingerprint the envelope header carries.
+    /// The binding fingerprint the envelope header carries.
     pub(crate) fn fingerprint(&self) -> [u8; 8] {
         self.fingerprint
     }
@@ -716,7 +716,7 @@ mod tests {
         // Declared out of order: the encoding sorts parts by part ID.
         let domain = BindingDomain::scoped(
             FIELD,
-            BindingShape::new(&[SEQUENCE, TENANT], false),
+            BindingDeclaration::new(&[SEQUENCE, TENANT], false),
             &[PartValue::I64(-2), PartValue::Uuid([0x33; 16])],
             None,
         )
@@ -744,7 +744,7 @@ mod tests {
     fn scoped_binding_tags_the_record_kind() {
         let domain = BindingDomain::scoped(
             FIELD,
-            BindingShape::new(&[TENANT], true),
+            BindingDeclaration::new(&[TENANT], true),
             &[PartValue::Uuid([0x33; 16])],
             Some(PartValue::Bytes(b"row-7")),
         )
@@ -776,7 +776,7 @@ mod tests {
     ) -> Vec<u8> {
         BindingDomain::scoped(
             FIELD,
-            BindingShape::new(parts, record.is_some()),
+            BindingDeclaration::new(parts, record.is_some()),
             values,
             record,
         )
@@ -845,7 +845,7 @@ mod tests {
     ) -> Result<BindingDomain, Error> {
         BindingDomain::scoped(
             FIELD,
-            BindingShape::new(parts, record),
+            BindingDeclaration::new(parts, record),
             values,
             record_value,
         )
@@ -886,44 +886,44 @@ mod tests {
     }
 
     #[test]
-    fn shape_fingerprint_is_truncated_sha256_of_the_sorted_shape() {
-        // Independently computed with shasum over the documented shape bytes.
+    fn declaration_fingerprint_is_truncated_sha256_of_the_sorted_parts() {
+        // Independently computed with shasum over the documented declaration bytes.
         assert_eq!(
-            BindingShape::new(&[SEQUENCE, TENANT], false).fingerprint(),
+            BindingDeclaration::new(&[SEQUENCE, TENANT], false).fingerprint(),
             hex_array("f93e3f05d673ab72"),
         );
         assert_eq!(
-            BindingShape::new(&[TENANT], true).fingerprint(),
+            BindingDeclaration::new(&[TENANT], true).fingerprint(),
             hex_array("f99c70ac24ad8a9a"),
         );
     }
 
     #[test]
-    fn shape_fingerprint_ignores_declaration_order_but_not_roles() {
-        let fingerprint = BindingShape::new(&[SEQUENCE, TENANT], false).fingerprint();
+    fn declaration_fingerprint_ignores_part_order_but_not_roles() {
+        let fingerprint = BindingDeclaration::new(&[SEQUENCE, TENANT], false).fingerprint();
         let index_tenant = PartSpec::new([0x11; 16], PartKind::Uuid, PartRole::Index);
 
         assert_eq!(
-            BindingShape::new(&[TENANT, SEQUENCE], false).fingerprint(),
+            BindingDeclaration::new(&[TENANT, SEQUENCE], false).fingerprint(),
             fingerprint
         );
         assert_ne!(
-            BindingShape::new(&[SEQUENCE, index_tenant], false).fingerprint(),
+            BindingDeclaration::new(&[SEQUENCE, index_tenant], false).fingerprint(),
             fingerprint
         );
         assert_ne!(
-            BindingShape::new(&[SEQUENCE, TENANT], true).fingerprint(),
+            BindingDeclaration::new(&[SEQUENCE, TENANT], true).fingerprint(),
             fingerprint
         );
     }
 
     #[test]
-    fn every_domain_carries_its_shape_fingerprint() {
-        let shape = BindingShape::new(&[TENANT], false);
+    fn every_domain_carries_its_declaration_fingerprint() {
+        let declaration = BindingDeclaration::new(&[TENANT], false);
         let domain = scoped(&[TENANT], false, &[PartValue::Uuid([0x33; 16])], None).unwrap();
 
-        assert_eq!(domain.fingerprint(), shape.fingerprint());
-        // Independently computed with shasum over the documented empty shape.
+        assert_eq!(domain.fingerprint(), declaration.fingerprint());
+        // Independently computed with shasum over the documented empty declaration.
         assert_eq!(
             scoped(&[], false, &[], None).unwrap().fingerprint(),
             hex_array("ff670aba047d77fa")

@@ -135,7 +135,7 @@ impl<F: Field> Sealed<F> {
     ///
     /// Returns [`Error::AuthenticationFailed`] for another field, other binding
     /// values, another record, or modified bytes, and
-    /// [`Error::BindingMismatch`] for a value sealed with another binding shape.
+    /// [`Error::BindingMismatch`] for a value sealed with another binding declaration.
     /// Also returns an error for invalid binding values, unknown keys,
     /// unavailable keys, invalid padding, or codec failure.
     pub fn open(
@@ -188,7 +188,7 @@ impl<F: Field> Sealed<F> {
     /// # Errors
     ///
     /// Returns [`Error::BindingMismatch`] for a value sealed with another binding
-    /// shape, or an error for invalid binding values or unavailable keys.
+    /// declaration, or an error for invalid binding values or unavailable keys.
     pub fn needs_reseal(
         &self,
         args: impl Args<F>,

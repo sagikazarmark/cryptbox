@@ -1,4 +1,4 @@
-//! Public-boundary tests for migrating a field's binding shape.
+//! Public-boundary tests for migrating a field's binding declaration.
 
 #![cfg(feature = "migrate")]
 
@@ -558,7 +558,7 @@ fn a_sweep_reports_a_row_of_another_scope_as_an_anomaly() {
 }
 
 /// Looks `email` up the way the application does during the window: probes
-/// over both index shapes, then opening each candidate under either shape.
+/// over both index declarations, then opening each candidate under either declaration.
 fn look_up(store: &MemoryStore, email: &str) -> Vec<(i64, String)> {
     let acme = tenant(b"acme");
     let probes = probes_across::<FieldOnly, EmailLookup>(
@@ -616,7 +616,7 @@ fn lookups_keep_working_throughout_the_window() {
 }
 
 #[test]
-fn probes_across_cover_the_old_and_the_new_index_shapes() {
+fn probes_across_cover_the_old_and_the_new_index_declarations() {
     let acme = tenant(b"acme");
     let probes = probes_across::<FieldOnly, EmailLookup>(
         "ada@example.com",
@@ -642,7 +642,7 @@ fn probes_across_cover_the_old_and_the_new_index_shapes() {
 }
 
 #[test]
-fn a_probe_both_index_shapes_share_is_returned_once() {
+fn a_probe_both_index_declarations_share_is_returned_once() {
     // Adding a record leaves the index binding unchanged.
     let acme = tenant(b"acme");
     let probes = probes_across::<Tenant, EmailLookup>(
@@ -660,7 +660,7 @@ fn a_probe_both_index_shapes_share_is_returned_once() {
 }
 
 #[test]
-fn open_across_reports_a_value_of_neither_shape_as_a_binding_mismatch() {
+fn open_across_reports_a_value_of_neither_declaration_as_a_binding_mismatch() {
     let keys = acme_keys();
     let sealed =
         Sealed::<TenantEmail>::seal(&"ada@example.com".into(), &tenant(b"acme"), &keys).unwrap();

@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     Binding, BlindIndexSpec, Codec, Field, FieldId, IndexId, Padding, PartKind, PartRole, PartSpec,
-    binding::shape_fingerprint,
+    binding::declaration_fingerprint,
 };
 
 /// Lists fields and blind indexes with their persistent schema.
@@ -147,7 +147,7 @@ impl Manifest {
                     padding: F::PADDING,
                     record: F::RECORD,
                     parts: <F::Binding as Binding>::PARTS,
-                    fingerprint: shape_fingerprint::<F::Binding>(F::RECORD),
+                    fingerprint: declaration_fingerprint::<F::Binding>(F::RECORD),
                     custody: None,
                 });
                 self.fields.len() - 1

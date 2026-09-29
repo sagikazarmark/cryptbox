@@ -119,10 +119,10 @@
 //!
 //! # Persistent schema
 //!
-//! Codec compatibility, field/index/part IDs, the binding shape (part kinds and
+//! Codec compatibility, field/index/part IDs, the binding declaration (part kinds and
 //! roles, and whether the field binds a record), normalization, and index
 //! precision are persistent schema. Stored bytes do not describe them, beyond a
-//! diagnostic fingerprint of the binding shape; changing them requires a
+//! diagnostic fingerprint of the binding declaration; changing them requires a
 //! migration plan. Padding is not schema: the envelope records it.
 //! Guard them in CI with [`testing::assert_encoding`] fixtures, a
 //! [`schema::Manifest`] snapshot, and [`assert_unique_ids!`]; see [schema rules].

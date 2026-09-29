@@ -69,7 +69,7 @@ impl Field for TenantNote {
 
 #[test]
 fn manifest_shows_a_scoped_binding_and_its_shred_unit() {
-    // The tenant part and its shape fingerprint are in docs/wire-format.md#presets.
+    // The tenant part and its binding fingerprint are in docs/wire-format.md#presets.
     assert_eq!(
         Manifest::new().field::<TenantNote>().to_string(),
         "\
@@ -224,7 +224,7 @@ field 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
 "
     );
 
-    // The fingerprint, computed with shasum from docs/wire-format.md#shape-fingerprint,
+    // The fingerprint, computed with shasum from docs/wire-format.md#binding-fingerprint,
     // is the one a sealed value's header carries.
     let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
     let scope = ProjectScope {

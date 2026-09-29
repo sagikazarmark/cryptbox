@@ -1,27 +1,27 @@
 use crate::{
     Args, Binding, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
     EncryptionKeySource, Error, Field, Sealed,
-    binding::{shape_fingerprint, with_domain},
+    binding::{declaration_fingerprint, with_domain},
     blind::{IndexArgs, probes_in},
     bound, inspect_ciphertext,
 };
 
-/// Opens a value during a legacy-binding window, whichever binding shape it is
+/// Opens a value during a legacy-binding window, whichever binding declaration it is
 /// sealed with.
 ///
-/// A value whose header names the field's current shape is opened under `args`
+/// A value whose header names the field's current declaration is opened under `args`
 /// with `keys`, as [`Sealed::open`] does. Any other value is opened under the
-/// older shape `Old` with `old_keys`: each of `Old`'s parts takes its value
+/// older declaration `Old` with `old_keys`: each of `Old`'s parts takes its value
 /// from the binding in `args` by part ID, and the record in `args` is bound
 /// when the header names `Old` with a record, as
 /// [`RowPlanner::legacy_binding`](super::RowPlanner::legacy_binding) does.
 ///
-/// The header's shape fingerprint only chooses the shape to try: either way the
-/// value must authenticate under that shape's binding.
+/// The header's binding fingerprint only chooses the declaration to try: either way the
+/// value must authenticate under that declaration's binding.
 ///
 /// # Errors
 ///
-/// Returns [`Error::BindingMismatch`] for a value of neither shape, and
+/// Returns [`Error::BindingMismatch`] for a value of neither declaration, and
 /// [`Error::InvalidBinding`] when `Old` has a part that the current binding
 /// lacks or holds with another kind. Also returns any error of
 /// [`Sealed::open`].
@@ -42,7 +42,7 @@ where
             return bound::open(&domain, bytes, keys);
         }
 
-        let recorded = record.is_some() && stored == shape_fingerprint::<Old>(true);
+        let recorded = record.is_some() && stored == declaration_fingerprint::<Old>(true);
         let record = if recorded { record } else { None };
         let old = BindingDomain::projected::<Old, F::Binding>(F::ID, binding, record)?;
         bound::open(&old, bytes, old_keys)
@@ -53,12 +53,12 @@ where
 
 /// Derives the probes of a lookup during a legacy-binding window: those of
 /// the field's current index binding under `args` with `keys`, followed by
-/// those of the older shape `Old` with `old_keys`.
+/// those of the older declaration `Old` with `old_keys`.
 ///
 /// A row keeps the index it was written with until a sweep reseals it, so a
-/// lookup must match both shapes until the window closes. `Old`'s `keys` and
-/// `index` parts take their values from `args` by part ID. A shape change that
-/// keeps the [index binding] keeps the index bytes, and a probe both shapes
+/// lookup must match both declarations until the window closes. `Old`'s `keys` and
+/// `index` parts take their values from `args` by part ID. A declaration change that
+/// keeps the [index binding] keeps the index bytes, and a probe both declarations
 /// share is returned once.
 ///
 /// Probes are candidates only: open each candidate row with [`open_across`] and

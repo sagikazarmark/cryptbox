@@ -20,12 +20,12 @@ use crate::{Binding, Codec, FieldId, IndexList, Padding};
 /// makes existing values fail authentication. Declaring the same ID on several
 /// types deliberately makes them the same logical field.
 ///
-/// The value type, codec representation, field ID, and binding shape define
+/// The value type, codec representation, field ID, and binding declaration define
 /// persistent schema. The envelope does not store a codec identifier, so
 /// incompatible changes require an explicit data migration. Padding is write
 /// policy instead: the envelope records whether a value is padded. See
 /// [`crate::schema`] and [`crate::testing`] for CI checks of the codec and IDs;
-/// an envelope written with another binding shape reports
+/// an envelope written with another binding declaration reports
 /// [`Error::BindingMismatch`](crate::Error::BindingMismatch) when opened.
 ///
 /// For blind indexes, the field domain-separates derivation; it does not
@@ -118,7 +118,7 @@ pub trait Field: 'static {
     /// The declared scope every value is bound to, such as a tenant.
     ///
     /// [`FieldOnly`](crate::FieldOnly) binds values to the field ID alone. The
-    /// binding's shape is persistent schema; its values are supplied at each
+    /// binding's declaration is persistent schema; its values are supplied at each
     /// call. See [`Binding`].
     type Binding: Binding;
 

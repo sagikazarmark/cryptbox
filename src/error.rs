@@ -88,14 +88,14 @@ pub enum Error {
     /// Ciphertext authentication failed.
     #[error("ciphertext authentication failed")]
     AuthenticationFailed,
-    /// The envelope was sealed with a different binding shape than the
+    /// The envelope was sealed with a different binding declaration than the
     /// reader's field declares.
     ///
-    /// Reported from the envelope's shape fingerprint before any key lookup or
+    /// Reported from the envelope's binding fingerprint before any key lookup or
     /// authentication, so the value was likely written before a binding
     /// migration, or read as the wrong field. Different binding values under
-    /// the same shape report [`Error::AuthenticationFailed`].
-    #[error("ciphertext binding shape does not match the field")]
+    /// the same declaration report [`Error::AuthenticationFailed`].
+    #[error("ciphertext binding declaration does not match the field")]
     BindingMismatch,
     /// Encoding or decoding the typed value failed.
     #[error("codec failed: {0}")]

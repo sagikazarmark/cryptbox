@@ -188,7 +188,7 @@ mod tests {
             hex::encode(&envelope[..55]),
             concat!(
                 "4342580002010011111111222243338444555555555555",
-                // Shape fingerprint, then the nonce.
+                // Binding fingerprint, then the nonce.
                 "cda083fe6eae1bf1",
                 "000102030405060708090a0b0c0d0e0f1011121314151617",
             )
@@ -214,7 +214,7 @@ mod tests {
 
     // docs/wire-format.md#provisional-scoped-vectors
     const FIELD_BINDING: &str = "123456781234423482341234567890ab000000";
-    // The empty shape's fingerprint, which a field-only binding carries.
+    // The empty declaration's fingerprint, which a field-only binding carries.
     const FIELD_FINGERPRINT: &str = "ff670aba047d77fa";
     const SCOPED_BINDING: &str = "123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
     const SCOPED_RECORD_BINDING: &str = "123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";

@@ -39,7 +39,7 @@ pub(crate) fn seal(
 
 /// Authenticates and decrypts `ciphertext` under `domain`, removing recorded padding.
 ///
-/// A different binding shape is reported before the key source is asked for
+/// A different binding declaration is reported before the key source is asked for
 /// a keyring.
 pub(crate) fn open(
     domain: &BindingDomain,

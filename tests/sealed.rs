@@ -80,7 +80,7 @@ field!(
     OrgWorkspace,
     true
 );
-// Same field ID as `CustomerEmail`, another binding shape.
+// Same field ID as `CustomerEmail`, another binding declaration.
 field!(
     TenantEmail,
     "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
@@ -128,12 +128,12 @@ fn every_argument_form_round_trips() {
 }
 
 #[test]
-fn field_only_values_carry_the_empty_shape_fingerprint() {
+fn field_only_values_carry_the_empty_declaration_fingerprint() {
     let keys = keys();
     let sealed = Sealed::<Nickname>::seal(&email(), (), &keys).unwrap();
 
     let info = cryptbox::inspect_ciphertext(sealed.as_bytes()).unwrap();
-    // docs/wire-format.md#shape-fingerprint
+    // docs/wire-format.md#binding-fingerprint
     assert_eq!(hex::encode(info.binding_fingerprint()), "ff670aba047d77fa");
 }
 
@@ -258,7 +258,7 @@ fn reseal_rewrites_a_value_under_the_current_key() {
 }
 
 #[test]
-fn needs_reseal_reports_another_shape() {
+fn needs_reseal_reports_another_declaration() {
     let keys = keys();
     let tenant = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
     let sealed = Sealed::<TenantEmail>::seal(&email(), &tenant, &keys).unwrap();
