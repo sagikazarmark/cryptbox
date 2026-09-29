@@ -3,7 +3,13 @@ use std::{collections::BTreeMap, fmt, sync::Arc};
 use base64::Engine as _;
 use zeroize::Zeroizing;
 
-use crate::{IndexKeyId, KeyId};
+use crate::id::identifier;
+
+identifier!(KeyId, "An opaque encryption-key generation identifier.");
+identifier!(
+    IndexKeyId,
+    "An opaque blind-index-key generation identifier."
+);
 
 /// A key or keyring could not be created.
 ///
@@ -482,4 +488,24 @@ impl Keys {
         self.blind_indexes = Some(keyring);
         self
     }
+}
+
+/// Creates a [`KeyId`](crate::KeyId) from a UUID literal.
+#[macro_export]
+macro_rules! key_id {
+    ($value:literal) => {{
+        const ID: $crate::KeyId =
+            $crate::KeyId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
+        ID
+    }};
+}
+
+/// Creates an [`IndexKeyId`](crate::IndexKeyId) from a UUID literal.
+#[macro_export]
+macro_rules! index_key_id {
+    ($value:literal) => {{
+        const ID: $crate::IndexKeyId =
+            $crate::IndexKeyId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
+        ID
+    }};
 }

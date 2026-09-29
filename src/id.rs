@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::fmt;
 
 macro_rules! identifier {
     ($name:ident, $description:literal) => {
@@ -29,14 +29,14 @@ macro_rules! identifier {
             }
         }
 
-        impl fmt::Display for $name {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-                fmt::Display::fmt(&uuid::Uuid::from_bytes(self.0).hyphenated(), formatter)
+        impl ::std::fmt::Display for $name {
+            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                ::std::fmt::Display::fmt(&::uuid::Uuid::from_bytes(self.0).hyphenated(), formatter)
             }
         }
 
-        impl fmt::Debug for $name {
-            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        impl ::std::fmt::Debug for $name {
+            fn fmt(&self, formatter: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 formatter
                     .debug_tuple(stringify!($name))
                     .field(&format_args!("{}", self))
@@ -44,26 +44,24 @@ macro_rules! identifier {
             }
         }
 
-        impl FromStr for $name {
-            type Err = InvalidIdentifier;
+        impl ::std::str::FromStr for $name {
+            type Err = $crate::InvalidIdentifier;
 
             fn from_str(value: &str) -> Result<Self, Self::Err> {
-                parse_uuid(value).map(Self)
+                $crate::id::parse_uuid(value).map(Self)
             }
         }
     };
 }
 
+// Shared with `key`, which declares its key-generation IDs next to the keys.
+pub(crate) use identifier;
+
 identifier!(FieldId, "A stable logical encrypted-field identifier.");
-identifier!(KeyId, "An opaque encryption-key generation identifier.");
 identifier!(IndexId, "A stable logical blind-index identifier.");
 identifier!(
     PartId,
     "A stable binding-part identifier, independent of Rust names."
-);
-identifier!(
-    IndexKeyId,
-    "An opaque blind-index-key generation identifier."
 );
 
 /// Identifies a complete encryption-suite construction.
@@ -150,7 +148,7 @@ impl std::error::Error for InvalidIdentifier {}
 
 // Accepts only the hyphenated form: `try_parse` also takes simple, braced, and URN
 // forms, which all differ from it in length.
-fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
+pub(crate) fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
     if value.len() != 36 {
         return Err(InvalidIdentifier);
     }
@@ -170,32 +168,12 @@ macro_rules! field_id {
     }};
 }
 
-/// Creates a [`KeyId`](crate::KeyId) from a UUID literal.
-#[macro_export]
-macro_rules! key_id {
-    ($value:literal) => {{
-        const ID: $crate::KeyId =
-            $crate::KeyId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
-        ID
-    }};
-}
-
 /// Creates an [`IndexId`](crate::IndexId) from a UUID literal.
 #[macro_export]
 macro_rules! index_id {
     ($value:literal) => {{
         const ID: $crate::IndexId =
             $crate::IndexId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
-        ID
-    }};
-}
-
-/// Creates an [`IndexKeyId`](crate::IndexKeyId) from a UUID literal.
-#[macro_export]
-macro_rules! index_key_id {
-    ($value:literal) => {{
-        const ID: $crate::IndexKeyId =
-            $crate::IndexKeyId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
         ID
     }};
 }

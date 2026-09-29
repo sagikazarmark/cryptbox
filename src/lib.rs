@@ -219,10 +219,11 @@ pub use envelope::{
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use field::Field;
-pub use id::{
-    FieldId, IndexId, IndexKeyId, InvalidIdentifier, KeyId, PartId, ShapeFingerprint, SuiteId,
+pub use id::{FieldId, IndexId, InvalidIdentifier, PartId, ShapeFingerprint, SuiteId};
+pub use key::{
+    BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyError,
+    KeyId, Keys,
 };
-pub use key::{BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, KeyError, Keys};
 pub use key_source::{BlindIndexKeySource, EncryptionKeySource, GlobalKeys, KeyContext};
 pub use padding::Padding;
 pub use prepare::Prepared;
