@@ -8,9 +8,9 @@ use std::sync::{
 use cryptbox::{Codec, FieldOnly, Padding, Plain, Raw, Seal, Secret, Utf8};
 use zeroize::Zeroize;
 
-struct ExampleField;
+struct ExampleSeal;
 
-impl Seal for ExampleField {
+impl Seal for ExampleSeal {
     const ID: cryptbox::SealId = cryptbox::seal_id!("7c1e6a52-0d3b-4f8e-9a61-2b5c4d7e8f90");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
@@ -22,7 +22,7 @@ impl Seal for ExampleField {
 
 #[test]
 fn plain_values_require_explicit_plaintext_access() {
-    let value = Plain::<ExampleField>::new("mark@example.com".to_owned());
+    let value = Plain::<ExampleSeal>::new("mark@example.com".to_owned());
 
     assert_eq!(value.expose_secret(), "mark@example.com");
     assert_eq!(format!("{value:?}"), "Plain([REDACTED])");
@@ -31,7 +31,7 @@ fn plain_values_require_explicit_plaintext_access() {
 /// Generic over the column keys without bounding them: only the `SQLx` column
 /// needs `K: ColumnKeys`.
 struct Record<K> {
-    email: Plain<ExampleField, K>,
+    email: Plain<ExampleSeal, K>,
 }
 
 impl<K> Record<K> {

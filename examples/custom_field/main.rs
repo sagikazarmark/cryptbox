@@ -1,4 +1,4 @@
-//! Custom field for an application-defined ASCII handle, with explicit ownership.
+//! Custom seal for an application-defined ASCII handle, with explicit ownership.
 
 // ANCHOR: custom-field
 use std::sync::{PoisonError, RwLock};
@@ -42,7 +42,7 @@ impl Codec<Secret<String>> for HandleCodec {
     }
 }
 
-// The field names the validating codec explicitly. `<Secret<String> as Plaintext>::Codec`
+// The seal names the validating codec explicitly. `<Secret<String> as Plaintext>::Codec`
 // (plain UTF-8) would store the same bytes but skip the handle policy.
 struct Handle;
 

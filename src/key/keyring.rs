@@ -20,7 +20,7 @@ use super::material::{BlindIndexKey, EncryptionKey, IndexKeyId, KeyId};
 /// unrelated material.
 ///
 /// A keyring is its own [`EncryptionKeySource`](crate::EncryptionKeySource): it
-/// serves every field and scope alike. Which keyring protects which field or
+/// serves every seal and scope alike. Which keyring protects which seal or
 /// scope is application code; see [choosing keyrings] for the mistakes the
 /// library cannot detect.
 ///

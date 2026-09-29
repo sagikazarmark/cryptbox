@@ -10,16 +10,16 @@ use crate::{
     binding::declaration_fingerprint,
 };
 
-/// Lists fields and blind indexes with their persistent schema.
+/// Lists seals and blind indexes with their persistent schema.
 ///
-/// Register every field and index explicitly, render the manifest with
+/// Register every seal and index explicitly, render the manifest with
 /// [`Display`](fmt::Display), and compare the result with a committed
 /// snapshot in a test. A change to persistent schema then shows up as a
 /// snapshot diff for review. Assert that [`Self::duplicates`] is empty as well.
 ///
-/// Each field lists:
+/// Each seal lists:
 ///
-/// - its field ID, codec ID, and padding;
+/// - its seal ID, codec ID, and padding;
 /// - `record`: whether it binds a record;
 /// - `binding`: the [binding fingerprint](crate::CiphertextInfo::context_fingerprint),
 ///   in hex, that its headers carry, followed by each part's ID, kind, and role in part-ID
@@ -32,7 +32,7 @@ use crate::{
 ///   tenant, shreds only that coarser unit; say so in the custody label;
 /// - `custody`: the label given with [`Self::custody`], if any.
 ///
-/// Each index lists its index ID, field ID, bits, and normalizer name.
+/// Each index lists its index ID, seal ID, bits, and normalizer name.
 ///
 /// The output names IDs, never Rust types, so it is the same on every
 /// toolchain and survives renaming or moving a marker. The value type is not
@@ -117,9 +117,9 @@ impl Manifest {
         self
     }
 
-    /// Labels which keys protect field `F`, registering it if needed.
+    /// Labels which keys protect seal `F`, registering it if needed.
     ///
-    /// The library cannot see which keyring an application passes for a field,
+    /// The library cannot see which keyring an application passes for a seal,
     /// so the manifest records custody declaratively: the label appears in the
     /// snapshot for reviewers and auditors, and a later label replaces an
     /// earlier one. Name the key custody, such as `"payments KMS, per org"`,
@@ -176,9 +176,9 @@ impl Manifest {
         self
     }
 
-    /// Returns every field or index ID that more than one registered marker declares.
+    /// Returns every seal or index ID that more than one registered marker declares.
     ///
-    /// Markers that share a field ID are one logical field and can read each
+    /// Markers that share a seal ID are one seal and can read each
     /// other's ciphertext. That is occasionally deliberate, but usually a copied
     /// ID, so assert that this is empty in a test. Each duplicate names the
     /// markers by [`std::any::type_name`] to help find the copy; the manifest's
@@ -198,7 +198,7 @@ impl Manifest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Duplicate {
-    /// Several field markers declare one field ID.
+    /// Several seal markers declare one seal ID.
     Seal {
         /// The shared ID.
         id: SealId,
@@ -331,10 +331,10 @@ const fn role_name(role: PartRole) -> &'static str {
 
 /// Fails compilation when two of the listed markers declare the same ID.
 ///
-/// List field markers to check their field IDs, or `indexes:` followed by
+/// List seal markers to check their seal IDs, or `indexes:` followed by
 /// blind-index markers to check their index IDs. The check is a constant
 /// assertion, so it works with manual impls and derives alike and needs no test
-/// to run. Markers that deliberately share a field ID are one logical field;
+/// to run. Markers that deliberately share a seal ID are one seal;
 /// leave one of them out.
 ///
 /// ```
@@ -479,7 +479,7 @@ pub const fn has_duplicate(ids: &[[u8; 16]]) -> bool {
 /// Reports whether `written` holds exactly the index IDs of `declared`, each
 /// once and in any order, at compile time.
 ///
-/// `#[derive(Record)]` checks each field's written indexes against its
+/// `#[derive(Record)]` checks each field's written indexes against its seal's
 /// [`Seal::Indexes`](crate::Seal::Indexes) with it.
 #[doc(hidden)]
 #[must_use]

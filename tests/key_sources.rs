@@ -170,7 +170,7 @@ fn a_blind_index_keyring_lists_its_current_key_first() {
     assert_eq!(probe_ids, ids);
 }
 
-/// An application source that keeps payment fields under their own keyring.
+/// An application source that keeps payment seals under their own keyring.
 struct BySeal {
     general: EncryptionKeyring,
     payments: EncryptionKeyring,

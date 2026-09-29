@@ -1,4 +1,4 @@
-//! Key selection: which keyring protects a field or blind index in a key scope.
+//! Key selection: which keyring protects a seal or blind index in a key scope.
 //!
 //! Key material and keyrings live in `key`, below the cryptographic cores; this
 //! layer sits above bindings, because a key source is asked by [`KeyScope`].
@@ -9,9 +9,9 @@ use crate::{BlindIndexKeyring, EncryptionKeyring, Error, IndexId, KeyScope, Keys
 
 /// Supplies the encryption keyring for each operation.
 ///
-/// Operations pass the source the field they act on and the [`KeyScope`] of the
+/// Operations pass the source the seal they act on and the [`KeyScope`] of the
 /// binding arguments. [`EncryptionKeyring`] and [`Keys`] ignore both and return
-/// themselves, so which keyring protects which field or scope is application
+/// themselves, so which keyring protects which seal or scope is application
 /// code: pass that keyring to the call, or implement this trait to choose it.
 /// See [choosing keyrings] for the mistakes a source must avoid, since sealing
 /// with the wrong keyring succeeds and is only noticed when reading.
@@ -135,7 +135,7 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
 /// [`keys::install`](crate::keys::install). Implement this trait over your own
 /// static to use other keys (a second deployment, a test fixture) without
 /// installing the global. Like the column, it serves only
-/// [`FieldOnly`](crate::FieldOnly) fields: a value bound to a tenant is sealed
+/// [`FieldOnly`](crate::FieldOnly) seals: a value bound to a tenant is sealed
 /// explicitly with that tenant's keys.
 ///
 /// # Examples

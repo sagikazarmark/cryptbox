@@ -1,12 +1,12 @@
 use super::{BindingDomain, FieldOnly, RecordId};
 use crate::{Error, Seal};
 
-/// The binding arguments of one seal or open of field `F`.
+/// The binding arguments of one sealing or opening call under seal `F`.
 ///
-/// Every value is bound to its field's [`Binding`](crate::Binding) and, when
+/// Every value is bound to its seal's [`Binding`](crate::Binding) and, when
 /// [`Seal::RECORD`] is set, to a record. The arguments take one of these forms:
 ///
-/// | Seal | Arguments |
+/// | The seal declares | Arguments |
 /// | --- | --- |
 /// | [`FieldOnly`], no record | `()` |
 /// | [`FieldOnly`], with a record | `RecordId` |
@@ -15,14 +15,14 @@ use crate::{Error, Seal};
 /// | any binding, in a record | [`InRecord(&F::Binding, RecordId)`](InRecord) |
 ///
 /// Passing a binding of another type is a type error. Passing a record to a
-/// field that binds none, or omitting it for a field that binds one, fails the
+/// seal that binds none, or omitting it for a seal that binds one, fails the
 /// build when the call is first compiled. Like the [`Binding`](crate::Binding)
 /// checks, it runs after monomorphization, so `cargo check` does not report it;
 /// `cargo build` and `cargo test` do.
 ///
 /// [`InRecord`] opts out of that check: it binds the record exactly when the
-/// field declares one. A [`Record`](crate::Record) uses it to pass its ID to
-/// every field, whichever of them bind it.
+/// seal declares one. A [`Record`](crate::Record) uses it to pass its ID to
+/// every sealed field, whichever of their seals bind it.
 ///
 /// This trait is sealed: the forms above are the only implementations.
 ///
@@ -55,7 +55,7 @@ use crate::{Error, Seal};
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
 ///
-/// Forgetting the record of a record-bound field fails the build:
+/// Forgetting the record of a record-bound seal fails the build:
 ///
 /// ```compile_fail,E0080
 /// # use cryptbox::{
@@ -79,7 +79,7 @@ use crate::{Error, Seal};
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
 ///
-/// So does binding a record to a field that declares none:
+/// So does binding a record to a seal that declares none:
 ///
 /// ```compile_fail,E0080
 /// # use cryptbox::{
@@ -172,12 +172,12 @@ impl<F: Seal> sealed::Sealed<F> for (&F::Binding, RecordId<'_>) {
     }
 }
 
-/// The binding arguments of a field of a [`Record`](crate::Record): the
+/// The binding arguments of a sealed field of a [`Record`](crate::Record): the
 /// record's binding and ID.
 ///
-/// The record is bound exactly when the field declares [`Seal::RECORD`], so
+/// The record is bound exactly when the field's seal declares [`Seal::RECORD`], so
 /// one record ID serves every field of a row, whether or not it binds one.
-/// Unlike the other [`Args`] forms, a record passed to a field that binds none
+/// Unlike the other [`Args`] forms, a record passed to a seal that binds none
 /// is not a build error: it is ignored. Pass `(&binding, record)` where the
 /// record must be bound.
 ///
@@ -205,7 +205,7 @@ impl<F: Seal> sealed::Sealed<F> for (&F::Binding, RecordId<'_>) {
 /// let record = RecordId::from(42_i64);
 ///
 /// let sealed = Sealed::<CustomerNote>::seal(&"VIP".into(), InRecord(&tenant, record), &keys)?;
-/// // The field binds no record, so the value opens under the tenant alone.
+/// // The seal binds no record, so the value opens under the tenant alone.
 /// assert_eq!(sealed.open(&tenant, &keys)?, "VIP");
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
@@ -230,18 +230,18 @@ impl<F: Seal> sealed::Sealed<F> for InRecord<'_, F::Binding> {
 }
 
 // Panics become build errors in `const` context, naming the missing or extra record.
-const fn check_record(field: bool, args: bool) {
+const fn check_record(seal: bool, args: bool) {
     assert!(
-        !field || args,
-        "this field binds a record: pass `(&binding, record)`, or a `RecordId` for a `FieldOnly` field"
+        !seal || args,
+        "this seal binds a record: pass `(&binding, record)`, or a `RecordId` for a `FieldOnly` seal"
     );
     assert!(
-        field || !args,
-        "this field binds no record: pass its binding alone, or `()` for a `FieldOnly` field"
+        seal || !args,
+        "this seal binds no record: pass its binding alone, or `()` for a `FieldOnly` seal"
     );
 }
 
-/// Encodes the binding of field `F` under `args`, checking at build time that
+/// Encodes the binding of seal `F` under `args`, checking at build time that
 /// `args` carries a record exactly when `F` binds one.
 pub(crate) fn domain<F: Seal, A: Args<F>>(args: A) -> Result<BindingDomain, Error> {
     const { check_record(F::RECORD, <A as sealed::Sealed<F>>::RECORD) };
@@ -249,7 +249,7 @@ pub(crate) fn domain<F: Seal, A: Args<F>>(args: A) -> Result<BindingDomain, Erro
     args.with_parts(|binding, record| BindingDomain::of(F::ID, binding, record))
 }
 
-/// Encodes the binding of field `F` under `args`, as [`domain`] does, and
+/// Encodes the binding of seal `F` under `args`, as [`domain`] does, and
 /// passes it to `f` with the binding and record it was encoded from.
 #[cfg(feature = "migrate")]
 pub(crate) fn with_domain<F: Seal, A: Args<F>, T>(
@@ -263,7 +263,7 @@ pub(crate) fn with_domain<F: Seal, A: Args<F>, T>(
     })
 }
 
-/// Encodes the binding of field `F` under `args`, as [`domain`] does, together
+/// Encodes the binding of seal `F` under `args`, as [`domain`] does, together
 /// with the blind-index domain of its `keys` and `index` parts.
 pub(crate) fn domains<F: Seal, A: Args<F>>(
     args: A,

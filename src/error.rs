@@ -89,13 +89,13 @@ pub enum Error {
     #[error("ciphertext authentication failed")]
     AuthenticationFailed,
     /// The envelope was sealed with a different binding declaration than the
-    /// reader's field declares.
+    /// reader's seal declares.
     ///
     /// Reported from the envelope's binding fingerprint before any key lookup or
     /// authentication, so the value was likely written before a binding
-    /// migration, or read as the wrong field. Different binding values under
+    /// migration, or read as the wrong seal. Different binding values under
     /// the same declaration report [`Error::AuthenticationFailed`].
-    #[error("ciphertext binding declaration does not match the field")]
+    #[error("ciphertext binding declaration does not match the seal")]
     BindingMismatch,
     /// Encoding or decoding the typed value failed.
     #[error("codec failed: {0}")]
@@ -133,7 +133,7 @@ pub enum Error {
     /// The input exceeds the suite's message-size limit.
     #[error("message is too long")]
     MessageTooLong,
-    /// The encoded plaintext does not fit the field's fixed padding length.
+    /// The encoded plaintext does not fit the seal's fixed padding length.
     #[error("encoded plaintext exceeds the padding length")]
     PaddingOverflow,
     /// Authenticated plaintext does not carry valid padding.

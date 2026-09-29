@@ -39,7 +39,7 @@ impl Binding for OrgWorkspace {
     }
 }
 
-macro_rules! field {
+macro_rules! seal {
     ($name:ident, $id:literal, $binding:ty, $record:literal) => {
         struct $name;
 
@@ -55,33 +55,33 @@ macro_rules! field {
     };
 }
 
-field!(
+seal!(
     Nickname,
     "5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01",
     FieldOnly,
     false
 );
-field!(
+seal!(
     RowNote,
     "9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24",
     FieldOnly,
     true
 );
-field!(
+seal!(
     CustomerEmail,
     "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     OrgWorkspace,
     true
 );
-// Same binding as `CustomerEmail`, another field ID.
-field!(
+// Same binding as `CustomerEmail`, another seal ID.
+seal!(
     BillingEmail,
     "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     OrgWorkspace,
     true
 );
-// Same field ID as `CustomerEmail`, another binding declaration.
-field!(
+// Same seal ID as `CustomerEmail`, another binding declaration.
+seal!(
     TenantEmail,
     "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     Tenant,
@@ -167,7 +167,7 @@ fn opening_under_other_binding_values_fails_authentication() {
 }
 
 #[test]
-fn opening_as_another_field_fails() {
+fn opening_as_another_seal_fails() {
     let keys = keys();
     let scope = scope(1, b"ws-1");
     let record = RecordId::from(7_i64);
@@ -215,7 +215,7 @@ fn invalid_binding_values_are_rejected() {
         }
     }
 
-    field!(
+    seal!(
         Scoped,
         "4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95",
         Unchecked,

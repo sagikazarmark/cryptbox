@@ -11,7 +11,7 @@ use crate::{
     keys,
 };
 
-/// A sealed value of field `F`: an encrypted envelope bound to the field, its
+/// A value sealed with seal `F`: an encrypted envelope bound to the seal, its
 /// binding values, and its record.
 ///
 /// This is what applications store. [`Self::seal`] encodes, pads, and encrypts a
@@ -22,7 +22,7 @@ use crate::{
 /// Construction from bytes validates only the envelope structure. Authenticity
 /// is established by opening. `F` is not encoded in the envelope, so the type
 /// parameter expresses caller intent rather than proving that stored bytes were
-/// sealed for that field. With the `serde` feature, this type serializes only
+/// sealed with that seal. With the `serde` feature, this type serializes only
 /// the binary envelope; deserialization performs the same structural checks as
 /// [`Self::from_bytes`], uses no keys, and leaves the bytes unauthenticated.
 ///
@@ -125,15 +125,15 @@ impl<F: Seal> Sealed<F> {
 
     /// Authenticates, decrypts, and decodes this value under `args`.
     ///
-    /// Success establishes authenticity under the supplied key, the field `F`,
+    /// Success establishes authenticity under the supplied key, the seal `F`,
     /// and the binding values and record in `args`, valid padding, and
-    /// successful decoding with the field's codec. Apply application-level
+    /// successful decoding with the seal's codec. Apply application-level
     /// validation separately. This does not establish freshness or consistency
     /// with a separately stored blind index.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::AuthenticationFailed`] for another field, other binding
+    /// Returns [`Error::AuthenticationFailed`] for another seal, other binding
     /// values, another record, or modified bytes, and
     /// [`Error::BindingMismatch`] for a value sealed with another binding declaration.
     /// Also returns an error for invalid binding values, unknown keys,
@@ -202,7 +202,7 @@ impl<F: Seal> Sealed<F> {
     ///
     /// The rewrite uses the current suite, key, and [`Seal::PADDING`],
     /// so a sweep can enable or disable padding. This authenticates the value
-    /// and checks padding, but does not decode it with the field's codec or
+    /// and checks padding, but does not decode it with the seal's codec or
     /// check any stored blind indexes. Use [`Self::open`] when decoded-value
     /// readability is required.
     ///
@@ -250,11 +250,11 @@ impl<F: Seal> Sealed<F> {
 }
 
 // Panics become build errors in `const` context. The process-wide keys and the
-// automatic column see no record, so a field that binds one never reaches them.
+// automatic column see no record, so a seal that binds one never reaches them.
 const fn check_no_record(record: bool) {
     assert!(
         !record,
-        "this field binds a record: the installed keys and the automatic column serve only fields without one"
+        "this seal binds a record: the installed keys and the automatic column serve only seals without one"
     );
 }
 
@@ -262,7 +262,7 @@ impl<F: Seal<Binding = FieldOnly>> Sealed<F> {
     /// Seals `value` with the [installed keys](keys::installed).
     ///
     /// This is exactly `Self::seal(value, (), keys::installed()?)`. The
-    /// process-wide keys serve only [`FieldOnly`] fields without a record.
+    /// process-wide keys serve only [`FieldOnly`] seals without a record.
     ///
     /// # Errors
     ///
@@ -321,14 +321,14 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
     }
 }
 
-/// A plaintext value of field `F` that an automatic `SQLx` column seals on
+/// A plaintext value of seal `F` that an automatic `SQLx` column seals on
 /// encode and opens on decode.
 ///
 /// A column decoder sees neither a row nor a scope, so `Plain` serves only
-/// [`FieldOnly`] fields without a record or blind indexes: its constructors
+/// [`FieldOnly`] seals without a record or blind indexes: its constructors
 /// and column impls require `F::Binding = FieldOnly` and `F::Indexes = ()`, and a
-/// field that binds a record fails the build.
-/// Seal every other field explicitly with [`Sealed`].
+/// seal that binds a record fails the build.
+/// Use [`Sealed`] explicitly for every other seal.
 ///
 /// `K` is the column's key source. The default, [`GlobalKeys`], reads the keys
 /// installed with [`keys::install`]; name another
@@ -358,7 +358,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// assert_eq!(email.expose_secret(), "user@example.com");
 /// ```
 ///
-/// A bound field is rejected:
+/// A bound seal is rejected:
 ///
 /// ```compile_fail,E0271
 /// use cryptbox::{Seal, SealId, Padding, Plain, Tenant, Utf8};
@@ -378,7 +378,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// let email = Plain::<CustomerEmail>::new("user@example.com");
 /// ```
 ///
-/// So is a field with blind indexes, which the column would not write:
+/// So is a seal with blind indexes, which the column would not write:
 ///
 /// ```compile_fail,E0271
 /// use cryptbox::{
@@ -419,7 +419,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// let email = Plain::<UserEmail>::new("user@example.com");
 /// ```
 ///
-/// And a field that binds a record fails the build:
+/// And a seal that binds a record fails the build:
 ///
 /// ```compile_fail,E0080
 /// # use cryptbox::{Seal, SealId, FieldOnly, Padding, Plain, Utf8};
@@ -472,8 +472,8 @@ where
 {
     /// Wraps a plaintext value.
     ///
-    /// Accepts anything convertible into the field's value type, so a `&str`
-    /// can initialize a `String` field.
+    /// Accepts anything convertible into the seal's value type, so a `&str`
+    /// can initialize a `String` value.
     pub fn new(value: impl Into<F::Value>) -> Self {
         Self::from_value(value.into())
     }
@@ -550,7 +550,7 @@ impl<F: Seal, K> fmt::Debug for Plain<F, K> {
 /// with its own lifetime; it does not share a single erasure boundary. This cannot
 /// erase previous copies, superseded allocations, or OS copies. For an opened
 /// `String`, use `Secret::new(sealed.open(args, keys)?)`.
-/// A field can also store `Secret<String>` or `Secret<Vec<u8>>` directly: their
+/// A seal can also take `Secret<String>` or `Secret<Vec<u8>>` as its value type: their
 /// [`crate::Plaintext`] codecs ([`crate::Utf8`], [`crate::Raw`]) write the same bytes.
 /// See the [custom-field example] and [ownership reference].
 ///

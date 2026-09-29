@@ -34,9 +34,9 @@ No features are enabled by default, and all features are additive:
   `RecordId`. Either binds the UUID's 16 bytes, exactly as a `[u8; 16]` does.
 
 The `SQLx` adapters automatically seal and open `Plain<F>`, the column for a
-`FieldOnly` field without a record or blind indexes. `Plain<F>` uses the keys
+`FieldOnly` seal without a record or blind indexes. `Plain<F>` uses the keys
 installed with `keys::install`; name another key source as `Plain<F, K>` to use
-application-owned keys. Seal every other field explicitly: `Sealed` and
+application-owned keys. Seal values of every other seal explicitly: `Sealed` and
 blind-index storage need no keys. These features do not
 choose an async runtime or TLS implementation for the application. Add `SQLx`
 0.8 directly with your backend and chosen runtime/TLS features; `CryptBox`'s

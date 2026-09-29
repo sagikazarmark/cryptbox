@@ -7,6 +7,12 @@ status: accepted
 > Amended by [ADR-0005](0005-runtime-binding-is-the-core.md), which supersedes the
 > `Field` shape and the `Encrypted<F>` carrier. The split between values and
 > fields still stands.
+>
+> Amended by [ADR-0007](0007-seals-may-be-their-own-values.md). A field is now a
+> *seal*, and a seal may be its own value type, so the split between values and
+> markers is a choice rather than a rule; a value type shared by several seals
+> still never carries an ID. `derive(Plaintext)` and application `Plaintext`
+> impls are retired in favour of an explicit `transparent` adapter or `codec`.
 
 The `profile!` macro is replaced by traits plus thin derives. An application's own
 types (`struct Address { .. }`, `struct Email(String)`) are **values**: they say

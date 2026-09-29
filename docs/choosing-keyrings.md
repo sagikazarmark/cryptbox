@@ -1,7 +1,7 @@
 # Choosing keyrings
 
 Operations take the keys to use directly, so deciding which keyring protects
-which field and which scope is application code. That decision is not
+which seal and which scope is application code. That decision is not
 cryptographically checked when values are written: this page lists the mistakes
 the library cannot detect, the rules that make them loud instead of silent, and
 how to test the choice.
@@ -11,14 +11,14 @@ how to test the choice.
 
 | Property | Who establishes it |
 | --- | --- |
-| Ciphertext cannot move across fields, scopes, or records | The library: the binding is in the AAD and the key derivation |
+| Ciphertext cannot move across seals, scopes, or records | The library: the binding is in the AAD and the key derivation |
 | Opening with the wrong keyring fails loudly | The library, **provided** key IDs follow the [rules below](#key-id-rules) |
 | Values of one scope are sealed under that scope's keyring | Your code: an unchecked decision at write time |
-| A field's values are sealed under the custody it requires | Your code: never checked |
+| A seal's values are sealed under the custody it requires | Your code: never checked |
 
-A keyring, and the `Keys` pair, serve every field and scope alike: they ignore
-the field and key scope the library passes them and return themselves. To keep
-fields or scopes apart, pass each call the keyring it needs, or implement a key
+A keyring, and the `Keys` pair, serve every seal and scope alike: they ignore
+the seal and key scope the library passes them and return themselves. To keep
+seals or scopes apart, pass each call the keyring it needs, or implement a key
 source that picks one.
 
 ## Four mistakes that fail silently at write time
@@ -29,15 +29,15 @@ all:
 - **Wrong scope.** Sealing scope A's data under scope B's keyring succeeds. It
   surfaces only when A is read with A's keyring, which may be long after the
   write, and the value is then unreadable by the scope that owns it.
-- **Wrong custody.** A field sealed under the wrong key hierarchy — an IBAN
+- **Wrong custody.** A seal's values sealed under the wrong key hierarchy — an IBAN
   under the general keyring rather than the payments one — is never detected.
   The data stays readable, so nothing fails; only a review finds it.
 - **Shredding.** A value sealed under the wrong scope's keyring survives the
   destruction of its own scope's keys, or is destroyed along with another
   scope's. Both are silent: one leaves
   data that should be gone, the other loses data that should have stayed.
-- **Audit.** The library cannot report which keys protect which field, so
-  "which keyring holds this field's data" is a question only your own records
+- **Audit.** The library cannot report which keys protect which seal, so
+  "which keyring holds this seal's data" is a question only your own records
   answer.
 
 The first two are write-time errors with delayed symptoms, so make them
@@ -69,7 +69,7 @@ Provision each generation once and reload the same pair after restarts. See
 Because the library cannot report custody, the mapping has to live where
 reviewers and auditors can see it and where a test can check it. Keep, beside
 the [manifest snapshot](integration.md#guarding-the-schema-in-ci), a committed
-table of one row per field:
+table of one row per seal:
 
 | Seal | Key scope | Custody | Shred unit |
 | --- | --- | --- | --- |
@@ -79,15 +79,15 @@ table of one row per field:
 
 Derive that table from the same constant your key source reads, so the code and
 the review artifact cannot drift, and treat a diff to it as a review gate: a
-field moving between custody labels is a migration of who can read the data, not
-a refactor. A field with no `keys` part has the empty key scope and cannot be
+seal moving between custody labels is a migration of who can read the data, not
+a refactor. A seal with no `keys` part has the empty key scope and cannot be
 shredded on its own; say so explicitly rather than leaving it blank.
 
 ## Implement a key source
 
 A key source is synchronous and must not do I/O on the sealing path. Load and
 refresh keys outside these calls and serve a local snapshot:
-`encryption_keyring(field, scope)` receives the field and the binding's key scope
+`encryption_keyring(seal, scope)` receives the seal and the binding's key scope
 and returns the keyring that protects them, or an error. The
 [tenant example](../examples/tenant_field.rs) implements it over a
 `HashMap<KeyScope, EncryptionKeyring>` in six lines.
@@ -112,10 +112,10 @@ rather than copying material, which is what makes refreshing simple:
   unreadable.
 
 Blind-index keyrings follow the same rules through `BlindIndexKeySource`, keyed
-by index instead of field, with independently generated roots.
+by index instead of seal, with independently generated roots.
 
 For the automatic SQLx column, the key source is a type: `Plain<F, K>` reads its
-keys from `K`, the installed keys by default. It serves only `FieldOnly` fields
+keys from `K`, the installed keys by default. It serves only `FieldOnly` seals
 without a record or blind indexes, because a column decoder sees neither the row
 nor its scope. Everything bound is sealed explicitly. See
 [keyrings and key sources](integration.md#keyrings-and-key-sources) for the
@@ -142,7 +142,7 @@ Key resolution is ordinary application logic, so test it like any other:
   state. See [testing and diagnostics](testing.md).
 
 A test that seals a value and opens it again with the same source proves a round
-trip, not custody: it passes even when every field shares one keyring. Pin the
+trip, not custody: it passes even when every seal shares one keyring. Pin the
 keyring identity, not only the round trip.
 
 ## Shredding depends on all of this

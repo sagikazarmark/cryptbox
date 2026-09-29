@@ -13,7 +13,7 @@ tests do not indicate security approval. [Documentation](README.md).
 flowchart TB
     subgraph trusted["Trusted application boundary"]
         K["Keyrings: independent encryption and index roots"]
-        A["Application: plaintext, fields, authorization"]
+        A["Application: plaintext, seals, authorization"]
         C["CryptBox: encode, encrypt, authenticate, decode"]
         K --> C
         A <--> C
@@ -29,11 +29,11 @@ compromised storage. Trust the application, key sources, dependencies, and opera
 system: root keys must be cryptographically random, encryption and index roots
 independently generated, and each generation ID permanently paired with the same
 material. IDs are public metadata; generate them independently of key bytes.
-Fields supply persistent schema, including their binding declaration. Binding values and
+Seals supply persistent schema, including their binding declaration. Binding values and
 record IDs are only as trustworthy as their source: take them from verified claims
 or an authorized request, never from the stored row. The exception is a
 `Record`'s record ID, which is read from the row and checked by opening every
-field that declares `record`; a record whose fields bind none gets no check.
+seal that declares `record`; a record whose seals bind none gets no check.
 Secure OS randomness and a compatible target are required; see [platform constraints](features.md#platforms-and-tested-configurations).
 
 ## Threats and unsuitable uses
@@ -42,12 +42,12 @@ Secure OS randomness and a compatible target are required; see [platform constra
 | --- | --- |
 | Read dumps, snapshots, backups, or detached volumes | Selected values remain confidential under the assumptions above. Other columns, IDs, and metadata remain visible. |
 | Modify stored ciphertext | Authenticated decryption rejects tampering. Parsing alone does not authenticate; malformed formats or unknown keys may fail earlier. |
-| Copy ciphertext to another logical field | Authentication rejects a field with a different field ID. A different binding declaration reports `BindingMismatch`. |
-| Copy ciphertext to another scope, such as another tenant | Authentication rejects other binding values of a field that declares them. A `FieldOnly` field has no scope. |
-| Copy ciphertext between rows of the same field | Authentication rejects another record of a field that binds one. For a field without a record, substitution within the same scope can succeed. |
+| Copy ciphertext to another seal | Authentication rejects a seal with a different seal ID. A different binding declaration reports `BindingMismatch`. |
+| Copy ciphertext to another scope, such as another tenant | Authentication rejects other binding values of a seal that declares them. A `FieldOnly` seal has no scope. |
+| Copy ciphertext between rows of the same seal | Authentication rejects another record of a seal that binds one. For a seal without a record, substitution within the same scope can succeed. |
 | Return a whole row in place of another | Every value in it opens, because each is bound to that row's own record ID. A `Record` opens as the record it is: when you asked for one record by ID, compare the opened ID with it. |
 | Restore an older authentic value | No replay, rollback, or freshness protection. |
-| Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency within the scope of their `keys` and `index` parts, and across bound-only parts and records; a `FieldOnly` field's indexes leak across the whole field. Access patterns remain visible. |
+| Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency within the scope of their `keys` and `index` parts, and across bound-only parts and records; a `FieldOnly` seal's indexes leak across the whole seal. Access patterns remain visible. |
 | Alter indexes or omit query results | Candidate comparison rejects false matches, but cannot detect omitted matches. Search completeness is not guaranteed. |
 | Compromise the live application | Plaintext and keys can be exposed. CryptBox supplies no process-isolation boundary. |
 
@@ -58,7 +58,7 @@ equality-style candidate lookup, not ordering, ranges, or full-text search.
 
 ## Application responsibilities
 
-- Own authorization, key provisioning, stable field/index schema, and operational
+- Own authorization, key provisioning, stable seal/index schema, and operational
   limits. Bound encoded/padded sizes, incoming envelopes, decoding expansion, and
   repeated authentication attempts; the [functional size limit](wire-format.md#size-semantics-and-enforcement)
   is not an operational budget.
@@ -85,7 +85,7 @@ distinct from the independent security review status of the implementation.
 | --- | --- | --- |
 | Parse ciphertext or deserialize stored bytes | Supported structure and lengths | Authenticity or readability |
 | Inspect generations / complete sweep verification | Stored values name the intended generations | Authentication, decodability, or index consistency |
-| Open with the expected field and binding values | Authentication under that field, scope, and record, padding removal, and decoding for that value | Row identity for a field without a record, freshness, or index consistency |
+| Open with the expected seal and binding values | Authentication under that seal, scope, and record, padding removal, and decoding for that value | Row identity for a seal without a record, freshness, or index consistency |
 | Verify a lookup candidate | Its normalized plaintext matches the query | Stored-index authenticity or completeness of query results |
 | Recompute a stored index under its recorded generation | Consistency with authenticated plaintext and the expected index policy at the configured precision | Absence of omitted rows or rollback |
 

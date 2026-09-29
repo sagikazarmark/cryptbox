@@ -1,4 +1,4 @@
-//! Public-boundary tests for field markers over application value types.
+//! Public-boundary tests for seal markers over application value types.
 
 use cryptbox::{
     Codec, CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, Error, FieldOnly, IndexId,
@@ -89,7 +89,7 @@ fn address() -> Address {
 }
 
 #[test]
-fn fields_over_one_value_type_round_trip() {
+fn seals_over_one_value_type_round_trip() {
     let keys = keyring();
 
     let home = Sealed::<HomeAddress>::seal(&address(), (), &keys).unwrap();
@@ -100,12 +100,12 @@ fn fields_over_one_value_type_round_trip() {
 }
 
 #[test]
-fn fields_over_one_value_type_have_distinct_ids() {
+fn seals_over_one_value_type_have_distinct_ids() {
     assert_ne!(HomeAddress::ID, BillingAddress::ID);
 }
 
 #[test]
-fn swapping_sealed_values_between_fields_over_one_value_type_fails_authentication() {
+fn swapping_sealed_values_between_seals_over_one_value_type_fails_authentication() {
     let keys = keyring();
     let home = Sealed::<HomeAddress>::seal(&address(), (), &keys).unwrap();
     let billing = Sealed::<BillingAddress>::seal(&address(), (), &keys).unwrap();

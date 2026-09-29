@@ -83,7 +83,7 @@ where
     /// [`IndexArgs`](crate::Binding::IndexArgs) find it. The key source
     /// receives that scope's [`KeyScope`](crate::KeyScope).
     ///
-    /// The index must be declared over this field. Attaching another field's
+    /// The index must be declared over this seal. Attaching another seal's
     /// index is a type error:
     ///
     /// ```compile_fail,E0271
@@ -173,7 +173,7 @@ where
     /// Adds an index with the [installed keys](keys::installed).
     ///
     /// This is exactly `self.with_index_with::<Spec>(keys::installed()?)`. The
-    /// installed keys serve only [`FieldOnly`] fields.
+    /// installed keys serve only [`FieldOnly`] seals.
     ///
     /// # Errors
     ///

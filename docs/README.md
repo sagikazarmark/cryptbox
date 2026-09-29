@@ -4,7 +4,7 @@
 
 Choose the entry point that fits your question:
 
-- **Try it:** [encrypt your first field](first-field.md), a small in-memory tutorial.
+- **Try it:** [seal your first value](first-field.md), a small in-memory tutorial.
 - **Understand it:** [how CryptBox works](concepts.md), from application value to storage and back.
 - **Assess it:** [security and threat model](security.md), including current review status.
 

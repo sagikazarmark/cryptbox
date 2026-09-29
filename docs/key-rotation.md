@@ -14,7 +14,7 @@ lookup probe. Readable generations may be staged before their first write.
 Before **any writer** promotes a role, **every participating reader** must load
 the same new pair while retaining existing pairs and prove compatibility. Include
 workers, scheduled jobs, read-only services, autoscaling and rollback deployments.
-Preserve the field/index schema, query all readable probes, and authenticate,
+Preserve the seal/index schema, query all readable probes, and authenticate,
 decrypt and normalize-compare candidates. A secret on disk is not readiness.
 
 Record acknowledgments against a configuration revision and trusted canary set
@@ -144,7 +144,7 @@ backups/PITR logs, snapshots, archives/exports, offline copies, rollback deploym
 secret versions and migration quarantine, including copies held by other teams.
 
 A recovery manifest ties backup identity, capture time and consistency boundary
-to stable key IDs and compatible binary/configuration revisions. Retain field/index
+to stable key IDs and compatible binary/configuration revisions. Retain seal/index
 IDs, binding, codec, padding, normalization and precision. Keep secret material
 under separate controlled custody, not inside the manifest or database backup.
 Root bytes alone are insufficient to restore application behavior.

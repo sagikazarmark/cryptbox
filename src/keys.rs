@@ -11,7 +11,7 @@
 //! the automatic `SQLx` column `Plain<F>` reads the same keys through
 //! [`GlobalKeys`](crate::GlobalKeys).
 //!
-//! The process-wide keys serve only [`FieldOnly`](crate::FieldOnly) fields
+//! The process-wide keys serve only [`FieldOnly`](crate::FieldOnly) seals
 //! without a record: a value bound to a scope or a record is sealed and opened
 //! explicitly, with keys the application chooses for that scope.
 //!

@@ -9,10 +9,10 @@ const FINGERPRINT_LABEL: &[u8] = b"cryptbox/binding-fingerprint/v1\0";
 // No kind code is 0, so an empty record differs from no record.
 const NO_RECORD: u8 = 0;
 
-/// Encodes a binding as `field_id ‖ record ‖ count ‖ parts`, sorting the parts
+/// Encodes a binding as `seal_id ‖ record ‖ count ‖ parts`, sorting the parts
 /// by part ID so the bytes do not depend on part order.
 ///
-/// The field, record, and part bytes are persistent KDF/AAD inputs,
+/// The seal ID, record, and part bytes are persistent KDF/AAD inputs,
 /// independent of Rust names. See ../../docs/wire-format.md#binding.
 pub(super) fn encode<'v>(
     seal: SealId,

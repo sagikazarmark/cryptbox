@@ -30,7 +30,7 @@ flowchart TB
 
 | Object or buffer | Ownership and end of lifetime |
 | --- | --- |
-| Application value `T` | The field's value type, owned by the application. `Sealed::seal` and `Sealed::prepare` borrow it and retain it. Drop drops `T`; it does not invoke zeroization for arbitrary application types. |
+| Application value `T` | The seal's value type, owned by the application. `Sealed::seal` and `Sealed::prepare` borrow it and retain it. Drop drops `T`; it does not invoke zeroization for arbitrary application types. |
 | `Plain<F>` | The automatic column's plaintext carrier: owns a `T`. Encoding the column borrows it. Drop drops `T` without zeroization. |
 | Plaintext clones | Cloning `T` or `Plain<F>` clones the value, and `Secret::clone` clones its inner value. A `String` clone owns another plaintext allocation. Each copy has an independent lifetime; erasing one does not erase the others. |
 | Encoded, padded, normalized and decrypted temporary bytes | CryptBox-owned plaintext buffers use zeroizing storage. Custom codecs and normalizers must protect their own intermediate allocations, including error paths and superseded buffers during growth. The trait's return type alone cannot enforce that. |
@@ -43,13 +43,13 @@ flowchart TB
 
 ## Opened and wrapped values
 
-`open` returns the field's bare value type; `Plain::into_inner()` likewise
+`open` returns the seal's bare value type; `Plain::into_inner()` likewise
 consumes the column wrapper and returns its `T`. Neither constructs a `Secret`.
-For a `String` field, `Secret::new(sealed.open(args, &keys)?)` gives the opened
+For a `String` seal, `Secret::new(sealed.open(args, &keys)?)` gives the opened
 string a zeroizing owner; the original sealing source and any prior clones still
 exist independently.
 
-A field can also store `Secret<String>` or `Secret<Vec<u8>>` directly. `Utf8`
+A seal can also store `Secret<String>` or `Secret<Vec<u8>>` directly. `Utf8`
 and `Raw` encode them with exactly the same bytes as `String` and `Vec<u8>`, and
 they are the wrappers' `Plaintext` codecs. Other wrapper types need their own
 codec. Normalizers also require an implementation for the exact input type. The

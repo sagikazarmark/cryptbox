@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # A seal declares how values are sealed, and may be its own value

@@ -3,9 +3,9 @@ use std::fmt;
 use super::{Binding, FromIndexValues, PartKind, PartSpec, PartType, PartValue, PartValues};
 use crate::Error;
 
-/// A binding with no parts: values are bound to their field ID only.
+/// A binding with no parts: values are bound to their seal ID only.
 ///
-/// It is the empty binding: no parts and, unless the field also binds a
+/// It is the empty binding: no parts and, unless the seal also binds a
 /// record, no record. Blind indexes take no arguments, and every value shares
 /// one [`KeyScope`](crate::KeyScope).
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
@@ -120,11 +120,11 @@ mod tests {
     use super::*;
     use crate::{BindingDomain, RecordId, SealId, seal_id};
 
-    const FIELD: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
+    const SEAL: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
 
     #[test]
     fn field_only_is_the_empty_binding() {
-        let domain = BindingDomain::of(FIELD, &FieldOnly, None).unwrap();
+        let domain = BindingDomain::of(SEAL, &FieldOnly, None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn field_only_with_a_record_binds_the_record_alone() {
-        let domain = BindingDomain::of(FIELD, &FieldOnly, Some(RecordId::from(1_i64))).unwrap();
+        let domain = BindingDomain::of(SEAL, &FieldOnly, Some(RecordId::from(1_i64))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn tenant_binds_one_bytes_keys_part() {
         let tenant = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
-        let domain = BindingDomain::of(FIELD, &tenant, None).unwrap();
+        let domain = BindingDomain::of(SEAL, &tenant, None).unwrap();
 
         // docs/wire-format.md#presets
         assert_eq!(

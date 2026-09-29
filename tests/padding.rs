@@ -1,4 +1,4 @@
-//! Public-boundary tests for field padding policies.
+//! Public-boundary tests for seal padding policies.
 
 use cryptbox::{
     EncryptionKey, EncryptionKeyring, Error, FieldOnly, KeyId, Padding, Raw, Seal, SealId, Sealed,
@@ -11,12 +11,12 @@ fn keyring() -> EncryptionKeyring {
     EncryptionKeyring::new(EncryptionKey::new(KEY_ID, [47; 32]), []).unwrap()
 }
 
-const SHARED_FIELD: SealId = seal_id!("60000000-0000-4000-8000-000000000006");
+const SHARED_SEAL: SealId = seal_id!("60000000-0000-4000-8000-000000000006");
 
 struct Unpadded;
 
 impl Seal for Unpadded {
-    const ID: SealId = SHARED_FIELD;
+    const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = String;
@@ -25,10 +25,10 @@ impl Seal for Unpadded {
     type Indexes = ();
 }
 
-struct SharedFieldPadded;
+struct SharedSealPadded;
 
-impl Seal for SharedFieldPadded {
-    const ID: SealId = SHARED_FIELD;
+impl Seal for SharedSealPadded {
+    const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(16);
     const RECORD: bool = false;
     type Value = String;
@@ -40,7 +40,7 @@ impl Seal for SharedFieldPadded {
 struct FixedLength;
 
 impl Seal for FixedLength {
-    const ID: SealId = SHARED_FIELD;
+    const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::length(16);
     const RECORD: bool = false;
     type Value = String;
@@ -52,7 +52,7 @@ impl Seal for FixedLength {
 struct WiderBlockPadded;
 
 impl Seal for WiderBlockPadded {
-    const ID: SealId = SHARED_FIELD;
+    const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(32);
     const RECORD: bool = false;
     type Value = String;
@@ -64,7 +64,7 @@ impl Seal for WiderBlockPadded {
 struct BlockPadded;
 
 impl Seal for BlockPadded {
-    const ID: SealId = SHARED_FIELD;
+    const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(16);
     const RECORD: bool = false;
     type Value = String;
@@ -76,7 +76,7 @@ impl Seal for BlockPadded {
 struct PolicyFixedLength;
 
 impl Seal for PolicyFixedLength {
-    const ID: SealId = SHARED_FIELD;
+    const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::length(1_048_576);
     const RECORD: bool = false;
     type Value = String;
@@ -142,12 +142,12 @@ fn block_padded_values_round_trip_without_revealing_length_within_a_bucket() {
 }
 
 #[test]
-fn a_field_that_enables_padding_reads_old_and_new_values() {
+fn a_seal_that_enables_padding_reads_old_and_new_values() {
     let keys = keyring();
     let old = Sealed::<Unpadded>::seal(&"written before padding".to_owned(), (), &keys).unwrap();
-    let old = Sealed::<SharedFieldPadded>::from_bytes(old.into_bytes()).unwrap();
+    let old = Sealed::<SharedSealPadded>::from_bytes(old.into_bytes()).unwrap();
     let new =
-        Sealed::<SharedFieldPadded>::seal(&"written with padding".to_owned(), (), &keys).unwrap();
+        Sealed::<SharedSealPadded>::seal(&"written with padding".to_owned(), (), &keys).unwrap();
 
     assert_eq!(old.open((), &keys).unwrap(), "written before padding");
     assert_eq!(new.open((), &keys).unwrap(), "written with padding");
@@ -156,7 +156,7 @@ fn a_field_that_enables_padding_reads_old_and_new_values() {
 struct RawUnpadded;
 
 impl Seal for RawUnpadded {
-    const ID: SealId = SHARED_FIELD;
+    const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -168,7 +168,7 @@ impl Seal for RawUnpadded {
 struct RawPadded;
 
 impl Seal for RawPadded {
-    const ID: SealId = SHARED_FIELD;
+    const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(16);
     const RECORD: bool = false;
     type Value = Vec<u8>;
@@ -203,9 +203,9 @@ fn unpadded_values_ending_in_marker_bytes_survive_enabling_padding() {
 fn a_sweep_converges_values_to_the_current_padding_policy() {
     let keys = keyring();
     let old = Sealed::<Unpadded>::seal(&"old".to_owned(), (), &keys).unwrap();
-    let new = Sealed::<SharedFieldPadded>::seal(&"new".to_owned(), (), &keys).unwrap();
+    let new = Sealed::<SharedSealPadded>::seal(&"new".to_owned(), (), &keys).unwrap();
 
-    let padded = [old.into_bytes(), new.as_bytes().to_vec()].map(sweep::<SharedFieldPadded>);
+    let padded = [old.into_bytes(), new.as_bytes().to_vec()].map(sweep::<SharedSealPadded>);
     assert_eq!(
         padded[1], new,
         "a value in the current form is not rewritten"

@@ -216,7 +216,7 @@ fn check_members(name: &Ident, record: &Ident, members: &[Member<'_>], errors: &
             errors.push(syn::Error::new(
                 member.ident.span(),
                 format!(
-                    "the record ID `{record}` is never encrypted: the fields that declare `record` \
+                    "the record ID `{record}` is never encrypted: the seals that declare `record` \
                      bind it, so it must be readable before the row is opened; \
                      mark it `#[cryptbox(plaintext)]`"
                 ),
@@ -307,14 +307,14 @@ fn sealed_struct(
     }
 }
 
-/// Asserts that a sealed field writes exactly the indexes its field declares.
+/// Asserts that a sealed field writes exactly the indexes its seal declares.
 fn index_check(krate: &Path, member: &Member<'_>) -> Option<TokenStream> {
     let Sealing { seal, indexes } = member.sealing.as_ref()?;
     let ident = member.ident;
     let specs = indexes.iter().map(|index| &index.spec);
     let message = LitStr::new(
         &format!(
-            "`{ident}` must write every blind index its field declares in `indexes(…)`, \
+            "`{ident}` must write every blind index its seal declares in `indexes(…)`, \
              each once, and no other: list them as `index(Spec as column, …)`"
         ),
         ident.span(),
@@ -420,7 +420,7 @@ fn seal_fn(
         let sealer = sealer_name(ident);
         let columns = indexes.iter().map(|index| &index.column);
         let binding = hygienic_at("binding", seal.span());
-        // Spanned on the field, so a field of another binding is reported there.
+        // Spanned on the seal, so a seal of another binding is reported there.
         let call = quote_spanned! {seal.span()=>
             Self::#sealer(&self.#ident, #binding, &self.#record, #keys)?
         };
@@ -473,7 +473,7 @@ fn open_fn(
         let Sealing { seal, .. } = member.sealing.as_ref()?;
         let ident = member.ident;
         let binding = hygienic_at("binding", seal.span());
-        // Naming the field's binding reports a field of another binding here.
+        // Naming the seal's binding reports a seal of another binding here.
         Some(quote_spanned! {seal.span()=>
             let #ident = #sealed.#ident.open(
                 #krate::InRecord::<<#seal as #krate::Seal>::Binding>(#binding, #record_id),

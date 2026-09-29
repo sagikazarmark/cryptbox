@@ -80,11 +80,11 @@ impl std::io::Write for ZeroizingByteBuffer {
 
 /// Encodes and decodes typed values independently from encryption.
 ///
-/// A codec is a strategy: it does not decide which values use it. A field names
+/// A codec is a strategy: it does not decide which values use it. A seal names
 /// its codec with [`Seal::Codec`](crate::Seal::Codec), and a value type can name
 /// a default with [`Plaintext`].
 ///
-/// A field's codec is part of its persistent schema: ciphertext does not
+/// A seal's codec is part of its persistent schema: ciphertext does not
 /// contain a codec identifier or codec version. Changing the emitted bytes or
 /// decode compatibility requires migrating existing data. [`Self::ID`] names
 /// the representation for the [schema manifest](crate::schema::Manifest), and
@@ -144,7 +144,7 @@ pub trait Codec<T>: 'static {
 
 /// Names the default codec of an application value type.
 ///
-/// A field over a `Plaintext` type can use `<Value as Plaintext>::Codec` instead
+/// A seal over a `Plaintext` type can use `<Value as Plaintext>::Codec` instead
 /// of naming a codec. The crate provides permanent mappings that no feature
 /// changes: `String` and [`Secret<String>`] use [`Utf8`], and `Vec<u8>` and
 /// [`Secret<Vec<u8>>`] use [`Raw`]. A `Secret` value is stored with exactly the
@@ -281,9 +281,9 @@ impl Codec<Secret<String>> for Utf8 {
 /// is `"json/1"`. Floats decode to exactly the value that was encoded.
 ///
 /// The value type's Serde representation is persistent schema. A serde
-/// attribute change such as `rename_all` changes the stored bytes of every field
+/// attribute change such as `rename_all` changes the stored bytes of every seal
 /// that uses the type, and a renamed field fails to decode or silently takes its
-/// default. Pin each field's bytes with
+/// default. Pin each seal's bytes with
 /// [`assert_encoding`](crate::testing::assert_encoding).
 #[cfg(feature = "json")]
 #[derive(Clone, Copy, Debug, Default)]
@@ -317,8 +317,8 @@ where
 /// Postcard is positional: it stores no field or variant names. Reordering
 /// struct fields or enum variants, or changing an integer type, decodes existing
 /// bytes into wrong values without an error. Serde attribute changes such as
-/// `rename_all` can change the stored bytes as well, for every field that uses
-/// the value type. Pin each field's bytes with
+/// `rename_all` can change the stored bytes as well, for every seal that uses
+/// the value type. Pin each seal's bytes with
 /// [`assert_encoding`](crate::testing::assert_encoding).
 #[cfg(feature = "postcard")]
 #[derive(Clone, Copy, Debug, Default)]

@@ -34,7 +34,7 @@ pub enum KeyError {
 /// Blind-index operations fail with [`Error::BlindIndexKeysNotConfigured`](crate::Error::BlindIndexKeysNotConfigured) when
 /// `blind_indexes` is `None`.
 ///
-/// `Keys` serves every field and scope alike. To keep fields or scopes under
+/// `Keys` serves every seal and scope alike. To keep seals or scopes under
 /// separate keys, pass each its own `Keys`, or implement a key source; see
 /// [choosing keyrings].
 ///

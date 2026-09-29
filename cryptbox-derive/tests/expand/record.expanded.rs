@@ -136,7 +136,7 @@ const _: () = {
         {
             ::core::panicking::panic_fmt(
                 format_args!(
-                    "`email` must write every blind index its field declares in `indexes(…)`, each once, and no other: list them as `index(Spec as column, …)`",
+                    "`email` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `index(Spec as column, …)`",
                 ),
             );
         }
@@ -150,7 +150,7 @@ const _: () = {
         {
             ::core::panicking::panic_fmt(
                 format_args!(
-                    "`note` must write every blind index its field declares in `indexes(…)`, each once, and no other: list them as `index(Spec as column, …)`",
+                    "`note` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `index(Spec as column, …)`",
                 ),
             );
         }

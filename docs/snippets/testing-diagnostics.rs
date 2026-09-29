@@ -52,7 +52,7 @@ fn main() -> Result<(), Error> {
     };
     assert!(matches!(error, Error::AuthenticationFailed));
     println!(
-        "field_id={} field_name={} operation=open error={}",
+        "seal_id={} seal_name={} operation=open error={}",
         UserEmail::ID,
         USER_EMAIL_LABEL,
         error_category(&error),

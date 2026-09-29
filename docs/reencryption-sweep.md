@@ -5,7 +5,7 @@ Rewrite stored values in bounded, resumable batches.
 
 Rotation selects keys for future writes; a later sweep converges existing
 ciphertext and indexes. The same sweep rewrites ciphertext whose padding flag
-disagrees with the field's current policy, so it also applies a padding change. The `migrate` feature supplies
+disagrees with the seal's current policy, so it also applies a padding change. The `migrate` feature supplies
 `RowPlanner`, `Sweep` and `SweepStore`, which also reseal values after a
 [binding-declaration change](#binding-declaration-changes); the
 [manual SQLite example](../examples/reencryption_sweep.rs) demonstrates the same
@@ -25,7 +25,7 @@ it handles plaintext. Log sanitized metadata, not values, tokens or key material
 ## Run identity and progress ownership
 
 Record the database/schema/table, ciphertext and index columns in planner order,
-cursor, field/index schema revision, fixed target encryption/index IDs, readable
+cursor, seal/index schema revision, fixed target encryption/index IDs, readable
 keyset revision, policy, run name and progress table. **Do not change the keyrings'
 current keys during a run.** Assign one owner to serialize batches and
 stop/join the old worker before handover.
@@ -82,7 +82,7 @@ Register each index in the same order in `RowPlanner::with_index_with` and
 1. Load rows strictly after the saved cursor in ascending order.
 2. Classify stored bytes. Skip current rows without new nonces or writes; rewrite
    stale ciphertext with the target encryption generation, current format, and
-   the field's padding policy, and stale indexes from
+   the seal's padding policy, and stale indexes from
    authenticated, decoded authoritative ciphertext. Legacy recovery is covered in
    the [adoption recipe](legacy-migration.md#running-the-sweep).
 3. Atomically write the replacement tuple with a predicate matching **every
@@ -138,17 +138,17 @@ full original-tuple guard whether both roles are swept together or separately.
 
 Current rows are skipped without decryption. Current index bytes are retained
 without recomputation even when another component changes. Re-encryption alone
-authenticates and checks padding but does not decode through the field codec.
+authenticates and checks padding but does not decode through the seal's codec.
 These behaviors make the following separate audit necessary.
 
 ## Binding-declaration changes
 
-A field's binding declaration (its parts, their roles and whether it binds a record) is
+A seal's binding declaration (its parts, their roles and whether it binds a record) is
 persistent schema, so changing it is a migration: an explicit legacy-binding
 window, a reseal sweep, and lookups over both index declarations until the window
 closes ([ADR-0005](adr/0005-runtime-binding-is-the-core.md)).
 
-A bound field's sweep is **partitioned by key scope**, because its keys are.
+A bound seal's sweep is **partitioned by key scope**, because its keys are.
 Configure one planner per key scope with
 `RowPlanner::for_key_scope(key_scope, keys, row_args)`. The key scope comes from
 the job, never from the rows; `row_args` builds each row's `RowArgs` (its
@@ -156,10 +156,10 @@ binding and record ID) from the columns the store loads into
 `SweepRow::columns`. The store selects only that key scope's rows. A row whose
 arguments name another key scope is left alone and counted as `out_of_scope`:
 an anomaly to investigate, not a row to rewrite. Packaged stores load no
-columns, so a bound field needs an application-owned `SweepStore`.
+columns, so a bound seal needs an application-owned `SweepStore`.
 
 Open the window with `RowPlanner::legacy_binding::<Old>(old_keys)`, where `Old`
-is the binding the field had before, such as `FieldOnly`. Its parts take their
+is the binding the seal had before, such as `FieldOnly`. Its parts take their
 values from each row's current binding by part ID, and a row whose header
 names `Old` with a record keeps the row's record. The window covers adding parts
 or a record and changing a role, not removing a part or changing its kind. Rows
@@ -182,7 +182,7 @@ record moving between workspaces or data changing residency, use
 
 This is the canonical whole-store audit procedure. The
 [assurance reference](security.md#what-each-check-establishes) explains what each
-check establishes. Fix the intended field ID, binding declaration, value type,
+check establishes. Fix the intended seal ID, binding declaration, value type,
 codec, index specifications, normalization, precision and allowed generations
 from trusted application schema, not stored metadata.
 

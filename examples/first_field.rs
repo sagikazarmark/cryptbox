@@ -1,4 +1,4 @@
-//! First field-bound round trip with explicit, ephemeral keys.
+//! First seal-bound round trip with explicit, ephemeral keys.
 
 // ANCHOR: first-field
 use cryptbox::{EncryptionKey, EncryptionKeyring, FieldOnly, Padding, Seal, SealId, Sealed, Utf8};
@@ -50,7 +50,7 @@ mod tests {
     }
 
     #[test]
-    fn stored_email_cannot_be_read_as_another_field() -> Result<(), cryptbox::Error> {
+    fn stored_email_cannot_be_read_as_another_seal() -> Result<(), cryptbox::Error> {
         let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
         let sealed = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), (), &keys)?;
         let substituted = Sealed::<BillingEmail>::from_bytes(sealed.as_bytes().to_vec())?;

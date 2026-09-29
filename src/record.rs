@@ -3,11 +3,11 @@ use crate::{Binding, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, E
 /// A row of plaintext values sealed and opened together under one binding.
 ///
 /// A record pairs a plaintext struct with its sealed storage form,
-/// [`Self::Sealed`]. [`Self::seal`] seals every encrypted field and writes
+/// [`Self::Sealed`]. [`Self::seal`] encrypts every sealed field and writes
 /// each field's blind indexes; [`Self::open`] authenticates and opens them.
 /// Plaintext fields, such as the record ID, are copied as they are.
 ///
-/// Every encrypted field shares the record's [`Binding`], and each field that
+/// Every sealed field shares the record's [`Binding`], and each field whose seal
 /// declares [`Seal::RECORD`] is also bound to the record's ID, through
 /// [`InRecord`](crate::InRecord). The record ID is never encrypted, so it can
 /// be read before the row is opened. The binding must come from an authorized
@@ -20,17 +20,17 @@ use crate::{Binding, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, E
 ///
 /// With the `derive` feature, `#[derive(Record)]` generates the sealed struct,
 /// this impl, and per-field sealers for partial updates, and checks that each
-/// field writes exactly the blind indexes it declares. See its documentation
+/// field writes exactly the blind indexes its seal declares. See its documentation
 /// for the expansion, which a hand-written impl can follow.
 pub trait Record: Sized {
     /// The storage form: the plaintext fields, the sealed values, and their
     /// blind indexes.
     type Sealed;
 
-    /// The binding every encrypted field of the record shares.
+    /// The binding every sealed field of the record shares.
     type Binding: Binding;
 
-    /// Seals every encrypted field under `binding` and the record's ID, and
+    /// Encrypts every sealed field under `binding` and the record's ID, and
     /// derives its blind indexes.
     ///
     /// # Errors
@@ -40,7 +40,7 @@ pub trait Record: Sized {
     where
         K: EncryptionKeySource + BlindIndexKeySource + ?Sized;
 
-    /// Opens every encrypted field of `sealed` under `binding` and the record's
+    /// Opens the sealed fields of `sealed` under `binding` and the record's
     /// ID.
     ///
     /// Stored blind indexes are neither read nor checked.

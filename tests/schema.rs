@@ -34,7 +34,7 @@ impl Seal for Avatar {
 }
 
 #[test]
-fn manifest_lists_each_field() {
+fn manifest_lists_each_seal() {
     let manifest = Manifest::new().seal::<Nickname>().seal::<Avatar>();
 
     assert_eq!(
@@ -114,7 +114,7 @@ seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
 }
 
 #[test]
-fn labelling_custody_registers_the_field_once() {
+fn labelling_custody_registers_the_seal_once() {
     let labelled_first = Manifest::new()
         .custody::<Nickname>("general KMS")
         .seal::<Nickname>();

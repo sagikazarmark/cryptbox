@@ -9,7 +9,7 @@ use crate::{
 /// Opens a value during a legacy-binding window, whichever binding declaration it is
 /// sealed with.
 ///
-/// A value whose header names the field's current declaration is opened under `args`
+/// A value whose header names the seal's current declaration is opened under `args`
 /// with `keys`, as [`Sealed::open`] does. Any other value is opened under the
 /// older declaration `Old` with `old_keys`: each of `Old`'s parts takes its value
 /// from the binding in `args` by part ID, and the record in `args` is bound
@@ -52,7 +52,7 @@ where
 }
 
 /// Derives the probes of a lookup during a legacy-binding window: those of
-/// the field's current index binding under `args` with `keys`, followed by
+/// the seal's current index binding under `args` with `keys`, followed by
 /// those of the older declaration `Old` with `old_keys`.
 ///
 /// A row keeps the index it was written with until a sweep reseals it, so a

@@ -1,6 +1,6 @@
-# Encrypt your first field
+# Seal your first value
 
-Encrypt and decrypt a field-bound value in a small Rust application.
+Seal and open a value bound to its seal in a small Rust application.
 CryptBox is experimental and [not production-ready](security.md).
 [Documentation](README.md).
 
@@ -89,26 +89,26 @@ Expect `Seal-bound round trip succeeded.` and exit status 0.
 - `Sealed::seal` borrows the **plaintext** `String` and returns a `Sealed` value:
   the encrypted envelope you store. `open` authenticates it and returns a new
   plaintext `String`.
-- `UserEmail` is a field. Its `ID` binds the sealed value to this field; it stores
+- `UserEmail` is a seal. Its `ID` binds the sealed value to this seal; it stores
   a `String` value with the `Utf8` codec and no padding.
 - `()` is the binding argument: `Binding = FieldOnly` with no record binds the
-  value to its field ID alone. A field can declare a binding such as a tenant, and
+  value to its seal ID alone. A seal can declare a binding such as a tenant, and
   a record, and then every call must pass their values; see
   [bind values to a scope](bindings.md).
 - `&keys` supplies keys explicitly, so these calls need no global installation.
-- A field-only value is bound to a logical field, not a row or tenant, so it does
-  not stop same-field substitution between rows, or replay. `Padding::NONE` reveals encoded length.
+- A field-only value is bound to its seal alone, not a row or tenant, so it does
+  not stop substitution between rows of the same seal, or replay. `Padding::NONE` reveals encoded length.
 
 See [how CryptBox works](concepts.md) for the complete picture.
 
-The field ID above is a generated UUID. Generate your own, and never copy one
+The seal ID above is a generated UUID. Generate your own, and never copy one
 from these pages:
 
 ```sh
 uuidgen
 ```
 
-See [ID hygiene](bindings.md#id-hygiene) for the rules that apply to every field,
+See [ID hygiene](bindings.md#id-hygiene) for the rules that apply to every seal,
 index, and binding part ID.
 
 ## Next: use durable storage
@@ -117,15 +117,15 @@ The round trip is complete. To keep values across restarts, follow
 [run the SQLite example](../examples/sqlite/README.md). It provisions
 one durable encryption generation and reads the stored value in a new process.
 
-In your own project, preserve the same key ID/material pairs and the field's
+In your own project, preserve the same key ID/material pairs and the seal's
 [persistent schema](integration.md#persistent-schema). Missing keys must not be
 silently replaced. The [integration explanation](integration.md) covers these
 choices before you commit data to storage.
 
 ## Then: bind values to a tenant
 
-`UserEmail` binds its values to a field ID alone. When values belong to separate
-tenants, orgs, or residencies, the field declares a binding instead, every call
+`UserEmail` binds its values to a seal ID alone. When values belong to separate
+tenants, orgs, or residencies, the seal declares a binding instead, every call
 passes its values, and each scope can have its own keyring:
 
 ```sh

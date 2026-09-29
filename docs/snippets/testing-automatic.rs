@@ -21,7 +21,7 @@ impl Seal for Nickname {
     type Indexes = ();
 }
 
-// A field with a blind index is never a `Plain` column: the column would not write the index.
+// A seal with a blind index is never a `Plain` column: the column would not write the index.
 struct UserEmail;
 
 impl Seal for UserEmail {
@@ -99,7 +99,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     let read: Plain<Nickname> = row.try_get("nickname")?;
     assert_eq!(read.expose_secret(), plaintext); // Automatic authenticated opening.
 
-    // An indexed field is sealed explicitly. Preparation seals with the installed
+    // A value of an indexed seal is sealed explicitly. Preparation seals with the installed
     // keys, and the implicit `with_index` resolves the installed blind-index keys
     // too. One statement maintains the sealed value and index pair atomically.
     let email = plaintext.to_owned();

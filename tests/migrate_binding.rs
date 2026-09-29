@@ -1,4 +1,4 @@
-//! Public-boundary tests for migrating a field's binding declaration.
+//! Public-boundary tests for migrating a seal's binding declaration.
 
 #![cfg(feature = "migrate")]
 
@@ -20,7 +20,7 @@ use cryptbox::{
 use futures_executor::block_on;
 use zeroize::Zeroizing;
 
-/// The field after the migration: bound to its tenant and its record.
+/// The seal after the migration: bound to its tenant and its record.
 struct CustomerEmail;
 
 impl Seal for CustomerEmail {
@@ -33,7 +33,7 @@ impl Seal for CustomerEmail {
     type Indexes = (EmailLookup,);
 }
 
-/// The same field as it was declared before the migration.
+/// The same seal as it was declared before the migration.
 struct FieldOnlyEmail;
 
 impl Seal for FieldOnlyEmail {
@@ -220,7 +220,7 @@ fn planner_reports_a_row_of_another_scope_as_out_of_scope_without_reading_it() {
 }
 
 #[test]
-fn planner_rejects_row_args_without_the_fields_record() {
+fn planner_rejects_row_args_without_the_seals_record() {
     let (keys, index_keys) = (acme_keys(), acme_index_keys());
     let planner = RowPlanner::<CustomerEmail, Columns>::for_key_scope(acme_scope(), &keys, |row| {
         Ok(RowArgs::new(Tenant(TenantId::new(row.tenant.clone())?)))
@@ -318,7 +318,7 @@ fn a_field_only_row_without_a_legacy_binding_window_is_a_binding_mismatch() {
     );
 }
 
-/// The same field when it was bound to its tenant but not yet to its record.
+/// The same seal when it was bound to its tenant but not yet to its record.
 struct TenantEmail;
 
 impl Seal for TenantEmail {
@@ -514,7 +514,7 @@ fn half_written_store() -> MemoryStore {
 }
 
 #[test]
-fn a_sweep_migrates_a_field_only_field_to_its_scope_and_record() {
+fn a_sweep_migrates_a_field_only_seal_to_its_scope_and_record() {
     let (keys, old_keys, index_keys) = (acme_keys(), field_only_keys(), acme_index_keys());
     let sweep = Sweep::new(migrating_planner(&keys, &old_keys, &index_keys)).with_batch_size(2);
     let mut store = half_written_store();
@@ -712,7 +712,7 @@ impl cryptbox::Binding for TenantWorkspace {
     }
 }
 
-/// The field after a workspace part is added to a binding that already binds a record.
+/// The seal after a workspace part is added to a binding that already binds a record.
 struct WorkspaceEmail;
 
 impl Seal for WorkspaceEmail {

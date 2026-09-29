@@ -1,13 +1,13 @@
 # Bind values to a scope
 
-A binding is the cryptographic domain of a value: the field it belongs to, the
-values of the field's declared scope, such as a tenant, and its record when the
-field binds one. This page explains how to declare a scope, which role each part
+A binding is the cryptographic domain of a value: the seal it is sealed with, the
+values of the seal's declared scope, such as a tenant, and its record when the
+seal binds one. This page explains how to declare a scope, which role each part
 should have, and where each bound value must come from.
 [Documentation](README.md) · [Choosing keyrings](choosing-keyrings.md).
 
-Start from [encrypt your first field](first-field.md), whose field binds values
-to its field ID alone. Add a scope when values of different tenants, orgs, or
+Start from [seal your first value](first-field.md), whose seal binds values
+to its seal ID alone. Add a scope when values of different tenants, orgs, or
 residencies must not be interchangeable, or when their keys must differ.
 
 ## Declarations are schema, values are arguments
@@ -16,12 +16,12 @@ A binding has two halves, and they change on different schedules:
 
 | Half | Where it is declared | When it changes |
 | --- | --- | --- |
-| **Declaration**: part IDs, kinds, roles, and the record flag | The field and its `Binding` type | Only through a [declaration migration](#change-a-binding-declaration) |
+| **Declaration**: part IDs, kinds, roles, and the record flag | The seal and its `Binding` type | Only through a [declaration migration](#change-a-binding-declaration) |
 | **Values**: this org, this workspace, this record | The binding arguments of each call | Every call |
 
-One field never seals with different part sets on different calls: that would
+One seal never seals with different part sets on different calls: that would
 give one value two valid encodings. The declaration is persistent schema exactly as a
-field ID or codec is, and every envelope carries a fingerprint of it so a
+seal ID or codec is, and every envelope carries a fingerprint of it so a
 reader that expects another declaration reports `Error::BindingMismatch` instead of an
 authentication failure.
 
@@ -54,7 +54,7 @@ pub struct OrgWorkspace {
 pub struct CustomerEmail;
 ```
 
-`EmailLookup` is a blind index over the field, declared as in the
+`EmailLookup` is a blind index over the seal, declared as in the
 [blind-index example](../examples/blind_indexes.rs).
 The derive generates `OrgSearch`, the index arguments of the `keys` and `index`
 parts, and implements `FromIndexValues` so an adapter such as a
@@ -64,8 +64,8 @@ implementing `PartType`. Every part ID is a generated UUID: see
 [ID hygiene](#id-hygiene).
 
 `FieldOnly` and `Tenant` are ready-made presets. `FieldOnly` has no parts: unless
-the field also binds a record, it is the
-[empty binding](wire-format.md#binding), bound to the field ID alone. `Tenant` has one
+the seal also binds a record, it is the
+[empty binding](wire-format.md#binding), bound to the seal ID alone. `Tenant` has one
 bytes `keys` part. Use a preset until its declaration is too coarse, then declare a
 scope.
 
@@ -94,7 +94,7 @@ Three consequences follow from the table:
   because it changes index derivation and custody. The binding fingerprint covers
   roles for exactly that reason.
 
-A record ID is never a part: declare `record` on the field. It is always bound
+A record ID is never a part: declare `record` on the seal. It is always bound
 only, since a record-scoped index could not be searched.
 
 ## Bound values come from an authorized source
@@ -113,7 +113,7 @@ whatever the row says will match what the row was sealed with.
 | A client-supplied scope the request was not authorized for | **Never**: authorize first, then bind |
 
 A `Record` is the one exception, and only for its record ID. Opening takes the
-ID from the row, and every field that declares `record` fails to open under
+ID from the row, and every seal that declares `record` fails to open under
 another one, so a value copied from another row is rejected. Storage can still
 return a whole authentic row in place of another, which no binding prevents:
 when you asked for one record, compare the opened ID with the one you asked for.
@@ -127,7 +127,7 @@ such a change only over columns the application already trusts.
 
 ## Record IDs
 
-A field that declares `record` binds every value to a record ID, so the ID must
+A seal that declares `record` binds every value to a record ID, so the ID must
 exist before the first value is sealed:
 
 - **The client generates it**, UUIDv7 recommended, so that inserts carry their
@@ -140,19 +140,19 @@ exist before the first value is sealed:
 - **Its kind is fixed**: a UUID, an `i64`, or bytes. Any `PartType` can hold
   one.
 
-A field of a record that declares no record is bound to the record's scope
+A record field whose seal declares no record is bound to the record's scope
 alone, and gets no check of the ID. Within a `Record`, `InRecord` passes the ID
-to every field and binds it only where the field declares it.
+to every seal and binds it only where the seal declares it.
 
 ## Seal and open under a scope
 
-The binding arguments of a call are typed by the field
+The binding arguments of a call are typed by the seal
 ([`Args<F>`](https://docs.rs/cryptbox/latest/cryptbox/trait.Args.html)): `()` and
-`RecordId` for a `FieldOnly` field, `&F::Binding`, or `(&F::Binding, RecordId)`.
+`RecordId` for a `FieldOnly` seal, `&F::Binding`, or `(&F::Binding, RecordId)`.
 A missing or extra record fails the build rather than the read.
 
 The [tenant example](../examples/tenant_field.rs) is the complete program: a
-field bound to `Tenant` with a record, one `EncryptionKeyring` per tenant behind a
+seal bound to `Tenant` with a record, one `EncryptionKeyring` per tenant behind a
 `HashMap<KeyScope, _>` key source, and assertions that another record of the same
 tenant fails authentication while another tenant's keyring reports
 `UnknownEncryptionKey`. Run it from a checkout, and expect
@@ -167,14 +167,14 @@ shows the same program beside the field-only tier.
 
 Whole rows are sealed and opened together through the
 [`Record`](https://docs.rs/cryptbox/latest/cryptbox/trait.Record.html) trait and
-derive, which pass one binding and record ID to every field and write each
-field's blind indexes.
+derive, which pass one binding and record ID to every sealed field and write each
+seal's blind indexes.
 
 ## Move a record between scopes
 
 Changing a bound value is not an update of a column: the ciphertext is bound to
 the old values. `Sealed::reseal_across` opens under the old binding and keys and
-reseals under the new ones, without decoding the value through the field's
+reseals under the new ones, without decoding the value through the seal's
 codec:
 
 - **Every blind index of the moved value must be derived again**, because the
@@ -206,7 +206,7 @@ must be resealed under an explicitly planned path of your own.
 ## Keys follow the key scope
 
 Operations take their keys directly, and the library passes the key source the
-field and the binding's key scope. Which keyring protects which scope is
+seal and the binding's key scope. Which keyring protects which scope is
 application code — and sealing with the wrong one succeeds silently. Read
 [choosing keyrings](choosing-keyrings.md) before you wire a scope to a keyring,
 and [shredding](shredding.md) before you rely on destroying one scope's keys.
@@ -221,16 +221,16 @@ uuidgen
 ```
 
 Either case parses; these pages use the lowercase form. Generate one ID per
-logical field, index, and part, and keep it unchanged for the life of the data:
+seal, index, and part, and keep it unchanged for the life of the data:
 renaming a Rust type does not change an ID, and reusing an ID makes two things
-one. Two examples in this repository share an ID only where they mean one logical
-field, as the SQLite and searchable examples share the tutorial's `UserEmail`; a
-`UserEmail` marker in another example is a different field with its own ID,
+one. Two examples in this repository share an ID only where they mean one
+seal, as the SQLite and searchable examples share the tutorial's `UserEmail`; a
+`UserEmail` marker in another example is a different seal with its own ID,
 because the Rust name is not the identity.
 
 Each check covers a different set: `#[derive(Binding)]` rejects a nil or
 repeated part ID when it expands, and a hand-written binding fails the build on
-the same declaration; `assert_unique_ids!` rejects field and index IDs shared by
+the same declaration; `assert_unique_ids!` rejects seal and index IDs shared by
 listed markers; and a
 [manifest snapshot](integration.md#guarding-the-schema-in-ci) makes any change
 to the IDs you have chosen a reviewable diff.

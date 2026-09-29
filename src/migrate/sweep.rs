@@ -61,7 +61,7 @@ pub trait SweepStore {
     /// The unique, immutable, indexed cursor rows are totally ordered by.
     type Cursor: Clone + Send + Sync;
     /// The columns each row carries for its binding arguments, such as its
-    /// scope and record ID; `()` for a [`FieldOnly`](crate::FieldOnly) field
+    /// scope and record ID; `()` for a [`FieldOnly`](crate::FieldOnly) seal
     /// without a record.
     type Columns: Send + Sync;
     /// The storage backend's error type.
@@ -355,7 +355,7 @@ where
     /// recompute indexes, or establish ciphertext/index consistency. Even a
     /// terminal report can contain ciphertext that fails authentication. For
     /// additional assurance, separately decrypt every value with its intended
-    /// field and recompute each index from that plaintext under the
+    /// seal and recompute each index from that plaintext under the
     /// intended specification and allowed generation, comparing complete bytes.
     ///
     /// The pass observes rows as loaded, not a library-provided snapshot. Ensure

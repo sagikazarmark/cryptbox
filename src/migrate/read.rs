@@ -180,7 +180,7 @@ where
 
     /// Consumes the read and returns the plaintext value.
     ///
-    /// Legacy bytes use identity recovery and decode through the field's
+    /// Legacy bytes use identity recovery and decode through the seal's
     /// codec; an envelope is opened under `args` with `keys`.
     ///
     /// # Errors
@@ -200,7 +200,7 @@ where
     }
 
     /// Consumes the read, recovering non-envelope bytes with `legacy` before
-    /// decoding them through the field's codec.
+    /// decoding them through the seal's codec.
     ///
     /// Valid `CryptBox` envelopes ignore the legacy handler and are opened
     /// under `args`.
@@ -234,7 +234,7 @@ where
     /// # Errors
     ///
     /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
-    /// opening fails or legacy bytes cannot be decoded by the field's codec.
+    /// opening fails or legacy bytes cannot be decoded by the seal's codec.
     pub fn open_global(self) -> Result<F::Value, Error> {
         match self.state {
             State::Sealed(sealed) => sealed.open_global(),

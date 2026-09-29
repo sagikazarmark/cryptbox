@@ -10,11 +10,11 @@ const KEYS: &[Key] = &[Key::IndexArgs, Key::Crate];
 
 const PART_KEYS: &[Key] = &[Key::Part, Key::Keys, Key::Index];
 
-// A record is declared on the field, never as a part, so it can't be given a role.
+// A record is declared on the seal, never as a part, so it can't be given a role.
 const REJECTED: &[(Key, &str)] = &[(
     Key::Record,
     "a record is never a binding part, so it can't scope keys or blind indexes: \
-     declare `record` on the field, and pass the record ID beside the binding",
+     declare `record` on the seal, and pass the record ID beside the binding",
 )];
 
 /// What a part scopes; mirrors `cryptbox::PartRole`.

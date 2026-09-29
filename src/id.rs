@@ -57,7 +57,7 @@ macro_rules! identifier {
 // Shared with `key`, which declares its key-generation IDs next to the keys.
 pub(crate) use identifier;
 
-identifier!(SealId, "A stable logical encrypted-field identifier.");
+identifier!(SealId, "A stable seal identifier.");
 identifier!(IndexId, "A stable logical blind-index identifier.");
 identifier!(
     PartId,

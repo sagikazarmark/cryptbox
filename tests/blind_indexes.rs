@@ -12,9 +12,9 @@ const ENCRYPTION_KEY_ID: KeyId = key_id!("50000000-0000-4000-8000-000000000005")
 const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("60000000-0000-4000-8000-000000000006");
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("70000000-0000-4000-8000-000000000007");
 
-struct EmailField;
+struct EmailSeal;
 
-impl Seal for EmailField {
+impl Seal for EmailSeal {
     const ID: cryptbox::SealId = seal_id!("80000000-0000-4000-8000-000000000008");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
@@ -24,9 +24,9 @@ impl Seal for EmailField {
     type Indexes = ();
 }
 
-struct PhoneField;
+struct PhoneSeal;
 
-impl Seal for PhoneField {
+impl Seal for PhoneSeal {
     const ID: cryptbox::SealId = seal_id!("90000000-0000-4000-8000-000000000009");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
@@ -43,7 +43,7 @@ fn normalize_email(input: &str) -> Zeroizing<Vec<u8>> {
 struct EmailExact;
 
 impl BlindIndexSpec for EmailExact {
-    type Seal = EmailField;
+    type Seal = EmailSeal;
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 13;
     const NORMALIZER: &'static str = "email/1";
@@ -58,11 +58,11 @@ impl BlindIndexSpec for EmailExact {
     }
 }
 
-/// The same index ID and normalization over another field.
+/// The same index ID and normalization over another seal.
 struct PhoneExact;
 
 impl BlindIndexSpec for PhoneExact {
-    type Seal = PhoneField;
+    type Seal = PhoneSeal;
     const ID: IndexId = EmailExact::ID;
     const BITS: u16 = EmailExact::BITS;
     const NORMALIZER: &'static str = "email/1";
@@ -111,7 +111,7 @@ fn blind_indexes_are_deterministic_normalized_and_explicitly_truncated() {
 }
 
 #[test]
-fn field_and_index_domains_are_cryptographically_separated() {
+fn seal_and_index_domains_are_cryptographically_separated() {
     let keys = index_keys();
     let email_index = EmailExact::derive_with(&email("mark@example.com"), &(), &keys).unwrap();
     let phone_index = PhoneExact::derive_with(&email("mark@example.com"), &(), &keys).unwrap();
@@ -167,7 +167,7 @@ fn prepared_values_derive_the_sealed_value_and_indexes_from_one_source() {
     let index_keys = index_keys();
     let value = email("Mark@Example.com");
 
-    let prepared = Sealed::<EmailField>::prepare(&value, (), &encryption_keys)
+    let prepared = Sealed::<EmailSeal>::prepare(&value, (), &encryption_keys)
         .unwrap()
         .with_index_with::<EmailExact>(&index_keys)
         .unwrap();
@@ -183,7 +183,7 @@ fn prepared_values_derive_the_sealed_value_and_indexes_from_one_source() {
 struct EmailDomain;
 
 impl BlindIndexSpec for EmailDomain {
-    type Seal = EmailField;
+    type Seal = EmailSeal;
     const ID: IndexId = index_id!("c0000000-0000-4000-8000-00000000000c");
     const BITS: u16 = 16;
     const NORMALIZER: &'static str = "email-domain/1";
@@ -218,9 +218,9 @@ struct Person {
     postal_code: String,
 }
 
-struct PersonField;
+struct PersonSeal;
 
-impl Seal for PersonField {
+impl Seal for PersonSeal {
     const ID: cryptbox::SealId = seal_id!("d0000000-0000-4000-8000-00000000000d");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
@@ -250,7 +250,7 @@ impl cryptbox::Codec<Person> for PersonCodec {
 struct NameAndPostalCode;
 
 impl BlindIndexSpec for NameAndPostalCode {
-    type Seal = PersonField;
+    type Seal = PersonSeal;
     const ID: IndexId = index_id!("b0000000-0000-4000-8000-00000000000b");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "name-postal-code/1";
@@ -315,7 +315,7 @@ macro_rules! truncation_spec {
         struct $name;
 
         impl BlindIndexSpec for $name {
-            type Seal = EmailField;
+            type Seal = EmailSeal;
             const ID: IndexId = IndexId::from_bytes([$id_byte; 16]);
             const BITS: u16 = $bits;
             const NORMALIZER: &'static str = "exact/1";
@@ -340,7 +340,7 @@ truncation_spec!(TwoHundredFiftySixBits, 256, 5);
 
 fn assert_canonical_truncation<Spec>(expected_bytes: usize)
 where
-    Spec: BlindIndexSpec<Seal = EmailField>,
+    Spec: BlindIndexSpec<Seal = EmailSeal>,
 {
     let index = Spec::derive_with(&email("truncation vector"), &(), &index_keys()).unwrap();
 

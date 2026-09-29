@@ -36,7 +36,7 @@ impl Seal for ManualUserEmail {
 }
 
 #[test]
-fn a_derived_field_declares_its_id_value_and_default_codec_without_padding() {
+fn a_derived_seal_declares_its_id_value_and_default_codec_without_padding() {
     assert_eq!(
         UserEmail::ID,
         seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25")
@@ -47,7 +47,7 @@ fn a_derived_field_declares_its_id_value_and_default_codec_without_padding() {
 }
 
 #[test]
-fn a_derived_field_opens_values_of_its_manual_equivalent() {
+fn a_derived_seal_opens_values_of_its_manual_equivalent() {
     let keys = keyring();
     let manual =
         Sealed::<ManualUserEmail>::seal(&"mark@example.com".to_owned(), (), &keys).unwrap();
@@ -110,7 +110,7 @@ struct BillingAddress;
 struct FixedBillingAddress;
 
 #[test]
-fn a_derived_field_uses_its_named_codec_and_padding() {
+fn a_derived_seal_uses_its_named_codec_and_padding() {
     assert_eq!(
         BillingAddress::ID,
         seal_id!("5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25")
@@ -423,7 +423,7 @@ impl Seal for ManualProjectNote {
 }
 
 #[test]
-fn a_derived_bound_field_opens_values_of_its_manual_equivalent() {
+fn a_derived_bound_seal_opens_values_of_its_manual_equivalent() {
     let keys = keyring();
     let manual_scope = ManualOrgProject {
         org: b"acme".to_vec(),
@@ -485,7 +485,7 @@ struct ProjectEmail;
 struct ProjectEmailLookup;
 
 #[test]
-fn a_derived_field_declares_its_blind_indexes() {
+fn a_derived_seal_declares_its_blind_indexes() {
     assert_eq!(
         <<ProjectEmail as Seal>::Indexes as IndexList<ProjectEmail>>::IDS,
         [index_id!("9c1e5a3d-7f2b-4d48-a6e0-3b5d9f1c7e24")]

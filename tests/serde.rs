@@ -11,9 +11,9 @@ use cryptbox::{
 use serde_json::Value;
 use zeroize::Zeroizing;
 
-struct EmailField;
+struct EmailSeal;
 
-impl Seal for EmailField {
+impl Seal for EmailSeal {
     const ID: cryptbox::SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
     const PADDING: Padding = Padding::NONE;
     const RECORD: bool = false;
@@ -26,7 +26,7 @@ impl Seal for EmailField {
 struct EmailExact;
 
 impl BlindIndexSpec for EmailExact {
-    type Seal = EmailField;
+    type Seal = EmailSeal;
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -62,7 +62,7 @@ fn encryption_keys() -> EncryptionKeyring {
     .unwrap()
 }
 
-fn sealed(keys: &EncryptionKeyring) -> Sealed<EmailField> {
+fn sealed(keys: &EncryptionKeyring) -> Sealed<EmailSeal> {
     Sealed::seal(&"mark@example.com".to_owned(), (), keys).unwrap()
 }
 
@@ -89,7 +89,7 @@ fn sealed_serde_round_trips_only_the_envelope_bytes() {
         sealed.as_bytes()
     );
 
-    let restored: Sealed<EmailField> = serde_json::from_str(&json).unwrap();
+    let restored: Sealed<EmailSeal> = serde_json::from_str(&json).unwrap();
     assert_eq!(sealed, restored);
     assert_eq!(restored.open((), &keys).unwrap(), "mark@example.com");
 }
@@ -97,7 +97,7 @@ fn sealed_serde_round_trips_only_the_envelope_bytes() {
 #[test]
 #[cfg(feature = "json")]
 fn sealed_serde_rejects_malformed_envelopes() {
-    let error = serde_json::from_str::<Sealed<EmailField>>("[1,2,3]").unwrap_err();
+    let error = serde_json::from_str::<Sealed<EmailSeal>>("[1,2,3]").unwrap_err();
 
     assert!(
         error
@@ -140,7 +140,7 @@ fn binary_serde_round_trips_sealed_and_blind_index_bytes() {
     let index = blind_index();
 
     let bytes = postcard::to_allocvec(&(sealed.clone(), index.clone())).unwrap();
-    let restored: (Sealed<EmailField>, BlindIndex<EmailExact>) =
+    let restored: (Sealed<EmailSeal>, BlindIndex<EmailExact>) =
         postcard::from_bytes(&bytes).unwrap();
 
     assert_eq!(restored, (sealed, index));

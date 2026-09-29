@@ -1,7 +1,7 @@
 # Wire format
 
 CryptBox stores encrypted values as binary **envelopes**: public metadata followed
-by encrypted bytes and an authentication tag. Searchable fields may also have a
+by encrypted bytes and an authentication tag. Searchable values may also have a
 separate **blind index**, a deterministic lookup value derived from normalized
 plaintext. This document defines both stored representations and the recipes
 needed to reproduce them.
@@ -79,8 +79,8 @@ authentication because the reader has no construction with which to verify it.
 ### Binding
 
 A binding identifies the expected cryptographic domain of a value. Every value is
-bound to a stable `SealId`, so an email field's ciphertext is not accepted under
-a different field, even when both use the same root key. A field declares its
+bound to a stable `SealId`, so an email seal's ciphertext is not accepted under
+a different seal, even when both use the same root key. A seal declares its
 binding **declaration**: a fixed set of parts, each with a part ID (a UUID), a value
 kind, and a role, plus whether it binds a record. The declaration is persistent
 schema. The **values**, such as a tenant ID and a record ID, are supplied at
@@ -89,7 +89,7 @@ each call. See [ADR-0005](adr/0005-runtime-binding-is-the-core.md).
 Every binding uses one layout:
 
 ```text
-binding = field_id[16] || record || count[2] || part*
+binding = seal_id[16] || record || count[2] || part*
 
 record  = 00                                (no record)
         | kind[1] || len[4] || value[len]   (record present)
@@ -97,18 +97,18 @@ part    = part_id[16] || kind[1] || len[4] || value[len]
 ```
 
 - `count` is the number of parts, as an unsigned 16-bit integer.
-- Parts are sorted by part ID in ascending byte order, whatever order the field
+- Parts are sorted by part ID in ascending byte order, whatever order the seal
   declares them in. Part IDs are unique and never the nil UUID.
 - `len` is an unsigned 32-bit byte count. Every value is length-prefixed, so
   `"ab", "c"` and `"a", "bc"` encode differently.
 - A record's kind code is never `00`, so an empty record differs from no record.
-- There is no leading tag or type byte: the binding starts with the field ID.
+- There is no leading tag or type byte: the binding starts with the seal ID.
 
-The **empty declaration** has no parts and no record. Its binding is the field ID
-followed by `00 0000`: a field-only binding, which identifies a logical field,
+The **empty declaration** has no parts and no record. Its binding is the seal ID
+followed by `00 0000`: a field-only binding, which identifies a seal alone,
 not a particular row or tenant.
 
-The field supplies the expected binding; it is not stored in the envelope.
+The seal supplies the expected binding; it is not stored in the envelope.
 This makes the application decide where a value belongs, rather than allowing
 stored bytes to select their own binding.
 
@@ -160,12 +160,12 @@ the declaration: a record of another kind fails authentication rather than repor
 Two ready-made bindings fix their declarations permanently:
 
 - `FieldOnly` has no parts. Without a record it is the empty declaration, so its
-  binding is `field_id || 00 || 0000`. With a record, it binds the record and
+  binding is `seal_id || 00 || 0000`. With a record, it binds the record and
   no parts; that declaration's fingerprint is `4e56863e564d3de9`.
 - `Tenant` has one part: part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
   bytes, role `keys`. A tenant ID is non-empty opaque bytes; a UUID tenant is
   its 16 bytes. Without a record, its binding fingerprint is `4bca2676fab96fae`.
-  For field `12345678-1234-4234-8234-1234567890ab` and tenant `acme`, the
+  For seal `12345678-1234-4234-8234-1234567890ab` and tenant `acme`, the
   binding is:
 
   ```text
@@ -175,7 +175,7 @@ Two ready-made bindings fix their declarations permanently:
 #### Reader rules
 
 The fingerprint is diagnostic only. The reader always takes the expected declaration
-from its own field, never from the envelope:
+from its own seal, never from the envelope:
 
 1. After structural parsing, and before any key lookup or AEAD work, compare the
    envelope's fingerprint with the fingerprint of the reader's declaration. A
@@ -301,7 +301,7 @@ establish freshness or row identity.
 
 ### Plaintext padding
 
-Encryption preserves payload length, so padding lets a field hide the exact
+Encryption preserves payload length, so padding lets a seal hide the exact
 encoded length by expanding it to a block boundary or fixed target. Suite 1 does
 not require padding; it can encrypt any byte length within its size limit.
 
@@ -321,9 +321,9 @@ The writer sets the padded flag exactly when it applies padding, and a reader
 removes padding exactly when the authenticated flag is set. The reader's current
 padding policy is not consulted, so padded bytes are never returned with their
 marker, and an unpadded value ending in `80` or `80 00` never loses those bytes.
-A field's padding policy therefore describes only how new values are written: it
+A seal's padding policy therefore describes only how new values are written: it
 can be enabled, disabled, or resized without making stored values unreadable.
-Re-encryption rewrites the payload and flag with the field's current policy.
+Re-encryption rewrites the payload and flag with the seal's current policy.
 
 The block size or fixed length is not recorded. Changing only those parameters
 is not visible in the envelope, so re-encryption applies them only to values it
@@ -357,7 +357,7 @@ maximum `(2^32 - 1) * 64`, which the reference implementation's AEAD rejects. It
 enforces the limit on encryption and rejects parsed/decrypted payloads implying a
 larger `P`, with `MessageTooLong`. Padding/envelope size arithmetic is checked;
 fixed padding rejects `E >= N` with `PaddingOverflow`. This is an algorithmic
-ceiling, not a recommended field size. Applications must choose smaller limits
+ceiling, not a recommended value size. Applications must choose smaller limits
 appropriate to their workloads; see
 [application responsibilities](security.md#application-responsibilities).
 
@@ -467,7 +467,7 @@ bits in the final byte are zero and noncanonical stored values are rejected.
 ### Key derivation and index input
 
 The logical `IndexId` distinguishes indexes, such as two differently normalized
-projections of the same field. It is separate from `IndexKeyId`: one identifies
+projections of the same seal. It is separate from `IndexKeyId`: one identifies
 the index's meaning, the other its key generation. `IndexId` and normalization
 come from the application schema, and the index binding from each call; none
 of them is stored in the index.
@@ -489,12 +489,12 @@ mac_input = MAC_label || context || normalized_length_be_u64 || normalized_bytes
 
 ### Index binding
 
-A blind index is derived under its **index binding**: the field's binding
+A blind index is derived under its **index binding**: the seal's binding
 restricted to its `keys` and `index` parts. Bound-only parts and the record are
 left out, because a query knows its scope but not the row. The index binding
 uses the [binding](#binding) encoding:
 
-- It is the field ID, `00` for no record, then those parts sorted by part ID.
+- It is the seal ID, `00` for no record, then those parts sorted by part ID.
 - With no `keys` or `index` parts, it is the empty binding, as for `FieldOnly`.
 
 Two bindings that agree on their `keys` and `index` values share the index
@@ -559,8 +559,8 @@ The final byte `40` has its three unused low bits cleared.
 
 ### Scoped blind-index vector
 
-The same inputs, for a field bound to the `Tenant` preset with tenant `acme`.
-The index binding is the field's `Tenant` binding without a record:
+The same inputs, for a seal bound to the `Tenant` preset with tenant `acme`.
+The index binding is the seal's `Tenant` binding without a record:
 
 ```text
 binding:      123456781234423482341234567890ab0000011e8306bf31354570831c6732f92550e9030000000461636d65

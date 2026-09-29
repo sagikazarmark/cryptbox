@@ -438,7 +438,7 @@ fn planner_encrypts_legacy_plaintext_and_derives_every_index() {
 }
 
 #[test]
-fn planner_encrypts_legacy_plaintext_with_the_field_padding_policy() {
+fn planner_encrypts_legacy_plaintext_with_the_seal_padding_policy() {
     let keys = rotated_keys();
     let planner = RowPlanner::<PaddedUserEmail>::new(&keys);
 

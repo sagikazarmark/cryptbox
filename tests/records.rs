@@ -181,7 +181,7 @@ fn a_record_round_trips_under_its_binding() {
 }
 
 #[test]
-fn a_field_that_binds_the_record_cannot_move_to_another_record() {
+fn a_seal_that_binds_the_record_cannot_move_to_another_record() {
     let keys = keys();
     let acme = tenant(b"acme");
     let ada = customer(7, "ada@example.com").seal(&acme, &keys).unwrap();
@@ -196,7 +196,7 @@ fn a_field_that_binds_the_record_cannot_move_to_another_record() {
 }
 
 #[test]
-fn a_field_that_binds_no_record_is_bound_to_the_binding_alone() {
+fn a_seal_that_binds_no_record_is_bound_to_the_binding_alone() {
     let keys = keys();
     let acme = tenant(b"acme");
     let ada = customer(7, "ada@example.com").seal(&acme, &keys).unwrap();

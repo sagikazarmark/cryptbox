@@ -3,10 +3,10 @@
 
 use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 
-/// Asserts that field `F` encodes `value` as exactly the hex bytes in `expected`,
+/// Asserts that seal `F` encodes `value` as exactly the hex bytes in `expected`,
 /// and decodes those bytes back to a value that encodes identically.
 ///
-/// Commit one fixture per field and run this in a test: it fails when the
+/// Commit one fixture per seal and run this in a test: it fails when the
 /// stored bytes would change, as a serde attribute change on a `Json` or
 /// `Postcard` value type can do silently. See [guarding the schema in CI].
 ///
@@ -68,7 +68,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 
 /// Asserts that `sealed` names a key that `keyring` holds, current or previous.
 ///
-/// Choosing which keyring protects a field or scope is application code, and a
+/// Choosing which keyring protects a seal or scope is application code, and a
 /// wrong choice fails silently at write time: the value seals and opens with the
 /// wrong keys, and survives destroying the right ones. Seal a value through the
 /// application's own key source and assert the keyring it should have chosen.
@@ -102,7 +102,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     type Indexes = ();
 /// }
 ///
-/// /// Keeps payment fields under their own keyring.
+/// /// Keeps payment seals under their own keyring.
 /// struct AppKeys {
 ///     general: EncryptionKeyring,
 ///     payments: EncryptionKeyring,
@@ -128,7 +128,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 /// # Panics
 ///
 /// Panics when `keyring` does not hold the key that `sealed` names. The message
-/// includes the field ID and the key ID, never the value.
+/// includes the seal ID and the key ID, never the value.
 #[track_caller]
 pub fn assert_sealed_under<F: Seal>(sealed: &Sealed<F>, keyring: &EncryptionKeyring) {
     let key = sealed.key_id();

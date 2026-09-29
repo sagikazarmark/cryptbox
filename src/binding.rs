@@ -16,7 +16,7 @@ pub use part::PartType;
 pub use presets::{FieldOnly, Tenant, TenantId};
 pub use scope::KeyScope;
 
-/// The declared scope a field's values are bound to, such as a tenant, or an
+/// The declared scope a seal's values are bound to, such as a tenant, or an
 /// org plus a workspace.
 ///
 /// A binding is data only. [`PARTS`](Self::PARTS) is its declaration: each
@@ -26,8 +26,8 @@ pub use scope::KeyScope;
 /// schema: changing a part ID, kind, or role is a migration. See [ADR-0005] and
 /// the [wire format].
 ///
-/// A record ID is not a part. Whether a field binds a record is declared on the
-/// field, and the record is always bound only: it never scopes keys or blind
+/// A record ID is not a part. Whether a seal binds a record is declared on the
+/// seal, and the record is always bound only: it never scopes keys or blind
 /// indexes, since a record-scoped index could not be searched.
 ///
 /// # Checks
@@ -514,7 +514,7 @@ impl<'a> BindingDeclaration<'a> {
 ///
 /// The encoded bytes are the domain separator that encryption mixes into key
 /// derivation and AAD, and that a blind index mixes into its MAC input. The
-/// field and key scope select the keyring; the binding fingerprint is recorded in
+/// seal and key scope select the keyring; the binding fingerprint is recorded in
 /// the envelope and checked by readers.
 #[derive(Clone, Debug)]
 pub(crate) struct BindingDomain {
@@ -525,7 +525,7 @@ pub(crate) struct BindingDomain {
 }
 
 impl BindingDomain {
-    /// Encodes a field's declared parts, in any order, with their values.
+    /// Encodes a seal's declared parts, in any order, with their values.
     ///
     /// Without parts or a record, the declaration is empty and the binding is
     /// field-only.
@@ -556,7 +556,7 @@ impl BindingDomain {
         })
     }
 
-    /// Encodes `binding` for field `id`, with `record` if any.
+    /// Encodes `binding` for seal `id`, with `record` if any.
     pub(crate) fn of<B: Binding>(
         id: SealId,
         binding: &B,
@@ -573,7 +573,7 @@ impl BindingDomain {
         )
     }
 
-    /// Encodes the blind-index domain of field `id` under a query's arguments.
+    /// Encodes the blind-index domain of seal `id` under a query's arguments.
     ///
     /// The domain is the binding restricted to its `keys` and `index` parts,
     /// without a record: the empty binding when it has no such parts.
@@ -590,7 +590,7 @@ impl BindingDomain {
         Self::index_parts(id, &specs, &B::index_values(args).0)
     }
 
-    /// Encodes the blind-index domain of field `id` under a whole binding: the
+    /// Encodes the blind-index domain of seal `id` under a whole binding: the
     /// same domain as [`Self::index`] under the binding's `keys` and `index`
     /// values.
     pub(crate) fn index_of<B: Binding>(id: SealId, binding: &B) -> Result<Self, Error> {
@@ -608,7 +608,7 @@ impl BindingDomain {
         Self::index_parts(id, &specs, &values)
     }
 
-    /// Encodes the binding of field `id` under the older declaration `Old`, taking each
+    /// Encodes the binding of seal `id` under the older declaration `Old`, taking each
     /// of `Old`'s parts from `binding` by part ID, and binding `record` if any.
     ///
     /// A part of `Old` that `binding` lacks, or holds with another kind, is
@@ -637,7 +637,7 @@ impl BindingDomain {
         }
     }
 
-    /// Encodes the blind-index domain of field `id` under the older declaration
+    /// Encodes the blind-index domain of seal `id` under the older declaration
     /// `Old`, taking each of its `keys` and `index` parts from a query's
     /// arguments for binding `B`, by part ID.
     #[cfg(feature = "migrate")]
@@ -694,7 +694,7 @@ mod tests {
     use super::*;
     use crate::{part_id, seal_id};
 
-    const FIELD: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
+    const SEAL: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
 
     #[test]
     fn the_empty_binding_is_the_field_id_without_record_or_parts() {
@@ -715,7 +715,7 @@ mod tests {
     fn scoped_binding_sorts_and_frames_parts() {
         // Declared out of order: the encoding sorts parts by part ID.
         let domain = BindingDomain::scoped(
-            FIELD,
+            SEAL,
             BindingDeclaration::new(&[SEQUENCE, TENANT], false),
             &[PartValue::I64(-2), PartValue::Uuid([0x33; 16])],
             None,
@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn scoped_binding_tags_the_record_kind() {
         let domain = BindingDomain::scoped(
-            FIELD,
+            SEAL,
             BindingDeclaration::new(&[TENANT], true),
             &[PartValue::Uuid([0x33; 16])],
             Some(PartValue::Bytes(b"row-7")),
@@ -775,7 +775,7 @@ mod tests {
         record: Option<PartValue<'_>>,
     ) -> Vec<u8> {
         BindingDomain::scoped(
-            FIELD,
+            SEAL,
             BindingDeclaration::new(parts, record.is_some()),
             values,
             record,
@@ -844,7 +844,7 @@ mod tests {
         record_value: Option<PartValue<'_>>,
     ) -> Result<BindingDomain, Error> {
         BindingDomain::scoped(
-            FIELD,
+            SEAL,
             BindingDeclaration::new(parts, record),
             values,
             record_value,
@@ -988,7 +988,7 @@ mod tests {
     #[test]
     fn a_two_part_scope_encodes_the_documented_vector() {
         // docs/wire-format.md#provisional-scoped-vectors
-        let domain = BindingDomain::of(FIELD, &ws1(), None).unwrap();
+        let domain = BindingDomain::of(SEAL, &ws1(), None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -999,7 +999,7 @@ mod tests {
 
     #[test]
     fn a_two_part_scope_binds_the_record_last_documented_vector() {
-        let domain = BindingDomain::of(FIELD, &ws1(), Some(RecordId::from(7_i64))).unwrap();
+        let domain = BindingDomain::of(SEAL, &ws1(), Some(RecordId::from(7_i64))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),

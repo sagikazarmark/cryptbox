@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let email = "Mark@Example.com".to_owned();
-    // The UserEmail field binds the sealed value and index to its field ID.
+    // The UserEmail seal binds the sealed value and index to its seal ID.
     // prepare borrows email: it does not remove plaintext from memory.
     let prepared = Sealed::<UserEmail>::prepare(&email, (), &keys)?
         .with_index_with::<EmailLookup>(&index_keys)?;
@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _index_info = inspect_blind_index(restored.email_lookup.as_bytes())?;
     assert!(!restored.email.needs_reseal((), &keys)?);
 
-    // Opening authenticates, decrypts, unpads, and decodes with the chosen field's codec.
+    // Opening authenticates, decrypts, unpads, and decodes with the chosen seal's codec.
     let plaintext = restored.email.open((), &keys)?;
     assert_eq!(plaintext, "Mark@Example.com");
 

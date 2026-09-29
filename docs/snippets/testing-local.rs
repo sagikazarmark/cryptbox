@@ -40,7 +40,7 @@ impl BlindIndexSpec for EmailLookup {
 
 #[test]
 fn independent_cases_run_concurrently() {
-    // Both cases deliberately reuse the same field and generation IDs with
+    // Both cases deliberately reuse the same seal and generation IDs with
     // different fixture roots. Neither case can use the other's keyring.
     std::thread::scope(|scope| {
         let first = scope.spawn(|| round_trip("first@example.test", 0x11, 0x21));

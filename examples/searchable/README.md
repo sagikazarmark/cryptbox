@@ -96,7 +96,7 @@ TLS trust policy (for example `sslmode=verify-full` with the appropriate CA).
 Both schemas store complete ciphertext envelopes and index tokens in `BYTEA`/`BLOB`
 columns. The lookup index is **non-unique**. A check constraint pairs `NULL` email
 with `NULL` lookup; it does not establish cryptographic consistency. Preserve
-field/index IDs, codec, binding, normalization and precision as
+seal/index IDs, codec, binding, normalization and precision as
 [persistent schema](../../docs/integration.md#persistent-schema).
 
 This example supports nullable fields. The packaged maintenance rehearsal linked
@@ -157,7 +157,7 @@ fresh dataset above; additional rows from earlier runs may also be returned.
 ## How the storage operations work
 
 These excerpts come from the [complete application](main.rs).
-Its `UserEmail` field uses `String`, `Utf8` and `Padding::NONE`, and binds ciphertext to its ID.
+Its `UserEmail` seal uses `String`, `Utf8` and `Padding::NONE`, and binds ciphertext to its ID.
 `EmailLookup` retains 128 bits and trims/ASCII-lowercases for equality—an illustrative
 policy, not general email canonicalization. Application validation requires a
 trimmed ASCII graphic value containing `@`, at most 254 bytes. Stored text retains
@@ -208,7 +208,7 @@ async fn put(
 Use an application-owned transaction for related multi-statement writes. This
 upsert is last-writer-wins; add a version guard if lost updates matter. The
 automatic `Plain` column does **not** maintain a separate index column, so it
-rejects indexed fields; seal them with `Sealed::prepare`.
+rejects indexed seals; seal their values with `Sealed::prepare`.
 Preparation borrows and retains the plaintext source.
 
 ### Nullable and deferred reads
@@ -283,7 +283,7 @@ rows or authenticate index metadata; see
 [what each check establishes](../../docs/security.md#what-each-check-establishes).
 
 Blind indexes reveal equality/frequency and cannot enforce uniqueness. `Padding::NONE`
-reveals encoded length; field binding does not prevent same-field substitution or replay.
+reveals encoded length; the binding does not prevent substitution between rows of one seal, or replay.
 
 ## Use it in your application
 

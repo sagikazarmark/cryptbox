@@ -107,9 +107,9 @@ impl RowOutcome {
 /// The binding arguments of one stored row, which a [`RowPlanner`]'s row
 /// closure builds from the row's columns.
 ///
-/// It holds the row's binding and, for a field that declares
-/// [`Seal::RECORD`], its record ID. A record passed to a field that binds
-/// none, or omitted for a field that binds one, fails planning with
+/// It holds the row's binding and, for a seal that declares
+/// [`Seal::RECORD`], its record ID. A record passed to a seal that binds
+/// none, or omitted for a seal that binds one, fails planning with
 /// [`Error::InvalidBinding`].
 ///
 /// The `keys` parts come from the job's configuration, never from the row: a
@@ -173,13 +173,13 @@ where
 {
     /// The declaration's fingerprint without a record.
     unrecorded: [u8; 8],
-    /// The declaration's fingerprint with a record, for a field that binds one.
+    /// The declaration's fingerprint with a record, for a seal that binds one.
     recorded: Option<[u8; 8]>,
     domain: fn(&F::Binding, Option<RecordId<'_>>) -> Result<BindingDomain, Error>,
     keys: &'a dyn EncryptionKeySource,
 }
 
-/// The binding of one row under the planner's field.
+/// The binding of one row under the planner's seal.
 struct RowBinding {
     domain: BindingDomain,
     index_domain: BindingDomain,
@@ -189,7 +189,7 @@ struct RowBinding {
 const fn check_no_record(record: bool) {
     assert!(
         !record,
-        "this field binds a record: build each row's record with `RowPlanner::for_key_scope`"
+        "this seal binds a record: build each row's record with `RowPlanner::for_key_scope`"
     );
 }
 
@@ -213,9 +213,9 @@ const fn check_no_record(record: bool) {
 /// one key scope, taken from the job's configuration: a sweep is partitioned
 /// by key scope, because its keys are. A row whose arguments name another key
 /// scope is reported as [`RowState::OutOfScope`] and left alone. [`Self::new`]
-/// serves a [`FieldOnly`] field without a record, whose rows need no columns.
+/// serves a [`FieldOnly`] seal without a record, whose rows need no columns.
 ///
-/// To change a field's binding declaration, register the declaration it had before with
+/// To change a seal's binding declaration, register the declaration it had before with
 /// [`Self::legacy_binding`]: rows whose header still names that declaration are
 /// opened under it and resealed under the current one.
 pub struct RowPlanner<'a, F, R = ()>
@@ -234,10 +234,10 @@ impl<'a, F, R> RowPlanner<'a, F, R>
 where
     F: Seal<Binding = FieldOnly>,
 {
-    /// Creates a planner for a [`FieldOnly`] field `F` without a record and an
+    /// Creates a planner for a [`FieldOnly`] seal `F` without a record and an
     /// encryption key source.
     ///
-    /// A field that binds a record fails the build; use [`Self::for_key_scope`].
+    /// A seal that binds a record fails the build; use [`Self::for_key_scope`].
     pub fn new(keys: &'a dyn EncryptionKeySource) -> Self {
         const { check_no_record(F::RECORD) };
 
@@ -249,7 +249,7 @@ impl<'a, F, R> RowPlanner<'a, F, R>
 where
     F: Seal,
 {
-    /// Creates a planner for the rows of one key scope of field `F`.
+    /// Creates a planner for the rows of one key scope of seal `F`.
     ///
     /// `key_scope` comes from the job's configuration, and `keys` serves it.
     /// `row_args` builds each row's binding arguments from its columns; a row
@@ -274,7 +274,7 @@ where
     /// Configures the handler used to recover non-envelope stored values.
     ///
     /// Without a handler, non-envelope bytes are treated as plaintext and
-    /// decoded directly through the field's codec.
+    /// decoded directly through the seal's codec.
     #[must_use]
     pub fn with_legacy(mut self, legacy: &'a dyn LegacyFormat) -> Self {
         self.legacy = Some(legacy);
@@ -282,12 +282,12 @@ where
     }
 
     /// Opens a legacy-binding window: rows sealed with the older binding declaration
-    /// `Old` are opened under it with `keys` and resealed under the field's
+    /// `Old` are opened under it with `keys` and resealed under the seal's
     /// current binding.
     ///
     /// `Old` takes each part's value from the row's current binding, by part ID.
     /// A row whose header names `Old` with a record is opened with the row's
-    /// record, so a field that binds one can still add parts. The window covers
+    /// record, so a seal that binds one can still add parts. The window covers
     /// moving from [`FieldOnly`] to any binding, adding parts or a record, and
     /// changing a part's role, but not removing a part or changing its kind. A part of `Old` that the
     /// current binding lacks, or holds with another kind, fails planning with
@@ -316,7 +316,7 @@ where
     /// which stored index bytes are later passed to [`Self::classify_row`] and
     /// [`Self::plan_row`].
     ///
-    /// The index must be declared over this field. Registering another field's
+    /// The index must be declared over this seal. Registering another seal's
     /// index is a type error:
     ///
     /// ```compile_fail,E0271

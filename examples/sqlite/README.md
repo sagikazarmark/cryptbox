@@ -1,10 +1,10 @@
-# Store your first field in SQLite
+# Store your first sealed value in SQLite
 
-Store one field-bound email, let the writing process exit, then authenticate and
+Store one sealed email, let the writing process exit, then authenticate and
 decrypt it in a new process. You will keep both the SQLite database and one
 independently provisioned encryption root across the restart.
 
-Continue from [your first field](../../docs/first-field.md).
+Continue from [seal your first value](../../docs/first-field.md).
 [Examples](../README.md) · [Documentation](../../docs/README.md).
 
 ## 1. Run from the checkout
@@ -46,7 +46,7 @@ The example pairs this root with the fixed demonstration generation ID
 is the immutable pairing of that ID and root material: preserve both across
 restarts and retain them for as long as the database or its backups need them.
 The ID is public metadata, not the secret. Do not generate another root under
-the same ID to replace a lost file; it cannot decrypt the stored field.
+the same ID to replace a lost file; it cannot decrypt the stored value.
 
 This file and fixed ID are demonstration provisioning. An application should load
 its stable ID/root pairing from its own key source and access policy; the database
@@ -54,7 +54,7 @@ does not supply the secret. See
 [keyrings and key sources](../../docs/integration.md#keyrings-and-key-sources)
 for the general design. This example uses one encryption generation only.
 
-## 3. Write the field and exit
+## 3. Write the value and exit
 
 ```sh
 cargo run --locked --example sqlx_sqlite --features derive,sqlx-sqlite -- \
@@ -118,8 +118,8 @@ authenticates and decodes, returning the bare `String`. Sealing borrows the
 original plaintext, and no global keys are installed: `keys` supplies the
 key explicitly.
 
-Seal binding identifies a logical field, not a row or tenant. Preserve the field
-ID, codec compatibility, and binding choices with your stored data; see
+A field-only binding identifies a seal alone, not a row or tenant. Preserve the
+seal ID, codec compatibility, and binding choices with your stored data; see
 [persistent schema](../../docs/integration.md#persistent-schema).
 
 You now have durable encryption-only storage. If you also need equality lookup,
@@ -128,7 +128,7 @@ continue with [verified searchable storage](../searchable/README.md).
 ## Use it in your application
 
 The `write` and `read` functions in [main.rs](main.rs) show the storage boundary.
-Adapt the table and field declaration, and replace `load_keys` with your application's
+Adapt the table and seal declaration, and replace `load_keys` with your application's
 key source. Enable `sqlx-sqlite` and add SQLx with your chosen runtime. The example
 also uses `hex` and `zeroize` for its file loader; those are choices of this sample,
 not requirements for every integration.

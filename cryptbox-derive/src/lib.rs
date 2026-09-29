@@ -21,25 +21,25 @@ mod seal;
 use proc_macro::TokenStream;
 use syn::{DeriveInput, parse_macro_input};
 
-/// Derives `cryptbox::Seal` for a field marker type.
+/// Derives `cryptbox::Seal` for a seal marker type.
 ///
 /// | Key | Required | Meaning |
 /// | --- | --- | --- |
-/// | `id = "…"` | yes | The field ID, a hyphenated UUID string literal. |
-/// | `value = Type` | yes | The value type stored in the field. |
+/// | `id = "…"` | yes | The seal ID, a hyphenated UUID string literal. |
+/// | `value = Type` | yes | The value type the seal seals. |
 /// | `codec = Type` | no | The codec. Defaults to `<Value as Plaintext>::Codec`. |
 /// | `padding = …` | no | `none` (the default), `block(size)`, or `length(len)`. |
 /// | `binding = Type` | no | The binding scope. Defaults to `FieldOnly`. |
 /// | `record` | no | Also binds every value to a record ID (`RECORD = true`). |
-/// | `indexes(Type, …)` | no | The field's blind indexes (`Indexes`). Defaults to none. |
+/// | `indexes(Type, …)` | no | The seal's blind indexes (`Indexes`). Defaults to none. |
 ///
 /// The ID is validated when the macro expands and is never derived from the
-/// type's name: generate a fresh UUID for every logical field. A codec is never
+/// type's name: generate a fresh UUID for every seal. A codec is never
 /// inferred from a type's shape. Without `codec`, a value type that does not
 /// implement `Plaintext` reports that it has no default codec. Padding
 /// parameters are validated when the macro expands.
 ///
-/// Without `binding`, `record`, and `indexes`, values are bound to their field
+/// Without `binding`, `record`, and `indexes`, values are bound to their seal
 /// ID alone: `Binding = FieldOnly`, no record, and no declared blind indexes.
 ///
 /// ```
@@ -71,7 +71,7 @@ use syn::{DeriveInput, parse_macro_input};
 /// };
 /// ```
 ///
-/// A field bound to a tenant and a record, with a blind index:
+/// A seal bound to a tenant and a record, with a blind index:
 ///
 /// ```
 /// # use cryptbox::BlindIndexError;
@@ -143,7 +143,7 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 /// | Key | Required | Meaning |
 /// | --- | --- | --- |
 /// | `id = "…"` | yes | The index ID, a hyphenated UUID string literal. |
-/// | `seal = Type` | yes | The field whose values the index projects. |
+/// | `seal = Type` | yes | The seal whose values the index projects. |
 /// | `bits = N` | yes | The retained index bits, from 1 to 256. |
 /// | `query = Type` | yes | The lookup input, such as `str`. |
 /// | `normalize = path` | yes | A `fn(&Query) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>`. |
@@ -151,7 +151,7 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 /// | `normalizer = "…"` | yes | The name of the normalization rules, such as `"email/1"`; see `BlindIndexSpec::NORMALIZER`. |
 ///
 /// One normalizer serves both lookups and stored values. Without `project`, it
-/// receives the field's value directly, so `&Value` must coerce to `&Query`,
+/// receives the sealed value directly, so `&Value` must coerce to `&Query`,
 /// as `&String` does to `&str`. With `project`, it receives the projection,
 /// such as one part of a larger value; prefer projections that borrow, because
 /// an owned projection is a plaintext copy the normalizer cannot erase. Write
@@ -321,7 +321,7 @@ pub fn derive_plaintext(input: TokenStream) -> TokenStream {
 /// UUID, a `uuid::Uuid` with `cryptbox`'s `uuid` feature, an `i64`, or bytes
 /// (`Vec<u8>`, `Box<[u8]>`, or `TenantId`), or any other type that implements
 /// `PartType`, such as an application's own ID newtype. A record is never a
-/// part: declare `record` on the field.
+/// part: declare `record` on the seal.
 ///
 /// | Struct key | Required | Meaning |
 /// | --- | --- | --- |
@@ -413,7 +413,7 @@ pub fn derive_plaintext(input: TokenStream) -> TokenStream {
 /// };
 /// ```
 ///
-/// A field names the binding with `#[cryptbox(binding = OrgWorkspace)]`.
+/// A seal names the binding with `#[cryptbox(binding = OrgWorkspace)]`.
 #[proc_macro_derive(Binding, attributes(cryptbox))]
 pub fn derive_binding(input: TokenStream) -> TokenStream {
     derive(input, binding::expand)
@@ -429,17 +429,18 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///
 /// Every field says how it is stored:
 ///
-/// | Seal key | Meaning |
+/// | Field key | Meaning |
 /// | --- | --- |
-/// | `seal = F` | Sealed as field `F`: the sealed struct holds a `Sealed<F>`. |
-/// | `index(S as column, …)` | With `field`: the blind indexes it writes, each in a `BlindIndex<S>` field named `column`. |
+/// | `seal = F` | Sealed with seal `F`: the sealed struct holds a `Sealed<F>`. |
+/// | `index(S as column, …)` | With `seal`: the blind indexes it writes, each in a `BlindIndex<S>` field named `column`. |
 /// | `plaintext` | Stored as it is. The record ID must be `plaintext`. |
 ///
-/// An unannotated field fails the build. Every sealed field must share one
-/// `Binding`, and each field that declares `record` is also bound to the record
-/// ID, which any `PartType` can hold. A field must write exactly the blind
-/// indexes its `Seal` declares in `indexes(…)`: a missing, extra, or repeated
-/// one fails the build, so no field can be sealed without writing its indexes.
+/// An unannotated field fails the build. The seals of all sealed fields must
+/// share one `Binding`, and each field whose seal declares `record` is also
+/// bound to the record ID, which any `PartType` can hold. A field must write
+/// exactly the blind indexes its seal declares in `indexes(…)`: a missing,
+/// extra, or repeated one fails the build, so no field can be sealed without
+/// writing its indexes.
 ///
 /// The sealed struct copies the struct's visibility, and each field's
 /// visibility and `#[doc]` and `#[sqlx(…)]` attributes; its index columns follow
@@ -496,7 +497,7 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 /// expands to exactly this hand-written struct and impls. The real expansion
 /// spells `Result`, `Clone`, and `Sized` as absolute paths, forwards docs, and
 /// also asserts, at compile time, that each field writes the blind indexes its
-/// field declares:
+/// seal declares:
 ///
 /// ```
 /// # use cryptbox::{

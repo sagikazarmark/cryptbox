@@ -38,6 +38,10 @@ status: accepted
 > Amended for terminology. A binding's *shape* is now its *declaration*, and the
 > shape fingerprint is the *binding fingerprint*, stored as 8 plain bytes. The
 > rest of this record keeps the original terms.
+>
+> Amended for terminology by [ADR-0007](0007-seals-may-be-their-own-values.md). A
+> *field* is now a *seal*, and the field ID a *seal ID*; the rest of this record
+> keeps the original terms.
 
 Every seal and open binds the ciphertext to a runtime **binding**: the field ID,
 a declared scope (for example tenant, or org plus workspace), and optionally a
