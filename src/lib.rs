@@ -172,6 +172,7 @@ pub struct ReadmeDoctests;
 #[doc = include_str!("../docs/first-field.md")]
 pub struct FirstFieldDoctests;
 
+mod args;
 mod binding;
 mod blind;
 mod bound;
@@ -201,9 +202,10 @@ mod sqlx_sqlite;
 pub mod testing;
 mod value;
 
+pub use args::Args;
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    Args, FromIndexValues, KeyScope, PartId, PartKind, PartRole, PartSpec, PartType, PartValue,
+    FromIndexValues, KeyScope, PartId, PartKind, PartRole, PartSpec, PartType, PartValue,
     PartValues, RecordId, Recorded, Scope, SealScope, Tenant, TenantId,
 };
 pub use blind::{
@@ -239,7 +241,7 @@ pub mod __private {
     pub use uuid;
     pub use zeroize::Zeroizing;
 
-    pub use crate::binding::InRecord;
+    pub use crate::args::InRecord;
     pub use crate::codec::DefaultCodec;
     pub use crate::schema::{has_duplicate, writes_declared_indexes};
 }

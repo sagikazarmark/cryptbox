@@ -89,7 +89,7 @@ use restate_sdk::{
 };
 
 use crate::{
-    Args, BlindIndexKeySource, EncryptionKeySource, Error, Record, Seal, Sealed, binding::domain,
+    Args, BlindIndexKeySource, EncryptionKeySource, Error, Record, Seal, Sealed, args::domain,
 };
 
 mod codec;

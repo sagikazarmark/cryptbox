@@ -6,7 +6,7 @@ use zeroize::Zeroizing;
 use crate::{
     BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, Error,
     IndexKeyId, KeyScope, Scope, Seal,
-    binding::{PartsOf, Target},
+    args::{PartsOf, Target},
     id::identifier,
     keys,
 };

@@ -34,7 +34,7 @@ error[E0308]: mismatched types
    = note: expected reference `&()`
               found reference `&Tenant`
 note: tuple struct defined here
-  --> $WORKSPACE/src/binding/args.rs
+  --> $WORKSPACE/src/args.rs
    |
    | pub struct InRecord<'a, S, Id: ?Sized>(pub &'a S, pub &'a Id);
    |            ^^^^^^^^

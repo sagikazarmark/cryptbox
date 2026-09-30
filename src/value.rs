@@ -4,7 +4,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
     Args, Codec, EncryptionKeySource, Error, GlobalKeys, KeyId, Prepared, Seal,
-    binding::{Target, domain, domains},
+    args::{Target, domain, domains},
     bound,
     envelope::validated_key_id,
     keys,

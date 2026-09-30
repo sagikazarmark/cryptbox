@@ -1,7 +1,7 @@
 use crate::{
     Args, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
     EncryptionKeySource, Error, KeyScope, Seal, SealScope, Sealed,
-    binding::{PartsOf, Target, with_domain},
+    args::{PartsOf, Target, with_domain},
     blind::{IndexArgs, probes_in},
     bound, inspect_ciphertext,
 };

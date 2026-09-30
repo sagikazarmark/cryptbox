@@ -5,7 +5,8 @@ use zeroize::Zeroizing;
 use crate::{
     BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec, EncryptionKeySource,
     Error, IndexKeyId, KeyScope, PartValue, RecordId, Scope, Seal, SealScope,
-    binding::{PartsOf, Target, declaration_fingerprint},
+    args::{PartsOf, Target},
+    binding::declaration_fingerprint,
     blind::{current_key_id, derive_value},
     bound, inspect_blind_index, inspect_ciphertext,
 };

@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed, binding::Target,
+    BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed, args::Target,
     blind::derive_value, keys,
 };
 

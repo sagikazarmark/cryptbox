@@ -7,8 +7,7 @@ use std::{
 
 use crate::{
     BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartRole, PartSpec, Scope, Seal, SealId,
-    SealScope,
-    binding::{PartsOf, declaration_fingerprint},
+    SealScope, args::PartsOf, binding::declaration_fingerprint,
 };
 
 /// Lists seals and blind indexes with their persistent schema.

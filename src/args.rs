@@ -1,5 +1,10 @@
-use super::{BindingDomain, KeyScope, PartKind, PartType, PartValue, Recorded, Scope, SealScope};
-use crate::{EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId};
+//! The typed layer's binding arguments: what a seal's callers pass, and the
+//! binding and key scope the typed layer resolves from them.
+
+use crate::{
+    BindingDomain, EncryptionKeySource, EncryptionKeyring, Error, KeyScope, PartKind, PartType,
+    PartValue, Recorded, Scope, Seal, SealId, SealScope,
+};
 
 /// The declared parts of seal `F`'s scope, without its record.
 pub(crate) type PartsOf<F> = <<F as Seal>::Scope as SealScope>::Parts;
