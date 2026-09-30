@@ -160,19 +160,19 @@ struct ProjectScope {
 
 impl Scope for ProjectScope {
     const PARTS: &'static [PartSpec] = &[
-        PartSpec::keys(
+        PartSpec::new(
             part_id!("1a2b3c4d-0000-4000-8000-000000000001"),
             PartKind::I64,
         ),
-        PartSpec::keys(
+        PartSpec::new(
             part_id!("2b3c4d5e-0000-4000-8000-000000000002"),
             PartKind::Uuid,
         ),
-        PartSpec::bound(
+        PartSpec::new(
             part_id!("3c4d5e6f-0000-4000-8000-000000000003"),
             PartKind::Bytes,
         ),
-        PartSpec::bound(
+        PartSpec::new(
             part_id!("4d5e6f70-0000-4000-8000-000000000004"),
             PartKind::Uuid,
         ),
@@ -196,11 +196,11 @@ struct ProjectKeys {
 
 impl Scope for ProjectKeys {
     const PARTS: &'static [PartSpec] = &[
-        PartSpec::keys(
+        PartSpec::new(
             part_id!("1a2b3c4d-0000-4000-8000-000000000001"),
             PartKind::I64,
         ),
-        PartSpec::keys(
+        PartSpec::new(
             part_id!("2b3c4d5e-0000-4000-8000-000000000002"),
             PartKind::Uuid,
         ),

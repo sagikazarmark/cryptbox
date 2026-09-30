@@ -206,8 +206,8 @@ mod value;
 pub use args::Args;
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    FromParts, PartId, PartKind, PartRole, PartSpec, PartType, PartValue, PartValues, RecordId,
-    Recorded, Scope, SealScope, Tenant, TenantId,
+    FromParts, PartId, PartKind, PartSpec, PartType, PartValue, PartValues, RecordId, Recorded,
+    Scope, SealScope, Tenant, TenantId,
 };
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexId, IndexList,

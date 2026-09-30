@@ -50,7 +50,8 @@ where
             return bound::open(&target.domain, bytes, || target.keyring(F::ID, keys));
         }
 
-        let old = BindingDomain::projected::<Old, PartsOf<F>>(F::ID.as_bytes(), scope, record)?;
+        let old =
+            BindingDomain::projected::<Old, OldKeys, PartsOf<F>>(F::ID.as_bytes(), scope, record)?;
         bound::open(&old, bytes, || {
             old_keys.encryption_keyring(F::ID, &project_view::<OldKeys, _>(scope)?)
         })
@@ -99,7 +100,7 @@ where
     let mut probes = S::probes_with(query, scope, keys)?;
     let old: Old = project_view(scope)?;
     let old = Target {
-        domain: BindingDomain::index(<S::Seal as Seal>::ID.as_bytes(), &old)?,
+        domain: BindingDomain::index(<S::Seal as Seal>::ID.as_bytes(), &old, OldKeys::PARTS)?,
         keys: project_view::<OldKeys, _>(&old)?,
     };
     for probe in probes_in::<S, _>(query, &old, old_keys)? {

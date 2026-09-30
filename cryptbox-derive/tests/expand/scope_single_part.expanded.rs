@@ -1,31 +1,31 @@
-pub struct Org {
-    #[cryptbox(part = "3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90", keys)]
-    pub id: [u8; 16],
+pub struct Revision {
+    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
+    pub number: i64,
 }
 const _: () = {
     #[automatically_derived]
-    impl ::cryptbox::Scope for Org {
+    impl ::cryptbox::Scope for Revision {
         const PARTS: &'static [::cryptbox::PartSpec] = &[
-            ::cryptbox::PartSpec::keys(
-                ::cryptbox::PartId::from_u128(0x3a1f0c6e_58b2_4d0a_9e57_1c4b8f2d6a90),
-                <[u8; 16] as ::cryptbox::PartType>::KIND,
+            ::cryptbox::PartSpec::new(
+                ::cryptbox::PartId::from_u128(0x8f4a6c13_9d2e_4b57_a0c8_6e1f3a5d7b92),
+                <i64 as ::cryptbox::PartType>::KIND,
             ),
         ];
         fn values(&self) -> ::cryptbox::PartValues<'_> {
             ::cryptbox::PartValues::from([
-                <[u8; 16] as ::cryptbox::PartType>::part_value(&self.id),
+                <i64 as ::cryptbox::PartType>::part_value(&self.number),
             ])
         }
     }
     #[automatically_derived]
-    impl ::cryptbox::FromParts for Org {
+    impl ::cryptbox::FromParts for Revision {
         fn from_parts(
             values: &[::cryptbox::PartValue<'_>],
         ) -> ::core::result::Result<Self, ::cryptbox::Error> {
             match values {
                 [value0] => {
                     ::core::result::Result::Ok(Self {
-                        id: <[u8; 16] as ::cryptbox::PartType>::from_part_value(*value0)?,
+                        number: <i64 as ::cryptbox::PartType>::from_part_value(*value0)?,
                     })
                 }
                 _ => ::core::result::Result::Err(::cryptbox::Error::InvalidBinding),

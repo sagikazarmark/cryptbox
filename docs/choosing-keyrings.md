@@ -80,7 +80,7 @@ table of one row per seal:
 Derive that table from the same constant your key source reads, so the code and
 the review artifact cannot drift, and treat a diff to it as a review gate: a
 seal moving between custody labels is a migration of who can read the data, not
-a refactor. A seal with no `keys` part has the empty keys view, `()`, and cannot be
+a refactor. A seal with the empty keys view, `()`, cannot be
 shredded on its own; say so explicitly rather than leaving it blank.
 
 ## Implement a key source

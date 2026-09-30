@@ -392,7 +392,7 @@ fn a_derived_blind_index_names_its_normalizer() {
 struct OrgProject {
     #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
     workspace: [u8; 16],
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     org: Vec<u8>,
     #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
     project: i64,
@@ -401,7 +401,7 @@ struct OrgProject {
 /// The keys view of [`OrgProject`]: its org.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct ProjectOrg {
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     org: Vec<u8>,
 }
 
@@ -411,7 +411,7 @@ struct ProjectOrg {
 struct OrgProjectSearch {
     #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
     project: i64,
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     org: Vec<u8>,
 }
 
@@ -425,15 +425,15 @@ struct ManualOrgProject {
 
 impl Scope for ManualOrgProject {
     const PARTS: &'static [PartSpec] = &[
-        PartSpec::keys(
+        PartSpec::new(
             part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
             PartKind::Bytes,
         ),
-        PartSpec::bound(
+        PartSpec::new(
             part_id!("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61"),
             PartKind::I64,
         ),
-        PartSpec::bound(
+        PartSpec::new(
             part_id!("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92"),
             PartKind::Uuid,
         ),
@@ -610,7 +610,7 @@ fn a_derived_blind_index_is_scoped_by_its_index_scope() {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct Org {
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     id: [u8; 16],
 }
 
@@ -692,7 +692,7 @@ mod uuid_parts {
 
     #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
     struct Org {
-        #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+        #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
         id: Uuid,
     }
 
@@ -726,7 +726,7 @@ impl PartType for OrgId {
 
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct TypedOrg {
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     id: OrgId,
 }
 
@@ -760,7 +760,7 @@ impl PartType for Mislabeled {
 
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct MislabeledScope {
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     id: Mislabeled,
 }
 

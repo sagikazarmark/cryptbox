@@ -17,7 +17,7 @@ A binding has two halves, and they change on different schedules:
 
 | Half | Where it is declared | When it changes |
 | --- | --- | --- |
-| **Declaration**: part IDs, kinds, roles, and the record's kind | The seal and its seal scope, such as `Tenant` or `Recorded<Tenant, i64>` | Only through a [declaration migration](#change-a-binding-declaration) |
+| **Declaration**: part IDs, kinds, the keys view, and the record's kind | The seal, its seal scope, such as `Tenant` or `Recorded<Tenant, i64>`, and its keys view | Only through a [declaration migration](#change-a-binding-declaration) |
 | **Values**: this org, this workspace, this record | The binding arguments of each call | Every call |
 
 One seal never seals with different part sets on different calls: that would
@@ -36,7 +36,7 @@ bytes. With the `derive` feature, each field of the struct is one part:
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 pub struct OrgWorkspace {
     /// Scopes keys; the shred unit.
-    #[cryptbox(part = "59881c28-3003-4047-847f-d7cc73b140e5", keys)]
+    #[cryptbox(part = "59881c28-3003-4047-847f-d7cc73b140e5")]
     pub org: [u8; 16],
     /// Bound only: it separates ciphertext without scoping keys.
     #[cryptbox(part = "78f0169a-f024-402b-9cdf-f436864fa17f")]
@@ -55,8 +55,8 @@ pub struct CustomerEmail;
 ```
 
 `keys = Org` names the seal's [keys view](#keys-follow-the-keys-view): `Org`,
-declared [below](#choose-each-blind-indexs-scope), holds the scope's `keys`
-part. Without `keys`, the keys view is the whole scope, which fits `()` and
+declared [below](#choose-each-blind-indexs-scope), holds the org, the part key
+custody follows. Without `keys`, the keys view is the whole scope, which fits `()` and
 `Tenant`. `EmailLookup` is a blind index over the seal, declared as in the
 [blind-index example](../examples/blind_indexes.rs) with its own
 [index scope](#choose-each-blind-indexs-scope). The derive also implements
@@ -70,28 +70,30 @@ implementing `PartType`. Every part ID is a generated UUID: see
 `()` and `Tenant` are ready-made scopes. `()`, the empty scope, has no parts:
 unless the seal also binds a record, it is the
 [empty binding](wire-format.md#binding), bound to the seal ID alone. `Tenant` has one
-bytes `keys` part. Use a preset until its declaration is too coarse, then declare a
-scope.
+bytes part, and is its own keys view. Use a preset until its declaration is too
+coarse, then declare a scope.
 
-## Choose a role for each part
+## Choose the keys view
 
-Every part is bound into the ciphertext. The role says whether it also scopes
-key custody, and it is the decision with the most consequences:
+Every part is bound into the ciphertext. Parts have no roles: what else a part
+scopes is decided by the views that include it. The seal's
+[keys view](#keys-follow-the-keys-view) is the decision with the most
+consequences:
 
-| Role | Keys | Shredding | Use it for |
+| Part | Keys | Shredding | Use it for |
 | --- | --- | --- | --- |
-| `keys` | Scopes key custody | The [shred unit](shredding.md) | The value whose data must be destroyable and separately keyed, such as an org |
-| bound only | Shared | Never alone | A value that separates ciphertext only, such as a workspace within an org |
+| In the keys view | Scopes key custody | The [shred unit](shredding.md) | The value whose data must be destroyable and separately keyed, such as an org |
+| In no view | Shared | Never alone | A value that separates ciphertext only, such as a workspace within an org |
 
 Two consequences follow from the table:
 
-- **A `keys` part must be known before rows are read.** Keys are resolved from
-  the keys view, whose values are the `keys` values, so a read that cannot name
-  them has no keyring to open anything with. Every query, job, and sweep is
-  partitioned by keys view; a cross-scope report has to be assembled per scope.
-- **A role change is a migration** even though the binding bytes do not change,
-  because it changes custody. The binding fingerprint covers roles for exactly
-  that reason.
+- **The keys view must be known before rows are read.** Keys are resolved from
+  its values, so a read that cannot name them has no keyring to open anything
+  with. Every query, job, and sweep is partitioned by keys view; a cross-scope
+  report has to be assembled per scope.
+- **Changing the keys view is a migration** even though the binding bytes do not
+  change, because it changes custody. The binding fingerprint marks the parts of
+  the keys view for exactly that reason.
 
 A record ID is never a declared part: a seal binds one with the seal scope
 `Recorded<S, Id>`, which adds it as one more part under the nil part ID. It is
@@ -110,7 +112,7 @@ sealed under:
 /// What a customer search knows: the org.
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 pub struct Org {
-    #[cryptbox(part = "59881c28-3003-4047-847f-d7cc73b140e5", keys)]
+    #[cryptbox(part = "59881c28-3003-4047-847f-d7cc73b140e5")]
     pub org: [u8; 16],
 }
 
@@ -127,8 +129,8 @@ pub struct Org {
 pub struct EmailLookup;
 ```
 
-- **An index scope holds every `keys` part** of the seal's scope, because a
-  query selects index keys from them. A scope that leaves one out, or has a part
+- **An index scope holds the seal's keys view**, because a query selects index
+  keys by it. A scope that leaves one of its parts out, or has a part
   the seal's scope lacks, fails the build when the index is first used.
 - **Add a part a query always knows** when equal values in different ones must
   not share index bytes, such as a region. A value that a lookup cannot know,
@@ -237,7 +239,7 @@ codec:
 
 ## Change a binding declaration
 
-Adding a part, adding a record, or changing a role is a migration, not a
+Adding a part, adding a record, or changing the keys view is a migration, not a
 deployment. The procedure is a legacy-binding window, a reseal sweep, and
 lookups over both index bindings until the window closes; rows of the old declaration
 are recognized by the fingerprint in their header. Follow
@@ -251,7 +253,8 @@ must be resealed under an explicitly planned path of your own.
 ## Keys follow the keys view
 
 A seal names its **keys view** (`Seal::Keys`, `keys = …`): a view of its scope
-that holds exactly its `keys` parts. Operations take their keys directly, and
+that holds the parts key custody follows, and by default the whole scope.
+Operations take their keys directly, and
 the library passes the key source the seal and the values of its keys view,
 projected from the binding arguments; a key source is typed by it, as
 `EncryptionKeySource<Org>`, and a keys view is `Hash + Eq`, so it can key a map

@@ -469,7 +469,7 @@ struct OrgWorkspace {
 struct Org([u8; 16]);
 
 impl Scope for Org {
-    const PARTS: &'static [PartSpec] = &[PartSpec::keys(
+    const PARTS: &'static [PartSpec] = &[PartSpec::new(
         part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
         PartKind::Uuid,
     )];
@@ -496,15 +496,15 @@ struct OrgRegion {
 
 impl Scope for OrgWorkspace {
     const PARTS: &'static [PartSpec] = &[
-        PartSpec::keys(
+        PartSpec::new(
             part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
             PartKind::Uuid,
         ),
-        PartSpec::bound(
+        PartSpec::new(
             part_id!("8b0e5d27-4f1a-4c39-a6d2-0e7f9c3b5a18"),
             PartKind::I64,
         ),
-        PartSpec::bound(
+        PartSpec::new(
             part_id!("c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48"),
             PartKind::Bytes,
         ),
@@ -520,11 +520,11 @@ impl Scope for OrgWorkspace {
 
 impl Scope for OrgRegion {
     const PARTS: &'static [PartSpec] = &[
-        PartSpec::keys(
+        PartSpec::new(
             part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
             PartKind::Uuid,
         ),
-        PartSpec::bound(
+        PartSpec::new(
             part_id!("8b0e5d27-4f1a-4c39-a6d2-0e7f9c3b5a18"),
             PartKind::I64,
         ),
@@ -693,7 +693,7 @@ fn a_stored_index_is_consistent_only_under_its_own_scope() {
 struct Team(Vec<u8>);
 
 impl Scope for Team {
-    const PARTS: &'static [PartSpec] = &[PartSpec::keys(
+    const PARTS: &'static [PartSpec] = &[PartSpec::new(
         part_id!("5d9a2c41-7e3b-4f80-9b16-c2a4e8d07f53"),
         PartKind::Bytes,
     )];

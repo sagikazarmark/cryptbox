@@ -143,7 +143,7 @@ These behaviors make the following separate audit necessary.
 
 ## Binding-declaration changes
 
-A seal's binding declaration (its parts, their roles and whether it binds a record) is
+A seal's binding declaration (its parts, its keys view, and whether it binds a record) is
 persistent schema, so changing it is a migration: an explicit legacy-binding
 window, a reseal sweep, and lookups over both index declarations until the window
 closes ([ADR-0005](adr/0005-runtime-binding-is-the-core.md)).

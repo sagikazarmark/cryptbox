@@ -11,7 +11,7 @@ Choose the entry point that fits your question:
 ## Integrate into a project
 
 - [Integration design and trade-offs](integration.md): persistent schema, storage boundaries, keys, and search.
-- [Bind values to a scope](bindings.md): part roles, authorized binding values, record IDs, and moving a record, with a runnable [tenant example](../examples/tenant_field.rs).
+- [Bind values to a scope](bindings.md): keys views and index scopes, authorized binding values, record IDs, and moving a record, with a runnable [tenant example](../examples/tenant_field.rs).
 - [Choosing keyrings](choosing-keyrings.md): custody, key-ID rules, the silent failure modes, and testing the choice.
 - [SQLite example](../examples/sqlite/README.md): run and adapt durable encrypted storage with a separate-process read.
 - [Searchable storage example](../examples/searchable/README.md): atomic writes and verified equality lookup on PostgreSQL or SQLite.

@@ -15,36 +15,33 @@ const REJECTED: &[(Key, &str)] = &[(
      with `scope = …`",
 )];
 
-const PART_KEYS: &[Key] = &[Key::Part, Key::Keys];
+const PART_KEYS: &[Key] = &[Key::Part];
 
-// A record is bound through the seal scope, never as a declared part, so it can't be
-// given a role; and a blind index names the parts it is partitioned by.
+// A record is bound through the seal scope, never as a declared part; and parts
+// have no roles: views of the scope say what else a part scopes (ADR-0009).
 const PART_REJECTED: &[(Key, &str)] = &[
     (
         Key::Record,
-        "a record is never a declared part, so it can't scope keys: \
-         bind it with a seal scope of `cryptbox::Recorded<Scope, Id>`",
+        "a record is never a declared part: bind it with a seal scope of \
+         `cryptbox::Recorded<Scope, Id>`",
+    ),
+    (
+        Key::Keys,
+        "parts have no roles: name the parts that key custody follows on the seal, \
+         with `keys = View`, a view of this scope",
     ),
     (
         Key::Index,
-        "the `index` role is gone: a blind index names the parts it is partitioned by \
+        "parts have no roles: a blind index names the parts it is partitioned by \
          with its own scope, `scope = …`, a view of this one",
     ),
 ];
 
-/// What a part scopes; mirrors `cryptbox::PartRole`.
-#[derive(Clone, Copy, PartialEq)]
-enum Role {
-    Keys,
-    Bound,
-}
-
-/// One validated part: a struct field with its part ID and role.
+/// One validated part: a struct field with its part ID.
 struct Part<'a> {
     field: &'a syn::Field,
     ident: &'a Ident,
     id: UuidLiteral,
-    role: Role,
 }
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
@@ -64,13 +61,9 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let specs = parts.iter().map(|part| {
         let ty = &part.field.ty;
         let id = &part.id;
-        let constructor = match part.role {
-            Role::Keys => quote!(keys),
-            Role::Bound => quote!(bound),
-        };
         let kind = quote_spanned!(ty.span()=> <#ty as #krate::PartType>::KIND);
         quote! {
-            #krate::PartSpec::#constructor(#krate::PartId::from_u128(#id), #kind)
+            #krate::PartSpec::new(#krate::PartId::from_u128(#id), #kind)
         }
     });
     let values = part_values(&krate, &quote!(self), parts.iter());
@@ -139,14 +132,8 @@ fn parse_parts<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Part<'
         let Some(ident) = &field.ident else { continue };
         let mut attrs = Attrs::parse_rejecting(&field.attrs, PART_KEYS, PART_REJECTED, errors);
         // A rejected record or role is already reported; don't also ask for more.
-        if attrs.seen(Key::Record) || attrs.seen(Key::Index) {
+        if attrs.seen(Key::Record) || attrs.seen(Key::Keys) || attrs.seen(Key::Index) {
             continue;
-        }
-        if let Some(keys) = &attrs.keys_view {
-            errors.push(syn::Error::new_spanned(
-                keys,
-                "`keys` takes no value on a part: it marks the part as a `keys` part",
-            ));
         }
         let Some(id) = required(
             attrs.part.take(),
@@ -174,17 +161,7 @@ fn parse_parts<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Part<'
             continue;
         }
 
-        let role = if attrs.keys.is_some() {
-            Role::Keys
-        } else {
-            Role::Bound
-        };
-        parts.push(Part {
-            field,
-            ident,
-            id,
-            role,
-        });
+        parts.push(Part { field, ident, id });
     }
 
     parts

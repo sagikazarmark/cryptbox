@@ -1,5 +1,0 @@
-error: `keys` takes no value on a part: it marks the part as a `keys` part
- --> tests/ui/scope_keys_with_value.rs:3:70
-  |
-3 |     #[cryptbox(part = "3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90", keys = Org)]
-  |                                                                      ^^^

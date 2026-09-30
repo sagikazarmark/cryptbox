@@ -28,11 +28,12 @@ re-encryption are separate operations that do none of this; see
 Check each of these before you plan a destruction, because none of them can be
 established afterwards:
 
-1. **The scope is a shred unit.** The unit you can shred is the finest `keys`
-   part whose root keys are stored independently. If every org has its own
-   roots, one org can be shredded; its workspaces, bound only, cannot be
-   shredded on their own. A seal with no `keys` part is not shreddable at all.
-   See [choosing a role for each part](bindings.md#choose-a-role-for-each-part).
+1. **The scope is a shred unit.** The unit you can shred is the finest part of
+   the seal's keys view whose root keys are stored independently. If every org
+   has its own roots, one org can be shredded; its workspaces, bound only,
+   cannot be shredded on their own. A seal with an empty keys view is not
+   shreddable at all.
+   See [choosing the keys view](bindings.md#choose-the-keys-view).
 2. **Custody is per scope, for both roles.** The scope's encryption and
    blind-index roots exist only in its own keyring, are never shared with
    another scope, and are destroyable independently in your secret store.
@@ -77,7 +78,7 @@ Treat a scope whose custody map is undocumented or untested as not shreddable.
    | Log lines, traces, and error payloads with plaintext | Follow your log retention; treat as a separate disposal |
 
    A key source is asked by the seal's keys view, such as an `Org`, which holds
-   the `keys` values alone, so caches and admin tooling can address one scope
+   the values key custody follows alone, so caches and admin tooling can address one scope
    by it without a whole binding.
 
 4. **Account for the plaintext around the sealed values.** Shredding removes no

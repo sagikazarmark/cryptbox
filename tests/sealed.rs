@@ -14,11 +14,11 @@ struct OrgWorkspace {
 
 impl Scope for OrgWorkspace {
     const PARTS: &'static [PartSpec] = &[
-        PartSpec::keys(
+        PartSpec::new(
             part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
             PartKind::Uuid,
         ),
-        PartSpec::bound(
+        PartSpec::new(
             part_id!("c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48"),
             PartKind::Bytes,
         ),
@@ -33,7 +33,7 @@ impl Scope for OrgWorkspace {
 struct Org([u8; 16]);
 
 impl Scope for Org {
-    const PARTS: &'static [PartSpec] = &[PartSpec::keys(
+    const PARTS: &'static [PartSpec] = &[PartSpec::new(
         part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
         PartKind::Uuid,
     )];
@@ -200,7 +200,7 @@ fn invalid_binding_values_are_rejected() {
     struct Unchecked(Vec<u8>);
 
     impl Scope for Unchecked {
-        const PARTS: &'static [PartSpec] = &[PartSpec::keys(
+        const PARTS: &'static [PartSpec] = &[PartSpec::new(
             part_id!("1d6f0a3c-7e25-4b98-a4c1-5f8e2b0d3a76"),
             PartKind::Bytes,
         )];

@@ -118,18 +118,20 @@ pub trait Seal: 'static {
     ///
     /// It is a view of the scope, without the record: a scope whose parts are
     /// parts of [`Self::Scope`], matched by part ID and kind, and whose values
-    /// are projected from the binding arguments by part ID. It must hold exactly
-    /// the scope's `keys` parts, or the build fails when the seal is first used.
-    /// Use the scope itself, such as `()` or `Tenant`, when every part is a
-    /// `keys` part. `#[derive(Seal)]` defaults to the scope. Custody follows it,
-    /// a sweep is partitioned by it, and the schema manifest reports its parts
-    /// as the shred unit. See [`EncryptionKeySource`](crate::EncryptionKeySource).
+    /// are projected from the binding arguments by part ID. Use the scope
+    /// itself, such as `()` or `Tenant`, when custody follows every part.
+    /// `#[derive(Seal)]` defaults to the scope. Custody follows it, a sweep is
+    /// partitioned by it, the binding fingerprint marks its parts, and the
+    /// schema manifest reports them as the shred unit; a part in no view is
+    /// bound only. Its values can't be empty. See
+    /// [`EncryptionKeySource`](crate::EncryptionKeySource).
     ///
-    /// A keys view that leaves out a `keys` part fails the build:
+    /// A keys view with a part the scope lacks fails the build when the seal is
+    /// first used:
     ///
     /// ```compile_fail,E0080
     /// use cryptbox::{
-    ///     EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Tenant, TenantId, Utf8,
+    ///     EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Tenant, Utf8,
     /// };
     ///
     /// struct TenantEmail;
@@ -139,14 +141,13 @@ pub trait Seal: 'static {
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Scope = Tenant;
-    ///     type Keys = ();
+    ///     type Scope = ();
+    ///     type Keys = Tenant;
     ///     type Indexes = ();
     /// }
     ///
     /// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-    /// let acme = Tenant(TenantId::new("acme")?);
-    /// let _ = Sealed::<TenantEmail>::seal(&"ada".to_owned(), &acme, &keys);
+    /// let _ = Sealed::<TenantEmail>::seal(&"ada".to_owned(), (), &keys);
     /// # Ok::<(), cryptbox::Error>(())
     /// ```
     type Keys: FromParts;

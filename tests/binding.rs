@@ -18,15 +18,15 @@ struct OrgProject {
 
 impl Scope for OrgProject {
     const PARTS: &'static [PartSpec] = &[
-        PartSpec::keys(
+        PartSpec::new(
             part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
             PartKind::Bytes,
         ),
-        PartSpec::bound(
+        PartSpec::new(
             part_id!("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61"),
             PartKind::I64,
         ),
-        PartSpec::bound(
+        PartSpec::new(
             part_id!("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92"),
             PartKind::Uuid,
         ),
@@ -45,7 +45,7 @@ impl Scope for OrgProject {
 struct Org(Vec<u8>);
 
 impl Scope for Org {
-    const PARTS: &'static [PartSpec] = &[PartSpec::keys(
+    const PARTS: &'static [PartSpec] = &[PartSpec::new(
         part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
         PartKind::Bytes,
     )];

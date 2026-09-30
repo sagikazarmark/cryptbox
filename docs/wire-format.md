@@ -81,12 +81,13 @@ authentication because the reader has no construction with which to verify it.
 A binding identifies the expected cryptographic domain of a value. Every value is
 bound to a stable `SealId`, so an email seal's ciphertext is not accepted under
 a different seal, even when both use the same root key. A seal declares its
-binding **declaration**: a fixed set of parts, each with a part ID (a UUID), a value
-kind, and a role, plus, when it binds a record, the record ID's kind. The
-declaration is persistent schema. The **values**, such as a tenant ID and a
-record ID, are supplied at each call. See
-[ADR-0005](adr/0005-runtime-binding-is-the-core.md) and
-[ADR-0008](adr/0008-records-declare-their-fields-seals.md).
+binding **declaration**: a fixed set of parts, each with a part ID (a UUID) and a
+value kind; which of them form its **keys view**, the parts key custody follows;
+and, when it binds a record, the record ID's kind. The declaration is persistent
+schema. The **values**, such as a tenant ID and a record ID, are supplied at each
+call. See [ADR-0005](adr/0005-runtime-binding-is-the-core.md),
+[ADR-0008](adr/0008-records-declare-their-fields-seals.md), and
+[ADR-0009](adr/0009-scopes-have-views.md).
 
 Every binding uses one layout:
 
@@ -123,13 +124,14 @@ Value kinds are fixed and canonical. There is no text kind:
 
 Every part and record value carries its kind code, so the same bytes under
 different kinds, such as an `i64` and its 8 big-endian bytes, never collide.
-A `keys` part value can't be empty.
+A value of a part in the keys view can't be empty.
 
 #### Binding fingerprint
 
 Every binding has a 64-bit **binding fingerprint**, and every envelope's header
-carries it. It covers the part IDs, kinds, and roles, a record's part included,
-but never values, because the header is stored in plaintext:
+carries it. It covers the part IDs and kinds, a record's part included, and
+which parts are in the keys view, but never values, because the header is
+stored in plaintext:
 
 ```text
 fingerprint label: "cryptbox/binding-fingerprint/v1\0"
@@ -141,17 +143,17 @@ fingerprint = SHA-256(fingerprint_label
 
 Parts are sorted by part ID as in the binding, so part order does not change
 the fingerprint, and a record's part comes first with the nil part ID and role
-`03`.
+`03`. A part's role code says whether it is in the keys view:
 
-| Role | Code | Scopes |
+| Role | Code | Part |
 | --- | --- | --- |
-| `keys` | `01` | key custody; the unit you shred |
-| bound only | `03` | the ciphertext only |
+| keys | `01` | in the keys view: it scopes key custody, and is the unit you shred |
+| bound only | `03` | any other part, the record's included |
 
 Code `02` was the retired `index` role and is no longer written: a blind index
-names its own [index scope](#index-binding). Roles are included because a role
-change alters custody, so it is a migration even though the binding bytes don't
-change. The empty declaration's fingerprint is `65640fc8333534b9`. A record's
+names its own [index scope](#index-binding). Roles are included because changing
+the keys view alters custody, so it is a migration even though the binding bytes
+don't change. The empty declaration's fingerprint is `65640fc8333534b9`. A record's
 kind is part of the declaration, so a value read with a record ID of another kind
 reports `BindingMismatch`.
 
@@ -164,7 +166,8 @@ Two ready-made scopes fix their declarations permanently:
   `Recorded<(), i64>`, it binds the record alone; that declaration's fingerprint
   is `76081b730530f822`.
 - `Tenant` has one part: part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
-  bytes, role `keys`. A tenant ID is non-empty opaque bytes; a UUID tenant is
+  bytes. A seal over it takes `Tenant` as its keys view, so its role is `keys`.
+  A tenant ID is non-empty opaque bytes; a UUID tenant is
   its 16 bytes. Without a record, its binding fingerprint is `9b73125a52bc08d1`.
   For seal `12345678-1234-4234-8234-1234567890ab` and tenant `acme`, the
   binding is:
@@ -187,7 +190,7 @@ from its own seal, never from the envelope:
    authentication.
 
 The fingerprint is part of the authenticated prefix. Changing it to match
-another declaration that has the same binding bytes, such as a role change, still
+another declaration that has the same binding bytes, such as another keys view, still
 fails authentication.
 
 Codec identity and version are also absent: the application schema must supply

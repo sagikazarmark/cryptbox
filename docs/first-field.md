@@ -131,7 +131,7 @@ cargo run --locked --example tenant_field
 ```
 
 Expect `Tenant-bound round trip succeeded.` Then read
-[bind values to a scope](bindings.md) for part roles and where bound values must
+[bind values to a scope](bindings.md) for keys views and where bound values must
 come from, and [choosing keyrings](choosing-keyrings.md) for whose keys protect
 each scope.
 

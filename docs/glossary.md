@@ -20,7 +20,8 @@ where a field's seal binds one.
 
 **Binding fingerprint**:
 A public 8-byte summary of a binding's declaration: truncated SHA-256 over its
-part IDs, kinds, and roles and whether it binds a record, never its values.
+part IDs and kinds, which parts are in its keys view, and whether it binds a
+record, never its values.
 Every envelope header stores the fingerprint of the binding it was sealed
 under, and opening compares it with the reader's before any key lookup,
 reporting a binding mismatch. Equal fingerprints do not imply equal bindings,
@@ -28,9 +29,11 @@ and security never depends on the fingerprint.
 <!-- Agent guidance: “shape” is the retired name for a binding's declaration, and “shape fingerprint” for this; do not reintroduce them. -->
 
 **Binding part**:
-One declared value of a binding scope, with a part ID, a value kind (uuid, i64,
-or bytes), and a role. A `keys` part scopes key custody, and any other part is
-bound only. A record ID is never a part: it is always bound only.
+One declared value of a binding scope, with a part ID and a value kind (uuid,
+i64, or bytes). A part has no role: views of the scope decide what else it
+scopes, and a part in no view is bound only. A record ID is never a part: it is
+always bound only.
+<!-- Agent guidance: the `keys` and `index` part roles are retired (ADR-0009); say a part is "in the keys view", not a "`keys` part". -->
 
 **Blind index**:
 A separately keyed, truncated searchable projection of a normalized sealed value.
@@ -92,7 +95,7 @@ parts gives an unscoped index binding.
 
 **Index scope**:
 The parts that partition a blind index (`BlindIndexSpec::Scope`): a view of its
-seal's scope that holds every `keys` part. A query supplies its values, and the
+seal's scope that holds the seal's keys view. A query supplies its values, and the
 index binding is derived from them. Two indexes over one seal may have
 different index scopes.
 <!-- Agent guidance: the `index` part role and `IndexArgs` are retired (ADR-0009); do not reintroduce them. -->
@@ -128,10 +131,10 @@ pairs the two roles. Key IDs are generated UUIDs, unique within a keyring and
 never shared across keyrings, so opening with the wrong keyring fails loudly.
 
 **Keys view**:
-The view of a seal's scope that key custody follows (`Seal::Keys`): exactly its
-`keys` parts. Key sources receive its values and are typed by it, so bindings
-with equal `keys` values share one whatever their other parts, and a scope
-without `keys` parts has the empty keys view, `()`. A record has one keys view
+The view of a seal's scope that key custody follows (`Seal::Keys`), by default
+the whole scope. Key sources receive its values and are typed by it, so
+bindings with equal values in it share one whatever their other parts; `()` is
+the empty keys view. A record has one keys view
 for all of its fields (`Record::Keys`).
 <!-- Agent guidance: `KeyScope`, “key scope”, is the retired, untyped form of the keys view (ADR-0009); do not reintroduce it. -->
 
@@ -155,8 +158,8 @@ the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 
 **Object key**:
 The canonical text form of a scope, usually a blind index's index scope, that
-keys a Restate Virtual Object (`restate::ObjectKey`): the `keys` parts, then the
-other parts, each spelled exactly one way. Every object key of one value of the
+keys a Restate Virtual Object (`restate::ObjectKey`): the parts of a keys view,
+then the other parts, each spelled exactly one way. Every object key of one value of the
 keys view starts with that value's prefix. It is plaintext to Restate, and it names a scope
 only as far as its caller was authorized for it.
 <!-- Agent guidance: “object key” is Restate's term for the key of a Virtual Object; do not call it a “key” alone, which reads as key material. -->
@@ -196,7 +199,7 @@ rejects a record that omits one.
 **Schema manifest**:
 A reviewable listing of registered seals and blind indexes with their
 persistent schema: seal ID, codec ID, padding, record kind, binding declaration
-(fingerprint, parts, kinds, and roles), shred unit, index ID, precision,
+(fingerprint, parts, kinds, and whether each is in the keys view), shred unit, index ID, precision,
 normalizer name, and index scope. It names IDs, never Rust types, so its output is the same on
 every toolchain. A seal may carry a custody label, a declarative note of which
 keys the application passes for it.
@@ -205,8 +208,8 @@ Applications compare it with a committed snapshot in CI.
 
 **Scope**:
 The declared parts of a binding, such as a tenant, or an org plus a workspace
-(`Scope`). Parts have roles: `keys` parts form the keys view, and other parts
-are bound only. A scope struct owns
+(`Scope`). Parts have no roles: a seal's keys view and a blind index's index
+scope are views of it, and a part in no view is bound only. A scope struct owns
 its values; a record is never part of it. `()` is the empty scope, with no
 parts: a seal with it is *unscoped*, and binds its values to its seal ID alone.
 <!-- Agent guidance: `FieldOnly` is the retired name of the empty scope `()`, and “field-only” of “unscoped”; do not reintroduce them. The `Scope` trait was `Binding`: “binding” still names the whole domain. -->
@@ -235,7 +238,7 @@ only.
 <!-- Agent guidance: `Ciphertext<F>` is the retired name; say “seal” and “open”, not “encrypt” and “decrypt”, for the typed operations. -->
 
 **Shred unit**:
-The finest `keys` part whose root keys are stored independently. Destroying
+The finest part of a keys view whose root keys are stored independently. Destroying
 those root keys makes every value sealed under them unreadable; bound-only
 parts are never shredded on their own. The schema manifest reports the
 finest possible unit, the keys view (its parts, or the whole keyring when it

@@ -408,7 +408,7 @@ fn a_record_for_a_seal_that_binds_none_is_invalid_without_a_window_that_does() {
 struct Region;
 
 impl cryptbox::Scope for Region {
-    const PARTS: &'static [cryptbox::PartSpec] = &[cryptbox::PartSpec::bound(
+    const PARTS: &'static [cryptbox::PartSpec] = &[cryptbox::PartSpec::new(
         cryptbox::part_id!("8c000000-0000-4000-8000-00000000000c"),
         cryptbox::PartKind::Bytes,
     )];
@@ -721,11 +721,11 @@ struct TenantWorkspace {
 impl cryptbox::Scope for TenantWorkspace {
     const PARTS: &'static [cryptbox::PartSpec] = &[
         // The part ID of `Tenant`.
-        cryptbox::PartSpec::keys(
+        cryptbox::PartSpec::new(
             cryptbox::part_id!("1e8306bf-3135-4570-831c-6732f92550e9"),
             cryptbox::PartKind::Bytes,
         ),
-        cryptbox::PartSpec::bound(
+        cryptbox::PartSpec::new(
             cryptbox::part_id!("8d000000-0000-4000-8000-00000000000d"),
             cryptbox::PartKind::I64,
         ),

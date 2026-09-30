@@ -240,8 +240,8 @@
   since those parts are now bound only.
 
 - **Breaking:** key sources are typed by a seal's keys view (ADR-0009).
-  `Seal::Keys` names the view of the scope that key custody follows: exactly its
-  `keys` parts, checked when the seal is first used. `#[derive(Seal)]` and a
+  `Seal::Keys` names the view of the scope that key custody follows, checked
+  when the seal is first used. `#[derive(Seal)]` and a
   `#[derive(Record)]` field take `keys = …`, defaulting to the scope, and
   `Record::Keys` is the keys view all of a record's fields share.
   `EncryptionKeySource<K>::encryption_keyring(&self, seal, keys: &K)` and
@@ -255,6 +255,16 @@
   `legacy_binding::<Old, OldKeys>`. `restate::ObjectKey<B, K = B>` leads with
   the parts of `K` and takes `prefix(&K)`. The schema manifest's shred unit is
   the keys view's parts. Stored bytes do not change.
+
+- **Breaking:** parts have no roles (ADR-0009). `PartSpec::new(id, kind)`
+  replaces `PartSpec::keys` and `PartSpec::bound`; `PartRole` and
+  `PartSpec::role` are removed, and `#[derive(Scope)]` rejects the `keys` flag
+  on a part. What a part scopes is decided by the views that include it: the
+  binding fingerprint gives role code `01` to a part of the seal's keys view
+  and `03` to any other, the record included, and a value of a keys-view part
+  can't be empty. The manifest prints each part's role from the keys view, and
+  each index scope part's from its seal's. Every seal keeps its fingerprint,
+  since its keys view held exactly its `keys` parts.
 
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new

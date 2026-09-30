@@ -318,10 +318,14 @@ where
         const { check_keys_view(OldKeys::PARTS, <Old::Parts as Scope>::PARTS) };
 
         self.legacy_declarations.push(LegacyDeclaration {
-            fingerprint: declaration_fingerprint::<Old>(),
+            fingerprint: declaration_fingerprint::<Old, OldKeys>(),
             recorded: Old::RECORD.is_some(),
             domain: |scope, record| {
-                BindingDomain::projected::<Old, PartsOf<F>>(F::ID.as_bytes(), scope, record)
+                BindingDomain::projected::<Old, OldKeys, PartsOf<F>>(
+                    F::ID.as_bytes(),
+                    scope,
+                    record,
+                )
             },
             keyring: Box::new(move |scope| {
                 keys.encryption_keyring(F::ID, &project_view::<OldKeys, _>(scope)?)
@@ -574,7 +578,7 @@ where
         }
 
         let record = if recorded { args.record } else { None };
-        let domain = BindingDomain::of::<F::Scope>(
+        let domain = BindingDomain::of::<F::Scope, F::Keys>(
             F::ID.as_bytes(),
             &args.binding,
             record.map(RecordId::part_value),

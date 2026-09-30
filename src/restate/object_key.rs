@@ -73,7 +73,7 @@ impl<B: Scope, K: Scope> ObjectKey<B, K> {
     pub fn encode(scope: &B) -> Result<String, Error> {
         let values = scope.values();
         let values = values.as_slice();
-        check_values(B::PARTS, values)?;
+        check_values(B::PARTS, K::PARTS, values)?;
 
         Ok(join(
             key_order::<B, K>()
@@ -89,7 +89,7 @@ impl<B: Scope, K: Scope> ObjectKey<B, K> {
     /// Returns [`Error::InvalidObjectKey`] for an object key that is not
     /// exactly the [encoding](Self) of a scope `B`: a missing or
     /// extra part, parts out of order, another spelling of a value, or a value
-    /// the scope cannot hold, such as an empty `keys` value.
+    /// the scope cannot hold, such as an empty value of a part of `K`.
     pub fn parse(key: &str) -> Result<B, Error>
     where
         B: FromParts,
@@ -110,7 +110,7 @@ impl<B: Scope, K: Scope> ObjectKey<B, K> {
         }
         let values: Vec<_> = decoded.iter().map(Decoded::part_value).collect();
 
-        let args = check_values(specs, &values)
+        let args = check_values(specs, K::PARTS, &values)
             .and_then(|()| B::from_parts(&values))
             .map_err(|_| Error::InvalidObjectKey)?;
         // A part type that does not read back exactly what it binds could
@@ -145,7 +145,7 @@ impl<B: Scope, K: Scope> ObjectKey<B, K> {
         };
 
         let values = keys.values();
-        check_values(K::PARTS, values.as_slice())?;
+        check_values(K::PARTS, K::PARTS, values.as_slice())?;
 
         Ok(join(values.as_slice().iter().copied()))
     }

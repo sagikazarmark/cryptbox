@@ -32,8 +32,8 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// several of its parts.
 ///
 /// Each index names its own [`Scope`](Self::Scope): a view of its seal's scope,
-/// which must include every [`keys`](crate::PartRole::Keys) part, since a query
-/// selects index keys from it. Each operation takes a value of that index scope
+/// which must include every part of the seal's [keys view](Seal::Keys), since a
+/// query selects index keys by it. Each operation takes a value of that index scope
 /// and derives in it; an unscoped index passes `&()`. Equal values under other
 /// index-scope values derive unrelated indexes, and the key source receives the
 /// seal's [keys view](Seal::Keys), projected from the index scope. Parts left out of the index
@@ -148,7 +148,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// let _ = BlindIndex::<TooManyBits>::from_bytes(Vec::new());
 /// ```
 ///
-/// So is an index scope that leaves out a `keys` part of the seal's scope, here
+/// So is an index scope that leaves out a part of the seal's keys view, here
 /// the tenant:
 ///
 /// ```compile_fail,E0080
@@ -253,7 +253,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// The index scope: the parts that partition this index, which a query
     /// supplies.
     ///
-    /// It is a view of the seal's scope that includes every `keys` part: its
+    /// It is a view of the seal's scope that includes its keys view: its
     /// parts must be parts of the seal's scope, with the same part IDs and kinds.
     /// Otherwise the build fails when the index is first used. Use `()` for an
     /// unscoped seal, or the seal's scope itself to partition by every part.
@@ -731,7 +731,11 @@ pub(crate) fn index_target<Spec: BlindIndexSpec>(
     };
 
     Ok(Target {
-        domain: BindingDomain::index(<Spec::Seal as Seal>::ID.as_bytes(), scope)?,
+        domain: BindingDomain::index(
+            <Spec::Seal as Seal>::ID.as_bytes(),
+            scope,
+            <KeysOf<Spec::Seal> as Scope>::PARTS,
+        )?,
         // The index scope holds every part of the keys view.
         keys: project_view(scope)?,
     })

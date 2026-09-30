@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 
-use super::{PartKind, PartRole, PartSpec, PartValue};
+use super::{PartKind, PartSpec, PartValue, is_keys_part};
 use crate::Error;
 
 // A persistent domain separator, not a display string.
@@ -32,9 +32,10 @@ pub(super) fn encode<'v>(
     Ok(encoded)
 }
 
-/// Fingerprints a declaration from its part IDs, kinds, and roles, a record's
-/// part included, never values; part order does not matter.
-pub(super) fn fingerprint(parts: &[PartSpec]) -> [u8; 8] {
+/// Fingerprints a declaration from its part IDs, kinds, and whether each is in
+/// the keys view `keys`, a record's part included, never values; part order
+/// does not matter.
+pub(super) fn fingerprint(parts: &[PartSpec], keys: &[PartSpec]) -> [u8; 8] {
     let mut parts = parts.to_vec();
     parts.sort_by_key(|spec| spec.id);
     // A count that does not fit is rejected when the binding is encoded.
@@ -47,7 +48,7 @@ pub(super) fn fingerprint(parts: &[PartSpec]) -> [u8; 8] {
     hasher.update(count.to_be_bytes());
     for spec in parts {
         hasher.update(spec.id);
-        hasher.update([kind_code(spec.kind), role_code(spec.role)]);
+        hasher.update([kind_code(spec.kind), role_code(is_keys_part(&spec, keys))]);
     }
 
     let digest = hasher.finalize();
@@ -86,11 +87,9 @@ const fn kind_code(kind: PartKind) -> u8 {
     }
 }
 
-// Role codes are persistent fingerprint input. See ../../docs/wire-format.md#binding-fingerprint.
-const fn role_code(role: PartRole) -> u8 {
-    match role {
-        PartRole::Keys => 1,
-        // 2 was the `index` role; ADR-0009 moved index scopes to blind indexes.
-        PartRole::Bound => 3,
-    }
+// Role codes are persistent fingerprint input: 1 for a part of the keys view,
+// 3 for any other part, the record's included. 2 was the retired `index` role.
+// See ../../docs/wire-format.md#binding-fingerprint.
+const fn role_code(in_keys_view: bool) -> u8 {
+    if in_keys_view { 1 } else { 3 }
 }

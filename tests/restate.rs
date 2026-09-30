@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 /// ID sorts last, so an object key led by [`Org`] moves it first.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct OrgSearch {
-    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92", keys)]
+    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
     org: [u8; 16],
     #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     region: i64,
@@ -26,7 +26,7 @@ struct OrgSearch {
 /// The keys view of [`OrgSearch`].
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct Org {
-    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92", keys)]
+    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
     org: [u8; 16],
 }
 

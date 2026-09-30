@@ -242,7 +242,7 @@ pub(crate) fn target<F: Seal>(
     record: Option<PartValue<'_>>,
 ) -> Result<Target<KeysOf<F>>, Error> {
     Ok(Target {
-        domain: BindingDomain::of::<F::Scope>(F::ID.as_bytes(), scope, record)?,
+        domain: BindingDomain::of::<F::Scope, F::Keys>(F::ID.as_bytes(), scope, record)?,
         keys: keys_of::<F>(scope)?,
     })
 }

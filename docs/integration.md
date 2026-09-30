@@ -22,7 +22,7 @@ These choices form persistent schema just as database column types do:
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
 | Seal ID | Every value is bound to its seal ID; a different ID fails authentication. |
-| Binding declaration and record kind | Every value is bound to its binding's part IDs, kinds, and roles, and to its record when the seal binds one; a different declaration reports `BindingMismatch`. |
+| Binding declaration and record kind | Every value is bound to its binding's part IDs, kinds, and keys view, and to its record when the seal binds one; a different declaration reports `BindingMismatch`. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
@@ -67,8 +67,8 @@ Stored bytes do not describe this schema, so check it in tests:
   migration or revert.
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered seal
   (ID, codec ID, padding, whether it binds a record, the binding
-  fingerprint and parts with their kinds and roles, and the shred unit) and
-  index (ID, seal, bits, normalizer). `Manifest::custody::<F>("…")` adds a
+  fingerprint and parts with their kinds and roles in the keys view, and the
+  shred unit) and index (ID, seal, bits, normalizer, and index scope). `Manifest::custody::<F>("…")` adds a
   custody label to a seal, such as `"payments KMS, one key per org"`, so
   reviewers and auditors see which keys the application passes for it.
   Compare the `Display` output with a committed snapshot, and
@@ -224,8 +224,8 @@ seal that declares blind indexes.
 
 A blind index is domain-separated by its seal ID and by the
 [index binding](wire-format.md#index-binding): the values of its index scope,
-which holds every `keys` part of the seal's scope. Equal values in different key
-scopes therefore have different index bytes, and a query supplies the index
+which holds the seal's keys view. Equal values under different keys views
+therefore have different index bytes, and a query supplies the index
 scope. The seal's other parts and the record do not participate unless the index
 scope names them, and the record never does, because a query cannot know it, so
 by default equal values in two workspaces of one org share index bytes. Choose
@@ -259,7 +259,7 @@ shows a zeroizing value, codec, normalizer, and key source working together.
 
 ## From design to a working application
 
-- [Bindings](bindings.md) covers declaring a scope, part roles, record IDs, and
+- [Bindings](bindings.md) covers declaring a scope, its views, record IDs, and
   where each bound value must come from.
 - [Choosing keyrings](choosing-keyrings.md) covers custody, key-ID rules, and
   testing which keyring protects which seal.

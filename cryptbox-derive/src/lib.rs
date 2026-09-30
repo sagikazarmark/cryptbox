@@ -317,9 +317,10 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// | Field key | Required | Meaning |
 /// | --- | --- | --- |
 /// | `part = "…"` | yes | The part ID, a hyphenated UUID string literal. |
-/// | `keys` | no | The part scopes key custody. |
 ///
-/// A part without `keys` is bound only. A part holds a `[u8; 16]`
+/// Parts have no roles: a seal names the parts key custody follows with
+/// `keys = View`, and a blind index the parts it is partitioned by with
+/// `scope = View`, each a view of this scope. A part holds a `[u8; 16]`
 /// UUID, a `uuid::Uuid` with `cryptbox`'s `uuid` feature, an `i64`, or bytes
 /// (`Vec<u8>`, `Box<[u8]>`, or `TenantId`), or any other type that implements
 /// `PartType`, such as an application's own ID newtype. A record is never a
@@ -327,16 +328,14 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///
 /// Part IDs are validated when the macro expands: none is nil, and none repeats.
 /// Declare the fields in any order; the derive sorts the parts by part ID. Every
-/// part ID, kind, and role is persistent schema.
+/// part ID and kind is persistent schema.
 ///
 /// ```
 /// #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 /// pub struct OrgWorkspace {
-///     /// Bound only.
 ///     #[cryptbox(part = "c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48")]
 ///     pub workspace: Vec<u8>,
-///     /// Scopes keys; the shred unit.
-///     #[cryptbox(part = "3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90", keys)]
+///     #[cryptbox(part = "3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90")]
 ///     pub org: [u8; 16],
 /// }
 /// ```
@@ -356,11 +355,11 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///     impl ::cryptbox::Scope for OrgWorkspace {
 ///         // Sorted by part ID.
 ///         const PARTS: &'static [::cryptbox::PartSpec] = &[
-///             ::cryptbox::PartSpec::keys(
+///             ::cryptbox::PartSpec::new(
 ///                 ::cryptbox::PartId::from_u128(0x3a1f0c6e_58b2_4d0a_9e57_1c4b8f2d6a90),
 ///                 <[u8; 16] as ::cryptbox::PartType>::KIND,
 ///             ),
-///             ::cryptbox::PartSpec::bound(
+///             ::cryptbox::PartSpec::new(
 ///                 ::cryptbox::PartId::from_u128(0xc7d24e19_0b8a_4f63_a1d5_6e9f3b720c48),
 ///                 <Vec<u8> as ::cryptbox::PartType>::KIND,
 ///             ),

@@ -32,7 +32,7 @@ impl FromParts for () {
 pub struct Tenant(pub TenantId);
 
 // Persistent schema: never change it. See ../../docs/wire-format.md#presets.
-const TENANT_PART: PartSpec = PartSpec::keys(
+const TENANT_PART: PartSpec = PartSpec::new(
     crate::part_id!("1e8306bf-3135-4570-831c-6732f92550e9"),
     PartKind::Bytes,
 );
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn unscoped_is_the_empty_binding() {
-        let domain = BindingDomain::of::<()>(&SEAL, &(), None).unwrap();
+        let domain = BindingDomain::of::<(), ()>(&SEAL, &(), None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -120,7 +120,8 @@ mod tests {
     #[test]
     fn unscoped_with_a_record_binds_the_record_alone() {
         let domain =
-            BindingDomain::of::<Recorded<(), i64>>(&SEAL, &(), Some(PartValue::I64(1))).unwrap();
+            BindingDomain::of::<Recorded<(), i64>, ()>(&SEAL, &(), Some(PartValue::I64(1)))
+                .unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -139,7 +140,7 @@ mod tests {
     #[test]
     fn tenant_binds_one_bytes_keys_part() {
         let tenant = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
-        let domain = BindingDomain::of::<Tenant>(&SEAL, &tenant, None).unwrap();
+        let domain = BindingDomain::of::<Tenant, Tenant>(&SEAL, &tenant, None).unwrap();
 
         // docs/wire-format.md#presets
         assert_eq!(

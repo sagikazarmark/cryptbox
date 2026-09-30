@@ -6,8 +6,7 @@ use std::{
 };
 
 use crate::{
-    BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartRole, PartSpec, Scope, Seal, SealId,
-    SealScope,
+    BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartSpec, Scope, Seal, SealId, SealScope,
     args::{KeysOf, PartsOf},
     binding::{check_keys_view, declaration_fingerprint},
 };
@@ -88,6 +87,8 @@ struct IndexEntry {
     bits: u16,
     normalizer: &'static str,
     parts: &'static [PartSpec],
+    /// The parts of the seal's keys view.
+    keys: &'static [PartSpec],
 }
 
 #[derive(Debug)]
@@ -154,7 +155,7 @@ impl Manifest {
                     record: <F::Scope as SealScope>::RECORD,
                     parts: <PartsOf<F> as Scope>::PARTS,
                     keys: <KeysOf<F> as Scope>::PARTS,
-                    fingerprint: declaration_fingerprint::<F::Scope>(),
+                    fingerprint: declaration_fingerprint::<F::Scope, F::Keys>(),
                     custody: None,
                 });
                 self.seals.len() - 1
@@ -179,6 +180,7 @@ impl Manifest {
                 bits: I::BITS,
                 normalizer: I::NORMALIZER,
                 parts: <I::Scope as Scope>::PARTS,
+                keys: <KeysOf<I::Seal> as Scope>::PARTS,
             });
         }
         self
@@ -269,7 +271,7 @@ impl fmt::Display for Manifest {
                     "    part {} {} {}",
                     part.id(),
                     kind_name(part.kind()),
-                    role_name(part.role()),
+                    role_name(part, seal.keys),
                 )?;
             }
             write!(formatter, "  shred unit: ")?;
@@ -313,7 +315,7 @@ impl fmt::Display for Manifest {
                     "    part {} {} {}",
                     part.id(),
                     kind_name(part.kind()),
-                    role_name(part.role()),
+                    role_name(part, index.keys),
                 )?;
             }
         }
@@ -339,10 +341,12 @@ const fn kind_name(kind: PartKind) -> &'static str {
     }
 }
 
-const fn role_name(role: PartRole) -> &'static str {
-    match role {
-        PartRole::Keys => "keys",
-        PartRole::Bound => "bound",
+// A part of the seal's keys view scopes keys; any other part is bound only.
+fn role_name(part: &PartSpec, keys: &[PartSpec]) -> &'static str {
+    if keys.iter().any(|key| key.id() == part.id()) {
+        "keys"
+    } else {
+        "bound"
     }
 }
 

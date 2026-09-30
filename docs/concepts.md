@@ -53,9 +53,10 @@ declares:
   whether it is also bound to its record. The empty scope, `()`, binds a value
   to its seal ID alone.
 
-A binding's parts have roles: a `keys` part scopes key custody and is the unit
-you can shred, and any other part is bound only. A blind index names its own
-index scope, some of the seal's parts that partition it.
+A binding's parts have no roles; views of the scope decide what else each
+scopes. A seal names its keys view, the parts key custody follows and the unit
+you can shred, and a blind index its index scope, the parts that partition it.
+Any other part is bound only.
 [Bind values to a scope](bindings.md) covers choosing them.
 
 The value type is your application's own type: it says how it encodes, never

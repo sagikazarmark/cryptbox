@@ -145,7 +145,7 @@ pub enum Error {
     /// A binding's declared parts or supplied values are invalid.
     ///
     /// For example, part IDs repeat, a value's kind differs from its part's, or
-    /// a `keys` part value is empty.
+    /// a value of a part in a seal's keys view is empty.
     #[error("binding is invalid")]
     InvalidBinding,
     /// A blind-index representation or bit count is invalid.
