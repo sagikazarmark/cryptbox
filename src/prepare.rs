@@ -1,9 +1,9 @@
 use std::fmt;
 
 use crate::{
-    BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed,
+    BlindIndexKeys, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed,
     args::PartsOf,
-    blind::{derive_value, projected_target},
+    blind::{derive_value, projected_domain},
     keys,
 };
 
@@ -79,8 +79,7 @@ where
     ///
     /// The index is scoped by its [index scope](BlindIndexSpec::Scope),
     /// projected from the scope the value was sealed under, so probes with the
-    /// same index scope find it. The key source receives the seal's
-    /// [keys view](Seal::Keys), projected from the index scope.
+    /// same index scope find it.
     ///
     /// The index must be declared over this seal. Attaching another seal's
     /// index is a type error:
@@ -152,7 +151,7 @@ where
     /// invalid precision, or unavailable keys.
     pub fn with_index_with<Spec>(
         mut self,
-        keys: &(impl BlindIndexKeySource<F::Keys> + ?Sized),
+        keys: &(impl BlindIndexKeys + ?Sized),
     ) -> Result<Self, Error>
     where
         Spec: BlindIndexSpec<Seal = F>,
@@ -162,7 +161,7 @@ where
         }
 
         let index =
-            derive_value::<Spec>(self.source, &projected_target::<Spec>(&self.scope)?, keys)?;
+            derive_value::<Spec>(self.source, &projected_domain::<Spec>(&self.scope)?, keys)?;
         self.indexes.push(PreparedIndex {
             id: Spec::ID,
             bytes: index.into_bytes(),

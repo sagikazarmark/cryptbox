@@ -27,9 +27,9 @@
 //!   [`Secret`] wrappers have a default ([`Utf8`] and [`Raw`]); every other value
 //!   type names its codec.
 //! - [`EncryptionKeyring`] and [`BlindIndexKeyring`] hold a current key plus
-//!   previous keys; [`Keys`] pairs them. Operations take keys directly through
-//!   [`EncryptionKeySource`] and [`BlindIndexKeySource`]; choosing which
-//!   keyring protects which seal or scope is application code.
+//!   previous keys; [`Keys`] pairs them. Operations take the keys to use
+//!   ([`EncryptionKeys`], [`BlindIndexKeys`], [`RecordKeys`]); choosing which
+//!   keyring protects which values is application code.
 //! - [`Prepared`] borrows a source value and derives sealed value and indexes for
 //!   an application-owned atomic write; it does not persist them.
 //! - A [`Record`] seals and opens a whole row under one binding and its
@@ -45,7 +45,7 @@
 //!
 //! See the [ownership reference] for clones, temporary buffers,
 //! `Secret`, and shared key lifetimes, and the [custom-field example] for public
-//! codec, normalizer, and key source implementations.
+//! codec and normalizer implementations, with keys the application refreshes.
 //!
 #![doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
@@ -97,9 +97,8 @@
 //! The seal declares `Scope = Recorded<Tenant, [u8; 16]>`, so each call passes
 //! `(&tenant, &record)`; a missing or extra record is a type error. Bound
 //! values come from an authorized source, such as the request's verified claims,
-//! never from the stored row. The library passes the key source the seal and the
-//! values of its [keys view](Seal::Keys), here the tenant, and choosing which keyring protects which scope is
-//! application code: sealing with the wrong one succeeds silently, while opening
+//! never from the stored row. The call takes the tenant's keyring: choosing which
+//! keyring protects which values is application code: sealing with the wrong one succeeds silently, while opening
 //! with it fails loudly. See the [binding guide], [choosing keyrings], and the
 //! [shredding runbook].
 //!
@@ -229,7 +228,7 @@ pub use key::{
     BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyError,
     KeyId, Keys,
 };
-pub use key_source::{BlindIndexKeySource, ColumnKeys, EncryptionKeySource, GlobalKeys};
+pub use key_source::{BlindIndexKeys, ColumnKeys, EncryptionKeys, GlobalKeys, RecordKeys};
 pub use padding::Padding;
 pub use prepare::Prepared;
 pub use record::{IndexedBy, Record, open_matching};

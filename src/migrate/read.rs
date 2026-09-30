@@ -2,7 +2,7 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
-use crate::{Args, Codec, EncryptionKeySource, Error, Seal, Sealed};
+use crate::{Args, Codec, EncryptionKeys, Error, Seal, Sealed};
 
 use super::{LegacyFormat, legacy};
 
@@ -190,7 +190,7 @@ where
     pub fn open(
         self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<F::Value, Error> {
         match self.state {
             State::Sealed(sealed) => sealed.open(args, keys),
@@ -212,7 +212,7 @@ where
     pub fn open_legacy(
         self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
         legacy: &dyn LegacyFormat,
     ) -> Result<F::Value, Error> {
         match self.state {

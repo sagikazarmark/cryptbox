@@ -3,11 +3,11 @@ use std::fmt;
 use zeroize::Zeroizing;
 
 use crate::{
-    BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec, EncryptionKeySource,
-    EncryptionKeyring, Error, FromParts, IndexKeyId, PartValue, RecordId, Scope, Seal, SealScope,
-    args::{KeysOf, PartsOf, Target, keys_of},
-    binding::{check_keys_view, declaration_fingerprint, project_view},
-    blind::{current_key_id, derive_value, projected_target},
+    BindingDomain, BlindIndex, BlindIndexKeyring, BlindIndexSpec, Codec, EncryptionKeyring, Error,
+    FromParts, PartValue, RecordId, Scope, Seal, SealScope,
+    args::{KeysOf, PartsOf, keys_of},
+    binding::{check_keys_view, declaration_fingerprint},
+    blind::{derive_value, projected_domain},
     bound, inspect_blind_index, inspect_ciphertext,
 };
 
@@ -146,27 +146,19 @@ impl<'r, B: Scope> RowArgs<'r, B> {
 type RowArgsFn<'a, F, R> =
     Box<dyn for<'r> Fn(&'r R) -> Result<RowArgs<'r, PartsOf<F>>, Error> + 'a>;
 
-type IndexDeriver<F> = fn(
-    &<F as Seal>::Value,
-    &Target<KeysOf<F>>,
-    &dyn BlindIndexKeySource<KeysOf<F>>,
-) -> Result<Vec<u8>, Error>;
+type IndexDeriver<F> =
+    fn(&<F as Seal>::Value, &BindingDomain, &BlindIndexKeyring) -> Result<Vec<u8>, Error>;
 
-type CurrentIndexKey<F> =
-    fn(&Target<KeysOf<F>>, &dyn BlindIndexKeySource<KeysOf<F>>) -> Result<IndexKeyId, Error>;
-
-type IndexTargetFn<F> = fn(&PartsOf<F>) -> Result<Target<KeysOf<F>>, Error>;
+type IndexDomainFn<F> = fn(&PartsOf<F>) -> Result<BindingDomain, Error>;
 
 type LegacyDomain<F> = fn(&PartsOf<F>, Option<PartValue<'_>>) -> Result<BindingDomain, Error>;
 
-type LegacyKeyring<'a, F> = Box<dyn Fn(&PartsOf<F>) -> Result<EncryptionKeyring, Error> + 'a>;
-
 fn derive_index_bytes<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
-    target: &Target<KeysOf<Spec::Seal>>,
-    keys: &dyn BlindIndexKeySource<KeysOf<Spec::Seal>>,
+    domain: &BindingDomain,
+    keys: &BlindIndexKeyring,
 ) -> Result<Vec<u8>, Error> {
-    derive_value::<Spec>(value, target, keys).map(BlindIndex::into_bytes)
+    derive_value::<Spec>(value, domain, keys).map(BlindIndex::into_bytes)
 }
 
 struct IndexColumn<'a, F>
@@ -174,10 +166,9 @@ where
     F: Seal,
 {
     /// Projects the column's index scope from a row's scope and encodes it.
-    target: IndexTargetFn<F>,
+    domain: IndexDomainFn<F>,
     deriver: IndexDeriver<F>,
-    current_key: CurrentIndexKey<F>,
-    keys: &'a dyn BlindIndexKeySource<KeysOf<F>>,
+    keys: &'a BlindIndexKeyring,
 }
 
 /// An older binding declaration whose rows the planner reseals, and its keys.
@@ -190,16 +181,14 @@ where
     /// Whether the declaration binds a record.
     recorded: bool,
     domain: LegacyDomain<F>,
-    /// Asks the declaration's key source by its keys view, projected from a
-    /// row's current scope.
-    keyring: LegacyKeyring<'a, F>,
+    keys: &'a EncryptionKeyring,
 }
 
 /// The binding of one row under the planner's seal.
-struct RowBinding<K> {
-    target: Target<K>,
-    /// One index target per registered index column, in order.
-    index_targets: Vec<Target<K>>,
+struct RowBinding {
+    domain: BindingDomain,
+    /// One index domain per registered index column, in order.
+    index_domains: Vec<BindingDomain>,
 }
 
 /// Plans the rewrite of one encrypted column and its blind-index columns.
@@ -232,7 +221,7 @@ pub struct RowPlanner<'a, F, R = ()>
 where
     F: Seal,
 {
-    keys: &'a dyn EncryptionKeySource<KeysOf<F>>,
+    keys: &'a EncryptionKeyring,
     view: KeysOf<F>,
     row_args: RowArgsFn<'a, F, R>,
     legacy: Option<&'a dyn LegacyFormat>,
@@ -244,11 +233,12 @@ impl<'a, F, R> RowPlanner<'a, F, R>
 where
     F: Seal<Scope = (), Keys = ()>,
 {
-    /// Creates a planner for an unscoped seal `F` without a record and an
-    /// encryption key source.
+    /// Creates a planner for an unscoped seal `F` without a record and its
+    /// encryption keyring.
     ///
     /// A seal with another scope is a type error; use [`Self::for_keys`].
-    pub fn new(keys: &'a dyn EncryptionKeySource<()>) -> Self {
+    #[must_use]
+    pub fn new(keys: &'a EncryptionKeyring) -> Self {
         Self::for_keys((), keys, |_| Ok(RowArgs::new(())))
     }
 }
@@ -267,7 +257,7 @@ where
     /// and stops a sweep or verification pass.
     pub fn for_keys(
         view: KeysOf<F>,
-        keys: &'a dyn EncryptionKeySource<KeysOf<F>>,
+        keys: &'a EncryptionKeyring,
         row_args: impl for<'r> Fn(&'r R) -> Result<RowArgs<'r, PartsOf<F>>, Error> + 'a,
     ) -> Self {
         Self {
@@ -298,8 +288,8 @@ where
     /// `Recorded<Tenant, i64>`, and `OldKeys` its keys view, such as `()` or
     /// `Tenant`. `Old` takes each part's value from the row's current scope, by
     /// part ID, and when it binds a record, the row's record ID: rows moving out
-    /// of a record still pass it. `keys` is asked by `OldKeys`, projected from
-    /// the row's current scope the same way. The window covers moving from the
+    /// of a record still pass it. `keys` is the keyring those rows were sealed
+    /// with. The window covers moving from the
     /// empty scope `()` to any scope, adding parts, moving into or out of a record,
     /// and changing the keys view, but not removing a part or changing its kind.
     /// A part of `Old` that the current scope lacks, or holds with another kind,
@@ -313,7 +303,7 @@ where
     #[must_use]
     pub fn legacy_binding<Old: SealScope, OldKeys: FromParts>(
         mut self,
-        keys: &'a dyn EncryptionKeySource<OldKeys>,
+        keys: &'a EncryptionKeyring,
     ) -> Self {
         const { check_keys_view(OldKeys::PARTS, <Old::Parts as Scope>::PARTS) };
 
@@ -327,9 +317,7 @@ where
                     record,
                 )
             },
-            keyring: Box::new(move |scope| {
-                keys.encryption_keyring(F::ID, &project_view::<OldKeys, _>(scope)?)
-            }),
+            keys,
         });
 
         self
@@ -402,14 +390,13 @@ where
     /// }
     /// ```
     #[must_use]
-    pub fn with_index_with<Spec>(mut self, keys: &'a dyn BlindIndexKeySource<KeysOf<F>>) -> Self
+    pub fn with_index_with<Spec>(mut self, keys: &'a BlindIndexKeyring) -> Self
     where
         Spec: BlindIndexSpec<Seal = F>,
     {
         self.indexes.push(IndexColumn {
-            target: projected_target::<Spec>,
+            domain: projected_domain::<Spec>,
             deriver: derive_index_bytes::<Spec>,
-            current_key: current_key_id::<Spec>,
             keys,
         });
 
@@ -457,16 +444,12 @@ where
             Err(error) => return Err(error),
         }
 
-        if bound::needs_reseal(&binding.target.domain, F::PADDING, ciphertext, || {
-            binding.target.keyring(F::ID, self.keys)
-        })? {
+        if bound::needs_reseal(&binding.domain, F::PADDING, ciphertext, self.keys)? {
             return Ok(RowState::Stale);
         }
 
-        for ((column, bytes), target) in
-            self.indexes.iter().zip(indexes).zip(&binding.index_targets)
-        {
-            if column.is_stale(bytes, target)? {
+        for (column, bytes) in self.indexes.iter().zip(indexes) {
+            if column.is_stale(bytes)? {
                 return Ok(RowState::Stale);
             }
         }
@@ -512,14 +495,10 @@ where
         }
 
         let envelope_is_stale =
-            bound::needs_reseal(&binding.target.domain, F::PADDING, ciphertext, || {
-                binding.target.keyring(F::ID, self.keys)
-            })?;
+            bound::needs_reseal(&binding.domain, F::PADDING, ciphertext, self.keys)?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
-        for ((column, bytes), target) in
-            self.indexes.iter().zip(indexes).zip(&binding.index_targets)
-        {
-            stale_columns.push(column.is_stale(bytes, target)?);
+        for (column, bytes) in self.indexes.iter().zip(indexes) {
+            stale_columns.push(column.is_stale(bytes)?);
         }
         let indexes_are_stale = stale_columns.contains(&true);
 
@@ -527,13 +506,12 @@ where
             return Ok(RowOutcome::unchanged(RowState::Current));
         }
 
-        let keyring = || binding.target.keyring(F::ID, self.keys);
-        let current = (&binding.target.domain, keyring);
+        let current = (&binding.domain, self.keys);
         let (plaintext, ciphertext) = if envelope_is_stale {
             bound::reseal(current, current, F::PADDING, ciphertext)?
         } else {
             (
-                bound::open(&binding.target.domain, ciphertext, keyring)?,
+                bound::open(&binding.domain, ciphertext, self.keys)?,
                 ciphertext.to_vec(),
             )
         };
@@ -543,10 +521,10 @@ where
             // from decrypted plaintext, never trusted index metadata.
             let value = F::Codec::decode(&plaintext)?;
             let mut replacements = Vec::with_capacity(self.indexes.len());
-            let columns = self.indexes.iter().zip(&binding.index_targets);
-            for (((column, target), bytes), stale) in columns.zip(indexes).zip(&stale_columns) {
+            let columns = self.indexes.iter().zip(&binding.index_domains);
+            for (((column, domain), bytes), stale) in columns.zip(indexes).zip(&stale_columns) {
                 replacements.push(if *stale {
-                    column.derive(&value, target)?
+                    column.derive(&value, domain)?
                 } else {
                     bytes.to_vec()
                 });
@@ -567,7 +545,7 @@ where
     }
 
     /// Encodes the row's binding, or returns `None` for a row of another keys view.
-    fn bind(&self, args: &RowArgs<'_, PartsOf<F>>) -> Result<Option<RowBinding<KeysOf<F>>>, Error> {
+    fn bind(&self, args: &RowArgs<'_, PartsOf<F>>) -> Result<Option<RowBinding>, Error> {
         let recorded = <F::Scope as SealScope>::RECORD.is_some();
         let legacy_recorded = self
             .legacy_declarations
@@ -589,12 +567,12 @@ where
         }
 
         Ok(Some(RowBinding {
-            index_targets: self
+            index_domains: self
                 .indexes
                 .iter()
-                .map(|column| (column.target)(&args.binding))
+                .map(|column| (column.domain)(&args.binding))
                 .collect::<Result<_, _>>()?,
-            target: Target { domain, keys },
+            domain,
         }))
     }
 
@@ -602,10 +580,10 @@ where
     /// unless it names the current declaration.
     fn legacy_declaration(
         &self,
-        binding: &RowBinding<KeysOf<F>>,
+        binding: &RowBinding,
         stored: [u8; 8],
     ) -> Option<&LegacyDeclaration<'a, F>> {
-        if stored == binding.target.domain.fingerprint() {
+        if stored == binding.domain.fingerprint() {
             return None;
         }
 
@@ -618,15 +596,13 @@ where
         &self,
         legacy: &LegacyDeclaration<'a, F>,
         args: &RowArgs<'_, PartsOf<F>>,
-        binding: &RowBinding<KeysOf<F>>,
+        binding: &RowBinding,
         ciphertext: &[u8],
     ) -> Result<RowOutcome, Error> {
         let old = (legacy.domain)(&args.binding, args.record.map(RecordId::part_value))?;
         let (plaintext, ciphertext) = bound::reseal(
-            (&old, || (legacy.keyring)(&args.binding)),
-            (&binding.target.domain, || {
-                binding.target.keyring(F::ID, self.keys)
-            }),
+            (&old, legacy.keys),
+            (&binding.domain, self.keys),
             F::PADDING,
             ciphertext,
         )?;
@@ -647,17 +623,11 @@ where
         })
     }
 
-    fn plan_legacy_row(
-        &self,
-        binding: &RowBinding<KeysOf<F>>,
-        bytes: &[u8],
-    ) -> Result<RowOutcome, Error> {
+    fn plan_legacy_row(&self, binding: &RowBinding, bytes: &[u8]) -> Result<RowOutcome, Error> {
         let plaintext = legacy::recover(bytes, self.legacy)?;
         let value = F::Codec::decode(&plaintext)?;
         let plaintext: Zeroizing<Vec<u8>> = F::Codec::encode(&value)?;
-        let ciphertext = bound::seal(&binding.target.domain, F::PADDING, &plaintext, || {
-            binding.target.keyring(F::ID, self.keys)
-        })?;
+        let ciphertext = bound::seal(&binding.domain, F::PADDING, &plaintext, self.keys)?;
 
         Ok(RowOutcome {
             state: RowState::Legacy,
@@ -671,12 +641,12 @@ where
     fn derive_indexes(
         &self,
         value: &F::Value,
-        binding: &RowBinding<KeysOf<F>>,
+        binding: &RowBinding,
     ) -> Result<Vec<Vec<u8>>, Error> {
         self.indexes
             .iter()
-            .zip(&binding.index_targets)
-            .map(|(column, target)| column.derive(value, target))
+            .zip(&binding.index_domains)
+            .map(|(column, domain)| column.derive(value, domain))
             .collect()
     }
 
@@ -696,12 +666,12 @@ impl<F> IndexColumn<'_, F>
 where
     F: Seal,
 {
-    fn is_stale(&self, bytes: &[u8], target: &Target<KeysOf<F>>) -> Result<bool, Error> {
-        Ok(inspect_blind_index(bytes)?.index_key_id() != (self.current_key)(target, self.keys)?)
+    fn is_stale(&self, bytes: &[u8]) -> Result<bool, Error> {
+        Ok(inspect_blind_index(bytes)?.index_key_id() != self.keys.current().id())
     }
 
-    fn derive(&self, value: &F::Value, target: &Target<KeysOf<F>>) -> Result<Vec<u8>, Error> {
-        (self.deriver)(value, target, self.keys)
+    fn derive(&self, value: &F::Value, domain: &BindingDomain) -> Result<Vec<u8>, Error> {
+        (self.deriver)(value, domain, self.keys)
     }
 }
 

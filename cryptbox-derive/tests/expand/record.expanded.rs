@@ -173,15 +173,14 @@ const _: () = {
             ::cryptbox::Error,
         >
         where
-            K: ::cryptbox::EncryptionKeySource<<CustomerEmail as ::cryptbox::Seal>::Keys>
-                + ::cryptbox::BlindIndexKeySource<
-                    <CustomerEmail as ::cryptbox::Seal>::Keys,
-                > + ?::core::marker::Sized,
+            K: ::cryptbox::RecordKeys + ?::core::marker::Sized,
         {
             let prepared = ::cryptbox::Sealed::<
                 CustomerEmail,
             >::prepare(value, ::cryptbox::__private::InRecord(binding, record), keys)?
-                .with_index_with::<EmailLookup>(keys)?;
+                .with_index_with::<
+                    EmailLookup,
+                >(::cryptbox::RecordKeys::record_blind_index_keyring(keys)?)?;
             let email_lookup = prepared.index::<EmailLookup>()?.to_blind_index();
             ::core::result::Result::Ok((prepared.into_sealed(), email_lookup))
         }
@@ -193,8 +192,7 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<::cryptbox::Sealed<CustomerNote>, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource<<CustomerNote as ::cryptbox::Seal>::Keys>
-                + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeys + ?::core::marker::Sized,
         {
             ::cryptbox::Sealed::<
                 CustomerNote,
@@ -218,8 +216,7 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<SealedCustomer, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource<Self::Keys>
-                + ::cryptbox::BlindIndexKeySource<Self::Keys> + ?::core::marker::Sized,
+            K: ::cryptbox::RecordKeys + ?::core::marker::Sized,
         {
             let (email, email_lookup) = Self::seal_email(
                 &self.email,
@@ -241,7 +238,7 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<Self, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource<Self::Keys> + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeys + ?::core::marker::Sized,
         {
             let record_id = &sealed.id;
             let email = sealed

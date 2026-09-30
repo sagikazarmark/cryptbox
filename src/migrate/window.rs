@@ -1,7 +1,7 @@
 use crate::{
-    Args, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, FromParts, Scope, Seal, SealScope, Sealed,
-    args::{KeysOf, PartsOf, Target, with_domain},
+    Args, BindingDomain, BlindIndex, BlindIndexKeys, BlindIndexSpec, Codec, EncryptionKeys, Error,
+    FromParts, Scope, Seal, SealScope, Sealed,
+    args::{PartsOf, with_domain},
     binding::{check_keys_view, project_view},
     blind::probes_in,
     bound, inspect_ciphertext,
@@ -12,7 +12,7 @@ use crate::{
 ///
 /// A value whose header names the seal's current declaration is opened under `args`
 /// with `keys`, as [`Sealed::open`] does. Any other value is opened under the
-/// older seal scope `Old` with `old_keys`, asked by the older keys view
+/// older seal scope `Old` with `old_keys`, under the older keys view
 /// `OldKeys`: each of `Old`'s and `OldKeys`'s parts takes its value from the
 /// scope in `args` by part ID, and the record in `args` is bound when
 /// `Old` binds one, as
@@ -33,8 +33,8 @@ use crate::{
 pub fn open_across<Old, OldKeys, F>(
     sealed: &Sealed<F>,
     args: impl Args<F>,
-    keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
-    old_keys: &(impl EncryptionKeySource<OldKeys> + ?Sized),
+    keys: &(impl EncryptionKeys + ?Sized),
+    old_keys: &(impl EncryptionKeys + ?Sized),
 ) -> Result<F::Value, Error>
 where
     Old: SealScope,
@@ -45,16 +45,14 @@ where
 
     let bytes = sealed.as_bytes();
     let stored = inspect_ciphertext(bytes)?.context_fingerprint();
-    let plaintext = with_domain::<F, _, _>(args, |target, scope, record| {
-        if stored == target.domain.fingerprint() {
-            return bound::open(&target.domain, bytes, || target.keyring(F::ID, keys));
+    let plaintext = with_domain::<F, _, _>(args, |domain, scope, record| {
+        if stored == domain.fingerprint() {
+            return bound::open(&domain, bytes, keys.encryption_keyring());
         }
 
         let old =
             BindingDomain::projected::<Old, OldKeys, PartsOf<F>>(F::ID.as_bytes(), scope, record)?;
-        bound::open(&old, bytes, || {
-            old_keys.encryption_keyring(F::ID, &project_view::<OldKeys, _>(scope)?)
-        })
+        bound::open(&old, bytes, old_keys.encryption_keyring())
     })?;
 
     Ok(F::Codec::decode(&plaintext)?)
@@ -62,7 +60,7 @@ where
 
 /// Derives the probes of a lookup during a legacy-binding window: those of the
 /// index's current scope under `scope` with `keys`, followed by those of the
-/// older index scope `Old` with `old_keys`, asked by the older keys view
+/// older index scope `Old` with `old_keys`, under the older keys view
 /// `OldKeys`.
 ///
 /// A row keeps the index it was written with until a sweep reseals it, so a
@@ -89,8 +87,8 @@ where
 pub fn probes_across<Old, OldKeys, S>(
     query: &S::Query,
     scope: &S::Scope,
-    keys: &(impl BlindIndexKeySource<KeysOf<S::Seal>> + ?Sized),
-    old_keys: &(impl BlindIndexKeySource<OldKeys> + ?Sized),
+    keys: &(impl BlindIndexKeys + ?Sized),
+    old_keys: &(impl BlindIndexKeys + ?Sized),
 ) -> Result<Vec<BlindIndex<S>>, Error>
 where
     S: BlindIndexSpec,
@@ -99,11 +97,8 @@ where
 {
     let mut probes = S::probes_with(query, scope, keys)?;
     let old: Old = project_view(scope)?;
-    let old = Target {
-        domain: BindingDomain::index(<S::Seal as Seal>::ID.as_bytes(), &old, OldKeys::PARTS)?,
-        keys: project_view::<OldKeys, _>(&old)?,
-    };
-    for probe in probes_in::<S, _>(query, &old, old_keys)? {
+    let old = BindingDomain::index(<S::Seal as Seal>::ID.as_bytes(), &old, OldKeys::PARTS)?;
+    for probe in probes_in::<S>(query, &old, old_keys)? {
         if !probes.contains(&probe) {
             probes.push(probe);
         }

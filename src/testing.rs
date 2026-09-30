@@ -70,8 +70,8 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///
 /// Choosing which keyring protects a seal or scope is application code, and a
 /// wrong choice fails silently at write time: the value seals and opens with the
-/// wrong keys, and survives destroying the right ones. Seal a value through the
-/// application's own key source and assert the keyring it should have chosen.
+/// wrong keys, and survives destroying the right ones. Seal a value with the keys the
+/// application chooses and assert the keyring it should have chosen.
 /// See [choosing keyrings].
 ///
 /// Key IDs are unique within a keyring and never shared across keyrings, so the
@@ -86,7 +86,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId,
+///     EncryptionKey, EncryptionKeyring, Seal, SealId,
 ///     Padding, Sealed, Utf8, testing::assert_sealed_under,
 /// };
 ///
@@ -108,9 +108,9 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     payments: EncryptionKeyring,
 /// }
 ///
-/// impl EncryptionKeySource<()> for AppKeys {
-///     fn encryption_keyring(&self, seal: SealId, (): &()) -> Result<EncryptionKeyring, Error> {
-///         Ok(if seal == Iban::ID { self.payments.clone() } else { self.general.clone() })
+/// impl AppKeys {
+///     fn for_seal(&self, seal: SealId) -> &EncryptionKeyring {
+///         if seal == Iban::ID { &self.payments } else { &self.general }
 ///     }
 /// }
 ///
@@ -119,7 +119,11 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     payments: EncryptionKeyring::new(EncryptionKey::generate()?, [])?,
 /// };
 ///
-/// let iban = Sealed::<Iban>::seal(&"DE89370400440532013000".to_owned(), (), &keys)?;
+/// let iban = Sealed::<Iban>::seal(
+///     &"DE89370400440532013000".to_owned(),
+///     (),
+///     keys.for_seal(Iban::ID),
+/// )?;
 ///
 /// assert_sealed_under::<Iban>(&iban, &keys.payments);
 /// # Ok::<(), cryptbox::Error>(())

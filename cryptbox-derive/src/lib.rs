@@ -494,7 +494,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///
 /// ```
 /// # use cryptbox::{
-/// #     BlindIndex, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Padding,
+/// #     BlindIndex, BlindIndexSpec, EncryptionKeys, Error, Padding, RecordKeys,
 /// #     Recorded, Seal, SealId, SealScope, Sealed, Tenant, Utf8, __private::InRecord,
 /// # };
 /// # use zeroize::Zeroizing;
@@ -566,12 +566,10 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///             keys: &K,
 ///         ) -> Result<(Sealed<CustomerEmail>, BlindIndex<EmailLookup>), Error>
 ///         where
-///             K: EncryptionKeySource<<CustomerEmail as Seal>::Keys>
-///                 + BlindIndexKeySource<<CustomerEmail as Seal>::Keys>
-///                 + ?Sized,
+///             K: RecordKeys + ?Sized,
 ///         {
 ///             let prepared = Sealed::<CustomerEmail>::prepare(value, InRecord(binding, record), keys)?
-///                 .with_index_with::<EmailLookup>(keys)?;
+///                 .with_index_with::<EmailLookup>(keys.record_blind_index_keyring()?)?;
 ///             let email_lookup = prepared.index::<EmailLookup>()?.to_blind_index();
 ///
 ///             Ok((prepared.into_sealed(), email_lookup))
@@ -586,7 +584,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///             keys: &K,
 ///         ) -> Result<Sealed<CustomerNote>, Error>
 ///         where
-///             K: EncryptionKeySource<<CustomerNote as Seal>::Keys> + ?Sized,
+///             K: EncryptionKeys + ?Sized,
 ///         {
 ///             Sealed::<CustomerNote>::seal(value, InRecord(binding, record), keys)
 ///         }
@@ -604,7 +602,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///
 ///         fn seal<K>(&self, binding: &Self::Scope, keys: &K) -> Result<SealedCustomer, Error>
 ///         where
-///             K: EncryptionKeySource<Self::Keys> + BlindIndexKeySource<Self::Keys> + ?Sized,
+///             K: RecordKeys + ?Sized,
 ///         {
 ///             let (email, email_lookup) = Self::seal_email(&self.email, binding, &self.id, keys)?;
 ///             let note = Self::seal_note(&self.note, binding, &self.id, keys)?;
@@ -620,7 +618,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///
 ///         fn open<K>(sealed: SealedCustomer, binding: &Self::Scope, keys: &K) -> Result<Self, Error>
 ///         where
-///             K: EncryptionKeySource<Self::Keys> + ?Sized,
+///             K: EncryptionKeys + ?Sized,
 ///         {
 ///             let record_id = &sealed.id;
 ///             let email = sealed.email.open(

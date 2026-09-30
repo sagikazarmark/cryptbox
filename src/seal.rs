@@ -113,8 +113,7 @@ pub trait Seal: 'static {
     /// each call. See [`Scope`](crate::Scope) and [`SealScope`].
     type Scope: SealScope;
 
-    /// The keys view: the parts of the scope that key custody follows, which
-    /// key sources receive.
+    /// The keys view: the parts of the scope that key custody follows.
     ///
     /// It is a view of the scope, without the record: a scope whose parts are
     /// parts of [`Self::Scope`], matched by part ID and kind, and whose values
@@ -123,8 +122,7 @@ pub trait Seal: 'static {
     /// `#[derive(Seal)]` defaults to the scope. Custody follows it, a sweep is
     /// partitioned by it, the binding fingerprint marks its parts, and the
     /// schema manifest reports them as the shred unit; a part in no view is
-    /// bound only. Its values can't be empty. See
-    /// [`EncryptionKeySource`](crate::EncryptionKeySource).
+    /// bound only. Its values can't be empty.
     ///
     /// A keys view with a part the scope lacks fails the build when the seal is
     /// first used:

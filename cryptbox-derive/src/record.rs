@@ -561,7 +561,7 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
             format!(
                 "Seals `{ident}` alone under `binding` and the record ID `record`, for a partial update."
             ),
-            quote!(#krate::EncryptionKeySource<<#seal as #krate::Seal>::Keys>),
+            quote!(#krate::EncryptionKeys),
             quote!(#krate::Sealed<#seal>),
             quote!(#krate::Sealed::<#seal>::seal(#value, #args, #keys)),
         )
@@ -575,14 +575,11 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
                 "Seals `{ident}` alone under `binding` and the record ID `record`, with the blind \
                  indexes it stores, for a partial update."
             ),
-            quote!(
-                #krate::EncryptionKeySource<<#seal as #krate::Seal>::Keys>
-                    + #krate::BlindIndexKeySource<<#seal as #krate::Seal>::Keys>
-            ),
+            quote!(#krate::RecordKeys),
             quote!((#krate::Sealed<#seal>, #(#krate::BlindIndex<#specs>),*)),
             quote! {
                 let #prepared = #krate::Sealed::<#seal>::prepare(#value, #args, #keys)?
-                    #(.with_index_with::<#specs>(#keys)?)*;
+                    #(.with_index_with::<#specs>(#krate::RecordKeys::record_blind_index_keyring(#keys)?)?)*;
                 #(let #locals = #prepared.index::<#specs>()?.to_blind_index();)*
 
                 ::core::result::Result::Ok((#prepared.into_sealed(), #(#locals),*))
@@ -653,9 +650,7 @@ fn seal_fn(
             #keys: &K,
         ) -> ::core::result::Result<#sealed_name, #krate::Error>
         where
-            K: #krate::EncryptionKeySource<Self::Keys>
-                + #krate::BlindIndexKeySource<Self::Keys>
-                + ?::core::marker::Sized,
+            K: #krate::RecordKeys + ?::core::marker::Sized,
         {
             #(#seals)*
 
@@ -704,7 +699,7 @@ fn open_fn(
             #keys: &K,
         ) -> ::core::result::Result<Self, #krate::Error>
         where
-            K: #krate::EncryptionKeySource<Self::Keys> + ?::core::marker::Sized,
+            K: #krate::EncryptionKeys + ?::core::marker::Sized,
         {
             let #record_id = &#sealed.#record;
             #(#opens)*

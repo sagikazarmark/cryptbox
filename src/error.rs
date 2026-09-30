@@ -103,8 +103,8 @@ pub enum Error {
     /// Normalizing a blind-index input failed.
     #[error("blind-index normalization failed")]
     BlindIndexNormalizationFailed,
-    /// A key source could not supply a keyring, such as keys that a KMS has
-    /// not loaded yet.
+    /// Keys could not be supplied, such as keys that a KMS has not loaded yet,
+    /// or a [`ColumnKeys`](crate::ColumnKeys) that could not load them.
     #[error("keys are unavailable")]
     KeysUnavailable,
     /// A global convenience was used before [`keys::install`](crate::keys::install).

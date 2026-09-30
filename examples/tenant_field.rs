@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Padding, Recorded, Seal, SealId,
-    Sealed, Tenant, TenantId, Utf8,
+    EncryptionKey, EncryptionKeyring, Error, Padding, Recorded, Seal, SealId, Sealed, Tenant,
+    TenantId, Utf8,
 };
 
 struct CustomerEmail;
@@ -23,11 +23,10 @@ impl Seal for CustomerEmail {
 /// One keyring per tenant, so one tenant's data can be shredded on its own.
 struct TenantKeyrings(HashMap<Tenant, EncryptionKeyring>);
 
-// Asked by the seal's keys view, `Tenant`.
-impl EncryptionKeySource<Tenant> for TenantKeyrings {
-    fn encryption_keyring(&self, _: SealId, tenant: &Tenant) -> Result<EncryptionKeyring, Error> {
-        // Cloning a keyring shares its keys. An unknown tenant fails closed.
-        self.0.get(tenant).cloned().ok_or(Error::KeysUnavailable)
+impl TenantKeyrings {
+    /// The keyring of `tenant`. An unknown tenant fails closed.
+    fn of(&self, tenant: &Tenant) -> Result<&EncryptionKeyring, Error> {
+        self.0.get(tenant).ok_or(Error::KeysUnavailable)
     }
 }
 
@@ -57,23 +56,28 @@ fn main() -> Result<(), Error> {
 
     let (ada, grace) = (&ADA, &GRACE);
     let email = "ada@acme.example".to_owned();
-    let sealed = Sealed::<CustomerEmail>::seal(&email, (&acme, ada), &keys)?;
-    assert_eq!(sealed.open((&acme, ada), &keys)?, email);
+    let sealed = Sealed::<CustomerEmail>::seal(&email, (&acme, ada), keys.of(&acme)?)?;
+    assert_eq!(sealed.open((&acme, ada), keys.of(&acme)?)?, email);
 
     // Another record of the same tenant is a different binding.
     assert!(matches!(
-        sealed.open((&acme, grace), &keys),
+        sealed.open((&acme, grace), keys.of(&acme)?),
         Err(Error::AuthenticationFailed)
     ));
     // Another tenant's keyring does not hold the key this envelope names.
     assert!(matches!(
-        sealed.open((&globex, ada), &keys),
+        sealed.open((&globex, ada), keys.of(&globex)?),
         Err(Error::UnknownEncryptionKey(_))
     ));
 
     // Moving the record to another tenant is an explicit reseal under its keys.
-    let moved = sealed.reseal_across((&acme, ada), &keys, (&globex, ada), &keys)?;
-    assert_eq!(moved.open((&globex, ada), &keys)?, email);
+    let moved = sealed.reseal_across(
+        (&acme, ada),
+        keys.of(&acme)?,
+        (&globex, ada),
+        keys.of(&globex)?,
+    )?;
+    assert_eq!(moved.open((&globex, ada), keys.of(&globex)?)?, email);
 
     println!("Tenant-bound round trip succeeded.");
     Ok(())
@@ -94,10 +98,7 @@ mod tests {
         let acme = Tenant(TenantId::new("acme")?);
         let keys = TenantKeyrings(HashMap::new());
 
-        assert!(matches!(
-            Sealed::<CustomerEmail>::seal(&"ada@acme.example".to_owned(), (&acme, &ADA), &keys,),
-            Err(Error::KeysUnavailable)
-        ));
+        assert!(matches!(keys.of(&acme), Err(Error::KeysUnavailable)));
         Ok(())
     }
 }

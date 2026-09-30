@@ -1,6 +1,4 @@
-use crate::{
-    BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, FromParts, Scope, Seal, SealId,
-};
+use crate::{BlindIndexSpec, EncryptionKeys, Error, FromParts, RecordKeys, Scope, Seal, SealId};
 
 /// A row of plaintext values sealed and opened together under one binding.
 ///
@@ -10,7 +8,7 @@ use crate::{
 /// Plaintext fields, such as the record ID, are copied as they are.
 ///
 /// Every sealed field shares the record's [`Scope`] and its
-/// [keys view](Self::Keys), so one key source serves the whole record, and each
+/// [keys view](Self::Keys), so one set of keys serves the whole record, and each
 /// field whose seal scope is [`Recorded`](crate::Recorded) is also bound to the
 /// record's ID. The
 /// record ID is never encrypted, so it can be read before the row is opened. The
@@ -35,8 +33,7 @@ pub trait Record: Sized {
     /// The binding every sealed field of the record shares.
     type Scope: Scope;
 
-    /// The keys view every sealed field's seal shares, [`Seal::Keys`], by which
-    /// the key source is asked.
+    /// The keys view every sealed field's seal shares, [`Seal::Keys`].
     type Keys: FromParts;
 
     /// The seal ID of each sealed field, in field order.
@@ -63,7 +60,7 @@ pub trait Record: Sized {
     /// Returns any error of sealing a field or deriving one of its indexes.
     fn seal<K>(&self, binding: &Self::Scope, keys: &K) -> Result<Self::Sealed, Error>
     where
-        K: EncryptionKeySource<Self::Keys> + BlindIndexKeySource<Self::Keys> + ?Sized;
+        K: RecordKeys + ?Sized;
 
     /// Opens the sealed fields of `sealed` under `binding` and the record's
     /// ID.
@@ -76,7 +73,7 @@ pub trait Record: Sized {
     /// [`Error::AuthenticationFailed`] for a value of another record or binding.
     fn open<K>(sealed: Self::Sealed, binding: &Self::Scope, keys: &K) -> Result<Self, Error>
     where
-        K: EncryptionKeySource<Self::Keys> + ?Sized;
+        K: EncryptionKeys + ?Sized;
 }
 
 /// A [`Record`] that stores blind index `S` of one of its fields.
@@ -106,7 +103,7 @@ pub fn open_matching<R, S>(
     rows: impl IntoIterator<Item = R::Sealed>,
     query: &S::Query,
     binding: &R::Scope,
-    keys: &(impl EncryptionKeySource<R::Keys> + ?Sized),
+    keys: &(impl EncryptionKeys + ?Sized),
 ) -> Result<Vec<R>, Error>
 where
     R: IndexedBy<S>,

@@ -34,9 +34,8 @@ pub enum KeyError {
 /// Blind-index operations fail with [`Error::BlindIndexKeysNotConfigured`](crate::Error::BlindIndexKeysNotConfigured) when
 /// `blind_indexes` is `None`.
 ///
-/// `Keys` serves every seal and scope alike. To keep seals or scopes under
-/// separate keys, pass each its own `Keys`, or implement a key source; see
-/// [choosing keyrings].
+/// `Keys` serves every seal and binding alike. To keep seals or tenants under
+/// separate keys, pass each its own `Keys`; see [choosing keyrings].
 ///
 #[doc = concat!(
     "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",

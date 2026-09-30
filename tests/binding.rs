@@ -1,11 +1,8 @@
 //! Public-boundary tests for declared scopes, their keys views, and part types.
 
-use std::sync::Mutex;
-
 use cryptbox::{
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FromParts, Padding, PartKind,
-    PartSpec, PartType, PartValue, PartValues, Raw, Scope, Seal, SealId, Sealed, Tenant, TenantId,
-    part_id, seal_id,
+    EncryptionKey, EncryptionKeyring, Error, FromParts, Padding, PartKind, PartSpec, PartType,
+    PartValue, PartValues, Raw, Scope, Seal, SealId, Sealed, Tenant, TenantId, part_id, seal_id,
 };
 
 /// An org scopes keys, and a project and a workspace are only bound.
@@ -63,68 +60,6 @@ impl FromParts for Org {
     }
 }
 
-struct ProjectNote;
-
-impl Seal for ProjectNote {
-    const ID: SealId = seal_id!("f312c91d-681e-4575-8d29-efdefae5adf3");
-    const PADDING: Padding = Padding::NONE;
-    type Value = Vec<u8>;
-    type Codec = Raw;
-    type Scope = OrgProject;
-    type Keys = Org;
-    type Indexes = ();
-}
-
-/// Records the keys views it is asked by.
-struct SeenOrgs(Mutex<Vec<Org>>, EncryptionKeyring);
-
-impl SeenOrgs {
-    fn new() -> Self {
-        let key = EncryptionKey::generate().unwrap();
-        Self(Mutex::default(), EncryptionKeyring::new(key, []).unwrap())
-    }
-
-    fn seen(self) -> Vec<Org> {
-        self.0.into_inner().unwrap()
-    }
-}
-
-impl EncryptionKeySource<Org> for SeenOrgs {
-    fn encryption_keyring(&self, _: SealId, org: &Org) -> Result<EncryptionKeyring, Error> {
-        self.0.lock().unwrap().push(org.clone());
-        Ok(self.1.clone())
-    }
-}
-
-fn scope(org: &[u8], project: i64, workspace: u8) -> OrgProject {
-    OrgProject {
-        org: org.to_vec(),
-        project,
-        workspace: [workspace; 16],
-    }
-}
-
-#[test]
-fn a_key_source_is_asked_by_the_keys_view_alone() {
-    let keys = SeenOrgs::new();
-
-    for scope in [
-        scope(b"acme", 1, 1),
-        scope(b"acme", 1, 2),
-        scope(b"acme", 2, 1),
-        scope(b"globex", 1, 1),
-    ] {
-        Sealed::<ProjectNote>::seal(&b"note".to_vec(), &scope, &keys).unwrap();
-    }
-
-    let (acme, globex) = (Org(b"acme".to_vec()), Org(b"globex".to_vec()));
-    assert_eq!(
-        keys.seen(),
-        [acme.clone(), acme.clone(), acme, globex],
-        "bound-only projects and workspaces share the org's keys view"
-    );
-}
-
 /// Supplies whatever values it holds, for exercising value validation.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct Supplied(Vec<SuppliedValue>);
@@ -166,8 +101,8 @@ impl Seal for SuppliedNote {
 }
 
 #[test]
-fn invalid_scope_values_are_rejected_before_keys_are_asked() {
-    let keys = SeenOrgs::new();
+fn invalid_scope_values_are_rejected() {
+    let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
     let seal = |values| Sealed::<SuppliedNote>::seal(&b"note".to_vec(), &values, &keys);
     let org = || SuppliedValue::Bytes(b"acme".to_vec());
     let workspace = || SuppliedValue::Uuid([1; 16]);
@@ -206,7 +141,6 @@ fn invalid_scope_values_are_rejected_before_keys_are_asked() {
     for (case, values) in cases {
         assert_eq!(seal(values), Err(Error::InvalidBinding), "{case}");
     }
-    assert_eq!(keys.seen().len(), 1, "only the control asks for keys");
 }
 
 #[test]

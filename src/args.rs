@@ -2,9 +2,8 @@
 //! binding and keys view the typed layer resolves from them.
 
 use crate::{
-    BindingDomain, EncryptionKeySource, EncryptionKeyring, Error, PartKind, PartType, PartValue,
-    Recorded, Scope, Seal, SealId, SealScope,
-    binding::{check_keys_view, project_view},
+    BindingDomain, Error, PartKind, PartType, PartValue, Recorded, Scope, Seal, SealScope,
+    binding::check_keys_view,
 };
 
 /// The declared parts of seal `F`'s scope, without its record.
@@ -208,47 +207,26 @@ const fn check_record_kind(declared: Option<PartKind>, id: PartKind) {
 /// The keys view of seal `F`.
 pub(crate) type KeysOf<F> = <F as Seal>::Keys;
 
-/// A binding, encoded, with the keys view its keyring is chosen by.
-///
-/// The binding layer never chooses keys: the typed layer asks a key source for
-/// the keyring of `keys` and hands the keyring down with `domain`.
-#[derive(Clone, Debug)]
-pub(crate) struct Target<K> {
-    pub(crate) domain: BindingDomain,
-    pub(crate) keys: K,
-}
-
-impl<K> Target<K> {
-    /// Asks `source` for the keyring of seal `seal` for this target's keys view.
-    pub(crate) fn keyring(
-        &self,
-        seal: SealId,
-        source: &(impl EncryptionKeySource<K> + ?Sized),
-    ) -> Result<EncryptionKeyring, Error> {
-        source.encryption_keyring(seal, &self.keys)
-    }
-}
-
 /// Projects the keys view of seal `F` from its scope.
+#[cfg(feature = "migrate")]
 pub(crate) fn keys_of<F: Seal>(scope: &PartsOf<F>) -> Result<KeysOf<F>, Error> {
     const { check_keys_view(<KeysOf<F> as Scope>::PARTS, <PartsOf<F> as Scope>::PARTS) };
 
-    project_view(scope)
+    crate::binding::project_view(scope)
 }
 
 /// Encodes the binding of seal `F` under `scope` and `record`.
 pub(crate) fn target<F: Seal>(
     scope: &PartsOf<F>,
     record: Option<PartValue<'_>>,
-) -> Result<Target<KeysOf<F>>, Error> {
-    Ok(Target {
-        domain: BindingDomain::of::<F::Scope, F::Keys>(F::ID.as_bytes(), scope, record)?,
-        keys: keys_of::<F>(scope)?,
-    })
+) -> Result<BindingDomain, Error> {
+    const { check_keys_view(<KeysOf<F> as Scope>::PARTS, <PartsOf<F> as Scope>::PARTS) };
+
+    BindingDomain::of::<F::Scope, F::Keys>(F::ID.as_bytes(), scope, record)
 }
 
 /// Encodes the binding of seal `F` under `args`.
-pub(crate) fn domain<F: Seal, A: Args<F>>(args: A) -> Result<Target<KeysOf<F>>, Error> {
+pub(crate) fn domain<F: Seal, A: Args<F>>(args: A) -> Result<BindingDomain, Error> {
     args.with_parts(|scope, record| target::<F>(scope, record))
 }
 
@@ -257,7 +235,7 @@ pub(crate) fn domain<F: Seal, A: Args<F>>(args: A) -> Result<Target<KeysOf<F>>, 
 #[cfg(feature = "migrate")]
 pub(crate) fn with_domain<F: Seal, A: Args<F>, T>(
     args: A,
-    f: impl FnOnce(Target<KeysOf<F>>, &PartsOf<F>, Option<PartValue<'_>>) -> Result<T, Error>,
+    f: impl FnOnce(BindingDomain, &PartsOf<F>, Option<PartValue<'_>>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     args.with_parts(|scope, record| f(target::<F>(scope, record)?, scope, record))
 }
@@ -266,6 +244,6 @@ pub(crate) fn with_domain<F: Seal, A: Args<F>, T>(
 /// the scope too, from which each blind index projects its index scope.
 pub(crate) fn domain_and_scope<F: Seal, A: Args<F>>(
     args: A,
-) -> Result<(Target<KeysOf<F>>, PartsOf<F>), Error> {
+) -> Result<(BindingDomain, PartsOf<F>), Error> {
     args.with_parts(|scope, record| Ok((target::<F>(scope, record)?, scope.clone())))
 }

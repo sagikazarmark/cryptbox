@@ -1,8 +1,8 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    Args, Codec, EncryptionKeySource, Error, GlobalKeys, KeyId, Prepared, Seal,
-    args::{Target, domain, domain_and_scope},
+    Args, BindingDomain, Codec, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal,
+    args::{domain, domain_and_scope},
     bound,
     envelope::validated_key_id,
     keys,
@@ -104,20 +104,18 @@ impl<F: Seal> Sealed<F> {
     pub fn seal(
         value: &F::Value,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
         Self::seal_in(value, &domain(args)?, keys)
     }
 
     pub(crate) fn seal_in(
         value: &F::Value,
-        target: &Target<F::Keys>,
-        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
+        domain: &BindingDomain,
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
         let plaintext = F::Codec::encode(value)?;
-        let sealed = bound::seal(&target.domain, F::PADDING, &plaintext, || {
-            target.keyring(F::ID, keys)
-        })?;
+        let sealed = bound::seal(domain, F::PADDING, &plaintext, keys.encryption_keyring())?;
 
         Ok(Self::from_validated_bytes(sealed))
     }
@@ -140,10 +138,10 @@ impl<F: Seal> Sealed<F> {
     pub fn open(
         &self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<F::Value, Error> {
         let target = domain(args)?;
-        let plaintext = bound::open(&target.domain, &self.bytes, || target.keyring(F::ID, keys))?;
+        let plaintext = bound::open(&target, &self.bytes, keys.encryption_keyring())?;
 
         Ok(F::Codec::decode(&plaintext)?)
     }
@@ -160,7 +158,7 @@ impl<F: Seal> Sealed<F> {
     pub fn prepare<'a>(
         value: &'a F::Value,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Prepared<'a, F>, Error> {
         let (target, scope) = domain_and_scope(args)?;
 
@@ -192,12 +190,10 @@ impl<F: Seal> Sealed<F> {
     pub fn needs_reseal(
         &self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<bool, Error> {
         let target = domain(args)?;
-        bound::needs_reseal(&target.domain, F::PADDING, &self.bytes, || {
-            target.keyring(F::ID, keys)
-        })
+        bound::needs_reseal(&target, F::PADDING, &self.bytes, keys.encryption_keyring())
     }
 
     /// Opens and reseals this value as `F` currently writes it, under the same
@@ -215,13 +211,13 @@ impl<F: Seal> Sealed<F> {
     pub fn reseal(
         &self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
         let target = domain(args)?;
-        let keyring = || target.keyring(F::ID, keys);
+        let keyring = keys.encryption_keyring();
         let (_, sealed) = bound::reseal(
-            (&target.domain, keyring),
-            (&target.domain, keyring),
+            (&target, keyring),
+            (&target, keyring),
             F::PADDING,
             &self.bytes,
         )?;
@@ -243,14 +239,14 @@ impl<F: Seal> Sealed<F> {
     pub fn reseal_across(
         &self,
         from: impl Args<F>,
-        from_keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
+        from_keys: &(impl EncryptionKeys + ?Sized),
         to: impl Args<F>,
-        to_keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
+        to_keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
         let (from, to) = (domain(from)?, domain(to)?);
         let (_, sealed) = bound::reseal(
-            (&from.domain, || from.keyring(F::ID, from_keys)),
-            (&to.domain, || to.keyring(F::ID, to_keys)),
+            (&from, from_keys.encryption_keyring()),
+            (&to, to_keys.encryption_keyring()),
             F::PADDING,
             &self.bytes,
         )?;
@@ -329,7 +325,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// seal that binds a record fails the build.
 /// Use [`Sealed`] explicitly for every other seal.
 ///
-/// `K` is the column's key source. The default, [`GlobalKeys`], reads the keys
+/// `K` names the column's keys. The default, [`GlobalKeys`], reads the keys
 /// installed with [`keys::install`]; name another
 /// [`ColumnKeys`](crate::ColumnKeys) to use application-owned keys instead.
 ///
@@ -506,7 +502,7 @@ where
     }
 }
 
-// The automatic SQLx columns seal and open with their key source `K`.
+// The automatic SQLx columns seal and open with their keys `K`.
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 impl<F, K> Plain<F, K>
 where

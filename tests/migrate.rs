@@ -8,10 +8,9 @@ use std::{
 };
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId,
-    Padding, Seal, SealId, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
-    inspect_ciphertext, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
+    index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
@@ -991,71 +990,6 @@ fn stepped_verification_matches_a_full_pass() {
     assert_eq!(stepped, full);
     assert_eq!(store.update_calls, 0);
     assert_eq!(store.checkpoint_saves, 0);
-}
-
-fn envelope_rows() -> Vec<(i64, Vec<u8>, Vec<Vec<u8>>)> {
-    let keys = rotated_keys();
-    let index_keys = rotated_index_keys();
-    vec![
-        (
-            1,
-            encrypt_email("first@example.com", &keys),
-            vec![derive_email_index("first@example.com", &index_keys)],
-        ),
-        (
-            2,
-            encrypt_email("second@example.com", &keys),
-            vec![derive_email_index("second@example.com", &index_keys)],
-        ),
-    ]
-}
-
-fn assert_verification_aborts_without_keys(sweep: &Sweep<'_, UserEmail>) {
-    let mut store = MemoryStore::new(envelope_rows());
-
-    assert!(matches!(
-        futures_executor::block_on(sweep.verify(&mut store)),
-        Err(SweepError::Row(Error::KeysUnavailable))
-    ));
-    // The batch aborts rather than returning a report that counts every row
-    // as malformed.
-    assert!(matches!(
-        futures_executor::block_on(sweep.verify_batch(&mut store, None)),
-        Err(SweepError::Row(Error::KeysUnavailable))
-    ));
-}
-
-/// A key source whose keys are not loaded.
-struct UnloadedKeys;
-
-impl<K> EncryptionKeySource<K> for UnloadedKeys {
-    fn encryption_keyring(&self, _: SealId, _: &K) -> Result<EncryptionKeyring, Error> {
-        Err(Error::KeysUnavailable)
-    }
-}
-
-impl<K> BlindIndexKeySource<K> for UnloadedKeys {
-    fn blind_index_keyring(&self, _: IndexId, _: &K) -> Result<BlindIndexKeyring, Error> {
-        Err(Error::KeysUnavailable)
-    }
-}
-
-#[test]
-fn verification_aborts_when_encryption_keys_are_unavailable() {
-    let keys = UnloadedKeys;
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
-
-    assert_verification_aborts_without_keys(&Sweep::new(planner));
-}
-
-#[test]
-fn verification_aborts_when_blind_index_keys_are_unavailable() {
-    let keys = rotated_keys();
-    let index_keys = UnloadedKeys;
-    let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
-
-    assert_verification_aborts_without_keys(&Sweep::new(planner));
 }
 
 #[test]

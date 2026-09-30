@@ -1,9 +1,9 @@
 //! Public-boundary tests for records: whole rows sealed and opened under one binding.
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring,
-    BlindIndexSpec, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, IndexId, Keys,
-    Padding, Record, Recorded, Seal, SealId, Sealed, Tenant, TenantId, Utf8,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, EncryptionKeys, Error, IndexId, Keys, Padding, Record, RecordKeys, Recorded,
+    Seal, SealId, Sealed, Tenant, TenantId, Utf8,
 };
 use zeroize::Zeroizing;
 
@@ -79,10 +79,10 @@ impl Customer {
         keys: &K,
     ) -> Result<(Sealed<CustomerEmail>, BlindIndex<EmailLookup>), Error>
     where
-        K: EncryptionKeySource<Tenant> + BlindIndexKeySource<Tenant> + ?Sized,
+        K: RecordKeys + ?Sized,
     {
         let prepared = Sealed::<CustomerEmail>::prepare(value, (binding, record), keys)?
-            .with_index_with::<EmailLookup>(keys)?;
+            .with_index_with::<EmailLookup>(keys.record_blind_index_keyring()?)?;
         let email_lookup = prepared.index::<EmailLookup>()?.to_blind_index();
 
         Ok((prepared.into_sealed(), email_lookup))
@@ -95,7 +95,7 @@ impl Customer {
         keys: &K,
     ) -> Result<Sealed<CustomerNote>, Error>
     where
-        K: EncryptionKeySource<Tenant> + ?Sized,
+        K: EncryptionKeys + ?Sized,
     {
         Sealed::<CustomerNote>::seal(value, binding, keys)
     }
@@ -112,7 +112,7 @@ impl Record for Customer {
 
     fn seal<K>(&self, binding: &Tenant, keys: &K) -> Result<SealedCustomer, Error>
     where
-        K: EncryptionKeySource<Tenant> + BlindIndexKeySource<Tenant> + ?Sized,
+        K: RecordKeys + ?Sized,
     {
         let (email, email_lookup) = Self::seal_email(&self.email, binding, &self.id, keys)?;
         let note = Self::seal_note(&self.note, binding, &self.id, keys)?;
@@ -127,7 +127,7 @@ impl Record for Customer {
 
     fn open<K>(sealed: SealedCustomer, binding: &Tenant, keys: &K) -> Result<Self, Error>
     where
-        K: EncryptionKeySource<Tenant> + ?Sized,
+        K: EncryptionKeys + ?Sized,
     {
         let email = sealed.email.open((binding, &sealed.id), keys)?;
         let note = sealed.note.open(binding, keys)?;

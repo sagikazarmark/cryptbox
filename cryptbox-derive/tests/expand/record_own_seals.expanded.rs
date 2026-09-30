@@ -92,8 +92,7 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<::cryptbox::Sealed<CustomerEmail>, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource<<CustomerEmail as ::cryptbox::Seal>::Keys>
-                + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeys + ?::core::marker::Sized,
         {
             ::cryptbox::Sealed::<
                 CustomerEmail,
@@ -107,8 +106,7 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<::cryptbox::Sealed<PrivateNote>, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource<<PrivateNote as ::cryptbox::Seal>::Keys>
-                + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeys + ?::core::marker::Sized,
         {
             ::cryptbox::Sealed::<
                 PrivateNote,
@@ -132,8 +130,7 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<SealedCustomer, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource<Self::Keys>
-                + ::cryptbox::BlindIndexKeySource<Self::Keys> + ?::core::marker::Sized,
+            K: ::cryptbox::RecordKeys + ?::core::marker::Sized,
         {
             let email = Self::seal_email(&self.email, binding, &self.id, keys)?;
             let note = Self::seal_note(&self.note, binding, &self.id, keys)?;
@@ -150,7 +147,7 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<Self, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource<Self::Keys> + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeys + ?::core::marker::Sized,
         {
             let record_id = &sealed.id;
             let email = sealed

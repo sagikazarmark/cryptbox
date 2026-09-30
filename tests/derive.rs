@@ -3,9 +3,9 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, FromParts, IndexId,
-    IndexKeyId, IndexList, Padding, PartKind, PartSpec, PartType, PartValue, PartValues, Scope,
-    Seal, SealId, Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
+    CodecErrorKind, EncryptionKey, EncryptionKeyring, FromParts, IndexId, IndexKeyId, IndexList,
+    Padding, PartKind, PartSpec, PartType, PartValue, PartValues, Scope, Seal, SealId, Sealed,
+    Utf8, index_id, index_key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -510,38 +510,6 @@ fn a_derived_bound_seal_opens_values_of_its_manual_equivalent() {
     let derived = Sealed::<ProjectNote>::from_bytes(manual.into_bytes()).unwrap();
 
     assert_eq!(derived.open((&scope, record), &keys).unwrap(), "ship it");
-}
-
-/// Records the keys views it is asked by.
-struct SeenOrgs(std::sync::Mutex<Vec<ProjectOrg>>, EncryptionKeyring);
-
-impl EncryptionKeySource<ProjectOrg> for SeenOrgs {
-    fn encryption_keyring(
-        &self,
-        _: SealId,
-        org: &ProjectOrg,
-    ) -> Result<EncryptionKeyring, cryptbox::Error> {
-        self.0.lock().unwrap().push(org.clone());
-        Ok(self.1.clone())
-    }
-}
-
-#[test]
-fn a_derived_seal_asks_its_key_source_by_its_keys_view() {
-    let keys = SeenOrgs(std::sync::Mutex::default(), keyring());
-    let scope = |project, workspace| OrgProject {
-        workspace: [workspace; 16],
-        org: b"acme".to_vec(),
-        project,
-    };
-
-    Sealed::<ProjectEmail>::seal(&"ada".to_owned(), &scope(7, 1), &keys).unwrap();
-    Sealed::<ProjectEmail>::seal(&"ada".to_owned(), &scope(8, 2), &keys).unwrap();
-
-    let acme = ProjectOrg {
-        org: b"acme".to_vec(),
-    };
-    assert_eq!(*keys.0.lock().unwrap(), [acme.clone(), acme]);
 }
 
 #[derive(Seal)]
