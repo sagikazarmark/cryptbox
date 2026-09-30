@@ -5,7 +5,7 @@ use zeroize::Zeroizing;
 use crate::{
     BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec, EncryptionKeySource,
     Error, IndexKeyId, KeyScope, PartValue, RecordId, Scope, Seal, SealScope,
-    binding::{PartsOf, declaration_fingerprint},
+    binding::{PartsOf, Target, declaration_fingerprint},
     blind::{current_key_id, derive_value},
     bound, inspect_blind_index, inspect_ciphertext,
 };
@@ -146,16 +146,16 @@ type RowArgsFn<'a, F, R> =
     Box<dyn for<'r> Fn(&'r R) -> Result<RowArgs<'r, PartsOf<F>>, Error> + 'a>;
 
 type IndexDeriver<F> =
-    fn(&<F as Seal>::Value, &BindingDomain, &dyn BlindIndexKeySource) -> Result<Vec<u8>, Error>;
+    fn(&<F as Seal>::Value, &Target, &dyn BlindIndexKeySource) -> Result<Vec<u8>, Error>;
 
-type CurrentIndexKey = fn(&BindingDomain, &dyn BlindIndexKeySource) -> Result<IndexKeyId, Error>;
+type CurrentIndexKey = fn(&Target, &dyn BlindIndexKeySource) -> Result<IndexKeyId, Error>;
 
 fn derive_index_bytes<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
-    domain: &BindingDomain,
+    target: &Target,
     keys: &dyn BlindIndexKeySource,
 ) -> Result<Vec<u8>, Error> {
-    derive_value::<Spec>(value, domain, keys).map(BlindIndex::into_bytes)
+    derive_value::<Spec>(value, target, keys).map(BlindIndex::into_bytes)
 }
 
 struct IndexColumn<'a, F>
@@ -176,14 +176,14 @@ where
     fingerprint: [u8; 8],
     /// Whether the declaration binds a record.
     recorded: bool,
-    domain: fn(&PartsOf<F>, Option<PartValue<'_>>) -> Result<BindingDomain, Error>,
+    target: fn(&PartsOf<F>, Option<PartValue<'_>>) -> Result<Target, Error>,
     keys: &'a dyn EncryptionKeySource,
 }
 
 /// The binding of one row under the planner's seal.
 struct RowBinding {
-    domain: BindingDomain,
-    index_domain: BindingDomain,
+    target: Target,
+    index_target: Target,
 }
 
 /// Plans the rewrite of one encrypted column and its blind-index columns.
@@ -294,8 +294,15 @@ where
         self.legacy_declarations.push(LegacyDeclaration {
             fingerprint: declaration_fingerprint::<Old>(),
             recorded: Old::RECORD.is_some(),
-            domain: |scope, record| {
-                BindingDomain::projected::<Old, PartsOf<F>>(F::ID, scope, record)
+            target: |scope, record| {
+                Ok(Target {
+                    domain: BindingDomain::projected::<Old, PartsOf<F>>(
+                        F::ID.as_bytes(),
+                        scope,
+                        record,
+                    )?,
+                    key_scope: KeyScope::projected::<Old::Parts, PartsOf<F>>(scope)?,
+                })
             },
             keys,
         });
@@ -421,12 +428,14 @@ where
             Err(error) => return Err(error),
         }
 
-        if bound::needs_reseal(&binding.domain, F::PADDING, ciphertext, self.keys)? {
+        if bound::needs_reseal(&binding.target.domain, F::PADDING, ciphertext, || {
+            binding.target.keyring(F::ID, self.keys)
+        })? {
             return Ok(RowState::Stale);
         }
 
         for (column, bytes) in self.indexes.iter().zip(indexes) {
-            if column.is_stale(bytes, &binding.index_domain)? {
+            if column.is_stale(bytes, &binding.index_target)? {
                 return Ok(RowState::Stale);
             }
         }
@@ -472,10 +481,12 @@ where
         }
 
         let envelope_is_stale =
-            bound::needs_reseal(&binding.domain, F::PADDING, ciphertext, self.keys)?;
+            bound::needs_reseal(&binding.target.domain, F::PADDING, ciphertext, || {
+                binding.target.keyring(F::ID, self.keys)
+            })?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
         for (column, bytes) in self.indexes.iter().zip(indexes) {
-            stale_columns.push(column.is_stale(bytes, &binding.index_domain)?);
+            stale_columns.push(column.is_stale(bytes, &binding.index_target)?);
         }
         let indexes_are_stale = stale_columns.contains(&true);
 
@@ -483,12 +494,13 @@ where
             return Ok(RowOutcome::unchanged(RowState::Current));
         }
 
-        let current = (&binding.domain, self.keys);
+        let keyring = || binding.target.keyring(F::ID, self.keys);
+        let current = (&binding.target.domain, keyring);
         let (plaintext, ciphertext) = if envelope_is_stale {
             bound::reseal(current, current, F::PADDING, ciphertext)?
         } else {
             (
-                bound::open(&binding.domain, ciphertext, self.keys)?,
+                bound::open(&binding.target.domain, ciphertext, keyring)?,
                 ciphertext.to_vec(),
             )
         };
@@ -500,7 +512,7 @@ where
             let mut replacements = Vec::with_capacity(self.indexes.len());
             for ((column, bytes), stale) in self.indexes.iter().zip(indexes).zip(&stale_columns) {
                 replacements.push(if *stale {
-                    column.derive(&value, &binding.index_domain)?
+                    column.derive(&value, &binding.index_target)?
                 } else {
                     bytes.to_vec()
                 });
@@ -532,15 +544,22 @@ where
         }
 
         let record = if recorded { args.record } else { None };
-        let domain =
-            BindingDomain::of::<F::Scope>(F::ID, &args.binding, record.map(RecordId::part_value))?;
-        if domain.key_scope() != &self.scope {
+        let key_scope = KeyScope::of(&args.binding)?;
+        let domain = BindingDomain::of::<F::Scope>(
+            F::ID.as_bytes(),
+            &args.binding,
+            record.map(RecordId::part_value),
+        )?;
+        if key_scope != self.scope {
             return Ok(None);
         }
 
         Ok(Some(RowBinding {
-            domain,
-            index_domain: BindingDomain::index_of(F::ID, &args.binding)?,
+            index_target: Target {
+                domain: BindingDomain::index_of(F::ID.as_bytes(), &args.binding)?,
+                key_scope: key_scope.clone(),
+            },
+            target: Target { domain, key_scope },
         }))
     }
 
@@ -551,7 +570,7 @@ where
         binding: &RowBinding,
         stored: [u8; 8],
     ) -> Option<&LegacyDeclaration<'a, F>> {
-        if stored == binding.domain.fingerprint() {
+        if stored == binding.target.domain.fingerprint() {
             return None;
         }
 
@@ -567,10 +586,12 @@ where
         binding: &RowBinding,
         ciphertext: &[u8],
     ) -> Result<RowOutcome, Error> {
-        let old = (legacy.domain)(&args.binding, args.record.map(RecordId::part_value))?;
+        let old = (legacy.target)(&args.binding, args.record.map(RecordId::part_value))?;
         let (plaintext, ciphertext) = bound::reseal(
-            (&old, legacy.keys),
-            (&binding.domain, self.keys),
+            (&old.domain, || old.keyring(F::ID, legacy.keys)),
+            (&binding.target.domain, || {
+                binding.target.keyring(F::ID, self.keys)
+            }),
             F::PADDING,
             ciphertext,
         )?;
@@ -595,7 +616,9 @@ where
         let plaintext = legacy::recover(bytes, self.legacy)?;
         let value = F::Codec::decode(&plaintext)?;
         let plaintext: Zeroizing<Vec<u8>> = F::Codec::encode(&value)?;
-        let ciphertext = bound::seal(&binding.domain, F::PADDING, &plaintext, self.keys)?;
+        let ciphertext = bound::seal(&binding.target.domain, F::PADDING, &plaintext, || {
+            binding.target.keyring(F::ID, self.keys)
+        })?;
 
         Ok(RowOutcome {
             state: RowState::Legacy,
@@ -613,7 +636,7 @@ where
     ) -> Result<Vec<Vec<u8>>, Error> {
         self.indexes
             .iter()
-            .map(|column| column.derive(value, &binding.index_domain))
+            .map(|column| column.derive(value, &binding.index_target))
             .collect()
     }
 
@@ -633,12 +656,12 @@ impl<F> IndexColumn<'_, F>
 where
     F: Seal,
 {
-    fn is_stale(&self, bytes: &[u8], domain: &BindingDomain) -> Result<bool, Error> {
-        Ok(inspect_blind_index(bytes)?.index_key_id() != (self.current_key)(domain, self.keys)?)
+    fn is_stale(&self, bytes: &[u8], target: &Target) -> Result<bool, Error> {
+        Ok(inspect_blind_index(bytes)?.index_key_id() != (self.current_key)(target, self.keys)?)
     }
 
-    fn derive(&self, value: &F::Value, domain: &BindingDomain) -> Result<Vec<u8>, Error> {
-        (self.deriver)(value, domain, self.keys)
+    fn derive(&self, value: &F::Value, target: &Target) -> Result<Vec<u8>, Error> {
+        (self.deriver)(value, target, self.keys)
     }
 }
 

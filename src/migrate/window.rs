@@ -1,7 +1,7 @@
 use crate::{
     Args, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, Seal, SealScope, Sealed,
-    binding::{PartsOf, with_domain},
+    EncryptionKeySource, Error, KeyScope, Seal, SealScope, Sealed,
+    binding::{PartsOf, Target, with_domain},
     blind::{IndexArgs, probes_in},
     bound, inspect_ciphertext,
 };
@@ -40,13 +40,16 @@ where
 {
     let bytes = sealed.as_bytes();
     let stored = inspect_ciphertext(bytes)?.context_fingerprint();
-    let plaintext = with_domain::<F, _, _>(args, |domain, scope, record| {
-        if stored == domain.fingerprint() {
-            return bound::open(&domain, bytes, keys);
+    let plaintext = with_domain::<F, _, _>(args, |target, scope, record| {
+        if stored == target.domain.fingerprint() {
+            return bound::open(&target.domain, bytes, || target.keyring(F::ID, keys));
         }
 
-        let old = BindingDomain::projected::<Old, PartsOf<F>>(F::ID, scope, record)?;
-        bound::open(&old, bytes, old_keys)
+        let old = BindingDomain::projected::<Old, PartsOf<F>>(F::ID.as_bytes(), scope, record)?;
+        let old_scope = KeyScope::projected::<Old::Parts, PartsOf<F>>(scope)?;
+        bound::open(&old, bytes, || {
+            old_keys.encryption_keyring(F::ID, &old_scope)
+        })
     })?;
 
     Ok(F::Codec::decode(&plaintext)?)
@@ -86,7 +89,13 @@ where
     Old: SealScope,
 {
     let mut probes = S::probes_with(query, args, keys)?;
-    let old = BindingDomain::index_projected::<Old, PartsOf<S::Seal>>(<S::Seal as Seal>::ID, args)?;
+    let old = Target {
+        domain: BindingDomain::index_projected::<Old, PartsOf<S::Seal>>(
+            <S::Seal as Seal>::ID.as_bytes(),
+            args,
+        )?,
+        key_scope: KeyScope::index_projected::<Old::Parts, PartsOf<S::Seal>>(args)?,
+    };
     for probe in probes_in::<S>(query, &old, old_keys)? {
         if !probes.contains(&probe) {
             probes.push(probe);

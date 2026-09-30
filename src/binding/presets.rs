@@ -112,13 +112,13 @@ impl fmt::Debug for TenantId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BindingDomain, Recorded, SealId, seal_id};
+    use crate::{BindingDomain, Recorded, seal_id};
 
-    const SEAL: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
+    const SEAL: [u8; 16] = *seal_id!("12345678-1234-4234-8234-1234567890ab").as_bytes();
 
     #[test]
     fn unscoped_is_the_empty_binding() {
-        let domain = BindingDomain::of::<()>(SEAL, &(), None).unwrap();
+        let domain = BindingDomain::of::<()>(&SEAL, &(), None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn unscoped_with_a_record_binds_the_record_alone() {
         let domain =
-            BindingDomain::of::<Recorded<(), i64>>(SEAL, &(), Some(PartValue::I64(1))).unwrap();
+            BindingDomain::of::<Recorded<(), i64>>(&SEAL, &(), Some(PartValue::I64(1))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -149,7 +149,7 @@ mod tests {
     #[test]
     fn tenant_binds_one_bytes_keys_part() {
         let tenant = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
-        let domain = BindingDomain::of::<Tenant>(SEAL, &tenant, None).unwrap();
+        let domain = BindingDomain::of::<Tenant>(&SEAL, &tenant, None).unwrap();
 
         // docs/wire-format.md#presets
         assert_eq!(

@@ -1,5 +1,5 @@
-use super::{BindingDomain, PartKind, PartType, PartValue, Recorded, Scope, SealScope};
-use crate::{Error, Seal};
+use super::{BindingDomain, KeyScope, PartKind, PartType, PartValue, Recorded, Scope, SealScope};
+use crate::{EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId};
 
 /// The declared parts of seal `F`'s scope, without its record.
 pub(crate) type PartsOf<F> = <<F as Seal>::Scope as SealScope>::Parts;
@@ -195,9 +195,35 @@ const fn check_record_kind(declared: Option<PartKind>, id: PartKind) {
     }
 }
 
+/// A seal's binding, encoded, with the key scope its keyring is chosen by.
+///
+/// The binding layer never chooses keys: the typed layer asks a key source for
+/// the keyring of `key_scope` and hands the keyring down with `domain`.
+#[derive(Clone, Debug)]
+pub(crate) struct Target {
+    pub(crate) domain: BindingDomain,
+    pub(crate) key_scope: KeyScope,
+}
+
+impl Target {
+    /// Asks `keys` for the keyring of seal `seal` in this target's key scope.
+    pub(crate) fn keyring(
+        &self,
+        seal: SealId,
+        keys: &(impl EncryptionKeySource + ?Sized),
+    ) -> Result<EncryptionKeyring, Error> {
+        keys.encryption_keyring(seal, &self.key_scope)
+    }
+}
+
 /// Encodes the binding of seal `F` under `args`.
-pub(crate) fn domain<F: Seal, A: Args<F>>(args: A) -> Result<BindingDomain, Error> {
-    args.with_parts(|scope, record| BindingDomain::of::<F::Scope>(F::ID, scope, record))
+pub(crate) fn domain<F: Seal, A: Args<F>>(args: A) -> Result<Target, Error> {
+    args.with_parts(|scope, record| {
+        Ok(Target {
+            domain: BindingDomain::of::<F::Scope>(F::ID.as_bytes(), scope, record)?,
+            key_scope: KeyScope::of(scope)?,
+        })
+    })
 }
 
 /// Encodes the binding of seal `F` under `args`, as [`domain`] does, and
@@ -205,26 +231,32 @@ pub(crate) fn domain<F: Seal, A: Args<F>>(args: A) -> Result<BindingDomain, Erro
 #[cfg(feature = "migrate")]
 pub(crate) fn with_domain<F: Seal, A: Args<F>, T>(
     args: A,
-    f: impl FnOnce(BindingDomain, &PartsOf<F>, Option<PartValue<'_>>) -> Result<T, Error>,
+    f: impl FnOnce(Target, &PartsOf<F>, Option<PartValue<'_>>) -> Result<T, Error>,
 ) -> Result<T, Error> {
     args.with_parts(|scope, record| {
-        f(
-            BindingDomain::of::<F::Scope>(F::ID, scope, record)?,
-            scope,
-            record,
-        )
+        let target = Target {
+            domain: BindingDomain::of::<F::Scope>(F::ID.as_bytes(), scope, record)?,
+            key_scope: KeyScope::of(scope)?,
+        };
+        f(target, scope, record)
     })
 }
 
 /// Encodes the binding of seal `F` under `args`, as [`domain`] does, together
-/// with the blind-index domain of its `keys` and `index` parts.
-pub(crate) fn domains<F: Seal, A: Args<F>>(
-    args: A,
-) -> Result<(BindingDomain, BindingDomain), Error> {
+/// with the blind-index domain of its `keys` and `index` parts, which shares its
+/// key scope.
+pub(crate) fn domains<F: Seal, A: Args<F>>(args: A) -> Result<(Target, Target), Error> {
     args.with_parts(|scope, record| {
+        let key_scope = KeyScope::of(scope)?;
         Ok((
-            BindingDomain::of::<F::Scope>(F::ID, scope, record)?,
-            BindingDomain::index_of(F::ID, scope)?,
+            Target {
+                domain: BindingDomain::of::<F::Scope>(F::ID.as_bytes(), scope, record)?,
+                key_scope: key_scope.clone(),
+            },
+            Target {
+                domain: BindingDomain::index_of(F::ID.as_bytes(), scope)?,
+                key_scope,
+            },
         ))
     })
 }

@@ -5,7 +5,10 @@ use zeroize::Zeroizing;
 
 use crate::{
     BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, Error,
-    IndexKeyId, Scope, Seal, binding::PartsOf, id::identifier, keys,
+    IndexKeyId, KeyScope, Scope, Seal,
+    binding::{PartsOf, Target},
+    id::identifier,
+    keys,
 };
 
 mod format;
@@ -226,7 +229,7 @@ pub trait BlindIndexSpec: Sized + 'static {
         args: &IndexArgs<Self>,
         keys: &(impl BlindIndexKeySource + ?Sized),
     ) -> Result<BlindIndex<Self>, Error> {
-        derive_value::<Self>(value, &index_domain::<Self>(args)?, keys)
+        derive_value::<Self>(value, &index_target::<Self>(args)?, keys)
     }
 
     /// Derives one candidate probe in the scope of `args` for every currently
@@ -555,22 +558,22 @@ impl<Spec> fmt::Debug for BlindIndexRef<'_, Spec> {
 /// `Spec`'s seal.
 pub(crate) fn derive_value<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
-    domain: &BindingDomain,
+    target: &Target,
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<BlindIndex<Spec>, Error> {
-    let key = keyring::<Spec>(keys, domain)?.current().clone();
+    let key = keyring::<Spec>(keys, target)?.current().clone();
 
-    derive_value_with_key::<Spec>(value, domain, &key)
+    derive_value_with_key::<Spec>(value, &target.domain, &key)
 }
 
 /// Returns the ID of the key that derives new stored indexes of `Spec` in
 /// `domain`, an index domain of `Spec`'s seal.
 #[cfg(feature = "migrate")]
 pub(crate) fn current_key_id<Spec: BlindIndexSpec>(
-    domain: &BindingDomain,
+    target: &Target,
     keys: &dyn BlindIndexKeySource,
 ) -> Result<IndexKeyId, Error> {
-    Ok(keyring::<Spec>(keys, domain)?.current().id())
+    Ok(keyring::<Spec>(keys, target)?.current().id())
 }
 
 fn derive_value_with_key<Spec: BlindIndexSpec>(
@@ -588,21 +591,21 @@ fn derive_probes<Spec: BlindIndexSpec>(
     args: &IndexArgs<Spec>,
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<Vec<BlindIndex<Spec>>, Error> {
-    probes_in::<Spec>(query, &index_domain::<Spec>(args)?, keys)
+    probes_in::<Spec>(query, &index_target::<Spec>(args)?, keys)
 }
 
 /// Derives one probe of `Spec` in `domain`, an index domain of `Spec`'s seal,
 /// for every readable index generation.
 pub(crate) fn probes_in<Spec: BlindIndexSpec>(
     query: &Spec::Query,
-    domain: &BindingDomain,
+    target: &Target,
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<Vec<BlindIndex<Spec>>, Error> {
     let normalized = Spec::normalize_query(query)?;
 
-    keyring::<Spec>(keys, domain)?
+    keyring::<Spec>(keys, target)?
         .readable()
-        .map(|key| derive_normalized::<Spec>(&normalized, domain, key))
+        .map(|key| derive_normalized::<Spec>(&normalized, &target.domain, key))
         .collect()
 }
 
@@ -612,13 +615,13 @@ fn check_consistency<Spec: BlindIndexSpec>(
     args: &IndexArgs<Spec>,
     keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<bool, Error> {
-    let domain = index_domain::<Spec>(args)?;
+    let target = index_target::<Spec>(args)?;
     let id = stored.index_key_id();
-    let key = keyring::<Spec>(keys, &domain)?
+    let key = keyring::<Spec>(keys, &target)?
         .get(id)
         .cloned()
         .ok_or(Error::UnknownBlindIndexKey(id))?;
-    let derived = derive_value_with_key::<Spec>(value, &domain, &key)?;
+    let derived = derive_value_with_key::<Spec>(value, &target.domain, &key)?;
 
     // Both representations carry Spec::BITS, so their lengths always agree.
     Ok(derived.as_bytes().ct_eq(stored.as_bytes()).into())
@@ -626,16 +629,22 @@ fn check_consistency<Spec: BlindIndexSpec>(
 
 // Blind indexes are domain-separated by their seal and the `keys` and `index`
 // parts of its binding, never by bound-only parts or a record.
-fn index_domain<Spec: BlindIndexSpec>(args: &IndexArgs<Spec>) -> Result<BindingDomain, Error> {
-    BindingDomain::index::<PartsOf<Spec::Seal>>(<Spec::Seal as Seal>::ID, args)
+fn index_target<Spec: BlindIndexSpec>(args: &IndexArgs<Spec>) -> Result<Target, Error> {
+    Ok(Target {
+        domain: BindingDomain::index::<PartsOf<Spec::Seal>>(
+            <Spec::Seal as Seal>::ID.as_bytes(),
+            args,
+        )?,
+        key_scope: KeyScope::of_index::<PartsOf<Spec::Seal>>(args)?,
+    })
 }
 
-// Asks the source for the keyring of the index in the domain's key scope.
+// Asks the source for the keyring of the index in the target's key scope.
 fn keyring<Spec: BlindIndexSpec>(
     keys: &(impl BlindIndexKeySource + ?Sized),
-    domain: &BindingDomain,
+    target: &Target,
 ) -> Result<BlindIndexKeyring, Error> {
-    keys.blind_index_keyring(Spec::ID, domain.key_scope())
+    keys.blind_index_keyring(Spec::ID, &target.key_scope)
 }
 
 fn compare_normalized<Spec: BlindIndexSpec>(

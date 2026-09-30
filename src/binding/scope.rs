@@ -100,6 +100,33 @@ impl KeyScope {
         })
     }
 
+    /// The key scope of the older scope `Old`, taking each of its `keys` parts
+    /// from `scope` by part ID.
+    #[cfg(feature = "migrate")]
+    pub(crate) fn projected<Old: Scope, B: Scope>(scope: &B) -> Result<Self, Error> {
+        let values = scope.values();
+        check_values(B::PARTS, &values.0)?;
+        let keys = keys_parts(Old::PARTS);
+        let values = super::project(&keys, &B::PARTS.iter().zip(&values.0))?;
+
+        Ok(Self::keys_of(keys.iter().zip(&values)))
+    }
+
+    /// The key scope of the older scope `Old`, taking each of its `keys` parts
+    /// from a query's arguments for scope `B`, by part ID.
+    #[cfg(feature = "migrate")]
+    pub(crate) fn index_projected<Old: Scope, B: Scope>(
+        args: &B::IndexArgs,
+    ) -> Result<Self, Error> {
+        let values = B::index_values(args);
+        let specs = B::PARTS.iter().filter(|spec| spec.role.scopes_index());
+        check_values(specs.clone(), &values.0)?;
+        let keys = keys_parts(Old::PARTS);
+        let values = super::project(&keys, &specs.zip(&values.0))?;
+
+        Ok(Self::keys_of(keys.iter().zip(&values)))
+    }
+
     /// The key scope of a binding without `keys` parts.
     #[cfg(any(feature = "migrate", test))]
     pub(crate) fn empty() -> Self {
@@ -124,4 +151,13 @@ impl KeyScope {
 
         Self(keys.collect())
     }
+}
+
+#[cfg(feature = "migrate")]
+fn keys_parts(parts: &[PartSpec]) -> Vec<PartSpec> {
+    parts
+        .iter()
+        .copied()
+        .filter(|spec| spec.role == PartRole::Keys)
+        .collect()
 }

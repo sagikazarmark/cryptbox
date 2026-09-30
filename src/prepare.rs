@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    BindingDomain, BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed,
+    BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed, binding::Target,
     blind::derive_value, keys,
 };
 
@@ -27,7 +27,7 @@ where
 {
     source: &'a F::Value,
     sealed: Sealed<F>,
-    index_domain: BindingDomain,
+    index_target: Target,
     indexes: Vec<PreparedIndex>,
 }
 
@@ -49,15 +49,11 @@ impl<'a, F> Prepared<'a, F>
 where
     F: Seal,
 {
-    pub(crate) const fn new(
-        source: &'a F::Value,
-        sealed: Sealed<F>,
-        index_domain: BindingDomain,
-    ) -> Self {
+    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F>, index_target: Target) -> Self {
         Self {
             source,
             sealed,
-            index_domain,
+            index_target,
             indexes: Vec::new(),
         }
     }
@@ -159,7 +155,7 @@ where
             return Err(Error::DuplicatePreparedIndex(Spec::ID));
         }
 
-        let index = derive_value::<Spec>(self.source, &self.index_domain, keys)?;
+        let index = derive_value::<Spec>(self.source, &self.index_target, keys)?;
         self.indexes.push(PreparedIndex {
             id: Spec::ID,
             bytes: index.into_bytes(),

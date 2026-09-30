@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 
 use super::{PartKind, PartRole, PartSpec, PartValue};
-use crate::{Error, SealId};
+use crate::Error;
 
 // A persistent domain separator, not a display string.
 // See ../../docs/wire-format.md#binding-fingerprint.
@@ -14,7 +14,7 @@ const FINGERPRINT_LABEL: &[u8] = b"cryptbox/binding-fingerprint/v1\0";
 /// The seal ID and part bytes are persistent KDF/AAD inputs, independent of Rust
 /// names. See ../../docs/wire-format.md#binding.
 pub(super) fn encode<'v>(
-    seal: SealId,
+    seal: &[u8; 16],
     parts: impl IntoIterator<Item = (&'v PartSpec, &'v PartValue<'v>)>,
 ) -> Result<Vec<u8>, Error> {
     let mut parts: Vec<_> = parts.into_iter().collect();
@@ -22,7 +22,7 @@ pub(super) fn encode<'v>(
     let count = u16::try_from(parts.len()).map_err(|_| Error::InvalidBinding)?;
 
     let mut encoded = Vec::new();
-    encoded.extend_from_slice(seal.as_bytes());
+    encoded.extend_from_slice(seal);
     encoded.extend_from_slice(&count.to_be_bytes());
     for (spec, value) in parts {
         encoded.extend_from_slice(&spec.id);

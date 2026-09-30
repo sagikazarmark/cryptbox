@@ -3,8 +3,8 @@ use std::{fmt, marker::PhantomData};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{
-    Args, BindingDomain, Codec, EncryptionKeySource, Error, GlobalKeys, KeyId, Prepared, Seal,
-    binding::{domain, domains},
+    Args, Codec, EncryptionKeySource, Error, GlobalKeys, KeyId, Prepared, Seal,
+    binding::{Target, domain, domains},
     bound,
     envelope::validated_key_id,
     keys,
@@ -112,11 +112,13 @@ impl<F: Seal> Sealed<F> {
 
     pub(crate) fn seal_in(
         value: &F::Value,
-        domain: &BindingDomain,
+        target: &Target,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
         let plaintext = F::Codec::encode(value)?;
-        let sealed = bound::seal(domain, F::PADDING, &plaintext, keys)?;
+        let sealed = bound::seal(&target.domain, F::PADDING, &plaintext, || {
+            target.keyring(F::ID, keys)
+        })?;
 
         Ok(Self::from_validated_bytes(sealed))
     }
@@ -141,7 +143,8 @@ impl<F: Seal> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<F::Value, Error> {
-        let plaintext = bound::open(&domain(args)?, &self.bytes, keys)?;
+        let target = domain(args)?;
+        let plaintext = bound::open(&target.domain, &self.bytes, || target.keyring(F::ID, keys))?;
 
         Ok(F::Codec::decode(&plaintext)?)
     }
@@ -160,12 +163,12 @@ impl<F: Seal> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Prepared<'a, F>, Error> {
-        let (domain, index_domain) = domains(args)?;
+        let (target, index_target) = domains(args)?;
 
         Ok(Prepared::new(
             value,
-            Self::seal_in(value, &domain, keys)?,
-            index_domain,
+            Self::seal_in(value, &target, keys)?,
+            index_target,
         ))
     }
 
@@ -192,7 +195,10 @@ impl<F: Seal> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<bool, Error> {
-        bound::needs_reseal(&domain(args)?, F::PADDING, &self.bytes, keys)
+        let target = domain(args)?;
+        bound::needs_reseal(&target.domain, F::PADDING, &self.bytes, || {
+            target.keyring(F::ID, keys)
+        })
     }
 
     /// Opens and reseals this value as `F` currently writes it, under the same
@@ -212,8 +218,14 @@ impl<F: Seal> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
-        let domain = domain(args)?;
-        let (_, sealed) = bound::reseal((&domain, keys), (&domain, keys), F::PADDING, &self.bytes)?;
+        let target = domain(args)?;
+        let keyring = || target.keyring(F::ID, keys);
+        let (_, sealed) = bound::reseal(
+            (&target.domain, keyring),
+            (&target.domain, keyring),
+            F::PADDING,
+            &self.bytes,
+        )?;
 
         Ok(Self::from_validated_bytes(sealed))
     }
@@ -236,9 +248,10 @@ impl<F: Seal> Sealed<F> {
         to: impl Args<F>,
         to_keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Self, Error> {
+        let (from, to) = (domain(from)?, domain(to)?);
         let (_, sealed) = bound::reseal(
-            (&domain(from)?, from_keys),
-            (&domain(to)?, to_keys),
+            (&from.domain, || from.keyring(F::ID, from_keys)),
+            (&to.domain, || to.keyring(F::ID, to_keys)),
             F::PADDING,
             &self.bytes,
         )?;
