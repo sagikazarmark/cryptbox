@@ -61,6 +61,7 @@ uuid = { version = "1.18.1", default-features = false }
 zeroize = { version = "1.8.1", features = ["alloc"], default-features = false }
 
 [dev-dependencies]
+base64 = "0.23.1"
 fs2 = "0.4.3"
 futures-executor = "0.3.34"
 hex = "0.4.3"

@@ -547,6 +547,13 @@ impl<Spec: BlindIndexSpec> TryFrom<Vec<u8>> for BlindIndex<Spec> {
     }
 }
 
+// Stores the index through `Vec<u8>`, as an ORM's `serialize_as` does.
+impl<Spec> From<BlindIndex<Spec>> for Vec<u8> {
+    fn from(index: BlindIndex<Spec>) -> Self {
+        index.into_bytes()
+    }
+}
+
 impl<Spec> AsRef<[u8]> for BlindIndex<Spec> {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()

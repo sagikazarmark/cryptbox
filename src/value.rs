@@ -290,6 +290,13 @@ impl<F: Seal> TryFrom<Vec<u8>> for Sealed<F> {
     }
 }
 
+// Stores the envelope through `Vec<u8>`, as an ORM's `serialize_as` does.
+impl<F: Seal> From<Sealed<F>> for Vec<u8> {
+    fn from(sealed: Sealed<F>) -> Self {
+        sealed.into_bytes()
+    }
+}
+
 impl<F: Seal> AsRef<[u8]> for Sealed<F> {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
