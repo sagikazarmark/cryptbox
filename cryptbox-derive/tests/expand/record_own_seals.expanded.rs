@@ -1,7 +1,7 @@
-#[record(sealed = SealedCustomer)]
 pub struct Customer {
     #[record_id]
     pub id: i64,
+    pub created_at: i64,
     /// The primary contact address.
     #[seal(id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", scope = cryptbox::Tenant)]
     pub email: String,
@@ -48,6 +48,7 @@ const _: () = {
 ///The sealed form of [`Customer`], as it is stored.
 pub struct SealedCustomer {
     pub id: i64,
+    pub created_at: i64,
     /// The primary contact address.
     pub email: ::cryptbox::Sealed<CustomerEmail>,
     note: ::cryptbox::Sealed<PrivateNote>,
@@ -119,6 +120,12 @@ const _: () = {
         type Sealed = SealedCustomer;
         type Scope = cryptbox::Tenant;
         type Keys = cryptbox::Tenant;
+        const SEALS: &'static [::cryptbox::SealId] = &[
+            <CustomerEmail as ::cryptbox::Seal>::ID,
+            <PrivateNote as ::cryptbox::Seal>::ID,
+        ];
+        const RECORD_ID: &'static str = "id";
+        const PLAINTEXT: &'static [&'static str] = &["created_at"];
         fn seal<K>(
             &self,
             binding: &Self::Scope,
@@ -132,6 +139,7 @@ const _: () = {
             let note = Self::seal_note(&self.note, binding, &self.id, keys)?;
             ::core::result::Result::Ok(SealedCustomer {
                 id: ::core::clone::Clone::clone(&self.id),
+                created_at: ::core::clone::Clone::clone(&self.created_at),
                 email,
                 note,
             })
@@ -163,7 +171,12 @@ const _: () = {
                     >(binding, record_id),
                     keys,
                 )?;
-            ::core::result::Result::Ok(Self { id: sealed.id, email, note })
+            ::core::result::Result::Ok(Self {
+                id: sealed.id,
+                created_at: sealed.created_at,
+                email,
+                note,
+            })
         }
     }
 };

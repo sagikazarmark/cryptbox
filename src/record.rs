@@ -1,5 +1,5 @@
 use crate::{
-    BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, FromParts, Scope, Seal,
+    BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, FromParts, Scope, Seal, SealId,
 };
 
 /// A row of plaintext values sealed and opened together under one binding.
@@ -38,6 +38,22 @@ pub trait Record: Sized {
     /// The keys view every sealed field's seal shares, [`Seal::Keys`], by which
     /// the key source is asked.
     type Keys: FromParts;
+
+    /// The seal ID of each sealed field, in field order.
+    ///
+    /// The [schema manifest](crate::schema::Manifest::record) names the record
+    /// by them.
+    const SEALS: &'static [SealId];
+
+    /// The name of the field that holds the record ID.
+    const RECORD_ID: &'static str;
+
+    /// The names of the other fields stored as they are, in field order.
+    ///
+    /// Field names are the one Rust name the [schema
+    /// manifest](crate::schema::Manifest::record) lists, so a field that should
+    /// have been sealed shows up in its snapshot.
+    const PLAINTEXT: &'static [&'static str];
 
     /// Encrypts every sealed field under `binding` and the record's ID, and
     /// derives its blind indexes.

@@ -206,6 +206,12 @@ const _: () = {
         type Sealed = SealedCustomer;
         type Scope = <<CustomerEmail as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts;
         type Keys = <CustomerEmail as ::cryptbox::Seal>::Keys;
+        const SEALS: &'static [::cryptbox::SealId] = &[
+            <CustomerEmail as ::cryptbox::Seal>::ID,
+            <CustomerNote as ::cryptbox::Seal>::ID,
+        ];
+        const RECORD_ID: &'static str = "id";
+        const PLAINTEXT: &'static [&'static str] = &[];
         fn seal<K>(
             &self,
             binding: &Self::Scope,

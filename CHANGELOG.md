@@ -276,6 +276,14 @@
   `#[blind_index(Spec as column, …)]`. A record field without `#[seal…]` is
   stored as it is, so `plaintext` and `record_id = field` are gone.
 
+- **Breaking:** a record lists its schema for the manifest (ADR-0009).
+  `Record` gains `SEALS`, the sealed fields' seal IDs, `RECORD_ID`, the record
+  ID field's name, and `PLAINTEXT`, the other plaintext fields' names, which
+  `#[derive(Record)]` generates. `schema::Manifest::record::<R>()` lists them,
+  so a field that should have been sealed shows up as a snapshot diff; field
+  names are the manifest's one Rust name. The sealed struct's name defaults to
+  `Sealed` and the record's name, so `#[record(sealed = …)]` is optional.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

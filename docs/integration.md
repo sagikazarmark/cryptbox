@@ -68,7 +68,9 @@ Stored bytes do not describe this schema, so check it in tests:
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered seal
   (ID, codec ID, padding, whether it binds a record, the binding
   fingerprint and parts with their kinds and roles in the keys view, and the
-  shred unit) and index (ID, seal, bits, normalizer, and index scope). `Manifest::custody::<F>("…")` adds a
+  shred unit), index (ID, seal, bits, normalizer, and index scope), and
+  record (its seals, record ID field, and plaintext fields by name, so a field
+  that should have been sealed shows up). `Manifest::custody::<F>("…")` adds a
   custody label to a seal, such as `"payments KMS, one key per org"`, so
   reviewers and auditors see which keys the application passes for it.
   Compare the `Display` output with a committed snapshot, and
@@ -83,7 +85,8 @@ The [custom-field example](../examples/custom_field/main.rs)'s
 `stored_bytes_and_schema_match_their_committed_fixtures` test runs the golden-bytes
 and manifest checks.
 The manifest names IDs, never Rust types, so its output is the same on every
-toolchain and does not change when a marker is renamed or moved.
+toolchain and does not change when a marker is renamed or moved. A record's
+field names are the one exception: a field stored as it is has no ID.
 
 A custody label is declarative: the library cannot see which keyring an
 application chooses. Test the choice itself with

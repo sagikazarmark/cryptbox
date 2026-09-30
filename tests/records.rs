@@ -106,6 +106,10 @@ impl Record for Customer {
     type Scope = Tenant;
     type Keys = Tenant;
 
+    const SEALS: &'static [SealId] = &[CustomerEmail::ID, CustomerNote::ID];
+    const RECORD_ID: &'static str = "id";
+    const PLAINTEXT: &'static [&'static str] = &[];
+
     fn seal<K>(&self, binding: &Tenant, keys: &K) -> Result<SealedCustomer, Error>
     where
         K: EncryptionKeySource<Tenant> + BlindIndexKeySource<Tenant> + ?Sized,

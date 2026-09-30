@@ -1,8 +1,8 @@
 #[derive(cryptbox::Record)]
-#[record(sealed = SealedCustomer)]
 pub struct Customer {
     #[record_id]
     pub id: i64,
+    pub created_at: i64,
     /// The primary contact address.
     #[seal(id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", scope = cryptbox::Tenant)]
     pub email: String,

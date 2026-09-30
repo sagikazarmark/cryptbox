@@ -197,11 +197,13 @@ rejects a record that omits one.
 <!-- Agent guidance: a “record” is the whole row, and its “fields” are the struct's members; a seal “binds a record” when its scope is `Recorded<S, Id>`, which adds the record ID as a bound-only part under the nil part ID. A record passes its ID to every sealed field and binds it only where a seal binds one. Avoid “entity” or “model” for a record. -->
 
 **Schema manifest**:
-A reviewable listing of registered seals and blind indexes with their
+A reviewable listing of registered seals, blind indexes, and records with their
 persistent schema: seal ID, codec ID, padding, record kind, binding declaration
-(fingerprint, parts, kinds, and whether each is in the keys view), shred unit, index ID, precision,
-normalizer name, and index scope. It names IDs, never Rust types, so its output is the same on
-every toolchain. A seal may carry a custody label, a declarative note of which
+(fingerprint, parts, kinds, and whether each is in the keys view), shred unit,
+index ID, precision, normalizer name, index scope, and a record's seals and
+plaintext fields. It names IDs, never Rust types, so its output is the same on
+every toolchain; a record's plaintext fields, which have no ID, are listed by
+name. A seal may carry a custody label, a declarative note of which
 keys the application passes for it.
 Applications compare it with a committed snapshot in CI.
 <!-- Agent guidance: the codec ID and normalizer name are reported, never stored in ciphertext or indexes. A custody label is documentation, not routing: choosing keyrings stays application code (ADR-0006), and `testing::assert_sealed_under` is how an application tests that choice. -->

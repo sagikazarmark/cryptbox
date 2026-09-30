@@ -616,7 +616,7 @@ struct Org {
 
 #[derive(Seal)]
 #[seal(
-    id = "3e7a9c1f-5b2d-4f60-8e14-a2c6d0b8f375",
+    id = "882016eb-21d9-42df-b559-82e4a82151f6",
     value = String,
     scope = OrgProject,
     keys = ProjectOrg,
@@ -627,7 +627,7 @@ struct OrgProjectEmail;
 /// Without `scope`, a derived blind index is scoped by its seal's whole scope.
 #[derive(BlindIndexSpec)]
 #[blind_index(
-    id = "6d2f8b4a-0c7e-4a95-b1d3-9e5f7a2c4b86",
+    id = "ef3a8a68-92f2-4e45-bebf-c4f112c0d540",
     seal = OrgProjectEmail,
     bits = 32,
     query = str,

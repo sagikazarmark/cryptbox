@@ -6,7 +6,8 @@ use std::{
 };
 
 use crate::{
-    BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartSpec, Scope, Seal, SealId, SealScope,
+    BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartSpec, Record, Scope, Seal, SealId,
+    SealScope,
     args::{KeysOf, PartsOf},
     binding::{check_keys_view, declaration_fingerprint},
 };
@@ -32,10 +33,17 @@ use crate::{
 ///   tenant, shreds only that coarser unit; say so in the custody label;
 /// - `custody`: the label given with [`Self::custody`], if any.
 ///
-/// Each index lists its index ID, seal ID, bits, and normalizer name.
+/// Each index lists its index ID, seal ID, bits, normalizer name, and the parts
+/// of its index scope.
+///
+/// Each record lists the seal IDs of its sealed fields, the field that holds
+/// its record ID, and the names of its other plaintext fields. A field stored
+/// as it is has no ID, so the manifest names it, and a field that should have
+/// been sealed shows up in the snapshot.
 ///
 /// The output names IDs, never Rust types, so it is the same on every
-/// toolchain and survives renaming or moving a marker. The value type is not
+/// toolchain and survives renaming or moving a marker; a record's field names
+/// are the one exception. The value type is not
 /// listed: the codec ID stands for its stored bytes, and golden-bytes fixtures
 /// ([`assert_encoding`](crate::testing::assert_encoding)) pin them.
 ///
@@ -76,6 +84,15 @@ use crate::{
 pub struct Manifest {
     seals: Vec<SealEntry>,
     indexes: Vec<IndexEntry>,
+    records: Vec<RecordEntry>,
+}
+
+#[derive(Debug)]
+struct RecordEntry {
+    marker: TypeId,
+    seals: &'static [SealId],
+    record_id: &'static str,
+    plaintext: &'static [&'static str],
 }
 
 #[derive(Debug)]
@@ -181,6 +198,25 @@ impl Manifest {
                 normalizer: I::NORMALIZER,
                 parts: <I::Scope as Scope>::PARTS,
                 keys: <KeysOf<I::Seal> as Scope>::PARTS,
+            });
+        }
+        self
+    }
+
+    /// Registers record `R`: its sealed fields' seal IDs and its plaintext
+    /// fields' names.
+    ///
+    /// Register its seals separately with [`Self::seal`]. Registering it again
+    /// changes nothing.
+    #[must_use]
+    pub fn record<R: Record + 'static>(mut self) -> Self {
+        let marker = TypeId::of::<R>();
+        if self.records.iter().all(|record| record.marker != marker) {
+            self.records.push(RecordEntry {
+                marker,
+                seals: R::SEALS,
+                record_id: R::RECORD_ID,
+                plaintext: R::PLAINTEXT,
             });
         }
         self
@@ -317,6 +353,21 @@ impl fmt::Display for Manifest {
                     kind_name(part.kind()),
                     role_name(part, index.keys),
                 )?;
+            }
+        }
+
+        for record in &self.records {
+            writeln!(formatter, "record")?;
+            write!(formatter, "  seals:")?;
+            for (position, seal) in record.seals.iter().enumerate() {
+                let separator = if position == 0 { " " } else { ", " };
+                write!(formatter, "{separator}{seal}")?;
+            }
+            writeln!(formatter)?;
+            writeln!(formatter, "  record id: {}", record.record_id)?;
+            match record.plaintext {
+                [] => writeln!(formatter, "  plaintext: none")?,
+                fields => writeln!(formatter, "  plaintext: {}", fields.join(", "))?,
             }
         }
 

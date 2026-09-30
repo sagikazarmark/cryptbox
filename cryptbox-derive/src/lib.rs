@@ -400,7 +400,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///
 /// | `#[record(…)]` key | Required | Meaning |
 /// | --- | --- | --- |
-/// | `sealed = Name` | yes | The name of the generated sealed struct. |
+/// | `sealed = Name` | no | The name of the generated sealed struct. Defaults to `Sealed` and the record's name, such as `SealedCustomer`. |
 /// | `attr(…)` | no | Attributes for the sealed struct, such as `attr(derive(sqlx::FromRow))`. |
 ///
 /// On the fields:
@@ -413,7 +413,9 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 /// | `#[seal]` | Sealed as its own type, which must be a seal, such as a transparent one. |
 /// | `#[blind_index(S as column, …)]` | With a seal: the blind indexes it writes, each in a `BlindIndex<S>` field named `column`. |
 ///
-/// A field without `#[seal…]` is stored as it is. A field's own seal takes:
+/// A field without `#[seal…]` is stored as it is. The schema manifest lists
+/// such fields by name (`Manifest::record`), so a field that should have been
+/// sealed shows up in a snapshot review. A field's own seal takes:
 ///
 /// | `#[seal(…)]` key | Meaning |
 /// | --- | --- |
@@ -459,7 +461,6 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
 /// #[derive(Clone, cryptbox::Record)]
-/// #[record(sealed = SealedCustomer)]
 /// pub struct Customer {
 ///     #[record_id]
 ///     pub id: i64,
@@ -471,6 +472,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///     pub email: String,
 ///     #[seal(id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38", scope = cryptbox::Tenant)]
 ///     pub note: String,
+///     pub created_at: i64,
 /// }
 ///
 /// #[derive(cryptbox::BlindIndexSpec)]
@@ -514,6 +516,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 /// #     pub id: i64,
 /// #     pub email: String,
 /// #     pub note: String,
+/// #     pub created_at: i64,
 /// # }
 /// /// The seal of `Customer::email`, which `#[derive(Record)]` declares.
 /// pub struct CustomerEmail;
@@ -548,6 +551,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///     /// The `EmailLookup` blind index of `email`.
 ///     pub email_lookup: BlindIndex<EmailLookup>,
 ///     pub note: Sealed<CustomerNote>,
+///     pub created_at: i64,
 /// }
 ///
 /// const _: () = {
@@ -594,6 +598,10 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///         type Scope = Tenant;
 ///         type Keys = Tenant;
 ///
+///         const SEALS: &'static [SealId] = &[<CustomerEmail as Seal>::ID, <CustomerNote as Seal>::ID];
+///         const RECORD_ID: &'static str = "id";
+///         const PLAINTEXT: &'static [&'static str] = &["created_at"];
+///
 ///         fn seal<K>(&self, binding: &Self::Scope, keys: &K) -> Result<SealedCustomer, Error>
 ///         where
 ///             K: EncryptionKeySource<Self::Keys> + BlindIndexKeySource<Self::Keys> + ?Sized,
@@ -606,6 +614,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///                 email,
 ///                 email_lookup,
 ///                 note,
+///                 created_at: Clone::clone(&self.created_at),
 ///             })
 ///         }
 ///
@@ -623,7 +632,12 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///                 keys,
 ///             )?;
 ///
-///             Ok(Self { id: sealed.id, email, note })
+///             Ok(Self {
+///                 id: sealed.id,
+///                 email,
+///                 note,
+///                 created_at: sealed.created_at,
+///             })
 ///         }
 ///     }
 ///

@@ -450,3 +450,65 @@ seal 7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13
         );
     }
 }
+
+#[cfg(feature = "derive")]
+mod records {
+    use cryptbox::{Seal, Tenant, schema::Manifest};
+
+    /// A record whose stored struct takes its default name, `SealedCustomer`.
+    #[derive(cryptbox::Record)]
+    pub struct Customer {
+        #[record_id]
+        pub id: i64,
+        #[seal(id = "dd965aff-c187-49ed-86fe-b75e63fd228d", scope = Tenant)]
+        pub email: String,
+        pub created_at: i64,
+        pub r#type: String,
+        #[seal(id = "c173ce33-731d-4051-b1d7-e5dd549c5371", scope = Tenant)]
+        pub note: String,
+    }
+
+    #[test]
+    fn manifest_lists_a_records_seals_and_plaintext_fields() {
+        let manifest = Manifest::new().record::<Customer>().record::<Customer>();
+
+        assert_eq!(
+            manifest.to_string(),
+            "\
+record
+  seals: dd965aff-c187-49ed-86fe-b75e63fd228d, c173ce33-731d-4051-b1d7-e5dd549c5371
+  record id: id
+  plaintext: created_at, type
+"
+        );
+        assert_eq!(
+            <CustomerEmail as Seal>::ID.to_string(),
+            "dd965aff-c187-49ed-86fe-b75e63fd228d"
+        );
+    }
+
+    #[test]
+    fn a_record_without_other_plaintext_fields_says_so() {
+        #[derive(cryptbox::Record)]
+        struct Note {
+            #[record_id]
+            id: i64,
+            #[seal(id = "4f3ca6a2-a683-49b7-8d1a-718b790f7154")]
+            body: String,
+        }
+
+        assert!(
+            Manifest::new()
+                .record::<Note>()
+                .to_string()
+                .ends_with("  record id: id\n  plaintext: none\n")
+        );
+    }
+
+    #[test]
+    fn a_records_stored_struct_defaults_to_sealed_and_its_name() {
+        fn stored<R: cryptbox::Record<Sealed = SealedCustomer>>() {}
+
+        stored::<Customer>();
+    }
+}

@@ -3,12 +3,11 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{
-    Attribute, Data, DeriveInput, Fields, Ident, LitStr, Meta, Path, Type, spanned::Spanned,
+    Attribute, Data, DeriveInput, Fields, Ident, LitStr, Meta, Path, Type, ext::IdentExt,
+    spanned::Spanned,
 };
 
-use crate::attr::{
-    Attrs, Errors, IndexColumn, Key, Padding, UuidLiteral, parse_index_columns, required,
-};
+use crate::attr::{Attrs, Errors, IndexColumn, Key, Padding, UuidLiteral, parse_index_columns};
 use crate::seal::seal_items;
 
 /// The keys of the struct's `#[record(…)]`.
@@ -91,20 +90,14 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let krate = attrs.krate();
     let name = &input.ident;
 
-    let sealed_name = required(
-        attrs.sealed.take(),
-        &attrs,
-        Key::Sealed,
-        name,
-        "SealedName",
-        &mut errors,
-    );
+    // The name resolves where the record is declared.
+    let sealed_name = attrs
+        .sealed
+        .take()
+        .unwrap_or_else(|| format_ident!("Sealed{}", name.unraw(), span = name.span()));
     let fields = struct_fields(input, &mut errors);
     let members = parse_members(name, &fields, &mut errors);
     errors = errors.check()?;
-    let Some(sealed_name) = sealed_name else {
-        unreachable!("missing keys are reported above");
-    };
     check_members(name, &members, &mut errors);
     errors.finish()?;
     let record = members
@@ -142,6 +135,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         .flat_map(|member| indexed_by(&krate, name, member));
     let seal = seal_fn(&krate, &sealed_name, record, &members);
     let open = open_fn(&krate, &sealed_name, record, &members);
+    let schema = schema_consts(&krate, record, &members);
 
     Ok(quote! {
         #(#own_seals)*
@@ -161,6 +155,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
                 type Sealed = #sealed_name;
                 type Scope = #record_scope;
                 type Keys = #record_keys;
+
+                #schema
 
                 #seal
 
@@ -810,4 +806,27 @@ fn own_seal(
             }
         };
     })
+}
+
+/// The record's schema for the manifest: its seals' IDs, the record ID's field,
+/// and its other plaintext fields, by name and in field order.
+fn schema_consts(krate: &Path, record: &Ident, members: &[Member<'_>]) -> TokenStream {
+    let seals = members
+        .iter()
+        .filter_map(|member| member.sealing.as_ref())
+        .map(|sealing| {
+            let seal = &sealing.seal;
+            quote!(<#seal as #krate::Seal>::ID)
+        });
+    let record = record.unraw().to_string();
+    let plaintext = members
+        .iter()
+        .filter(|member| member.sealing.is_none() && !member.record_id)
+        .map(|member| member.ident.unraw().to_string());
+
+    quote! {
+        const SEALS: &'static [#krate::SealId] = &[#(#seals),*];
+        const RECORD_ID: &'static str = #record;
+        const PLAINTEXT: &'static [&'static str] = &[#(#plaintext),*];
+    }
 }

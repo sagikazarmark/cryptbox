@@ -118,7 +118,7 @@ pub struct Org {
 
 #[derive(cryptbox::BlindIndexSpec)]
 #[blind_index(
-    id = "5b0e3c9a-7d21-4f86-a4b3-0c8e2f6d9a15",
+    id = "ab78afa9-7aaa-499c-8239-037b7e136130",
     seal = CustomerEmail,
     scope = Org,
     bits = 32,
