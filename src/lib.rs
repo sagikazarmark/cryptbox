@@ -193,6 +193,7 @@ mod record;
 pub mod restate;
 pub mod schema;
 mod seal;
+mod secret;
 #[cfg(feature = "serde")]
 mod serde_impl;
 #[cfg(feature = "sqlx-postgres")]
@@ -233,7 +234,8 @@ pub use padding::Padding;
 pub use prepare::Prepared;
 pub use record::{IndexedBy, Record, open_matching};
 pub use seal::{Seal, SealId};
-pub use value::{Plain, Sealed, Secret};
+pub use secret::Secret;
+pub use value::{Plain, Sealed};
 
 // Paths that derive-generated code names; not public API.
 #[doc(hidden)]

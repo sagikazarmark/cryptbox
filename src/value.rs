@@ -1,7 +1,5 @@
 use std::{fmt, marker::PhantomData};
 
-use zeroize::{Zeroize, Zeroizing};
-
 use crate::{
     Args, Codec, EncryptionKeySource, Error, GlobalKeys, KeyId, Prepared, Seal,
     args::{Target, domain, domains},
@@ -16,7 +14,7 @@ use crate::{
 /// This is what applications store. [`Self::seal`] encodes, pads, and encrypts a
 /// value; [`Self::open`] authenticates and decrypts it under the same
 /// [binding arguments](Args), and returns the bare [`Seal::Value`]. Plaintext
-/// hygiene comes from the value type, such as [`Secret`].
+/// hygiene comes from the value type, such as [`Secret`](crate::Secret).
 ///
 /// Construction from bytes validates only the envelope structure. Authenticity
 /// is established by opening. `F` is not encoded in the envelope, so the type
@@ -337,7 +335,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// `Plain` contains plaintext while it is in application memory. It redacts
 /// `Debug`, does not implement `Display`, `Deref`, `PartialEq`, or Serde, and
 /// requires explicit access through [`Self::expose_secret`]. It does not
-/// zeroize arbitrary values; use [`Secret`] when the value supports [`Zeroize`].
+/// zeroize arbitrary values; use [`Secret`](crate::Secret) when the value supports [`Zeroize`](zeroize::Zeroize).
 ///
 /// ```
 /// use cryptbox::{Seal, SealId, Padding, Plain, Utf8};
@@ -535,50 +533,5 @@ where
 impl<F: Seal, K> fmt::Debug for Plain<F, K> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Plain([REDACTED])")
-    }
-}
-
-/// Plaintext with zeroization on drop and explicit access semantics.
-///
-/// Drop invokes `T`'s [`Zeroize`] implementation. Cloning creates a separate `T`
-/// with its own lifetime; it does not share a single erasure boundary. This cannot
-/// erase previous copies, superseded allocations, or OS copies. For an opened
-/// `String`, use `Secret::new(sealed.open(args, keys)?)`.
-/// A seal can also take `Secret<String>` or `Secret<Vec<u8>>` as its value type: their
-/// default codecs ([`crate::Utf8`], [`crate::Raw`]) write the same bytes.
-/// See the [custom-field example] and [ownership reference].
-///
-#[doc = concat!(
-    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
-)]
-pub struct Secret<T: Zeroize> {
-    value: Zeroizing<T>,
-}
-
-impl<T: Zeroize> Secret<T> {
-    /// Wraps plaintext that will be zeroized on drop.
-    pub fn new(value: T) -> Self {
-        Self {
-            value: Zeroizing::new(value),
-        }
-    }
-
-    /// Explicitly exposes the plaintext value.
-    #[must_use]
-    pub fn expose_secret(&self) -> &T {
-        &self.value
-    }
-}
-
-impl<T: Clone + Zeroize> Clone for Secret<T> {
-    fn clone(&self) -> Self {
-        Self::new((*self.value).clone())
-    }
-}
-
-impl<T: Zeroize> fmt::Debug for Secret<T> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Secret([REDACTED])")
     }
 }
