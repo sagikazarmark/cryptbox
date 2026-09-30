@@ -14,14 +14,7 @@ use crate::seal::seal_items;
 const KEYS: &[Key] = &[Key::Sealed, Key::Attr, Key::Crate];
 
 /// The keys of a field's own `#[seal(…)]`.
-const OWN_SEAL_KEYS: &[Key] = &[
-    Key::Id,
-    Key::Scope,
-    Key::Keys,
-    Key::Codec,
-    Key::Padding,
-    Key::Name,
-];
+const OWN_SEAL_KEYS: &[Key] = &[Key::Id, Key::Scope, Key::Codec, Key::Padding, Key::Name];
 
 /// One struct field of the record, and how it is stored.
 struct Member<'a> {
@@ -46,7 +39,6 @@ struct OwnSeal {
     name: Ident,
     id: UuidLiteral,
     scope: Option<Type>,
-    keys: Option<Type>,
     codec: Option<Type>,
     padding: Option<Padding>,
 }
@@ -57,13 +49,6 @@ impl OwnSeal {
         self.scope
             .as_ref()
             .map_or_else(|| quote!(()), |scope| quote!(#scope))
-    }
-
-    /// The keys view, which defaults to the declared scope.
-    fn keys(&self) -> TokenStream {
-        self.keys
-            .as_ref()
-            .map_or_else(|| self.scope(), |keys| quote!(#keys))
     }
 }
 
@@ -110,15 +95,12 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         unreachable!("a record without sealed fields is reported above");
     };
     // A field's own seal may be private, so the record names its declared scope
-    // and keys view rather than a projection through it.
-    let (record_scope, record_keys) = if let Some(own) = &first.own {
-        (own.scope(), own.keys())
+    // rather than a projection through it.
+    let record_scope = if let Some(own) = &first.own {
+        own.scope()
     } else {
         let seal = &first.seal;
-        (
-            quote!(<<#seal as #krate::Seal>::Scope as #krate::SealScope>::Parts),
-            quote!(<#seal as #krate::Seal>::Keys),
-        )
+        quote!(<<#seal as #krate::Seal>::Scope as #krate::SealScope>::Parts)
     };
     let own_seals = members
         .iter()
@@ -154,7 +136,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             impl #krate::Record for #name {
                 type Sealed = #sealed_name;
                 type Scope = #record_scope;
-                type Keys = #record_keys;
 
                 #schema
 
@@ -344,7 +325,6 @@ fn parse_seal(
             name: seal_name,
             id,
             scope: attrs.scope.take(),
-            keys: attrs.keys.take(),
             codec: attrs.codec.take(),
             padding: attrs.padding.take(),
         }),
@@ -777,18 +757,8 @@ fn own_seal(
     );
     let scope = own.scope();
     let scope = quote!(#krate::Recorded<#scope, #record_ty>);
-    let keys = own.keys();
     let specs: Vec<_> = indexes.iter().map(|index| index.spec.clone()).collect();
-    let items = seal_items(
-        krate,
-        id,
-        &padding,
-        &quote!(#value),
-        &codec,
-        &scope,
-        &keys,
-        &specs,
-    );
+    let items = seal_items(krate, id, &padding, &quote!(#value), &codec, &scope, &specs);
 
     Some(quote! {
         #[doc = #doc]

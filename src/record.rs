@@ -1,4 +1,4 @@
-use crate::{BlindIndexSpec, EncryptionKeys, Error, FromParts, RecordKeys, Scope, Seal, SealId};
+use crate::{BlindIndexSpec, EncryptionKeys, Error, RecordKeys, Scope, Seal, SealId};
 
 /// A row of plaintext values sealed and opened together under one binding.
 ///
@@ -7,8 +7,7 @@ use crate::{BlindIndexSpec, EncryptionKeys, Error, FromParts, RecordKeys, Scope,
 /// each field's blind indexes; [`Self::open`] authenticates and opens them.
 /// Plaintext fields, such as the record ID, are copied as they are.
 ///
-/// Every sealed field shares the record's [`Scope`] and its
-/// [keys view](Self::Keys), so one set of keys serves the whole record, and each
+/// Every sealed field shares the record's [`Scope`], and each
 /// field whose seal scope is [`Recorded`](crate::Recorded) is also bound to the
 /// record's ID. The
 /// record ID is never encrypted, so it can be read before the row is opened. The
@@ -32,9 +31,6 @@ pub trait Record: Sized {
 
     /// The binding every sealed field of the record shares.
     type Scope: Scope;
-
-    /// The keys view every sealed field's seal shares, [`Seal::Keys`].
-    type Keys: FromParts;
 
     /// The seal ID of each sealed field, in field order.
     ///

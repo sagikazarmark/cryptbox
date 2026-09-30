@@ -18,7 +18,6 @@ impl Seal for EmailSeal {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 

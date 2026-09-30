@@ -31,7 +31,6 @@ impl Seal for ManualUserEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -398,13 +397,6 @@ struct OrgProject {
     project: i64,
 }
 
-/// The keys view of [`OrgProject`]: its org.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
-struct ProjectOrg {
-    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-    org: Vec<u8>,
-}
-
 /// A view of [`OrgProject`]: the org and the project, which a project search
 /// knows.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
@@ -472,7 +464,6 @@ fn a_derived_scope_is_built_back_from_its_part_values() {
     id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",
     value = String,
     scope = cryptbox::Recorded<OrgProject, i64>,
-    keys = ProjectOrg,
 )]
 struct ProjectNote;
 
@@ -485,7 +476,6 @@ impl Seal for ManualProjectNote {
     type Value = String;
     type Codec = Utf8;
     type Scope = cryptbox::Recorded<ManualOrgProject, i64>;
-    type Keys = ProjectOrg;
     type Indexes = ();
 }
 
@@ -517,7 +507,6 @@ fn a_derived_bound_seal_opens_values_of_its_manual_equivalent() {
     id = "4b8e2d6f-1a3c-4e57-b9d0-6f2a4c8e1b35",
     value = String,
     scope = OrgProject,
-    keys = ProjectOrg,
     indexes(ProjectEmailLookup),
 )]
 struct ProjectEmail;
@@ -587,7 +576,6 @@ struct Org {
     id = "882016eb-21d9-42df-b559-82e4a82151f6",
     value = String,
     scope = OrgProject,
-    keys = ProjectOrg,
     indexes(ProjectEmailByOrg),
 )]
 struct OrgProjectEmail;

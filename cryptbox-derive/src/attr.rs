@@ -23,7 +23,6 @@ pub(crate) enum Key {
     Normalizer,
     Project,
     Scope,
-    Keys,
     Indexes,
     Sealed,
     Attr,
@@ -32,7 +31,7 @@ pub(crate) enum Key {
 }
 
 impl Key {
-    const ALL: [Self; 18] = [
+    const ALL: [Self; 17] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -45,7 +44,6 @@ impl Key {
         Self::Normalizer,
         Self::Project,
         Self::Scope,
-        Self::Keys,
         Self::Indexes,
         Self::Sealed,
         Self::Attr,
@@ -67,7 +65,6 @@ impl Key {
             Self::Normalizer => "normalizer",
             Self::Project => "project",
             Self::Scope => "scope",
-            Self::Keys => "keys",
             Self::Indexes => "indexes",
             Self::Sealed => "sealed",
             Self::Attr => "attr",
@@ -146,7 +143,6 @@ pub(crate) struct Attrs {
     pub(crate) normalizer: Option<LitStr>,
     pub(crate) project: Option<Path>,
     pub(crate) scope: Option<Type>,
-    pub(crate) keys: Option<Type>,
     pub(crate) indexes: Option<Vec<Type>>,
     pub(crate) sealed: Option<Ident>,
     pub(crate) name: Option<Ident>,
@@ -179,7 +175,6 @@ impl Attrs {
             normalizer: None,
             project: None,
             scope: None,
-            keys: None,
             indexes: None,
             sealed: None,
             name: None,
@@ -269,7 +264,6 @@ impl Attrs {
             Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
             Key::Scope => self.scope = Some(input.parse()?),
-            Key::Keys => self.keys = Some(input.parse()?),
             Key::Sealed => self.sealed = Some(input.parse()?),
             Key::Name => self.name = Some(input.parse()?),
             Key::Transparent | Key::Indexes | Key::Attr => {

@@ -16,7 +16,6 @@ impl Seal for CustomerEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Recorded<Tenant, i64>;
-    type Keys = Tenant;
     type Indexes = (EmailLookup,);
 }
 
@@ -29,7 +28,6 @@ impl Seal for CustomerNote {
     type Value = String;
     type Codec = Utf8;
     type Scope = Tenant;
-    type Keys = Tenant;
     type Indexes = ();
 }
 
@@ -104,7 +102,6 @@ impl Customer {
 impl Record for Customer {
     type Sealed = SealedCustomer;
     type Scope = Tenant;
-    type Keys = Tenant;
 
     const SEALS: &'static [SealId] = &[CustomerEmail::ID, CustomerNote::ID];
     const RECORD_ID: &'static str = "id";

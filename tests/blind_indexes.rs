@@ -20,7 +20,6 @@ impl Seal for EmailSeal {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -32,7 +31,6 @@ impl Seal for PhoneSeal {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -229,7 +227,6 @@ impl Seal for PersonSeal {
     type Value = Person;
     type Codec = PersonCodec;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -464,29 +461,6 @@ struct OrgWorkspace {
     workspace: Vec<u8>,
 }
 
-/// The keys view of [`OrgWorkspace`]: its org.
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct Org([u8; 16]);
-
-impl Scope for Org {
-    const PARTS: &'static [PartSpec] = &[PartSpec::new(
-        part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
-        PartKind::Uuid,
-    )];
-    fn values(&self) -> PartValues<'_> {
-        PartValues::from([PartValue::Uuid(self.0)])
-    }
-}
-
-impl FromParts for Org {
-    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
-        match *values {
-            [PartValue::Uuid(org)] => Ok(Self(org)),
-            _ => Err(Error::InvalidBinding),
-        }
-    }
-}
-
 /// The index scope of a ticket search: the org and the region.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct OrgRegion {
@@ -552,7 +526,6 @@ impl Seal for TicketEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Recorded<OrgWorkspace, i64>;
-    type Keys = Org;
     type Indexes = (TicketEmailExact,);
 }
 
@@ -685,85 +658,5 @@ fn a_stored_index_is_consistent_only_under_its_own_scope() {
     );
     assert!(
         !TicketEmailExact::is_consistent_with(&value, &stored, &org_region(1, 8), &keys).unwrap()
-    );
-}
-
-/// A team scopes keys with opaque bytes, which may be supplied empty.
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct Team(Vec<u8>);
-
-impl Scope for Team {
-    const PARTS: &'static [PartSpec] = &[PartSpec::new(
-        part_id!("5d9a2c41-7e3b-4f80-9b16-c2a4e8d07f53"),
-        PartKind::Bytes,
-    )];
-    fn values(&self) -> PartValues<'_> {
-        PartValues::from([PartValue::Bytes(&self.0)])
-    }
-}
-
-impl FromParts for Team {
-    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
-        match *values {
-            [PartValue::Bytes(team)] => Ok(Self(team.to_vec())),
-            _ => Err(Error::InvalidBinding),
-        }
-    }
-}
-
-struct TeamEmail;
-
-impl Seal for TeamEmail {
-    const ID: cryptbox::SealId = seal_id!("e0000000-0000-4000-8000-00000000000e");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
-    type Scope = Team;
-    type Keys = Team;
-    type Indexes = (TeamEmailExact,);
-}
-
-struct TeamEmailExact;
-
-impl BlindIndexSpec for TeamEmailExact {
-    type Seal = TeamEmail;
-    type Scope = Team;
-    const ID: IndexId = index_id!("f0000000-0000-4000-8000-00000000000f");
-    const BITS: u16 = 32;
-    const NORMALIZER: &'static str = "email/1";
-    type Query = str;
-
-    fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(normalize_email(query))
-    }
-
-    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(normalize_email(value))
-    }
-}
-
-#[test]
-fn invalid_index_arguments_are_rejected() {
-    let keys = index_keys();
-    let value = email("mark@example.com");
-    let valid = Team(b"core".to_vec());
-    let empty = Team(Vec::new());
-    assert!(
-        TeamEmailExact::derive_with(&value, &valid, &keys).is_ok(),
-        "control"
-    );
-
-    assert_eq!(
-        TeamEmailExact::derive_with(&value, &empty, &keys),
-        Err(Error::InvalidBinding)
-    );
-    assert_eq!(
-        TeamEmailExact::probes_with("mark@example.com", &empty, &keys),
-        Err(Error::InvalidBinding)
-    );
-    let stored = TeamEmailExact::derive_with(&value, &valid, &keys).unwrap();
-    assert_eq!(
-        TeamEmailExact::is_consistent_with(&value, &stored, &empty, &keys),
-        Err(Error::InvalidBinding)
     );
 }

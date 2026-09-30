@@ -31,7 +31,6 @@ use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -98,7 +97,6 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///

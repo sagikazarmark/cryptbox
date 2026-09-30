@@ -25,7 +25,6 @@ impl Seal for EmailSeal {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -37,7 +36,6 @@ impl Seal for PaddedEmailSeal {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -66,7 +64,6 @@ impl Seal for PhoneSeal {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -257,7 +254,6 @@ impl Seal for TypedEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 

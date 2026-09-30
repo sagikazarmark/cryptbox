@@ -1,9 +1,8 @@
 //! The typed layer's binding arguments: what a seal's callers pass, and the
-//! binding and keys view the typed layer resolves from them.
+//! binding the typed layer resolves from them.
 
 use crate::{
     BindingDomain, Error, PartKind, PartType, PartValue, Recorded, Scope, Seal, SealScope,
-    binding::check_keys_view,
 };
 
 /// The declared parts of seal `F`'s scope, without its record.
@@ -42,7 +41,6 @@ pub(crate) type PartsOf<F> = <<F as Seal>::Scope as SealScope>::Parts;
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Recorded<Tenant, i64>;
-///     type Keys = Tenant;
 ///     type Indexes = ();
 /// }
 ///
@@ -68,7 +66,6 @@ pub(crate) type PartsOf<F> = <<F as Seal>::Scope as SealScope>::Parts;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
 /// #     type Scope = Recorded<Tenant, i64>;
-/// #     type Keys = Tenant;
 /// #     type Indexes = ();
 /// # }
 /// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
@@ -89,7 +86,6 @@ pub(crate) type PartsOf<F> = <<F as Seal>::Scope as SealScope>::Parts;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
 /// #     type Scope = ();
-/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
@@ -110,7 +106,6 @@ pub(crate) type PartsOf<F> = <<F as Seal>::Scope as SealScope>::Parts;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
 /// #     type Scope = ();
-/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
@@ -204,25 +199,12 @@ const fn check_record_kind(declared: Option<PartKind>, id: PartKind) {
     }
 }
 
-/// The keys view of seal `F`.
-pub(crate) type KeysOf<F> = <F as Seal>::Keys;
-
-/// Projects the keys view of seal `F` from its scope.
-#[cfg(feature = "migrate")]
-pub(crate) fn keys_of<F: Seal>(scope: &PartsOf<F>) -> Result<KeysOf<F>, Error> {
-    const { check_keys_view(<KeysOf<F> as Scope>::PARTS, <PartsOf<F> as Scope>::PARTS) };
-
-    crate::binding::project_view(scope)
-}
-
 /// Encodes the binding of seal `F` under `scope` and `record`.
 pub(crate) fn target<F: Seal>(
     scope: &PartsOf<F>,
     record: Option<PartValue<'_>>,
 ) -> Result<BindingDomain, Error> {
-    const { check_keys_view(<KeysOf<F> as Scope>::PARTS, <PartsOf<F> as Scope>::PARTS) };
-
-    BindingDomain::of::<F::Scope, F::Keys>(F::ID.as_bytes(), scope, record)
+    BindingDomain::of::<F::Scope>(F::ID.as_bytes(), scope, record)
 }
 
 /// Encodes the binding of seal `F` under `args`.

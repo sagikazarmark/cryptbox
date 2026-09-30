@@ -32,7 +32,6 @@ impl Seal for VectorSeal {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -44,7 +43,6 @@ impl Seal for PaddedVectorSeal {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -134,7 +132,6 @@ impl Seal for TenantVectorSeal {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = Tenant;
-    type Keys = Tenant;
     type Indexes = ();
 }
 

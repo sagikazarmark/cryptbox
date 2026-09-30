@@ -1,4 +1,4 @@
-error: unknown `seal` key `bits`; expected one of `id`, `value`, `codec`, `transparent`, `padding`, `scope`, `keys`, `indexes`, `crate`
+error: unknown `seal` key `bits`; expected one of `id`, `value`, `codec`, `transparent`, `padding`, `scope`, `indexes`, `crate`
  --> tests/ui/unknown_key.rs:2:69
   |
 2 | #[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, bits = 32)]

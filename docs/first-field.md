@@ -57,7 +57,6 @@ impl Seal for UserEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 

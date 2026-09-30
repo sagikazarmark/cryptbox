@@ -15,7 +15,7 @@ pub struct SweepRow<C, R = ()> {
     /// The row's unique, immutable cursor value.
     pub cursor: C,
     /// The columns the planner builds the row's binding arguments from; see
-    /// [`RowPlanner::for_keys`].
+    /// [`RowPlanner::for_rows`].
     pub columns: R,
     /// The encrypted column's bytes exactly as read.
     pub ciphertext: Vec<u8>,

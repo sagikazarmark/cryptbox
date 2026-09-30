@@ -4,9 +4,9 @@ use zeroize::Zeroizing;
 
 use crate::{
     BindingDomain, BlindIndex, BlindIndexKeyring, BlindIndexSpec, Codec, EncryptionKeyring, Error,
-    FromParts, PartValue, RecordId, Scope, Seal, SealScope,
-    args::{KeysOf, PartsOf, keys_of},
-    binding::{check_keys_view, declaration_fingerprint},
+    PartValue, RecordId, Scope, Seal, SealScope,
+    args::PartsOf,
+    binding::declaration_fingerprint,
     blind::{derive_value, projected_domain},
     bound, inspect_blind_index, inspect_ciphertext,
 };
@@ -35,12 +35,6 @@ pub enum RowState {
     ///
     /// Only the unauthenticated binding fingerprint is compared.
     LegacyBinding,
-    /// The row's binding arguments project another keys view than the planner's.
-    ///
-    /// This is an anomaly, not a row to rewrite: the store returned a row of
-    /// another partition, or the row's `keys` columns disagree with the job's key
-    /// scope. The row is neither decrypted nor written.
-    OutOfScope,
 }
 
 /// Replacement bytes for one row.
@@ -113,11 +107,6 @@ impl RowOutcome {
 /// that binds one, or passed to a seal that binds none while no
 /// [legacy-binding window](RowPlanner::legacy_binding) binds one either, fails
 /// planning with [`Error::InvalidBinding`].
-///
-/// The keys view comes from the job's configuration, never from the row: a
-/// closure may read its parts from the row's columns only for the planner to
-/// compare with its own keys view, and a row of another keys view is reported as
-/// [`RowState::OutOfScope`]. The other parts and the record come from the row.
 #[derive(Clone, Debug)]
 pub struct RowArgs<'r, B> {
     binding: B,
@@ -207,12 +196,11 @@ struct RowBinding {
 /// # Bindings
 ///
 /// Each row is sealed under its own binding arguments, which a row closure
-/// builds from `R`, the row's columns ([`Self::for_keys`]). A planner serves
-/// one value of the seal's [keys view](Seal::Keys), taken from the job's
-/// configuration: a sweep is partitioned by the keys view, because its keys
-/// are. A row whose arguments project another keys view is reported as
-/// [`RowState::OutOfScope`] and left alone. [`Self::new`] serves an unscoped
-/// seal without a record, whose rows need no columns.
+/// builds from `R`, the row's columns ([`Self::for_rows`]). A planner seals
+/// with one keyring: when the application keeps values under separate keys,
+/// such as one keyring per org, run one sweep per keyring over the rows those
+/// keys protect. [`Self::new`] serves an unscoped seal without a record, whose
+/// rows need no columns.
 ///
 /// To change a seal's binding declaration, register the declaration it had before with
 /// [`Self::legacy_binding`]: rows whose header still names that declaration are
@@ -222,7 +210,6 @@ where
     F: Seal,
 {
     keys: &'a EncryptionKeyring,
-    view: KeysOf<F>,
     row_args: RowArgsFn<'a, F, R>,
     legacy: Option<&'a dyn LegacyFormat>,
     legacy_declarations: Vec<LegacyDeclaration<'a, F>>,
@@ -231,15 +218,15 @@ where
 
 impl<'a, F, R> RowPlanner<'a, F, R>
 where
-    F: Seal<Scope = (), Keys = ()>,
+    F: Seal<Scope = ()>,
 {
     /// Creates a planner for an unscoped seal `F` without a record and its
     /// encryption keyring.
     ///
-    /// A seal with another scope is a type error; use [`Self::for_keys`].
+    /// A seal with another scope is a type error; use [`Self::for_rows`].
     #[must_use]
     pub fn new(keys: &'a EncryptionKeyring) -> Self {
-        Self::for_keys((), keys, |_| Ok(RowArgs::new(())))
+        Self::for_rows(keys, |_| Ok(RowArgs::new(())))
     }
 }
 
@@ -247,22 +234,17 @@ impl<'a, F, R> RowPlanner<'a, F, R>
 where
     F: Seal,
 {
-    /// Creates a planner for the rows of one value of seal `F`'s
-    /// [keys view](Seal::Keys), such as one org.
+    /// Creates a planner for rows of seal `F` that `keys` protects.
     ///
-    /// `view` comes from the job's configuration, and `keys` serves it.
-    /// `row_args` builds each row's binding arguments from its columns; a row
-    /// whose arguments project another keys view is reported as
-    /// [`RowState::OutOfScope`]. An error from `row_args` is returned as it is,
-    /// and stops a sweep or verification pass.
-    pub fn for_keys(
-        view: KeysOf<F>,
+    /// `row_args` builds each row's binding arguments from its columns. An
+    /// error from `row_args` is returned as it is, and stops a sweep or
+    /// verification pass.
+    pub fn for_rows(
         keys: &'a EncryptionKeyring,
         row_args: impl for<'r> Fn(&'r R) -> Result<RowArgs<'r, PartsOf<F>>, Error> + 'a,
     ) -> Self {
         Self {
             keys,
-            view,
             row_args: Box::new(row_args),
             legacy: None,
             legacy_declarations: Vec::new(),
@@ -281,41 +263,30 @@ where
     }
 
     /// Opens a legacy-binding window: rows sealed with the older binding declaration
-    /// `Old` and keys view `OldKeys` are opened under it with `keys` and
-    /// resealed under the seal's current binding.
+    /// `Old` are opened under it with `keys` and resealed under the seal's
+    /// current binding.
     ///
     /// `Old` is the seal scope the seal had before, such as `()`, `Tenant`, or
-    /// `Recorded<Tenant, i64>`, and `OldKeys` its keys view, such as `()` or
-    /// `Tenant`. `Old` takes each part's value from the row's current scope, by
+    /// `Recorded<Tenant, i64>`. `Old` takes each part's value from the row's current scope, by
     /// part ID, and when it binds a record, the row's record ID: rows moving out
     /// of a record still pass it. `keys` is the keyring those rows were sealed
     /// with. The window covers moving from the
-    /// empty scope `()` to any scope, adding parts, moving into or out of a record,
-    /// and changing the keys view, but not removing a part or changing its kind.
+    /// empty scope `()` to any scope, adding parts, and moving into or out of a
+    /// record, but not removing a part or changing its kind.
     /// A part of `Old` that the current scope lacks, or holds with another kind,
     /// and a record `Old` binds that the row lacks, fail planning with
-    /// [`Error::InvalidBinding`]; an `OldKeys` that is not a view of both
-    /// scopes fails the build.
+    /// [`Error::InvalidBinding`].
     ///
     /// Such rows are classified as [`RowState::LegacyBinding`] by their header's
     /// binding fingerprint, and every blind index is derived again under the
     /// current binding. Close the window once a verification pass counts none.
     #[must_use]
-    pub fn legacy_binding<Old: SealScope, OldKeys: FromParts>(
-        mut self,
-        keys: &'a EncryptionKeyring,
-    ) -> Self {
-        const { check_keys_view(OldKeys::PARTS, <Old::Parts as Scope>::PARTS) };
-
+    pub fn legacy_binding<Old: SealScope>(mut self, keys: &'a EncryptionKeyring) -> Self {
         self.legacy_declarations.push(LegacyDeclaration {
-            fingerprint: declaration_fingerprint::<Old, OldKeys>(),
+            fingerprint: declaration_fingerprint::<Old>(),
             recorded: Old::RECORD.is_some(),
             domain: |scope, record| {
-                BindingDomain::projected::<Old, OldKeys, PartsOf<F>>(
-                    F::ID.as_bytes(),
-                    scope,
-                    record,
-                )
+                BindingDomain::projected::<Old, PartsOf<F>>(F::ID.as_bytes(), scope, record)
             },
             keys,
         });
@@ -347,7 +318,6 @@ where
     ///     type Value = String;
     ///     type Codec = Utf8;
     ///     type Scope = ();
-    ///     type Keys = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -359,7 +329,6 @@ where
     ///     type Value = String;
     ///     type Codec = Utf8;
     ///     type Scope = ();
-    ///     type Keys = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -406,7 +375,7 @@ where
     /// Classifies one stored row without producing writes or consuming nonces.
     ///
     /// `row` holds the columns the row's binding arguments are built from.
-    /// Checks the row's keys view and structure, and compares unauthenticated
+    /// Checks the row's structure, and compares unauthenticated
     /// binding fingerprints and generation IDs. It does not decrypt, decode,
     /// recover legacy data, or recompute indexes. Index parsing
     /// checks the stored format, not agreement with the registered specification's
@@ -427,9 +396,7 @@ where
     ) -> Result<RowState, Error> {
         self.check_arity(indexes)?;
         let args = (self.row_args)(row)?;
-        let Some(binding) = self.bind(&args)? else {
-            return Ok(RowState::OutOfScope);
-        };
+        let binding = self.bind(&args)?;
 
         match inspect_ciphertext(ciphertext) {
             Ok(info)
@@ -459,7 +426,7 @@ where
 
     /// Classifies one stored row and builds its replacement bytes when needed.
     ///
-    /// Current and out-of-scope rows are returned without decryption. Current
+    /// Current rows are returned without decryption. Current
     /// index columns keep their bytes even when another component is
     /// rewritten. Re-encryption alone authenticates and checks padding but does
     /// not decode with the codec; stale-index derivation also decrypts and
@@ -479,9 +446,7 @@ where
     ) -> Result<RowOutcome, Error> {
         self.check_arity(indexes)?;
         let args = (self.row_args)(row)?;
-        let Some(binding) = self.bind(&args)? else {
-            return Ok(RowOutcome::unchanged(RowState::OutOfScope));
-        };
+        let binding = self.bind(&args)?;
 
         match inspect_ciphertext(ciphertext) {
             Ok(info) => {
@@ -544,8 +509,8 @@ where
         })
     }
 
-    /// Encodes the row's binding, or returns `None` for a row of another keys view.
-    fn bind(&self, args: &RowArgs<'_, PartsOf<F>>) -> Result<Option<RowBinding>, Error> {
+    /// Encodes the row's binding.
+    fn bind(&self, args: &RowArgs<'_, PartsOf<F>>) -> Result<RowBinding, Error> {
         let recorded = <F::Scope as SealScope>::RECORD.is_some();
         let legacy_recorded = self
             .legacy_declarations
@@ -556,24 +521,19 @@ where
         }
 
         let record = if recorded { args.record } else { None };
-        let domain = BindingDomain::of::<F::Scope, F::Keys>(
+        let domain = BindingDomain::of::<F::Scope>(
             F::ID.as_bytes(),
             &args.binding,
             record.map(RecordId::part_value),
         )?;
-        let keys = keys_of::<F>(&args.binding)?;
-        if keys != self.view {
-            return Ok(None);
-        }
-
-        Ok(Some(RowBinding {
+        Ok(RowBinding {
             index_domains: self
                 .indexes
                 .iter()
                 .map(|column| (column.domain)(&args.binding))
                 .collect::<Result<_, _>>()?,
             domain,
-        }))
+        })
     }
 
     /// Returns the registered legacy declaration an envelope's header names,

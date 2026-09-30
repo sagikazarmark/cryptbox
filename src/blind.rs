@@ -6,8 +6,8 @@ use zeroize::Zeroizing;
 use crate::{
     BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeys, Error, FromParts, IndexKeyId,
     Scope, Seal,
-    args::{KeysOf, PartsOf},
-    binding::{check_index_scope, check_keys_view, project_view},
+    args::PartsOf,
+    binding::{check_index_scope, project_view},
     id::identifier,
     keys,
 };
@@ -32,8 +32,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// several of its parts.
 ///
 /// Each index names its own [`Scope`](Self::Scope): a view of its seal's scope,
-/// which must include every part of the seal's [keys view](Seal::Keys), since a
-/// query selects index keys by it. Each operation takes a value of that index scope
+/// the parts a query supplies. Each operation takes a value of that index scope
 /// and derives in it; an unscoped index passes `&()`. Equal values under other
 /// index-scope values derive unrelated indexes. Parts left out of the index
 /// scope and the record never scope an index, and two indexes over one seal may
@@ -58,7 +57,6 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -99,7 +97,6 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = ();
-/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// struct ZeroBits;
@@ -128,7 +125,6 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = ();
-/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// struct TooManyBits;
@@ -147,41 +143,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// let _ = BlindIndex::<TooManyBits>::from_bytes(Vec::new());
 /// ```
 ///
-/// So is an index scope that leaves out a part of the seal's keys view, here
-/// the tenant:
-///
-/// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndexError, BlindIndexKeyring, BlindIndexKey, BlindIndexSpec, Seal, SealId, IndexId, Padding, Raw, Tenant};
-/// # use zeroize::Zeroizing;
-/// # struct Bytes;
-/// # impl Seal for Bytes {
-/// #     const ID: SealId = SealId::from_bytes([1; 16]);
-/// #     const PADDING: Padding = Padding::NONE;
-/// #     type Value = Vec<u8>;
-/// #     type Codec = Raw;
-/// #     type Scope = Tenant;
-/// #     type Keys = Tenant;
-/// #     type Indexes = ();
-/// # }
-/// struct AcrossTenants;
-///
-/// impl BlindIndexSpec for AcrossTenants {
-///     type Seal = Bytes;
-///     type Scope = ();
-///     const ID: IndexId = IndexId::from_bytes([2; 16]);
-///     const BITS: u16 = 32;
-///     const NORMALIZER: &'static str = "exact/1";
-///     type Query = [u8];
-/// #   fn normalize_query(q: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(q.to_vec())) }
-/// #   fn normalize_value(v: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(v.clone())) }
-/// }
-///
-/// # let keys = BlindIndexKeyring::new(BlindIndexKey::generate()?, [])?;
-/// let _ = AcrossTenants::probes_with(b"ada", &(), &keys);
-/// # Ok::<(), cryptbox::Error>(())
-/// ```
-///
-/// Or one with a part the seal's scope does not have:
+/// So is an index scope with a part the seal's scope does not have:
 ///
 /// ```compile_fail,E0080
 /// # use cryptbox::{BlindIndexError, BlindIndexKeyring, BlindIndexKey, BlindIndexSpec, Seal, SealId, IndexId, Padding, Raw, Tenant, TenantId};
@@ -193,7 +155,6 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = ();
-/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// struct PerTenant;
@@ -252,8 +213,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// The index scope: the parts that partition this index, which a query
     /// supplies.
     ///
-    /// It is a view of the seal's scope that includes its keys view: its
-    /// parts must be parts of the seal's scope, with the same part IDs and kinds.
+    /// It is a view of the seal's scope: its parts must be parts of the seal's scope, with the same part IDs and kinds.
     /// Otherwise the build fails when the index is first used. Use `()` for an
     /// unscoped seal, or the seal's scope itself to partition by every part.
     type Scope: FromParts;
@@ -420,7 +380,6 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = (InviteEmailLookup,);
 /// }
 ///
@@ -432,7 +391,6 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = (InviteEmailLookup,);
 /// }
 ///
@@ -706,22 +664,13 @@ pub(crate) fn index_domain<Spec: BlindIndexSpec>(
     scope: &Spec::Scope,
 ) -> Result<BindingDomain, Error> {
     const {
-        check_keys_view(
-            <KeysOf<Spec::Seal> as Scope>::PARTS,
-            <PartsOf<Spec::Seal> as Scope>::PARTS,
-        );
         check_index_scope(
             <Spec::Scope as Scope>::PARTS,
             <PartsOf<Spec::Seal> as Scope>::PARTS,
-            <KeysOf<Spec::Seal> as Scope>::PARTS,
         );
     };
 
-    BindingDomain::index(
-        <Spec::Seal as Seal>::ID.as_bytes(),
-        scope,
-        <KeysOf<Spec::Seal> as Scope>::PARTS,
-    )
+    BindingDomain::index(<Spec::Seal as Seal>::ID.as_bytes(), scope)
 }
 
 /// Projects the index scope of `Spec` from `scope`, the scope a value of its

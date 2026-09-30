@@ -13,7 +13,6 @@ const KEYS: &[Key] = &[
     Key::Transparent,
     Key::Padding,
     Key::Scope,
-    Key::Keys,
     Key::Indexes,
     Key::Crate,
 ];
@@ -56,12 +55,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         || quote!(#krate::Padding::NONE),
         |padding| padding.to_tokens(&krate),
     );
-    // Without `keys`, custody follows the whole scope.
-    let keys = match (&attrs.keys, &attrs.scope) {
-        (Some(keys), _) => quote!(#keys),
-        (None, Some(scope)) => quote!(<#scope as #krate::SealScope>::Parts),
-        (None, None) => quote!(()),
-    };
     let scope = attrs
         .scope
         .map_or_else(|| quote!(()), |scope| quote!(#scope));
@@ -106,9 +99,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
-    let items = seal_items(
-        &krate, &id, &padding, &value, &codec, &scope, &keys, &indexes,
-    );
+    let items = seal_items(&krate, &id, &padding, &value, &codec, &scope, &indexes);
 
     Ok(quote! {
         const _: () = {
@@ -123,7 +114,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 }
 
 /// The items of a `Seal` impl, as every derive that declares a seal writes them.
-#[expect(clippy::too_many_arguments, reason = "one per item of the impl")]
 pub(crate) fn seal_items(
     krate: &Path,
     id: &UuidLiteral,
@@ -131,7 +121,6 @@ pub(crate) fn seal_items(
     value: &TokenStream,
     codec: &TokenStream,
     scope: &TokenStream,
-    keys: &TokenStream,
     indexes: &[Type],
 ) -> TokenStream {
     quote! {
@@ -140,7 +129,6 @@ pub(crate) fn seal_items(
         type Value = #value;
         type Codec = #codec;
         type Scope = #scope;
-        type Keys = #keys;
         type Indexes = (#(#indexes,)*);
     }
 }

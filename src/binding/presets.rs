@@ -4,7 +4,7 @@ use super::{FromParts, PartKind, PartSpec, PartType, PartValue, PartValues, Scop
 use crate::Error;
 
 // The empty scope: values are bound to their seal ID only. Blind indexes take
-// no arguments, and every value shares the empty keys view.
+// no arguments.
 impl Scope for () {
     const PARTS: &'static [PartSpec] = &[];
 
@@ -22,12 +22,12 @@ impl FromParts for () {
     }
 }
 
-/// A scope with a single tenant part, which scopes keys.
+/// A scope with a single tenant part.
 ///
-/// The tenant is the [shred unit](Scope#shredding) when each tenant's root
-/// keys are stored independently. A blind index over a tenant-scoped seal takes
+/// A tenant can be [shredded](Scope#shredding) on its own when the application
+/// keeps each tenant's root keys separately. A blind index over a tenant-scoped seal takes
 /// `Tenant` as its index scope, so its queries pass the tenant. Its one part is persistent schema: part ID
-/// `1e8306bf-3135-4570-831c-6732f92550e9`, kind bytes, role `keys`.
+/// `1e8306bf-3135-4570-831c-6732f92550e9`, kind bytes.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Tenant(pub TenantId);
 
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn unscoped_is_the_empty_binding() {
-        let domain = BindingDomain::of::<(), ()>(&SEAL, &(), None).unwrap();
+        let domain = BindingDomain::of::<()>(&SEAL, &(), None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -120,8 +120,7 @@ mod tests {
     #[test]
     fn unscoped_with_a_record_binds_the_record_alone() {
         let domain =
-            BindingDomain::of::<Recorded<(), i64>, ()>(&SEAL, &(), Some(PartValue::I64(1)))
-                .unwrap();
+            BindingDomain::of::<Recorded<(), i64>>(&SEAL, &(), Some(PartValue::I64(1))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -138,9 +137,9 @@ mod tests {
     }
 
     #[test]
-    fn tenant_binds_one_bytes_keys_part() {
+    fn tenant_binds_one_bytes_part() {
         let tenant = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
-        let domain = BindingDomain::of::<Tenant, Tenant>(&SEAL, &tenant, None).unwrap();
+        let domain = BindingDomain::of::<Tenant>(&SEAL, &tenant, None).unwrap();
 
         // docs/wire-format.md#presets
         assert_eq!(
@@ -154,7 +153,7 @@ mod tests {
                 "61636d65",
             )
         );
-        assert_eq!(domain.fingerprint(), hex_array("9b73125a52bc08d1"));
+        assert_eq!(domain.fingerprint(), hex_array("9b5379b1f03beb17"));
     }
 
     #[test]

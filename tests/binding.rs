@@ -1,4 +1,4 @@
-//! Public-boundary tests for declared scopes, their keys views, and part types.
+//! Public-boundary tests for declared scopes, their views, and part types.
 
 use cryptbox::{
     EncryptionKey, EncryptionKeyring, Error, FromParts, Padding, PartKind, PartSpec, PartType,
@@ -34,29 +34,6 @@ impl Scope for OrgProject {
             PartValue::I64(self.project),
             PartValue::Uuid(self.workspace),
         ])
-    }
-}
-
-/// The keys view of `OrgProject`: its org.
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-struct Org(Vec<u8>);
-
-impl Scope for Org {
-    const PARTS: &'static [PartSpec] = &[PartSpec::new(
-        part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
-        PartKind::Bytes,
-    )];
-    fn values(&self) -> PartValues<'_> {
-        PartValues::from([PartValue::Bytes(&self.0)])
-    }
-}
-
-impl FromParts for Org {
-    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
-        match *values {
-            [PartValue::Bytes(org)] => Ok(Self(org.to_vec())),
-            _ => Err(Error::InvalidBinding),
-        }
     }
 }
 
@@ -96,7 +73,6 @@ impl Seal for SuppliedNote {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = Supplied;
-    type Keys = Org;
     type Indexes = ();
 }
 
@@ -125,14 +101,6 @@ fn invalid_scope_values_are_rejected() {
             Supplied(vec![
                 org(),
                 SuppliedValue::Bytes(b"1".to_vec()),
-                workspace(),
-            ]),
-        ),
-        (
-            "empty keys value",
-            Supplied(vec![
-                SuppliedValue::Bytes(Vec::new()),
-                SuppliedValue::I64(1),
                 workspace(),
             ]),
         ),

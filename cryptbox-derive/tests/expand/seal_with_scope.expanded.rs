@@ -16,10 +16,6 @@ const _: () = {
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Scope = cryptbox::Recorded<cryptbox::Tenant, i64>;
-        type Keys = <cryptbox::Recorded<
-            cryptbox::Tenant,
-            i64,
-        > as ::cryptbox::SealScope>::Parts;
         type Indexes = (EmailLookup, EmailDomainLookup);
     }
 };

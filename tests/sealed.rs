@@ -1,8 +1,8 @@
 //! Public-boundary tests for sealing and opening values under their runtime binding.
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Error, FromParts, Padding, PartKind, PartSpec, PartValue,
-    PartValues, Recorded, Scope, Seal, SealId, Sealed, Tenant, TenantId, Utf8, key_id, part_id,
+    EncryptionKey, EncryptionKeyring, Error, Padding, PartKind, PartSpec, PartValue, PartValues,
+    Recorded, Scope, Seal, SealId, Sealed, Tenant, TenantId, Utf8, key_id, part_id,
 };
 
 /// An org scopes keys; a workspace is only bound.
@@ -28,31 +28,8 @@ impl Scope for OrgWorkspace {
     }
 }
 
-/// The keys view of [`OrgWorkspace`]: its org.
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct Org([u8; 16]);
-
-impl Scope for Org {
-    const PARTS: &'static [PartSpec] = &[PartSpec::new(
-        part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
-        PartKind::Uuid,
-    )];
-    fn values(&self) -> PartValues<'_> {
-        PartValues::from([PartValue::Uuid(self.0)])
-    }
-}
-
-impl FromParts for Org {
-    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
-        match *values {
-            [PartValue::Uuid(org)] => Ok(Self(org)),
-            _ => Err(Error::InvalidBinding),
-        }
-    }
-}
-
 macro_rules! seal {
-    ($name:ident, $id:literal, $scope:ty, $keys:ty) => {
+    ($name:ident, $id:literal, $scope:ty) => {
         struct $name;
 
         impl Seal for $name {
@@ -61,39 +38,30 @@ macro_rules! seal {
             type Value = String;
             type Codec = Utf8;
             type Scope = $scope;
-            type Keys = $keys;
             type Indexes = ();
         }
     };
 }
 
-seal!(Nickname, "5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01", (), ());
+seal!(Nickname, "5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01", ());
 seal!(
     RowNote,
     "9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24",
-    Recorded<(), i64>,
-    ()
+    Recorded<(), i64>
 );
 seal!(
     CustomerEmail,
     "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-    Recorded<OrgWorkspace, i64>,
-    Org
+    Recorded<OrgWorkspace, i64>
 );
 // Same binding as `CustomerEmail`, another seal ID.
 seal!(
     BillingEmail,
     "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
-    Recorded<OrgWorkspace, i64>,
-    Org
+    Recorded<OrgWorkspace, i64>
 );
 // Same seal ID as `CustomerEmail`, another binding declaration.
-seal!(
-    TenantEmail,
-    "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-    Tenant,
-    Tenant
-);
+seal!(TenantEmail, "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", Tenant);
 
 fn first_key() -> EncryptionKey {
     EncryptionKey::new(key_id!("b7f69f1d-4476-4dc3-9576-528f95691d50"), [0x42; 32])
@@ -191,43 +159,6 @@ fn opening_as_another_seal_fails() {
     assert_eq!(
         nickname.open((), &keys).unwrap_err(),
         Error::BindingMismatch
-    );
-}
-
-#[test]
-fn invalid_binding_values_are_rejected() {
-    #[derive(Clone, Hash, PartialEq, Eq)]
-    struct Unchecked(Vec<u8>);
-
-    impl Scope for Unchecked {
-        const PARTS: &'static [PartSpec] = &[PartSpec::new(
-            part_id!("1d6f0a3c-7e25-4b98-a4c1-5f8e2b0d3a76"),
-            PartKind::Bytes,
-        )];
-        fn values(&self) -> PartValues<'_> {
-            PartValues::from([PartValue::Bytes(&self.0)])
-        }
-    }
-
-    impl FromParts for Unchecked {
-        fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
-            match *values {
-                [PartValue::Bytes(bytes)] => Ok(Self(bytes.to_vec())),
-                _ => Err(Error::InvalidBinding),
-            }
-        }
-    }
-
-    seal!(
-        Scoped,
-        "4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95",
-        Unchecked,
-        Unchecked
-    );
-
-    assert_eq!(
-        Sealed::<Scoped>::seal(&email(), &Unchecked(Vec::new()), &keys()).unwrap_err(),
-        Error::InvalidBinding
     );
 }
 

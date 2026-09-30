@@ -38,7 +38,6 @@ use crate::{
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -345,7 +344,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -366,7 +364,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Tenant;
-///     type Keys = Tenant;
 ///     type Indexes = ();
 /// }
 ///
@@ -389,7 +386,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = (EmailLookup,);
 /// }
 ///
@@ -427,7 +423,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Recorded<(), i64>;
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -445,7 +440,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// #     type Value = String;
 /// #     type Codec = Utf8;
 /// #     type Scope = ();
-/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// let left = Plain::<UserEmail>::new("secret");

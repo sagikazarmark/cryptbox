@@ -23,7 +23,7 @@ struct OrgSearch {
     shard: Vec<u8>,
 }
 
-/// The keys view of [`OrgSearch`].
+/// A view of [`OrgSearch`]: its org.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct Org {
     #[part("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]

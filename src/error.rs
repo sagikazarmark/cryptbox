@@ -144,8 +144,7 @@ pub enum Error {
     InvalidPadding,
     /// A binding's declared parts or supplied values are invalid.
     ///
-    /// For example, part IDs repeat, a value's kind differs from its part's, or
-    /// a value of a part in a seal's keys view is empty.
+    /// For example, part IDs repeat, or a value's kind differs from its part's.
     #[error("binding is invalid")]
     InvalidBinding,
     /// A blind-index representation or bit count is invalid.

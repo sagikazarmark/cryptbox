@@ -1,5 +1,5 @@
 use crate::id::identifier;
-use crate::{Codec, FromParts, IndexList, Padding, SealScope};
+use crate::{Codec, IndexList, Padding, SealScope};
 
 identifier!(SealId, "A stable seal identifier.");
 
@@ -53,7 +53,6 @@ identifier!(SealId, "A stable seal identifier.");
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 /// ```
@@ -61,8 +60,8 @@ identifier!(SealId, "A stable seal identifier.");
 /// With the `derive` feature, `#[derive(Seal)]` writes this impl from
 /// `#[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
 /// taking `String`'s built-in default codec, `Utf8`.
-/// Add `scope = Tenant`, `keys = Org`, or `indexes(EmailLookup)` to set
-/// [`Self::Scope`], [`Self::Keys`], or [`Self::Indexes`]. On a type with
+/// Add `scope = Tenant` or `indexes(EmailLookup)` to set [`Self::Scope`] or
+/// [`Self::Indexes`]. On a type with
 /// fields, the derive makes the type its own value: `codec = Json` encodes it
 /// whole, and `transparent` stores its single field.
 ///
@@ -112,43 +111,6 @@ pub trait Seal: 'static {
     /// The binding's declaration is persistent schema; its values are supplied at
     /// each call. See [`Scope`](crate::Scope) and [`SealScope`].
     type Scope: SealScope;
-
-    /// The keys view: the parts of the scope that key custody follows.
-    ///
-    /// It is a view of the scope, without the record: a scope whose parts are
-    /// parts of [`Self::Scope`], matched by part ID and kind, and whose values
-    /// are projected from the binding arguments by part ID. Use the scope
-    /// itself, such as `()` or `Tenant`, when custody follows every part.
-    /// `#[derive(Seal)]` defaults to the scope. Custody follows it, a sweep is
-    /// partitioned by it, the binding fingerprint marks its parts, and the
-    /// schema manifest reports them as the shred unit; a part in no view is
-    /// bound only. Its values can't be empty.
-    ///
-    /// A keys view with a part the scope lacks fails the build when the seal is
-    /// first used:
-    ///
-    /// ```compile_fail,E0080
-    /// use cryptbox::{
-    ///     EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Tenant, Utf8,
-    /// };
-    ///
-    /// struct TenantEmail;
-    ///
-    /// impl Seal for TenantEmail {
-    ///     const ID: SealId = SealId::from_bytes([1; 16]);
-    ///     const PADDING: Padding = Padding::NONE;
-    ///     type Value = String;
-    ///     type Codec = Utf8;
-    ///     type Scope = ();
-    ///     type Keys = Tenant;
-    ///     type Indexes = ();
-    /// }
-    ///
-    /// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-    /// let _ = Sealed::<TenantEmail>::seal(&"ada".to_owned(), (), &keys);
-    /// # Ok::<(), cryptbox::Error>(())
-    /// ```
-    type Keys: FromParts;
 
     /// The blind indexes declared over this seal, as a tuple of
     /// [`BlindIndexSpec`](crate::BlindIndexSpec)s, or `()` for none.

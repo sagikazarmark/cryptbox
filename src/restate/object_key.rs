@@ -12,14 +12,14 @@ const UUID_HYPHENS: [usize; 4] = [8, 13, 18, 23];
 // A sign and the 19 digits of `i64::MIN`'s magnitude.
 const I64_LEN: usize = 20;
 
-/// The Restate object key of scope `B`, led by its keys view `K`: a strict,
+/// The Restate object key of scope `B`, led by its view `K`: a strict,
 /// canonical text encoding of its values, usually those of a blind index's
 /// [index scope](crate::BlindIndexSpec::Scope).
 ///
 /// A Virtual Object keyed by a scope, such as one object per org and workspace,
 /// reads it back from its object key with [`Self::parse`]. An object key holds
 /// one segment per part, separated by `:`. The parts of `K`, a view of `B` such
-/// as its seal's [keys view](crate::Seal::Keys), come first, then the other
+/// as an org of an org and workspace, come first, then the other
 /// parts, each in [`PARTS`](Scope::PARTS) order, so every object key of one
 /// value of `K` starts with that value's [`Self::prefix`]. `K` defaults to `B`
 /// itself. A `K` that is not a view of `B` fails the build when the object key
@@ -73,7 +73,7 @@ impl<B: Scope, K: Scope> ObjectKey<B, K> {
     pub fn encode(scope: &B) -> Result<String, Error> {
         let values = scope.values();
         let values = values.as_slice();
-        check_values(B::PARTS, K::PARTS, values)?;
+        check_values(B::PARTS, values)?;
 
         Ok(join(
             key_order::<B, K>()
@@ -89,7 +89,7 @@ impl<B: Scope, K: Scope> ObjectKey<B, K> {
     /// Returns [`Error::InvalidObjectKey`] for an object key that is not
     /// exactly the [encoding](Self) of a scope `B`: a missing or
     /// extra part, parts out of order, another spelling of a value, or a value
-    /// the scope cannot hold, such as an empty value of a part of `K`.
+    /// the scope cannot hold.
     pub fn parse(key: &str) -> Result<B, Error>
     where
         B: FromParts,
@@ -110,7 +110,7 @@ impl<B: Scope, K: Scope> ObjectKey<B, K> {
         }
         let values: Vec<_> = decoded.iter().map(Decoded::part_value).collect();
 
-        let args = check_values(specs, K::PARTS, &values)
+        let args = check_values(specs, &values)
             .and_then(|()| B::from_parts(&values))
             .map_err(|_| Error::InvalidObjectKey)?;
         // A part type that does not read back exactly what it binds could
@@ -145,7 +145,7 @@ impl<B: Scope, K: Scope> ObjectKey<B, K> {
         };
 
         let values = keys.values();
-        check_values(K::PARTS, K::PARTS, values.as_slice())?;
+        check_values(K::PARTS, values.as_slice())?;
 
         Ok(join(values.as_slice().iter().copied()))
     }

@@ -14,7 +14,6 @@ impl Seal for CustomerEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Recorded<Tenant, [u8; 16]>;
-    type Keys = Tenant;
     type Indexes = ();
 }
 

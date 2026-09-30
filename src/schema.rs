@@ -7,9 +7,7 @@ use std::{
 
 use crate::{
     BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartSpec, Record, Scope, Seal, SealId,
-    SealScope,
-    args::{KeysOf, PartsOf},
-    binding::{check_keys_view, declaration_fingerprint},
+    SealScope, args::PartsOf, binding::declaration_fingerprint,
 };
 
 /// Lists seals and blind indexes with their persistent schema.
@@ -24,14 +22,7 @@ use crate::{
 /// - its seal ID, codec ID, and padding;
 /// - `record`: the kind of the record ID it is bound to, or `no`;
 /// - `binding`: the [binding fingerprint](crate::CiphertextInfo::context_fingerprint),
-///   order;
-/// - `shred unit`: the finest unit that destroying root keys can shred, if the
-///   application stores root keys per value of the seal's
-///   [keys view](crate::Seal::Keys): its parts, joined by `+`, or `keyring`
-///   when it has none and only the whole keyring can be. The library cannot see
-///   how keys are stored, so a coarser choice, such as one keyring for every
-///   tenant, shreds only that coarser unit; say so in the custody label;
-/// - `custody`: the label given with [`Self::custody`], if any.
+///   followed by each part's ID and kind, in part ID order.
 ///
 /// Each index lists its index ID, seal ID, bits, normalizer name, and the parts
 /// of its index scope.
@@ -60,13 +51,10 @@ use crate::{
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Recorded<Tenant, i64>;
-///     type Keys = Tenant;
 ///     type Indexes = ();
 /// }
 ///
-/// let manifest = Manifest::new()
-///     .seal::<Nickname>()
-///     .custody::<Nickname>("general KMS, one key per tenant");
+/// let manifest = Manifest::new().seal::<Nickname>();
 ///
 /// assert!(manifest.duplicates().is_empty());
 /// assert_eq!(manifest.to_string(), "\
@@ -74,10 +62,8 @@ use crate::{
 ///   codec: utf8
 ///   padding: block(16)
 ///   record: i64
-///   binding: 75e187c06144e3b7
-///     part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
-///   shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
-///   custody: general KMS, one key per tenant
+///   binding: 53aad4c274f3c0c4
+///     part 1e8306bf-3135-4570-831c-6732f92550e9 bytes
 /// ");
 /// ```
 #[derive(Debug, Default)]
@@ -104,8 +90,6 @@ struct IndexEntry {
     bits: u16,
     normalizer: &'static str,
     parts: &'static [PartSpec],
-    /// The parts of the seal's keys view.
-    keys: &'static [PartSpec],
 }
 
 #[derive(Debug)]
@@ -117,10 +101,7 @@ struct SealEntry {
     padding: Padding,
     record: Option<PartKind>,
     parts: &'static [PartSpec],
-    /// The parts of the keys view.
-    keys: &'static [PartSpec],
     fingerprint: [u8; 8],
-    custody: Option<String>,
 }
 
 impl Manifest {
@@ -135,50 +116,20 @@ impl Manifest {
     /// Registering it again changes nothing.
     #[must_use]
     pub fn seal<F: Seal>(mut self) -> Self {
-        self.seal_entry::<F>();
-        self
-    }
-
-    /// Labels which keys protect seal `F`, registering it if needed.
-    ///
-    /// The library cannot see which keyring an application passes for a seal,
-    /// so the manifest records custody declaratively: the label appears in the
-    /// snapshot for reviewers and auditors, and a later label replaces an
-    /// earlier one. Name the key custody, such as `"payments KMS, per org"`,
-    /// never key material. Line breaks are escaped to keep the label on one
-    /// line. Test that the application passes those keys with
-    /// [`assert_sealed_under`](crate::testing::assert_sealed_under).
-    #[must_use]
-    pub fn custody<F: Seal>(mut self, label: impl Into<String>) -> Self {
-        self.seal_entry::<F>().custody = Some(label.into());
-        self
-    }
-
-    fn seal_entry<F: Seal>(&mut self) -> &mut SealEntry {
-        const { check_keys_view(<KeysOf<F> as Scope>::PARTS, <PartsOf<F> as Scope>::PARTS) };
-
         let marker = TypeId::of::<F>();
-        let position = self
-            .seals
-            .iter()
-            .position(|seal| seal.marker == marker)
-            .unwrap_or_else(|| {
-                self.seals.push(SealEntry {
-                    marker,
-                    name: type_name::<F>(),
-                    id: F::ID,
-                    codec: <F::Codec as Codec<F::Value>>::ID,
-                    padding: F::PADDING,
-                    record: <F::Scope as SealScope>::RECORD,
-                    parts: <PartsOf<F> as Scope>::PARTS,
-                    keys: <KeysOf<F> as Scope>::PARTS,
-                    fingerprint: declaration_fingerprint::<F::Scope, F::Keys>(),
-                    custody: None,
-                });
-                self.seals.len() - 1
+        if self.seals.iter().all(|seal| seal.marker != marker) {
+            self.seals.push(SealEntry {
+                marker,
+                name: type_name::<F>(),
+                id: F::ID,
+                codec: <F::Codec as Codec<F::Value>>::ID,
+                padding: F::PADDING,
+                record: <F::Scope as SealScope>::RECORD,
+                parts: <PartsOf<F> as Scope>::PARTS,
+                fingerprint: declaration_fingerprint::<F::Scope>(),
             });
-
-        &mut self.seals[position]
+        }
+        self
     }
 
     /// Registers blind index `I`.
@@ -197,7 +148,6 @@ impl Manifest {
                 bits: I::BITS,
                 normalizer: I::NORMALIZER,
                 parts: <I::Scope as Scope>::PARTS,
-                keys: <KeysOf<I::Seal> as Scope>::PARTS,
             });
         }
         self
@@ -304,35 +254,10 @@ impl fmt::Display for Manifest {
             for part in seal.parts {
                 writeln!(
                     formatter,
-                    "    part {} {} {}",
+                    "    part {} {}",
                     part.id(),
-                    kind_name(part.kind()),
-                    role_name(part, seal.keys),
+                    kind_name(part.kind())
                 )?;
-            }
-            write!(formatter, "  shred unit: ")?;
-            let mut keys = seal.keys.iter();
-            match keys.next() {
-                // Without a keys view, only the whole keyring can be destroyed.
-                None => writeln!(formatter, "keyring")?,
-                Some(first) => {
-                    write!(formatter, "{}", first.id())?;
-                    for part in keys {
-                        write!(formatter, " + {}", part.id())?;
-                    }
-                    writeln!(formatter)?;
-                }
-            }
-            if let Some(custody) = &seal.custody {
-                write!(formatter, "  custody: ")?;
-                for character in custody.chars() {
-                    if character.is_control() || matches!(character, '\u{2028}' | '\u{2029}') {
-                        write!(formatter, "{}", character.escape_debug())?;
-                    } else {
-                        write!(formatter, "{character}")?;
-                    }
-                }
-                writeln!(formatter)?;
             }
         }
 
@@ -348,10 +273,9 @@ impl fmt::Display for Manifest {
             for part in index.parts {
                 writeln!(
                     formatter,
-                    "    part {} {} {}",
+                    "    part {} {}",
                     part.id(),
-                    kind_name(part.kind()),
-                    role_name(part, index.keys),
+                    kind_name(part.kind())
                 )?;
             }
         }
@@ -392,15 +316,6 @@ const fn kind_name(kind: PartKind) -> &'static str {
     }
 }
 
-// A part of the seal's keys view scopes keys; any other part is bound only.
-fn role_name(part: &PartSpec, keys: &[PartSpec]) -> &'static str {
-    if keys.iter().any(|key| key.id() == part.id()) {
-        "keys"
-    } else {
-        "bound"
-    }
-}
-
 /// Fails compilation when two of the listed types declare the same ID.
 ///
 /// List seals to check their seal IDs, or `indexes:` followed by
@@ -420,7 +335,6 @@ fn role_name(part: &PartSpec, keys: &[PartSpec]) -> &'static str {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -432,7 +346,6 @@ fn role_name(part: &PartSpec, keys: &[PartSpec]) -> &'static str {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -450,7 +363,6 @@ fn role_name(part: &PartSpec, keys: &[PartSpec]) -> &'static str {
 /// #     type Value = String;
 /// #     type Codec = Utf8;
 /// #     type Scope = ();
-/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// struct BillingAddress;
@@ -461,7 +373,6 @@ fn role_name(part: &PartSpec, keys: &[PartSpec]) -> &'static str {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -480,7 +391,6 @@ fn role_name(part: &PartSpec, keys: &[PartSpec]) -> &'static str {
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = ();
-/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// struct Exact;

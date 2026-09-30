@@ -15,7 +15,6 @@ impl Seal for TestSeal {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 

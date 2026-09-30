@@ -34,7 +34,6 @@ use syn::{DeriveInput, parse_macro_input};
 /// | `transparent` | no | Stores a type's single field alone. |
 /// | `padding = …` | no | `none` (the default), `block(size)`, or `length(len)`. |
 /// | `scope = Type` | no | The scope. Defaults to `()`, the empty scope; `cryptbox::Recorded<Scope, Id>` also binds a record. |
-/// | `keys = Type` | no | The keys view (`Keys`), a view of the scope that key custody follows. Defaults to the scope without its record. |
 /// | `indexes(Type, …)` | no | The seal's blind indexes (`Indexes`). Defaults to none. |
 ///
 /// The ID is validated when the macro expands and is never derived from the
@@ -56,8 +55,7 @@ use syn::{DeriveInput, parse_macro_input};
 ///   ID and codec, so the two read each other's values.
 ///
 /// Without `scope` and `indexes`, values are bound to their seal ID alone:
-/// `Scope = ()`, `Keys = ()`, and no declared blind indexes. Without `keys`, the
-/// keys view is `<Scope as SealScope>::Parts`, the scope without its record.
+/// `Scope = ()` and no declared blind indexes.
 ///
 /// ```
 /// #[derive(cryptbox::Seal)]
@@ -82,7 +80,6 @@ use syn::{DeriveInput, parse_macro_input};
 ///         type Value = String;
 ///         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
 ///         type Scope = ();
-///         type Keys = ();
 ///         type Indexes = ();
 ///     }
 /// };
@@ -145,7 +142,6 @@ use syn::{DeriveInput, parse_macro_input};
 ///         type Value = String;
 ///         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
 ///         type Scope = cryptbox::Recorded<cryptbox::Tenant, i64>;
-///         type Keys = <cryptbox::Recorded<cryptbox::Tenant, i64> as ::cryptbox::SealScope>::Parts;
 ///         type Indexes = (EmailLookup,);
 ///     }
 /// };
@@ -190,7 +186,6 @@ use syn::{DeriveInput, parse_macro_input};
 ///         type Value = Self;
 ///         type Codec = Self;
 ///         type Scope = ();
-///         type Keys = ();
 ///         type Indexes = ();
 ///     }
 ///
@@ -319,9 +314,8 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// Each named field is one part, declared on the field with `#[part("…")]`,
 /// its part ID, a hyphenated UUID string literal.
 ///
-/// Parts have no roles: a seal names the parts key custody follows with
-/// `keys = View`, and a blind index the parts it is partitioned by with
-/// `scope = View`, each a view of this scope. A part holds a `[u8; 16]`
+/// Parts have no roles: a blind index names the parts it is partitioned by
+/// with `scope = View`, a view of this scope. A part holds a `[u8; 16]`
 /// UUID, a `uuid::Uuid` with `cryptbox`'s `uuid` feature, an `i64`, or bytes
 /// (`Vec<u8>`, `Box<[u8]>`, or `TenantId`), or any other type that implements
 /// `PartType`, such as an application's own ID newtype. A record is never a
@@ -421,7 +415,6 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 /// | --- | --- |
 /// | `id = "…"` | The seal ID. Required. |
 /// | `scope = Type` | The scope. Defaults to `()`, the empty scope. |
-/// | `keys = Type` | The keys view, as for `#[derive(Seal)]`. Defaults to the scope. |
 /// | `codec = Type`, `padding = …` | The codec and padding, as for `#[derive(Seal)]`. |
 /// | `name = Name` | Names the seal `Name` instead of the record's name and the field's, such as `CustomerEmail`. |
 ///
@@ -436,8 +429,8 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 /// An existing seal binds the record only if its scope is `Recorded`, with a
 /// record ID of the record's kind. One seal on two fields fails the build, since
 /// their values could be swapped within a row. The
-/// seals of all sealed fields must share one scope and one keys view, the
-/// record's `Scope` and `Keys`, so one key source serves the record, and a field must write
+/// seals of all sealed fields must share one scope, the record's `Scope`, and
+/// a field must write
 /// exactly the blind indexes its seal declares in `indexes(…)`: a missing,
 /// extra, or repeated one fails the build, so no field can be sealed without
 /// writing its indexes.
@@ -527,7 +520,6 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Recorded<Tenant, i64>;
-///     type Keys = Tenant;
 ///     type Indexes = (EmailLookup,);
 /// }
 ///
@@ -540,7 +532,6 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Recorded<Tenant, i64>;
-///     type Keys = Tenant;
 ///     type Indexes = ();
 /// }
 ///
@@ -594,7 +585,6 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 ///     impl cryptbox::Record for Customer {
 ///         type Sealed = SealedCustomer;
 ///         type Scope = Tenant;
-///         type Keys = Tenant;
 ///
 ///         const SEALS: &'static [SealId] = &[<CustomerEmail as Seal>::ID, <CustomerNote as Seal>::ID];
 ///         const RECORD_ID: &'static str = "id";

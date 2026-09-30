@@ -25,7 +25,6 @@ const _: () = {
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Scope = ::cryptbox::Recorded<cryptbox::Tenant, i64>;
-        type Keys = cryptbox::Tenant;
         type Indexes = ();
     }
 };
@@ -41,7 +40,6 @@ const _: () = {
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Scope = ::cryptbox::Recorded<cryptbox::Tenant, i64>;
-        type Keys = cryptbox::Tenant;
         type Indexes = ();
     }
 };
@@ -117,7 +115,6 @@ const _: () = {
     impl ::cryptbox::Record for Customer {
         type Sealed = SealedCustomer;
         type Scope = cryptbox::Tenant;
-        type Keys = cryptbox::Tenant;
         const SEALS: &'static [::cryptbox::SealId] = &[
             <CustomerEmail as ::cryptbox::Seal>::ID,
             <PrivateNote as ::cryptbox::Seal>::ID,

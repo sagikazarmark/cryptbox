@@ -12,7 +12,6 @@ const _: () = {
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Scope = ();
-        type Keys = ();
         type Indexes = ();
     }
 };

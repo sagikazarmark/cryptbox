@@ -82,12 +82,11 @@ A binding identifies the expected cryptographic domain of a value. Every value i
 bound to a stable `SealId`, so an email seal's ciphertext is not accepted under
 a different seal, even when both use the same root key. A seal declares its
 binding **declaration**: a fixed set of parts, each with a part ID (a UUID) and a
-value kind; which of them form its **keys view**, the parts key custody follows;
-and, when it binds a record, the record ID's kind. The declaration is persistent
+value kind, and, when it binds a record, the record ID's kind. The declaration is persistent
 schema. The **values**, such as a tenant ID and a record ID, are supplied at each
 call. See [ADR-0005](adr/0005-runtime-binding-is-the-core.md),
 [ADR-0008](adr/0008-records-declare-their-fields-seals.md), and
-[ADR-0009](adr/0009-scopes-have-views.md).
+[ADR-0010](adr/0010-records-carry-their-bound-values.md).
 
 Every binding uses one layout:
 
@@ -100,8 +99,7 @@ part    = part_id[16] || kind[1] || len[4] || value[len]
 - `count` is the number of parts, as an unsigned 16-bit integer.
 - Parts are sorted by part ID in ascending byte order, whatever order the seal
   declares them in. Declared part IDs are unique and never the nil UUID.
-- A record is one more part, bound only, under the nil part ID, so it always
-  sorts first. Its kind is the record ID's kind.
+- A record is one more part, under the nil part ID, so it always sorts first. Its kind is the record ID's kind.
 - `len` is an unsigned 32-bit byte count. Every value is length-prefixed, so
   `"ab", "c"` and `"a", "bc"` encode differently.
 - There is no leading tag or type byte: the binding starts with the seal ID.
@@ -124,14 +122,12 @@ Value kinds are fixed and canonical. There is no text kind:
 
 Every part and record value carries its kind code, so the same bytes under
 different kinds, such as an `i64` and its 8 big-endian bytes, never collide.
-A value of a part in the keys view can't be empty.
 
 #### Binding fingerprint
 
 Every binding has a 64-bit **binding fingerprint**, and every envelope's header
-carries it. It covers the part IDs and kinds, a record's part included, and
-which parts are in the keys view, but never values, because the header is
-stored in plaintext:
+carries it. It covers the part IDs and kinds, a record's part included, but never
+values, because the header is stored in plaintext:
 
 ```text
 fingerprint label: "cryptbox/binding-fingerprint/v1\0"
@@ -142,18 +138,11 @@ fingerprint = SHA-256(fingerprint_label
 ```
 
 Parts are sorted by part ID as in the binding, so part order does not change
-the fingerprint, and a record's part comes first with the nil part ID and role
-`03`. A part's role code says whether it is in the keys view:
-
-| Role | Code | Part |
-| --- | --- | --- |
-| keys | `01` | in the keys view: it scopes key custody, and is the unit you shred |
-| bound only | `03` | any other part, the record's included |
-
-Code `02` was the retired `index` role and is no longer written: a blind index
-names its own [index scope](#index-binding). Roles are included because changing
-the keys view alters custody, so it is a migration even though the binding bytes
-don't change. The empty declaration's fingerprint is `65640fc8333534b9`. A record's
+the fingerprint, and a record's part comes first with the nil part ID. Every
+part's role byte is `03`. Codes `01`, the retired keys view, and `02`, the
+retired `index` role, are no longer written: which keys protect a value is key
+management, recorded by the envelope's key ID, and a blind index names its own
+[index scope](#index-binding). The empty declaration's fingerprint is `65640fc8333534b9`. A record's
 kind is part of the declaration, so a value read with a record ID of another kind
 reports `BindingMismatch`.
 
@@ -166,9 +155,8 @@ Two ready-made scopes fix their declarations permanently:
   `Recorded<(), i64>`, it binds the record alone; that declaration's fingerprint
   is `76081b730530f822`.
 - `Tenant` has one part: part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
-  bytes. A seal over it takes `Tenant` as its keys view, so its role is `keys`.
-  A tenant ID is non-empty opaque bytes; a UUID tenant is
-  its 16 bytes. Without a record, its binding fingerprint is `9b73125a52bc08d1`.
+  bytes. A tenant ID is non-empty opaque bytes; a UUID tenant is
+  its 16 bytes. Without a record, its binding fingerprint is `9b5379b1f03beb17`.
   For seal `12345678-1234-4234-8234-1234567890ab` and tenant `acme`, the
   binding is:
 
@@ -190,8 +178,7 @@ from its own seal, never from the envelope:
    authentication.
 
 The fingerprint is part of the authenticated prefix. Changing it to match
-another declaration that has the same binding bytes, such as another keys view, still
-fails authentication.
+another declaration that has the same binding bytes still fails authentication.
 
 Codec identity and version are also absent: the application schema must supply
 them to interpret the plaintext after authentication. Whether the payload is
@@ -412,27 +399,26 @@ independently as described under the scoped vectors below.
 ### Provisional scoped vectors
 
 These vectors use the root key, `KeyId`, `SealId`, plaintext, and nonce above,
-unpadded, with a [binding](#binding) of two parts, the first of which is the
-seal's keys view:
+unpadded, with a [binding](#binding) of two parts:
 
 ```text
-part 11111111-1111-1111-1111-111111111111  uuid   keys        33333333-3333-3333-3333-333333333333
-part 22222222-2222-2222-2222-222222222222  bytes  bound only  77732d31 ("ws-1")
+part 11111111-1111-1111-1111-111111111111  uuid   33333333-3333-3333-3333-333333333333
+part 22222222-2222-2222-2222-222222222222  bytes  77732d31 ("ws-1")
 ```
 
-Without a record, the binding fingerprint is `3c607e5f83c2ec23`:
+Without a record, the binding fingerprint is `0d940ea58b80d8bd`:
 
 ```text
 context:  123456781234423482341234567890ab00021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
-envelope: 43425800020100111111112222433384445555555555553c607e5f83c2ec23000102030405060708090a0b0c0d0e0f101112131415161760a4cae4f6c4caea7d60b573050315f837bb12b7e3f475cf7c866e358f4a14
+envelope: 43425800020100111111112222433384445555555555550d940ea58b80d8bd000102030405060708090a0b0c0d0e0f101112131415161760a4cae4f6c4caea7d60b5730503156361817eff41170fa37c4d0a55ca82bd
 ```
 
 With the `i64` record `7`, bound first as the nil part, the binding fingerprint is
-`5d608899e74caec9`:
+`27689c2e3de5d291`:
 
 ```text
 context:  123456781234423482341234567890ab000300000000000000000000000000000000020000000800000000000000071111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
-envelope: 43425800020100111111112222433384445555555555555d608899e74caec9000102030405060708090a0b0c0d0e0f10111213141516174f25a5c9a5434209ef7a02cea389bf869eddf936d6b19486820d8406e8db7b
+envelope: 434258000201001111111122224333844455555555555527689c2e3de5d291000102030405060708090a0b0c0d0e0f10111213141516174f25a5c9a5434209ef7a02cea389bff059087653aa6f82eee5dc8a6d39ed7f
 ```
 
 The fingerprints, bindings, and all four envelopes above were computed
@@ -496,17 +482,16 @@ mac_input = MAC_label || context || normalized_length_be_u64 || normalized_bytes
 ### Index binding
 
 A blind index is derived under its **index binding**: the seal's binding
-restricted to the parts of the index's **index scope**, which holds every `keys`
-part of the seal's scope. The seal's other parts and the record are left out,
-because a query knows its index scope but not the row. The index binding uses
+restricted to the parts of the index's **index scope**. The seal's other parts
+and the record are left out, because a query knows its index scope but not the
+row. The index binding uses
 the [binding](#binding) encoding:
 
 - It is the seal ID, then the index scope's parts sorted by part ID.
 - With no parts, it is the empty binding, as for the empty scope.
 
 Two bindings that agree on the index scope's values share the index binding, so
-their indexes of the same value are equal. The key source receives the seal's
-keys view, projected from the index scope.
+their indexes of the same value are equal.
 
 ### Blind-index recipe
 

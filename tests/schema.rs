@@ -1,9 +1,9 @@
 //! Public-boundary tests for the schema manifest and unique-ID checks.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, FromParts, IndexId, Padding,
-    PartKind, PartSpec, PartValue, PartValues, Raw, Recorded, Scope, Seal, SealId, Sealed, Tenant,
-    Utf8, index_id, inspect_ciphertext, part_id,
+    BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, IndexId, Padding, PartKind,
+    PartSpec, PartValue, PartValues, Raw, Recorded, Scope, Seal, SealId, Sealed, Tenant, Utf8,
+    index_id, inspect_ciphertext, part_id,
     schema::{Duplicate, Manifest},
     seal_id,
 };
@@ -17,7 +17,6 @@ impl Seal for Nickname {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -29,7 +28,6 @@ impl Seal for Avatar {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -45,13 +43,11 @@ seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   padding: none
   record: no
   binding: 65640fc8333534b9
-  shred unit: keyring
 seal 9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e
   codec: raw
   padding: block(64)
   record: no
   binding: 65640fc8333534b9
-  shred unit: keyring
 "
     );
 }
@@ -64,12 +60,11 @@ impl Seal for TenantNote {
     type Value = String;
     type Codec = Utf8;
     type Scope = Tenant;
-    type Keys = Tenant;
     type Indexes = ();
 }
 
 #[test]
-fn manifest_shows_a_scoped_binding_and_its_shred_unit() {
+fn manifest_shows_a_scoped_binding() {
     // The tenant part and its binding fingerprint are in docs/wire-format.md#presets.
     assert_eq!(
         Manifest::new().seal::<TenantNote>().to_string(),
@@ -78,78 +73,13 @@ seal 4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37
   codec: utf8
   padding: none
   record: no
-  binding: 9b73125a52bc08d1
-    part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
-  shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
+  binding: 9b5379b1f03beb17
+    part 1e8306bf-3135-4570-831c-6732f92550e9 bytes
 "
     );
 }
 
-#[test]
-fn manifest_shows_custody_labels() {
-    let manifest = Manifest::new()
-        .seal::<TenantNote>()
-        .seal::<Nickname>()
-        .custody::<TenantNote>("per-tenant KMS key");
-
-    assert_eq!(
-        manifest.to_string(),
-        "\
-seal 4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37
-  codec: utf8
-  padding: none
-  record: no
-  binding: 9b73125a52bc08d1
-    part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
-  shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
-  custody: per-tenant KMS key
-seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
-  codec: utf8
-  padding: none
-  record: no
-  binding: 65640fc8333534b9
-  shred unit: keyring
-"
-    );
-}
-
-#[test]
-fn labelling_custody_registers_the_seal_once() {
-    let labelled_first = Manifest::new()
-        .custody::<Nickname>("general KMS")
-        .seal::<Nickname>();
-    let registered_first = Manifest::new()
-        .seal::<Nickname>()
-        .custody::<Nickname>("payments KMS")
-        .custody::<Nickname>("general KMS");
-
-    assert_eq!(labelled_first.to_string(), registered_first.to_string());
-    assert_eq!(
-        labelled_first.to_string(),
-        "\
-seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
-  codec: utf8
-  padding: none
-  record: no
-  binding: 65640fc8333534b9
-  shred unit: keyring
-  custody: general KMS
-"
-    );
-}
-
-#[test]
-fn a_custody_label_stays_on_one_line() {
-    let manifest = Manifest::new().custody::<Nickname>("org's \"general\"\nKMS\u{2028}EU");
-
-    assert!(
-        manifest
-            .to_string()
-            .ends_with("  custody: org's \"general\"\\nKMS\\u{2028}EU\n")
-    );
-}
-
-/// Four parts, declared by hand: two in its keys view and two bound only.
+/// Four parts, declared by hand.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct ProjectScope {
     region: i64,
@@ -187,38 +117,6 @@ impl Scope for ProjectScope {
     }
 }
 
-/// The keys view of [`ProjectScope`]: its region and its org.
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct ProjectKeys {
-    region: i64,
-    org: [u8; 16],
-}
-
-impl Scope for ProjectKeys {
-    const PARTS: &'static [PartSpec] = &[
-        PartSpec::new(
-            part_id!("1a2b3c4d-0000-4000-8000-000000000001"),
-            PartKind::I64,
-        ),
-        PartSpec::new(
-            part_id!("2b3c4d5e-0000-4000-8000-000000000002"),
-            PartKind::Uuid,
-        ),
-    ];
-    fn values(&self) -> PartValues<'_> {
-        PartValues::from([PartValue::I64(self.region), PartValue::Uuid(self.org)])
-    }
-}
-
-impl FromParts for ProjectKeys {
-    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, cryptbox::Error> {
-        match *values {
-            [PartValue::I64(region), PartValue::Uuid(org)] => Ok(Self { region, org }),
-            _ => Err(cryptbox::Error::InvalidBinding),
-        }
-    }
-}
-
 struct WorkspaceNote;
 
 impl Seal for WorkspaceNote {
@@ -227,7 +125,6 @@ impl Seal for WorkspaceNote {
     type Value = String;
     type Codec = Utf8;
     type Scope = Recorded<ProjectScope, i64>;
-    type Keys = ProjectKeys;
     type Indexes = ();
 }
 
@@ -242,12 +139,11 @@ seal 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
   codec: utf8
   padding: block(16)
   record: i64
-  binding: 3c900b26f1b5d5c4
-    part 1a2b3c4d-0000-4000-8000-000000000001 i64 keys
-    part 2b3c4d5e-0000-4000-8000-000000000002 uuid keys
-    part 3c4d5e6f-0000-4000-8000-000000000003 bytes bound
-    part 4d5e6f70-0000-4000-8000-000000000004 uuid bound
-  shred unit: 1a2b3c4d-0000-4000-8000-000000000001 + 2b3c4d5e-0000-4000-8000-000000000002
+  binding: 82a33aab775dbdb0
+    part 1a2b3c4d-0000-4000-8000-000000000001 i64
+    part 2b3c4d5e-0000-4000-8000-000000000002 uuid
+    part 3c4d5e6f-0000-4000-8000-000000000003 bytes
+    part 4d5e6f70-0000-4000-8000-000000000004 uuid
 "
     );
 
@@ -311,7 +207,6 @@ impl Seal for DisplayName {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -400,7 +295,6 @@ mod serde_codecs {
         type Value = Address;
         type Codec = cryptbox::Json;
         type Scope = ();
-        type Keys = ();
         type Indexes = ();
     }
 
@@ -415,7 +309,6 @@ seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
   padding: length(256)
   record: no
   binding: 65640fc8333534b9
-  shred unit: keyring
 "
         );
     }
@@ -430,7 +323,6 @@ seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
         type Value = Address;
         type Codec = cryptbox::Postcard;
         type Scope = ();
-        type Keys = ();
         type Indexes = ();
     }
 
@@ -445,7 +337,6 @@ seal 7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13
   padding: none
   record: no
   binding: 65640fc8333534b9
-  shred unit: keyring
 "
         );
     }

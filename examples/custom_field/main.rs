@@ -55,7 +55,6 @@ impl Seal for Handle {
     type Value = Self;
     type Codec = HandleCodec;
     type Scope = ();
-    type Keys = ();
     type Indexes = (HandleEquality,);
 }
 
@@ -253,7 +252,6 @@ seal dcaa3c69-1767-49a1-8476-36555eaf54bf
   padding: none
   record: no
   binding: 65640fc8333534b9
-  shred unit: keyring
 index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
   seal: dcaa3c69-1767-49a1-8476-36555eaf54bf
   bits: 128
@@ -272,7 +270,6 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
             type Value = String;
             type Codec = cryptbox::Utf8;
             type Scope = ();
-            type Keys = ();
             type Indexes = ();
         }
 

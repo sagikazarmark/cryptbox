@@ -58,7 +58,6 @@ use super::{LegacyFormat, legacy};
 ///     type Value = String;
 ///     type Codec = cryptbox::Utf8;
 ///     type Scope = ();
-///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -159,7 +158,6 @@ where
     ///     type Value = Vec<u8>;
     ///     type Codec = cryptbox::Raw;
     ///     type Scope = ();
-    ///     type Keys = ();
     ///     type Indexes = ();
     /// }
     ///

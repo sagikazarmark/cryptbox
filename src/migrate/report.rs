@@ -20,11 +20,6 @@ pub struct SweepReport {
     ///
     /// A legacy-binding window closes only once a verification pass counts none.
     pub legacy_binding: u64,
-    /// Rows whose binding arguments project another keys view than the planner's.
-    ///
-    /// Such rows are an anomaly, left unread and unwritten; see
-    /// [`RowState::OutOfScope`].
-    pub out_of_scope: u64,
     /// Rows that could not be classified during verification.
     pub malformed: u64,
     /// Rewrites lost to a concurrent writer; always zero for verification.
@@ -38,7 +33,6 @@ impl SweepReport {
             RowState::Stale => self.stale += 1,
             RowState::Legacy => self.legacy += 1,
             RowState::LegacyBinding => self.legacy_binding += 1,
-            RowState::OutOfScope => self.out_of_scope += 1,
         }
     }
 
@@ -54,13 +48,12 @@ impl SweepReport {
         self.stale += other.stale;
         self.legacy += other.legacy;
         self.legacy_binding += other.legacy_binding;
-        self.out_of_scope += other.out_of_scope;
         self.malformed += other.malformed;
         self.conflicts += other.conflicts;
     }
 
-    /// Returns whether the legacy, legacy-binding, out-of-scope, stale, and
-    /// malformed counts are all zero.
+    /// Returns whether the legacy, legacy-binding, stale, and malformed
+    /// counts are all zero.
     ///
     /// This predicate does not know whether a pass is complete: even an empty
     /// default report returns `true`, and conflicts are not considered. Use the
@@ -76,10 +69,6 @@ impl SweepReport {
     /// It says nothing about historical keys needed by backups or other stores.
     #[must_use]
     pub const fn is_terminal(&self) -> bool {
-        self.legacy == 0
-            && self.legacy_binding == 0
-            && self.out_of_scope == 0
-            && self.stale == 0
-            && self.malformed == 0
+        self.legacy == 0 && self.legacy_binding == 0 && self.stale == 0 && self.malformed == 0
     }
 }

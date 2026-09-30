@@ -29,7 +29,6 @@ impl Seal for CustomerEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Recorded<Tenant, i64>;
-    type Keys = Tenant;
     type Indexes = (EmailLookup,);
 }
 
@@ -42,7 +41,6 @@ impl Seal for UnscopedEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
-    type Keys = ();
     type Indexes = (UnscopedEmailLookup,);
 }
 
@@ -173,7 +171,7 @@ fn planner<'a>(
     keys: &'a EncryptionKeyring,
     index_keys: &'a BlindIndexKeyring,
 ) -> RowPlanner<'a, CustomerEmail, Columns> {
-    RowPlanner::for_keys(tenant(b"acme"), keys, row_args).with_index_with::<EmailLookup>(index_keys)
+    RowPlanner::for_rows(keys, row_args).with_index_with::<EmailLookup>(index_keys)
 }
 
 #[test]
@@ -193,30 +191,9 @@ fn planner_skips_a_current_row_bound_to_its_scope_and_record() {
 }
 
 #[test]
-fn planner_reports_a_row_of_another_scope_as_out_of_scope_without_reading_it() {
-    let (keys, index_keys) = (acme_keys(), acme_index_keys());
-    let globex = row(b"globex", 7);
-    let planner = planner(&keys, &index_keys);
-
-    // Bytes that are not even an envelope: the row is left alone before its
-    // stored bytes are looked at.
-    assert_eq!(
-        planner
-            .classify_row(&globex, b"ada@example.com", &[b""])
-            .unwrap(),
-        RowState::OutOfScope
-    );
-    let outcome = planner
-        .plan_row(&globex, b"ada@example.com", &[b""])
-        .unwrap();
-    assert_eq!(outcome.state(), RowState::OutOfScope);
-    assert!(outcome.write().is_none());
-}
-
-#[test]
 fn planner_rejects_row_args_without_the_seals_record() {
     let (keys, index_keys) = (acme_keys(), acme_index_keys());
-    let planner = RowPlanner::<CustomerEmail, Columns>::for_keys(tenant(b"acme"), &keys, |row| {
+    let planner = RowPlanner::<CustomerEmail, Columns>::for_rows(&keys, |row| {
         Ok(RowArgs::new(Tenant(TenantId::new(row.tenant.clone())?)))
     })
     .with_index_with::<EmailLookup>(&index_keys);
@@ -252,7 +229,7 @@ fn migrating_planner<'a>(
     old_keys: &'a EncryptionKeyring,
     index_keys: &'a BlindIndexKeyring,
 ) -> RowPlanner<'a, CustomerEmail, Columns> {
-    planner(keys, index_keys).legacy_binding::<(), ()>(old_keys)
+    planner(keys, index_keys).legacy_binding::<()>(old_keys)
 }
 
 #[test]
@@ -317,7 +294,6 @@ impl Seal for TenantEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Tenant;
-    type Keys = Tenant;
     type Indexes = ();
 }
 
@@ -331,7 +307,7 @@ fn a_legacy_binding_takes_its_parts_from_the_rows_binding() {
             .into_bytes();
     // Adding a record leaves the index binding, and so the index, unchanged.
     let index = seal_current(&row, "ada@example.com").1;
-    let planner = planner(&keys, &index_keys).legacy_binding::<Tenant, Tenant>(&keys);
+    let planner = planner(&keys, &index_keys).legacy_binding::<Tenant>(&keys);
 
     let write = planner
         .plan_row(&row, &ciphertext, &[&index])
@@ -355,8 +331,8 @@ fn a_legacy_binding_moves_rows_out_of_their_record() {
     let row = row(b"acme", 7);
     // Sealed while the seal bound its record.
     let (ciphertext, _) = seal_current(&row, "ada@example.com");
-    let planner = RowPlanner::<TenantEmail, Columns>::for_keys(tenant(b"acme"), &keys, row_args)
-        .legacy_binding::<Recorded<Tenant, i64>, Tenant>(&keys);
+    let planner = RowPlanner::<TenantEmail, Columns>::for_rows(&keys, row_args)
+        .legacy_binding::<Recorded<Tenant, i64>>(&keys);
 
     assert_eq!(
         planner.classify_row(&row, &ciphertext, &[]).unwrap(),
@@ -376,11 +352,10 @@ fn a_legacy_binding_moves_rows_out_of_their_record() {
     );
 
     // The old declaration binds the record, so its rows must still pass it.
-    let without_record =
-        RowPlanner::<TenantEmail, Columns>::for_keys(tenant(b"acme"), &keys, |row| {
-            Ok(RowArgs::new(tenant(&row.tenant)))
-        })
-        .legacy_binding::<Recorded<Tenant, i64>, Tenant>(&keys);
+    let without_record = RowPlanner::<TenantEmail, Columns>::for_rows(&keys, |row| {
+        Ok(RowArgs::new(tenant(&row.tenant)))
+    })
+    .legacy_binding::<Recorded<Tenant, i64>>(&keys);
     assert_eq!(
         without_record.plan_row(&row, &ciphertext, &[]).unwrap_err(),
         Error::InvalidBinding
@@ -395,7 +370,7 @@ fn a_record_for_a_seal_that_binds_none_is_invalid_without_a_window_that_does() {
         Sealed::<TenantEmail>::seal(&"ada@example.com".into(), &tenant(b"acme"), &keys)
             .unwrap()
             .into_bytes();
-    let planner = RowPlanner::<TenantEmail, Columns>::for_keys(tenant(b"acme"), &keys, row_args);
+    let planner = RowPlanner::<TenantEmail, Columns>::for_rows(&keys, row_args);
 
     assert_eq!(
         planner.classify_row(&row, &ciphertext, &[]).unwrap_err(),
@@ -424,7 +399,7 @@ fn a_legacy_binding_with_a_part_the_current_binding_lacks_is_invalid() {
     let ciphertext = Sealed::<RegionEmail>::seal(&"ada@example.com".into(), &Region, &keys)
         .unwrap()
         .into_bytes();
-    let planner = planner(&keys, &index_keys).legacy_binding::<Region, ()>(&keys);
+    let planner = planner(&keys, &index_keys).legacy_binding::<Region>(&keys);
 
     assert_eq!(
         planner.classify_row(&row, &ciphertext, &[b""]).unwrap(),
@@ -444,7 +419,6 @@ impl Seal for RegionEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Region;
-    type Keys = ();
     type Indexes = ();
 }
 
@@ -575,38 +549,13 @@ fn a_sweep_migrates_an_unscoped_seal_to_its_scope_and_record() {
     }
 }
 
-#[test]
-fn a_sweep_reports_a_row_of_another_scope_as_an_anomaly() {
-    let (keys, old_keys, index_keys) = (acme_keys(), unscoped_keys(), acme_index_keys());
-    let sweep = Sweep::new(migrating_planner(&keys, &old_keys, &index_keys));
-    let mut store = half_written_store();
-    store.rows[1].columns.tenant = b"globex".to_vec();
-    let foreign = store.rows[1].clone();
-
-    let report = block_on(sweep.run(&mut store)).unwrap();
-    assert_eq!(
-        (report.out_of_scope, report.legacy_binding, report.current),
-        (1, 2, 1)
-    );
-    assert_eq!(store.rows[1].ciphertext, foreign.ciphertext);
-    assert_eq!(store.rows[1].indexes, foreign.indexes);
-
-    let verified = block_on(sweep.verify(&mut store)).unwrap();
-    assert_eq!((verified.out_of_scope, verified.malformed), (1, 0));
-    assert!(!verified.is_terminal());
-}
-
 /// Looks `email` up the way the application does during the window: probes
 /// over both index declarations, then opening each candidate under either declaration.
 fn look_up(store: &MemoryStore, email: &str) -> Vec<(i64, String)> {
     let acme = tenant(b"acme");
-    let probes = probes_across::<(), (), EmailLookup>(
-        email,
-        &acme,
-        &acme_index_keys(),
-        &unscoped_index_keys(),
-    )
-    .unwrap();
+    let probes =
+        probes_across::<(), EmailLookup>(email, &acme, &acme_index_keys(), &unscoped_index_keys())
+            .unwrap();
 
     store
         .rows
@@ -620,7 +569,7 @@ fn look_up(store: &MemoryStore, email: &str) -> Vec<(i64, String)> {
             let sealed = Sealed::<CustomerEmail>::from_bytes(row.ciphertext.clone()).unwrap();
             let args = (&acme, &row.columns.id);
             let value =
-                open_across::<(), (), _>(&sealed, args, &acme_keys(), &unscoped_keys()).unwrap();
+                open_across::<(), _>(&sealed, args, &acme_keys(), &unscoped_keys()).unwrap();
             assert!(EmailLookup::verify_candidate(email, &value).unwrap());
             (row.columns.id, value)
         })
@@ -656,7 +605,7 @@ fn lookups_keep_working_throughout_the_window() {
 #[test]
 fn probes_across_cover_the_old_and_the_new_index_declarations() {
     let acme = tenant(b"acme");
-    let probes = probes_across::<(), (), EmailLookup>(
+    let probes = probes_across::<(), EmailLookup>(
         "ada@example.com",
         &acme,
         &acme_index_keys(),
@@ -683,7 +632,7 @@ fn probes_across_cover_the_old_and_the_new_index_declarations() {
 fn a_probe_both_index_declarations_share_is_returned_once() {
     // Adding a record leaves the index binding unchanged.
     let acme = tenant(b"acme");
-    let probes = probes_across::<Tenant, Tenant, EmailLookup>(
+    let probes = probes_across::<Tenant, EmailLookup>(
         "ada@example.com",
         &acme,
         &acme_index_keys(),
@@ -705,7 +654,7 @@ fn open_across_reports_a_value_of_neither_declaration_as_a_binding_mismatch() {
     let sealed = Sealed::<CustomerEmail>::from_bytes(sealed.into_bytes()).unwrap();
 
     assert_eq!(
-        open_across::<(), (), _>(&sealed, (&tenant(b"acme"), &7_i64), &keys, &unscoped_keys(),)
+        open_across::<(), _>(&sealed, (&tenant(b"acme"), &7_i64), &keys, &unscoped_keys(),)
             .unwrap_err(),
         Error::BindingMismatch
     );
@@ -747,7 +696,6 @@ impl Seal for WorkspaceEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Recorded<TenantWorkspace, i64>;
-    type Keys = Tenant;
     type Indexes = ();
 }
 
@@ -756,14 +704,14 @@ fn a_legacy_binding_keeps_the_record_its_rows_were_sealed_with() {
     let keys = acme_keys();
     let row = row(b"acme", 7);
     let (ciphertext, _) = seal_current(&row, "ada@example.com");
-    let planner = RowPlanner::<WorkspaceEmail, Columns>::for_keys(tenant(b"acme"), &keys, |row| {
+    let planner = RowPlanner::<WorkspaceEmail, Columns>::for_rows(&keys, |row| {
         let binding = TenantWorkspace {
             tenant: row.tenant.clone(),
             workspace: 3,
         };
         Ok(RowArgs::new(binding).with_record(RecordId::from(row.id)))
     })
-    .legacy_binding::<Recorded<Tenant, i64>, Tenant>(&keys);
+    .legacy_binding::<Recorded<Tenant, i64>>(&keys);
 
     assert_eq!(
         planner.classify_row(&row, &ciphertext, &[]).unwrap(),
@@ -786,12 +734,11 @@ fn a_legacy_binding_keeps_the_record_its_rows_were_sealed_with() {
 
     let old = Sealed::<WorkspaceEmail>::from_bytes(ciphertext).unwrap();
     assert_eq!(
-        open_across::<Recorded<Tenant, i64>, Tenant, _>(&old, (&binding, &7_i64), &keys, &keys)
-            .unwrap(),
+        open_across::<Recorded<Tenant, i64>, _>(&old, (&binding, &7_i64), &keys, &keys).unwrap(),
         "ada@example.com"
     );
     assert_eq!(
-        open_across::<Recorded<Tenant, i64>, Tenant, _>(&old, (&binding, &8_i64), &keys, &keys)
+        open_across::<Recorded<Tenant, i64>, _>(&old, (&binding, &8_i64), &keys, &keys)
             .unwrap_err(),
         Error::AuthenticationFailed
     );
