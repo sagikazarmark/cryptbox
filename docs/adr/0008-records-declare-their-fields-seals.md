@@ -4,6 +4,12 @@ status: accepted
 
 # Records declare their fields' seals; the record ID is a bound part
 
+> Amended by [ADR-0009](0009-scopes-have-views.md). The derives' attributes are
+> named after them: `#[record(…)]`, `#[record_id]`, `#[seal(…)]`, and
+> `#[blind_index(…)]` replace `#[cryptbox(…)]`. A record field without
+> `#[seal…]` is stored as it is, the sealed struct defaults to `Sealed{Record}`,
+> and a record has one keys view.
+
 A record declares a seal for each of its sealed fields, and every value is bound
 to its seal ID, its scope's values, and, inside a record, the record ID:
 

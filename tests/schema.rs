@@ -149,7 +149,7 @@ fn a_custody_label_stays_on_one_line() {
     );
 }
 
-/// Two `keys` parts and two bound-only parts, declared by hand.
+/// Four parts, declared by hand: two in its keys view and two bound only.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct ProjectScope {
     region: i64,
@@ -187,7 +187,7 @@ impl Scope for ProjectScope {
     }
 }
 
-/// The keys view of [`ProjectScope`]: its two `keys` parts.
+/// The keys view of [`ProjectScope`]: its region and its org.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct ProjectKeys {
     region: i64,

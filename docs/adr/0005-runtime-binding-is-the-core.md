@@ -50,6 +50,12 @@ status: accepted
 > `#[derive(Record)]` declares a seal for each sealed field, so every storage
 > location keeps its own seal ID.
 
+> Amended by [ADR-0009](0009-scopes-have-views.md). Parts carry no roles: a
+> seal names its keys view, the parts key custody follows, and each blind index
+> names its own index scope, both views of the seal's scope. The `index` role and
+> `IndexArgs` are gone, and the fingerprint gives role code `01` to a part of the
+> keys view and `03` to any other.
+
 Every seal and open binds the ciphertext to a runtime **binding**: the field ID,
 a declared scope (for example tenant, or org plus workspace), and optionally a
 record ID. The binding bytes go into the AAD and the HKDF info. Tenant and

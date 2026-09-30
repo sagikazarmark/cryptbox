@@ -412,7 +412,8 @@ independently as described under the scoped vectors below.
 ### Provisional scoped vectors
 
 These vectors use the root key, `KeyId`, `SealId`, plaintext, and nonce above,
-unpadded, with a [binding](#binding) of two parts:
+unpadded, with a [binding](#binding) of two parts, the first of which is the
+seal's keys view:
 
 ```text
 part 11111111-1111-1111-1111-111111111111  uuid   keys        33333333-3333-3333-3333-333333333333

@@ -284,6 +284,25 @@
   names are the manifest's one Rust name. The sealed struct's name defaults to
   `Sealed` and the record's name, so `#[record(sealed = …)]` is optional.
 
+  Migrating to views (ADR-0009):
+
+  | Before | Now |
+  | --- | --- |
+  | `#[cryptbox(part = "…", keys)] org` | `#[part("…")] org`, and `keys = Org` on the seal, where `Org` is a view holding the org |
+  | `#[cryptbox(index_args = Search)]` and `index` parts | a view `Search` named by `#[blind_index(scope = Search, …)]` |
+  | `PartSpec::keys(id, kind)`, `PartSpec::bound(id, kind)` | `PartSpec::new(id, kind)` |
+  | `impl EncryptionKeySource for S`, `fn encryption_keyring(&self, seal, scope: &KeyScope)` | `impl EncryptionKeySource<Tenant> for S`, `fn encryption_keyring(&self, seal, tenant: &Tenant)` |
+  | `HashMap<KeyScope, EncryptionKeyring>` | `HashMap<Tenant, EncryptionKeyring>` |
+  | `RowPlanner::for_key_scope(KeyScope::of(&acme)?, keys, row_args)` | `RowPlanner::for_keys(acme, keys, row_args)` |
+  | `.legacy_binding::<Tenant>(old_keys)`, `open_across::<(), _>`, `probes_across::<(), S>` | `.legacy_binding::<Tenant, Tenant>(old_keys)`, `open_across::<(), (), _>`, `probes_across::<(), (), S>` |
+  | `ObjectKey::<B>::prefix(&KeyScope::of(&b)?)` | `ObjectKey::<B, K>::prefix(&k)`, `K` the view that leads the object key |
+  | `#[cryptbox(id = "…", value = String)]` on a seal | `#[seal(id = "…", value = String)]` |
+  | `#[cryptbox(id = "…", seal = S, bits = 32, …)]` on a blind index | `#[blind_index(id = "…", seal = S, bits = 32, …)]` |
+  | `#[cryptbox(record_id = id, sealed = SealedCustomer)]` | `#[record_id]` on `id`; `#[record(sealed = …)]` only to rename `SealedCustomer` |
+  | `#[cryptbox(id = "…", index(S as s))]` on a record field | `#[seal(id = "…")]` and `#[blind_index(S as s)]` |
+  | `#[cryptbox(seal = F)]`, `#[cryptbox(seal)]` | `#[seal(F)]`, `#[seal]` |
+  | `#[cryptbox(plaintext)]` | nothing |
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

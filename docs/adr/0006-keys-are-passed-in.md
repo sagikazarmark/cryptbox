@@ -18,6 +18,10 @@ status: accepted
 > A borrowed keyring could not be handed out from behind a lock, a swapped
 > snapshot, or a lazily filled per-scope cache, which a routing source needs.
 
+> Amended by [ADR-0009](0009-scopes-have-views.md). Key sources are typed by the
+> seal's keys view, `EncryptionKeySource<K>` and `BlindIndexKeySource<K>`, and
+> receive its values instead of an untyped `KeyScope`, which is removed.
+
 `seal`, `open`, and the index operations take the keys to use directly. The crate
 ships concrete keyrings (`EncryptionKeyring`, `BlindIndexKeyring`, and the `Keys`
 pair). Each holds the current key plus previous keys, looked up by the key ID in

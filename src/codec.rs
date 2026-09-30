@@ -159,7 +159,7 @@ pub trait Codec<T>: 'static {
 #[diagnostic::on_unimplemented(
     message = "`{Self}` has no default codec",
     label = "`{Self}` has no built-in codec",
-    note = "only `String`, `Vec<u8>`, `Secret<String>`, and `Secret<Vec<u8>>` have one: name the codec with `#[cryptbox(codec = …)]`, such as `cryptbox::Json`; the codec is persistent schema"
+    note = "only `String`, `Vec<u8>`, `Secret<String>`, and `Secret<Vec<u8>>` have one: name the codec with `#[seal(codec = …)]`, such as `cryptbox::Json`; the codec is persistent schema"
 )]
 pub trait DefaultCodec: Sized + sealed::Sealed {
     /// The codec a seal over this type uses when it names none.

@@ -2,9 +2,9 @@
 
 A binding is the cryptographic domain of a value: the seal it is sealed with, the
 values of the seal's declared scope, such as a tenant, and its record when the
-seal binds one. This page explains how to declare a scope, which role each part
-should have, how a blind index chooses its own scope, and where each bound value
-must come from.
+seal binds one. This page explains how to declare a scope and the views that
+decide what each part scopes, the seal's keys view and each blind index's
+scope, and where each bound value must come from.
 [Documentation](README.md) · [Choosing keyrings](choosing-keyrings.md).
 
 Start from [seal your first value](first-field.md), whose seal binds values
@@ -26,21 +26,27 @@ seal ID or codec is, and every envelope carries a fingerprint of it so a
 reader that expects another declaration reports `Error::BindingMismatch` instead of an
 authentication failure.
 
-## Declare a scope
+## Declare a scope and its views
 
 A `Scope` is data only: it declares its parts and returns their values. The
 library sorts, frames, and validates the bytes, so no application writes binding
-bytes. With the `derive` feature, each field of the struct is one part:
+bytes. With the `derive` feature, each field of the struct is one part, with its
+part ID:
 
 ```rust
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 pub struct OrgWorkspace {
-    /// Scopes keys; the shred unit.
     #[part("59881c28-3003-4047-847f-d7cc73b140e5")]
     pub org: [u8; 16],
-    /// Bound only: it separates ciphertext without scoping keys.
     #[part("78f0169a-f024-402b-9cdf-f436864fa17f")]
     pub workspace: [u8; 16],
+}
+
+/// A view of `OrgWorkspace`: the org alone.
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
+pub struct Org {
+    #[part("59881c28-3003-4047-847f-d7cc73b140e5")]
+    pub org: [u8; 16],
 }
 
 #[derive(cryptbox::Seal)]
@@ -54,14 +60,23 @@ pub struct OrgWorkspace {
 pub struct CustomerEmail;
 ```
 
-`keys = Org` names the seal's [keys view](#keys-follow-the-keys-view): `Org`,
-declared [below](#choose-each-blind-indexs-scope), holds the org, the part key
-custody follows. Without `keys`, the keys view is the whole scope, which fits `()` and
-`Tenant`. `EmailLookup` is a blind index over the seal, declared as in the
-[blind-index example](../examples/blind_indexes.rs) with its own
-[index scope](#choose-each-blind-indexs-scope). The derive also implements
-`FromParts`, which builds a scope back from its part values, so a blind index's
-scope can be projected from the seal's and an adapter such as a
+Parts have no roles. A **view** of a scope is another scope whose parts are
+parts of it, matched by part ID and kind, as `Org` is of `OrgWorkspace`; its
+values are projected from the scope's by part ID. Views decide what else a part
+scopes:
+
+- the seal's **keys view**, `keys = Org`, holds the parts
+  [key custody follows](#choose-the-keys-view). Without `keys`, it is the
+  whole scope, which fits `()` and `Tenant`;
+- each blind index's **index scope** holds the parts that
+  [partition the index](#choose-each-blind-indexs-scope), here for
+  `EmailLookup`;
+- a part in no view, here the workspace, is bound only: it separates
+  ciphertext and nothing else.
+
+A view is checked when it is first used: one with a part its scope lacks fails
+the build. The derive also implements `FromParts`, which builds a scope back
+from its part values, so views can be projected and an adapter such as a
 [Restate object key](restate.md#object-keys) can parse one. A part holds a
 UUID, an `i64`, or bytes; an application's own ID type can hold one by
 implementing `PartType`. Every part ID is a generated UUID: see
@@ -73,12 +88,14 @@ unless the seal also binds a record, it is the
 bytes part, and is its own keys view. Use a preset until its declaration is too
 coarse, then declare a scope.
 
+A record ID is never a declared part: a seal binds one with the seal scope
+`Recorded<S, Id>`, which adds it as one more part under the nil part ID. It is
+in no view, since a record-scoped index could not be searched.
+
 ## Choose the keys view
 
-Every part is bound into the ciphertext. Parts have no roles: what else a part
-scopes is decided by the views that include it. The seal's
-[keys view](#keys-follow-the-keys-view) is the decision with the most
-consequences:
+Every part is bound into the ciphertext. Whether it also scopes key custody is
+the decision with the most consequences:
 
 | Part | Keys | Shredding | Use it for |
 | --- | --- | --- | --- |
@@ -90,32 +107,19 @@ Two consequences follow from the table:
 - **The keys view must be known before rows are read.** Keys are resolved from
   its values, so a read that cannot name them has no keyring to open anything
   with. Every query, job, and sweep is partitioned by keys view; a cross-scope
-  report has to be assembled per scope.
+  report has to be assembled per scope. A value of a part in the keys view can't
+  be empty.
 - **Changing the keys view is a migration** even though the binding bytes do not
   change, because it changes custody. The binding fingerprint marks the parts of
   the keys view for exactly that reason.
 
-A record ID is never a declared part: a seal binds one with the seal scope
-`Recorded<S, Id>`, which adds it as one more part under the nil part ID. It is
-always bound only, and never in an index scope, since a record-scoped index
-could not be searched.
-
 ## Choose each blind index's scope
 
-A blind index names its own **index scope**, the parts that partition it: a
-view of its seal's scope, which is a scope whose parts are parts of the seal's
-scope, matched by part ID and kind. A query supplies its values, and a stored
-index is derived under the same values, projected from the scope its value was
-sealed under:
+A blind index names its own **index scope**, the parts that partition it: a view
+of its seal's scope. A query supplies its values, and a stored index is derived
+under the same values, projected from the scope its value was sealed under:
 
 ```rust
-/// What a customer search knows: the org.
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-pub struct Org {
-    #[part("59881c28-3003-4047-847f-d7cc73b140e5")]
-    pub org: [u8; 16],
-}
-
 #[derive(cryptbox::BlindIndexSpec)]
 #[blind_index(
     id = "ab78afa9-7aaa-499c-8239-037b7e136130",
@@ -130,8 +134,8 @@ pub struct EmailLookup;
 ```
 
 - **An index scope holds the seal's keys view**, because a query selects index
-  keys by it. A scope that leaves one of its parts out, or has a part
-  the seal's scope lacks, fails the build when the index is first used.
+  keys by it. A scope that leaves one of its parts out, or has a part the
+  seal's scope lacks, fails the build when the index is first used.
 - **Add a part a query always knows** when equal values in different ones must
   not share index bytes, such as a region. A value that a lookup cannot know,
   such as a workspace the query spans or the record, must stay out.
@@ -166,8 +170,8 @@ when you asked for one record, compare the opened ID with the one you asked for.
 
 A [migration sweep](reencryption-sweep.md#binding-declaration-changes) has no request
 to take a binding from, so it builds each row's binding from the row's own
-columns. Its keys view still comes from the job, and a row whose `keys` columns
-project another keys view is reported out of scope and left alone. Resealing a
+columns. Its keys view still comes from the job, and a row whose columns project
+another keys view is reported out of scope and left alone. Resealing a
 value from a declaration that did not bind those columns trusts them once, so sweep
 such a change only over columns the application already trusts.
 
@@ -182,7 +186,8 @@ ID must exist before the first value is sealed:
 - **It need not be the primary key.** A row can keep its own surrogate key and
   carry a separate, stable record ID; what matters is that the ID never changes
   while sealed values exist.
-- **It is never encrypted**, because opening the row needs it first.
+- **It is never encrypted**, because opening the row needs it first. A
+  `#[derive(Record)]` marks its field `#[record_id]`.
 - **Its kind is fixed**: a UUID, an `i64`, or bytes, the kind of `Id`. Any
   `PartType` can hold one, and changing its type is a declaration change.
 
@@ -215,7 +220,10 @@ shows the same program beside the unscoped tier.
 Whole rows are sealed and opened together through the
 [`Record`](https://docs.rs/cryptbox/latest/cryptbox/trait.Record.html) trait and
 derive, which pass one binding and record ID to every sealed field and write each
-seal's blind indexes.
+seal's blind indexes. A record has one scope and one keys view, so one key
+source serves all of its fields. A field without `#[seal…]` is stored as it is,
+and the [schema manifest](integration.md#guarding-the-schema-in-ci) lists it by
+name, so a field that should have been sealed shows up in review.
 
 ## Move a record between scopes
 
@@ -252,14 +260,12 @@ must be resealed under an explicitly planned path of your own.
 
 ## Keys follow the keys view
 
-A seal names its **keys view** (`Seal::Keys`, `keys = …`): a view of its scope
-that holds the parts key custody follows, and by default the whole scope.
-Operations take their keys directly, and
-the library passes the key source the seal and the values of its keys view,
-projected from the binding arguments; a key source is typed by it, as
-`EncryptionKeySource<Org>`, and a keys view is `Hash + Eq`, so it can key a map
-of keyrings. A blind index's key source receives the same keys view, projected
-from its index scope. Which keyring protects which scope is
+Operations take their keys directly, and the library passes the key source the
+seal and the values of its [keys view](#choose-the-keys-view) (`Seal::Keys`),
+projected from the binding arguments. A key source is typed by the keys view it
+serves, as `EncryptionKeySource<Org>`, and a keys view is `Hash + Eq`, so it can
+key a map of keyrings. A blind index's key source receives the same keys view,
+projected from its index scope. Which keyring protects which scope is
 application code — and sealing with the wrong one succeeds silently. Read
 [choosing keyrings](choosing-keyrings.md) before you wire a scope to a keyring,
 and [shredding](shredding.md) before you rely on destroying one scope's keys.

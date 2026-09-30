@@ -5,8 +5,8 @@ The expected cryptographic domain of a value, independent of where its stored
 bytes are found. Every sealed value is bound at runtime to its seal ID, to the
 values of its seal's declared scope, and, when the seal's scope is
 `Recorded`, to the ID of the record it is stored in. The binding of an unscoped seal identifies the seal alone, not a row
-or tenant. The binding's *declaration* (its parts and whether it binds a record)
-is persistent schema, declared by the seal; its values are supplied at each call as
+or tenant. The binding's *declaration* (its parts, its keys view, and whether it
+binds a record) is persistent schema, declared by the seal; its values are supplied at each call as
 the seal's binding arguments (`Args`). Opening under other values fails
 authentication; opening under another declaration reports a binding mismatch.
 <!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “keys view” is only the `keys` parts. Avoid “context” for any of them: it names only the envelope's input (see Context), and a user-authored context was rejected in ADR-0005. -->
@@ -134,8 +134,8 @@ never shared across keyrings, so opening with the wrong keyring fails loudly.
 The view of a seal's scope that key custody follows (`Seal::Keys`), by default
 the whole scope. Key sources receive its values and are typed by it, so
 bindings with equal values in it share one whatever their other parts; `()` is
-the empty keys view. A record has one keys view
-for all of its fields (`Record::Keys`).
+the empty keys view. A record has one keys view for all of its fields
+(`Record::Keys`).
 <!-- Agent guidance: `KeyScope`, “key scope”, is the retired, untyped form of the keys view (ADR-0009); do not reintroduce it. -->
 
 **Legacy-binding window**:
@@ -159,9 +159,9 @@ the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 **Object key**:
 The canonical text form of a scope, usually a blind index's index scope, that
 keys a Restate Virtual Object (`restate::ObjectKey`): the parts of a keys view,
-then the other parts, each spelled exactly one way. Every object key of one value of the
-keys view starts with that value's prefix. It is plaintext to Restate, and it names a scope
-only as far as its caller was authorized for it.
+then the other parts, each spelled exactly one way. Every object key of one
+value of the keys view starts with that value's prefix. It is plaintext to
+Restate, and it names a scope only as far as its caller was authorized for it.
 <!-- Agent guidance: “object key” is Restate's term for the key of a Virtual Object; do not call it a “key” alone, which reads as key material. -->
 
 **Plain value**:
@@ -191,9 +191,11 @@ the row's record ID (`Record`). Each sealed field usually declares its own seal,
 bound to its field, the scope, and the row, so a value moved to another field,
 table, or row fails to open; one seal never serves two fields of a record. The
 record ID is never encrypted: every seal bound to the record binds it, so it
-must be readable before the row is opened. The sealed form holds each sealed
-field's value and the blind indexes its seal declares; `#[derive(Record)]`
-rejects a record that omits one.
+must be readable before the row is opened. A record has one scope and one keys
+view, so one key source serves it. The sealed form holds each sealed field's
+value and the blind indexes its seal declares; `#[derive(Record)]` rejects a
+record that omits one. A field without a seal is stored as it is, and the schema
+manifest lists it by name.
 <!-- Agent guidance: a “record” is the whole row, and its “fields” are the struct's members; a seal “binds a record” when its scope is `Recorded<S, Id>`, which adds the record ID as a bound-only part under the nil part ID. A record passes its ID to every sealed field and binds it only where a seal binds one. Avoid “entity” or “model” for a record. -->
 
 **Schema manifest**:
@@ -260,4 +262,6 @@ both at once, so it is never shared by another seal.
 **View**:
 A scope whose parts are a subset of another scope's, matched by part ID and
 kind, and whose values are projected from that scope's by part ID
-(`FromParts`). A blind index's index scope is a view of its seal's scope.
+(`FromParts`). A seal's keys view and a blind index's index scope are views of
+the seal's scope; they decide what each part scopes beyond the ciphertext.
+<!-- Agent guidance: a view replaces part roles (ADR-0009); it is a plain scope type, never a role annotation on a part. -->

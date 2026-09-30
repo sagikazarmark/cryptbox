@@ -1,8 +1,18 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Scopes have views; key sources are typed by the keys view
+
+> Amended when implemented. A legacy-binding window names the old keys view
+> beside the old seal scope, `RowPlanner::legacy_binding::<Old, OldKeys>`, as
+> do `migrate::open_across` and `migrate::probes_across`, since the old
+> fingerprint and the old key source both depend on it.
+> `restate::ObjectKey<B, K = B>` leads with the parts of a view `K` and takes
+> `prefix(&K)`. `#[derive(Scope)]` takes `crate = "…"` in `#[scope(…)]`. The
+> manifest reads a record's seals and plaintext fields from `Record::SEALS`,
+> `Record::RECORD_ID`, and `Record::PLAINTEXT`, registered with
+> `Manifest::record::<R>()`, and names the record by its seal IDs.
 
 A scope is a struct of parts with no roles. What a part does beyond being bound
 into the ciphertext is decided by **views**: other scope types whose parts are a
