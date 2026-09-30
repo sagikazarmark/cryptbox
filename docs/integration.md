@@ -22,7 +22,7 @@ These choices form persistent schema just as database column types do:
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
 | Seal ID | Every value is bound to its seal ID; a different ID fails authentication. |
-| Binding declaration and record kind | Every value is bound to its binding's part IDs, kinds, and keys view, and to its record when the seal binds one; a different declaration reports `BindingMismatch`. |
+| Binding declaration and record kind | Every value is bound to the kinds of its bound values, and to its record when the seal binds one; a different declaration reports `BindingMismatch`. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
@@ -66,14 +66,12 @@ Stored bytes do not describe this schema, so check it in tests:
   derives and attributes. A failure means stored values would change; plan a
   migration or revert.
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered seal
-  (ID, codec ID, padding, whether it binds a record, the binding
-  fingerprint and parts with their kinds and roles in the keys view, and the
-  shred unit), index (ID, seal, bits, normalizer, and index scope), and
-  record (its seals, record ID field, and plaintext fields by name, so a field
-  that should have been sealed shows up). `Manifest::custody::<F>("…")` adds a
-  custody label to a seal, such as `"payments KMS, one key per org"`, so
-  reviewers and auditors see which keys the application passes for it.
-  Compare the `Display` output with a committed snapshot, and
+  (ID, codec ID, padding, whether it binds a record, and the binding
+  fingerprint with each bound value's part ID and kind), index (ID, seal, bits,
+  normalizer, and partition), and record (its seals, record ID field, bound
+  fields, plaintext fields, and open legacy windows by name, so a field that
+  should have been sealed shows up). Compare the `Display` output with a
+  committed snapshot, and
   assert that `duplicates()` is empty. A snapshot diff needs review: for
   example, a codec ID, normalizer, or binding change needs a migration.
 - **Unique IDs.** `cryptbox::assert_unique_ids!(HomeAddress, BillingAddress)`
@@ -88,11 +86,10 @@ The manifest names IDs, never Rust types, so its output is the same on every
 toolchain and does not change when a marker is renamed or moved. A record's
 field names are the one exception: a field stored as it is has no ID.
 
-A custody label is declarative: the library cannot see which keyring an
-application chooses. Test the choice itself with
-`cryptbox::testing::assert_sealed_under::<F>(&sealed, &keyring)`, which fails
-when a value sealed through the application's key source names a key that the
-expected keyring does not hold. A value sealed under the wrong keyring
+The library cannot see which keyring an application chooses. Test the choice
+with `cryptbox::testing::assert_sealed_under::<F>(&sealed, &keyring)`, which
+fails when a value sealed with the keys the application resolved names a key
+that the expected keyring does not hold. A value sealed under the wrong keyring
 otherwise seals and opens without error, and outlives the destruction of the
 keys that should have protected it.
 
@@ -112,12 +109,12 @@ keys are needed and where plaintext becomes available:
 | Approach | Behavior and consequence |
 | --- | --- |
 | Explicit sealing or preparation | Produce a sealed value before calling storage. Key failures happen at that explicit step; the stored representation can then cross a database or serialization boundary. |
-| Read as `Sealed<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to open it, with the binding values of the row. Useful when only some loaded values need plaintext. |
+| Read as a stored form or `Sealed<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to open it: a record reads its bound values from the row. Useful when only some loaded values need plaintext. |
 | Automatic SQLx `Plain<F>` | The adapter seals on encode and opens on decode. It reads keys from its `ColumnKeys` type `K`: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Plain<F, K>`. |
 
-The automatic `Plain<F>` column serves only unscoped seals without a record or
-blind indexes: a column decoder sees neither the row nor its scope, and would not
-write index columns. Seal values of bound and indexed seals explicitly. Explicit operations
+The automatic `Plain<F>` column serves only seals without bound values, a
+record, or blind indexes: a column decoder sees neither the row nor its bound
+values, and would not write index columns. Seal values of bound and indexed seals explicitly. Explicit operations
 are useful when dependencies and plaintext access should be visible at the call
 site. Automatic adapters are useful when
 encryption belongs consistently at the database boundary.
@@ -128,11 +125,31 @@ or TLS configuration. Serde handles stored bytes only and supplies neither
 encryption nor atomic persistence. See [features and platforms](features.md) for
 exact availability and configuration requirements.
 
-Try [explicit SQLite storage](../examples/sqlite/README.md), the
+Try [records with SQLx](../examples/records/README.md),
+[explicit SQLite storage](../examples/sqlite/README.md), the
 [automatic-adapter example](testing.md#automatic-adapters), or
 [stored-value serialization](../examples/stored_values/README.md).
 
-## Keyrings and key sources
+## Records, ORMs, and serde
+
+A record's stored form is an ordinary struct, so a database layer or a serde
+format reads and writes it like any other; sealing and opening stay explicit
+calls, never hooks of the storage layer. `#[cryptbox(stored(…))]` forwards
+attributes to it, at the record or at a field:
+
+| Layer | Stored form |
+| --- | --- |
+| SQLx | `stored(derive(sqlx::FromRow))`. `Sealed<F>` and `BlindIndex<S>` are `BLOB` or `bytea`; a bound ID newtype derives `sqlx::Type` with `#[sqlx(transparent)]`. |
+| Diesel | `stored(derive(Queryable, Selectable, Insertable), diesel(table_name = …))`, and `stored(diesel(serialize_as = Vec<u8>, deserialize_as = Vec<u8>))` on each sealed field and index column, through `From<Sealed<F>> for Vec<u8>` and `TryFrom<Vec<u8>>`. A bound ID newtype needs Diesel's usual newtype impls. |
+| serde | `stored(derive(Serialize, Deserialize))`. Human-readable formats, such as JSON, write sealed values and blind indexes as unpadded base64url text and read text or byte sequences; binary formats write bytes. |
+
+The stored form's field order follows the record's, each index column after its
+field, so a positional format, such as `Postcard`, makes it persistent schema:
+append fields rather than reordering them. An `Option<T>` sealed field stores
+`Option<Sealed<F>>` and an optional index column. The
+[records example](../examples/records/README.md) runs SQLx and serde messages.
+
+## Keyrings
 
 A **keyring** holds one current key generation and the previous generations
 that stored data still needs: `EncryptionKeyring` for values and
@@ -140,21 +157,19 @@ that stored data still needs: `EncryptionKeyring` for values and
 optional blind-index keyring. The **installed keys** back the process-wide forms,
 and a **`ColumnKeys`** type selects the keys of an automatic SQLx column.
 
-Which keyring protects which seal and scope is the decision with the most
-silent failure modes; [choosing keyrings](choosing-keyrings.md) covers it in
-full, and [shredding a scope](shredding.md) covers what destroying one scope's
-keys does.
+Which keyring protects which values is the decision with the most silent
+failure modes; [choosing keyrings](choosing-keyrings.md) covers it in full, and
+[shredding a tenant](shredding.md) covers what destroying one tenant's keys does.
 
-Operations take keys directly. Explicit `Sealed::seal`, `open`, `prepare`,
-`with_index_with`, and `probes_with` calls accept any **key source**
-(`EncryptionKeySource` or `BlindIndexKeySource`) and never read the installed
-keys. The library passes the source the seal (or index) and the binding's key
-scope; keyrings and `Keys` ignore both and return themselves. This allows each
-test or application component to own its dependencies.
+Operations take the keys to use. Explicit `Sealed::seal`, `open`, and `prepare`
+take an `EncryptionKeyring` or `Keys`; `with_index_with` and `probes_with` a
+`BlindIndexKeyring` or `Keys`; and a record's `seal` an `EncryptionKeyring`, or
+`Keys` when it has blind indexes. They never read the installed keys, so each
+test or application component owns its dependencies.
 
-Choosing which keyring protects which seal or scope is application code. Pass
-the payments keyring when sealing an IBAN and the general keyring when sealing an
-email, or implement a key source that picks one by seal or keys view. Opening
+Choosing which keyring protects which values is application code. Pass the
+payments keyring when sealing an IBAN and the general keyring when sealing an
+email, or an org's keyring for its rows, resolved in one function of your own. Opening
 with the wrong keyring fails loudly with `Error::UnknownEncryptionKey`, as long
 as key IDs are generated UUIDs, unique within a keyring, and never shared across
 keyrings. Sealing with the wrong keyring succeeds silently, so test the choice:
@@ -163,8 +178,8 @@ rules, and how to record and test custody.
 
 The process-wide forms (`Sealed::seal_global`, `open_global`, `with_index()`,
 `probes()`) are the explicit forms called with `keys::installed()`. Like the
-automatic column, `seal_global` and `open_global` serve only unscoped seals
-without a record.
+automatic column, `seal_global` and `open_global` serve only seals without
+bound values or a record.
 `keys::install(keys)` sets the installed keys once per process, from the binary
 entry point; a second call returns `AlreadyInstalled` and never replaces them.
 Before installation the process-wide forms return `Error::KeysNotInstalled`: there is
@@ -172,7 +187,7 @@ no default and no panic. There are no thread- or task-scoped keys, because work
 spawned outside a scope would silently use other keys
 ([ADR-0004](adr/0004-key-supply-global-and-explicit.md)).
 
-The automatic SQLx column `Plain<F, K>` takes its key source as a type,
+The automatic SQLx column `Plain<F, K>` takes its keys as a type,
 because SQLx decoding receives no context. The default `K`, `GlobalKeys`, reads
 the installed keys. Implement `ColumnKeys` over an application-owned static
 `Keys` to use a second keyring or a test fixture without the global.
@@ -186,12 +201,12 @@ keeps the installed keys empty, so process-wide calls fail at run time; denying
 the process-wide forms also reports them at lint time. With the `migrate` feature,
 also deny `MaybeEncrypted::open_global` and `MaybeEncrypted::open_global_legacy`.
 
-Key sources are synchronous. Applications load secrets from their chosen
+Resolving keys is synchronous. Applications load secrets from their chosen
 source and build keyrings locally; CryptBox does not distribute secrets or
 refresh remote key-management state. Startup snapshots are simple, but changing
-their source files does not refresh a running process. A custom refreshing
-key source owns synchronization, availability, and consistent generation
-selection, and returns `Error::KeysUnavailable` when its keys are not loaded.
+their source files does not refresh a running process. Refreshing keys owns
+synchronization, availability, and consistent generation selection, and returns
+`Error::KeysUnavailable` when its keys are not loaded.
 
 For durable data, the public generation ID and root material are one immutable
 pair. Reload that exact pair after restarts and retain readable generations while
@@ -201,9 +216,9 @@ generated roots; encryption-only applications need no index roots.
 
 The [SQLite example](../examples/sqlite/README.md#2-provision-the-demonstration-key-once) shows
 a single durable encryption generation. The [searchable example](../examples/searchable/README.md#provision-durable-key-generations-once)
-adds independent index generations. For a custom key source, see
-[key source contracts](../examples/custom_field/README.md#implementor-obligations); for changing a
-serving keyset, see [key lifecycle](key-rotation.md).
+adds independent index generations. For keys the application refreshes, see
+[their contract](../examples/custom_field/README.md#implementor-obligations); for
+changing a serving keyset, see [key lifecycle](key-rotation.md).
 
 ## Search and atomic writes
 
@@ -226,14 +241,14 @@ sealing of one column would not maintain another column, so `Plain<F>` rejects a
 seal that declares blind indexes.
 
 A blind index is domain-separated by its seal ID and by the
-[index binding](wire-format.md#index-binding): the values of its index scope,
-which holds the seal's keys view. Equal values under different keys views
-therefore have different index bytes, and a query supplies the index
-scope. The seal's other parts and the record do not participate unless the index
-scope names them, and the record never does, because a query cannot know it, so
-by default equal values in two workspaces of one org share index bytes. Choose
-index scopes with that in mind; see
-[bindings](bindings.md#choose-each-blind-indexs-scope).
+[index binding](wire-format.md#index-binding): the values of its partition, all
+of its seal's bound values except those it spans. Equal values in different
+partitions therefore have different index bytes, and a query supplies the
+partition. The bound values an index spans, such as the workspaces of an
+org-wide index, and the record do not participate, because a query cannot know
+them, so equal values in two workspaces of one org share index bytes. Choose
+partitions with that in mind; see
+[bindings](bindings.md#partition-each-blind-index).
 
 Search availability also depends on retaining all readable index-key generations.
 An application can decrypt a row successfully yet omit it from lookup if the
@@ -253,17 +268,16 @@ preparation does not erase them, and decoded values have their own lifetimes.
 copies. The [ownership reference](ownership.md) defines exact behavior by type
 and buffer.
 
-Seals, value types, codecs, normalizers, bindings, and key sources are
-extensible; padding policies are a closed set of built-in const policies. A
-codec or normalizer cannot add scope or record authentication: that comes from
-the seal's [binding](bindings.md). The
+Seals, value types, codecs, normalizers, and bound ID types are extensible; padding policies are a closed set of built-in const policies. A
+codec or normalizer cannot add bound-value or record authentication: that comes
+from the seal's [binding](bindings.md). The
 [custom-field example](../examples/custom_field/README.md)
-shows a zeroizing value, codec, normalizer, and key source working together.
+shows a zeroizing value, codec, normalizer, and refreshed keys working together.
 
 ## From design to a working application
 
-- [Bindings](bindings.md) covers declaring a scope, its views, record IDs, and
-  where each bound value must come from.
+- [Bindings](bindings.md) covers bound values, records, blind-index partitions,
+  and where each bound value must come from.
 - [Choosing keyrings](choosing-keyrings.md) covers custody, key-ID rules, and
   testing which keyring protects which seal.
 - [Testing and diagnostics](testing.md) covers key isolation and sanitized failures.

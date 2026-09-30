@@ -274,8 +274,8 @@ impl<'a> BindingDeclaration<'a> {
 
     /// Checks the declaration's own invariants: unique, non-nil part IDs.
     ///
-    /// Without parts or a record, the declaration is empty: the seal is
-    /// unscoped.
+    /// Without parts or a record, the declaration is empty: the seal binds
+    /// its seal ID alone.
     pub(crate) fn validate(&self) -> Result<(), Error> {
         let mut ids: Vec<_> = self.parts.iter().map(|spec| spec.id).collect();
         ids.sort_unstable();
@@ -320,8 +320,8 @@ impl BindingDomain {
     /// Encodes a seal's declared parts, in any order, with their values, and
     /// its record if the declaration binds one.
     ///
-    /// Without parts or a record, the declaration is empty and the seal is
-    /// unscoped.
+    /// Without parts or a record, the declaration is empty and the seal binds
+    /// its seal ID alone.
     ///
     /// `values` follows the order of `declaration`'s parts.
     pub(crate) fn scoped(
@@ -696,7 +696,7 @@ mod tests {
 
     #[test]
     fn a_two_part_binding_encodes_the_documented_vector() {
-        // docs/wire-format.md#provisional-scoped-vectors
+        // docs/wire-format.md#provisional-bound-vectors
         let domain = scoped(&[ORG, WORKSPACE], None, &WS1, None).unwrap();
 
         assert_eq!(

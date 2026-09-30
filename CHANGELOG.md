@@ -303,6 +303,94 @@
   | `#[cryptbox(seal = F)]`, `#[cryptbox(seal)]` | `#[seal(F)]`, `#[seal]` |
   | `#[cryptbox(plaintext)]` | nothing |
 
+- **Breaking:** operations take keys, not key sources (ADR-0010).
+  `EncryptionKeySource`, `BlindIndexKeySource`, and keys views (`Seal::Keys`,
+  `Record::Keys`, the `keys = …` derive key) are removed. Sealing and opening
+  take `impl EncryptionKeys`, an `EncryptionKeyring` or `Keys`; blind-index
+  operations take `impl BlindIndexKeys`, a `BlindIndexKeyring` or `Keys`; and a
+  record takes `impl RecordKeys`, `Keys` when it has blind indexes. Which keyring
+  protects which values is application code, resolved before the call.
+  `Manifest::custody`, the manifest's shred unit, and the `keys` role are
+  removed: every part's role byte is `03`, so a seal whose declaration had a keys
+  view gets a new binding fingerprint. Blind-index bytes do not change.
+
+- **Breaking:** a binding is a list of bound ID types (ADR-0010). An
+  application's own ID newtype derives `BoundId` with
+  `#[cryptbox(kind = "…")]`, the part ID every value of it is bound under, and
+  `TenantId` is a ready-made one. `Seal::Bound` is a list of them, `()` or a
+  tuple of up to four with each kind once, checked at compile time, and
+  `Seal::Record` is `()` or the record ID's type. `Scope`, `#[derive(Scope)]`,
+  `Recorded`, `SealScope`, `FromParts`, the `Tenant` preset, and views are
+  removed. Binding arguments are flat: the bound values in order, then the
+  record ID, such as `&org`, `(&org, &workspace)`, or `(&org, &id)`.
+  `BlindIndexSpec::Partition` names the bound ID types that partition an index,
+  some of its seal's, with `partition(…)` on the derive; `derive_with`,
+  `probes_with`, and `is_consistent_with` take their values the same way.
+  Binding bytes are unchanged for the same part IDs, kinds, and values.
+
+- **Breaking:** records carry their bound values (ADR-0010). Every field of
+  `#[derive(Record)]` has one role: `record_id`, `bound`, `seal = "…"` (with
+  `codec`, `padding`, `name`, `blind_index(…)`, and `legacy(…)`), or
+  `plaintext`; a field without one fails the build. Every sealed field is bound
+  to its own seal, all of the record's bound values, and its record ID, which
+  the stored form keeps as columns and opening reads and authenticates.
+  `Record::seal(&keys)` and `Record::open(stored, &keys)` take no binding
+  arguments, and `Record::open_expecting` checks a row before decrypting it,
+  reporting `Error::UnexpectedRecord`. The stored form is `Stored{Record}` by
+  default; `stored(…)` renames it and forwards attributes to it, at the record
+  or a field. A blind index is declared on its field with
+  `blind_index(id, across(…), bits, normalize, normalizer)` and searched through
+  an `Index` handle const named after its column, such as
+  `Customer::EMAIL_INDEX`, whose `probes` and `open_matching` take the
+  partition; `open_matching` refuses rows of another partition with
+  `Error::OutsidePartition`. `Option<T>` fields are stored as
+  `Option<Sealed<F>>`. Per-field sealers, existing seals on record fields
+  (`seal = F`, a bare `seal`), and self-valued fields are removed.
+
+- **Breaking:** legacy-binding windows name bound lists (ADR-0010).
+  `RowPlanner::for_keys` becomes `RowPlanner::for_rows(keys, row_args)`, and
+  `RowArgs::new(values)` owns its values. `legacy_binding::<Old, OldRecord>`,
+  `open_across::<Old, OldRecord, _>`, and `probes_across::<Old, S>` name the old
+  bound list, record, and partition. A record field declares its old
+  declaration with `legacy(seal = "…", bound(…), record = false)`; the record opens
+  both declarations, `RowPlanner::legacy_seal::<L>` sweeps them, and the
+  manifest lists open windows. `RowState::OutOfScope` and the report's
+  `out_of_scope` count are removed.
+
+- **Breaking:** `restate::ObjectKey<B>` takes a bound list and encodes its
+  values in list order: `encode(values)`, `parse(key)`, and
+  `prefix::<P>(values)` for a leading sublist, such as an org's objects of an
+  `(OrgId, WorkspaceId)` key. `restate::seal_record` and `seal_record_with`
+  take a record's keys and no binding arguments.
+
+- **Breaking:** `Sealed<F>` and `BlindIndex<S>` serialize as unpadded base64url
+  text in human-readable Serde formats, such as JSON, instead of an integer
+  array, and deserialize from text, bytes, or a sequence. Binary formats are
+  unchanged. `From<Sealed<F>> for Vec<u8>` and `From<BlindIndex<S>> for Vec<u8>`
+  are added for ORMs that store bytes.
+
+  Migrating to bound values (ADR-0010):
+
+  | Before | Now |
+  | --- | --- |
+  | `#[derive(Scope)] struct Org { #[part("…")] org: Uuid }` | `#[derive(BoundId)] #[cryptbox(kind = "…")] struct OrgId(Uuid);` |
+  | `Tenant(TenantId)`, `ObjectKey::<Tenant>` | `TenantId`, `ObjectKey::<(TenantId,)>` |
+  | `#[seal(id = "…", value = String, scope = Org)]` | `#[cryptbox(id = "…", value = String, bound(OrgId))]` |
+  | `type Scope = Recorded<Org, Uuid>`, `(&org_scope, &id)` | `type Bound = (OrgId,); type Record = Uuid;`, `(&org, &id)` |
+  | `keys = Org`, `impl EncryptionKeySource<Org> for S` | nothing; pass the org's keyring to each call |
+  | `#[blind_index(scope = Search, …)]` | `#[cryptbox(partition(OrgId), …)]` |
+  | `#[record(sealed = SealedCustomer)]` | `#[cryptbox(stored(name = StoredCustomer))]` |
+  | a plaintext record field | `#[cryptbox(plaintext)]` |
+  | `#[record_id]` | `#[cryptbox(record_id)]` |
+  | a scope passed to `seal`, `open` | `#[cryptbox(bound)]` fields on the record |
+  | `#[seal(id = "…")]` and `#[blind_index(Spec as email_index)]` on a field | `#[cryptbox(seal = "…", blind_index(id = "…", …))]` |
+  | `record.seal(&org_scope, &keys)`, `Customer::open(sealed, &org_scope, &keys)` | `record.seal(&keys)`, `Customer::open(stored, &keys)` |
+  | `Spec::probes_with(query, &scope, &keys)` plus manual candidate checks | `Customer::EMAIL_INDEX.probes(query, &org, &keys)` and `open_matching` |
+  | `RowPlanner::for_keys(view, keys, row_args)` | `RowPlanner::for_rows(keys, row_args)`, one planner per keyring |
+  | `legacy_binding::<Old, OldKeys>`, `open_across::<Old, OldKeys, _>`, `probes_across::<Old, OldKeys, S>` | `legacy_binding::<Old, OldRecord>`, `open_across::<Old, OldRecord, _>`, `probes_across::<Old, S>` |
+  | `ObjectKey::<B, K>::prefix(&k)` | `ObjectKey::<B>::prefix::<P>(values)` |
+  | `Manifest::custody::<F>("…")` | a committed custody table and `testing::assert_sealed_under` |
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

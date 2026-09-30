@@ -1,15 +1,17 @@
-# Bind values to a scope
+# Bind values to what they belong to
 
-A binding is the cryptographic domain of a value: the seal it is sealed with, the
-values of the seal's declared scope, such as a tenant, and its record when the
-seal binds one. This page explains how to declare a scope and the views that
-decide what each part scopes, the seal's keys view and each blind index's
-scope, and where each bound value must come from.
+A binding is the cryptographic domain of a value: the seal it is sealed with,
+its **bound values**, such as the org and workspace it belongs to, and its
+record when the seal binds one. A value opens only under the same binding, so
+it cannot be moved to another org, workspace, row, or column. This page explains
+how to declare bound values, where their values come from, and how blind
+indexes are partitioned by them.
 [Documentation](README.md) · [Choosing keyrings](choosing-keyrings.md).
 
 Start from [seal your first value](first-field.md), whose seal binds values
-to its seal ID alone. Add a scope when values of different tenants, orgs, or
-residencies must not be interchangeable, or when their keys must differ.
+to its seal ID alone. Add bound values when values of different tenants, orgs,
+or residencies must not be interchangeable. Which keys protect them is a
+separate choice: see [choosing keyrings](choosing-keyrings.md).
 
 ## Declarations are schema, values are arguments
 
@@ -17,168 +19,104 @@ A binding has two halves, and they change on different schedules:
 
 | Half | Where it is declared | When it changes |
 | --- | --- | --- |
-| **Declaration**: part IDs, kinds, the keys view, and the record's kind | The seal, its seal scope, such as `Tenant` or `Recorded<Tenant, i64>`, and its keys view | Only through a [declaration migration](#change-a-binding-declaration) |
-| **Values**: this org, this workspace, this record | The binding arguments of each call | Every call |
+| **Declaration**: the kinds of bound values and the record's kind | The seal's bound ID types and record, or a record's fields | Only through a [declaration migration](#change-a-binding-declaration) |
+| **Values**: this org, this workspace, this record | The binding arguments of each call, or the row | Every call |
 
-One seal never seals with different part sets on different calls: that would
-give one value two valid encodings. The declaration is persistent schema exactly as a
-seal ID or codec is, and every envelope carries a fingerprint of it so a
-reader that expects another declaration reports `Error::BindingMismatch` instead of an
-authentication failure.
+One seal never seals with different bound values on different calls: that
+would give one value two valid encodings. The declaration is persistent schema
+exactly as a seal ID or codec is, and every envelope carries a fingerprint of it,
+so a reader that expects another declaration reports `Error::BindingMismatch`
+instead of an authentication failure.
 
-## Declare a scope and its views
+## Declare bound ID types
 
-A `Scope` is data only: it declares its parts and returns their values. The
-library sorts, frames, and validates the bytes, so no application writes binding
-bytes. With the `derive` feature, each field of the struct is one part, with its
-part ID:
+A bound value is one of the application's own ID types, marked with the kind of
+value it is, once, on the type:
 
 ```rust
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-pub struct OrgWorkspace {
-    #[part("59881c28-3003-4047-847f-d7cc73b140e5")]
-    pub org: [u8; 16],
-    #[part("78f0169a-f024-402b-9cdf-f436864fa17f")]
-    pub workspace: [u8; 16],
-}
+use uuid::Uuid;
 
-/// A view of `OrgWorkspace`: the org alone.
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-pub struct Org {
-    #[part("59881c28-3003-4047-847f-d7cc73b140e5")]
-    pub org: [u8; 16],
-}
+#[derive(cryptbox::BoundId, Clone, Copy, PartialEq)]
+#[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
+pub struct OrgId(Uuid);
 
-#[derive(cryptbox::Seal)]
-#[cryptbox(
-    id = "2cef6a47-3e20-42dc-a319-56022cb4cf30",
-    value = String,
-    scope = cryptbox::Recorded<OrgWorkspace, [u8; 16]>,
-    keys = Org,
-    indexes(EmailLookup),
-)]
-pub struct CustomerEmail;
+#[derive(cryptbox::BoundId, Clone, Copy, PartialEq)]
+#[cryptbox(kind = "78f0169a-f024-402b-9cdf-f436864fa17f")]
+pub struct WorkspaceId(Uuid);
 ```
 
-Parts have no roles. A **view** of a scope is another scope whose parts are
-parts of it, matched by part ID and kind, as `Org` is of `OrgWorkspace`; its
-values are projected from the scope's by part ID. Views decide what else a part
-scopes:
+`kind` is a generated UUID, the part ID every value of the type is bound under,
+whichever seal or record binds it: see [ID hygiene](#id-hygiene). The newtype
+binds as its field, which holds a UUID (`uuid::Uuid` with the `uuid` feature, or
+`[u8; 16]`), an `i64`, or bytes. `TenantId` is a ready-made bound ID of opaque
+bytes.
 
-- the seal's **keys view**, `keys = Org`, holds the parts
-  [key custody follows](#choose-the-keys-view). Without `keys`, it is the
-  whole scope, which fits `()` and `Tenant`;
-- each blind index's **index scope** holds the parts that
-  [partition the index](#choose-each-blind-indexs-scope), here for
-  `EmailLookup`;
-- a part in no view, here the workspace, is bound only: it separates
-  ciphertext and nothing else.
+## Records carry their bound values
 
-A view is checked when it is first used: one with a part its scope lacks fails
-the build. The derive also implements `FromParts`, which builds a scope back
-from its part values, so views can be projected and an adapter such as a
-[Restate object key](restate.md#object-keys) can parse one. A part holds a
-UUID, an `i64`, or bytes; an application's own ID type can hold one by
-implementing `PartType`. Every part ID is a generated UUID: see
-[ID hygiene](#id-hygiene).
-
-`()` and `Tenant` are ready-made scopes. `()`, the empty scope, has no parts:
-unless the seal also binds a record, it is the
-[empty binding](wire-format.md#binding), bound to the seal ID alone. `Tenant` has one
-bytes part, and is its own keys view. Use a preset until its declaration is too
-coarse, then declare a scope.
-
-A record ID is never a declared part: a seal binds one with the seal scope
-`Recorded<S, Id>`, which adds it as one more part under the nil part ID. It is
-in no view, since a record-scoped index could not be searched.
-
-## Choose the keys view
-
-Every part is bound into the ciphertext. Whether it also scopes key custody is
-the decision with the most consequences:
-
-| Part | Keys | Shredding | Use it for |
-| --- | --- | --- | --- |
-| In the keys view | Scopes key custody | The [shred unit](shredding.md) | The value whose data must be destroyable and separately keyed, such as an org |
-| In no view | Shared | Never alone | A value that separates ciphertext only, such as a workspace within an org |
-
-Two consequences follow from the table:
-
-- **The keys view must be known before rows are read.** Keys are resolved from
-  its values, so a read that cannot name them has no keyring to open anything
-  with. Every query, job, and sweep is partitioned by keys view; a cross-scope
-  report has to be assembled per scope. A value of a part in the keys view can't
-  be empty.
-- **Changing the keys view is a migration** even though the binding bytes do not
-  change, because it changes custody. The binding fingerprint marks the parts of
-  the keys view for exactly that reason.
-
-## Choose each blind index's scope
-
-A blind index names its own **index scope**, the parts that partition it: a view
-of its seal's scope. A query supplies its values, and a stored index is derived
-under the same values, projected from the scope its value was sealed under:
+A row stores the values it is bound to as its own columns, so a record
+declares them as fields. Every field has one role, and a field without one
+fails the build, so nothing is stored as it is by accident:
 
 ```rust
-#[derive(cryptbox::BlindIndexSpec)]
-#[cryptbox(
-    id = "ab78afa9-7aaa-499c-8239-037b7e136130",
-    seal = CustomerEmail,
-    scope = Org,
-    bits = 32,
-    query = str,
-    normalize = normalize_email,
-    normalizer = "email/1",
-)]
-pub struct EmailLookup;
+#[derive(cryptbox::Record)]
+pub struct Customer {
+    #[cryptbox(record_id)]
+    pub id: Uuid,
+    #[cryptbox(bound)]
+    pub org: OrgId,
+    #[cryptbox(bound)]
+    pub workspace: WorkspaceId,
+    #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
+    #[cryptbox(blind_index(
+        id = "ab78afa9-7aaa-499c-8239-037b7e136130",
+        across(workspace),
+        bits = 32,
+        normalize = normalize_email,
+        normalizer = "email/1",
+    ))]
+    pub email: String,
+    #[cryptbox(seal = "5d1f0c3a-8f6e-4b1d-9a7c-2e4b6d8f0a13")]
+    pub note: Option<String>,
+    #[cryptbox(plaintext)]
+    pub created_at: i64,
+}
 ```
 
-- **An index scope holds the seal's keys view**, because a query selects index
-  keys by it. A scope that leaves one of its parts out, or has a part the
-  seal's scope lacks, fails the build when the index is first used.
-- **Add a part a query always knows** when equal values in different ones must
-  not share index bytes, such as a region. A value that a lookup cannot know,
-  such as a workspace the query spans or the record, must stay out.
-- **Two indexes over one seal may partition differently.** Without `scope`, a
-  derived index is scoped by the seal's whole scope; an unscoped seal's index
-  uses `()`.
-- **Changing an index scope**, such as adding a part to it, changes that
-  index's bytes, as changing its normalizer does: look up with
-  `migrate::probes_across` over both scopes while a
-  [sweep](reencryption-sweep.md#blind-indexes) derives every stored index again.
+Every sealed field is bound to its own seal, to all of the record's bound
+values, and to its record ID. The derive generates the stored form,
+`StoredCustomer`, with each sealed field as its `Sealed<CustomerEmail>` and a
+`BlindIndex` column per index, and a seal for each sealed field, named after the
+record and the field. `customer.seal(&keys)` seals the whole row, and
+`Customer::open(stored, &keys)` opens it.
 
-## Bound values come from an authorized source
+## Bound values are authenticated, then authorized
 
-Every bound value must come from a source the request has already been
-authorized against — verified claims, a session, an authorized
-[object key](restate.md#object-keys) — and never from the row being read.
-Reading the org out of the row and then opening the row under it proves nothing:
-whatever the row says will match what the row was sealed with.
+Opening a row reads its record ID and bound values from the row and
+authenticates them: a row whose org column was changed, or whose sealed value
+was copied from another row, fails to open. They say where the row belongs;
+they do not say who may read it. Authorize on them:
 
-| Source of a bound value | Verdict |
-| --- | --- |
-| Verified request claims, an authorized scope, job configuration | Correct |
-| A `Record`'s own record ID, read from the row | Correct, and checked when the row opens |
-| The row's tenant, org, or scope columns | **Never**: the check becomes a tautology |
-| A client-supplied scope the request was not authorized for | **Never**: authorize first, then bind |
+```rust
+let customer = Customer::open(stored, &keys)?;
+authz.require(user, customer.org, customer.workspace)?;
+```
 
-A `Record` is the one exception, and only for its record ID. Opening takes the
-ID from the row, and every seal bound to the record fails to open under
-another one, so a value copied from another row is rejected. Storage can still
-return a whole authentic row in place of another, which no binding prevents:
-when you asked for one record, compare the opened ID with the one you asked for.
+or check them before anything is decrypted:
 
-A [migration sweep](reencryption-sweep.md#binding-declaration-changes) has no request
-to take a binding from, so it builds each row's binding from the row's own
-columns. Its keys view still comes from the job, and a row whose columns project
-another keys view is reported out of scope and left alone. Resealing a
-value from a declaration that did not bind those columns trusts them once, so sweep
-such a change only over columns the application already trusts.
+```rust
+let customer = Customer::open_expecting(stored, &keys, |row| row.org == org)?;
+```
+
+`open_expecting` reports `Error::UnexpectedRecord` for a row it rejects. Keys add
+a second check: with a keyring per org, another org's row fails to open with
+`UnknownEncryptionKey`. Storage can still return a whole authentic row in place
+of another, which no binding prevents: when you asked for one record, check its
+ID, as `open_expecting` does.
 
 ## Record IDs
 
-A seal whose scope is `Recorded<S, Id>` binds every value to a record ID, so the
-ID must exist before the first value is sealed:
+Every sealed field of a record is bound to its record ID, so the ID must exist
+before the first value is sealed:
 
 - **The client generates it**, UUIDv7 recommended, so that inserts carry their
   ID. Sealing after an insert, against a database-assigned key, is not
@@ -186,60 +124,97 @@ ID must exist before the first value is sealed:
 - **It need not be the primary key.** A row can keep its own surrogate key and
   carry a separate, stable record ID; what matters is that the ID never changes
   while sealed values exist.
-- **It is never encrypted**, because opening the row needs it first. A
-  `#[derive(Record)]` marks its field `#[record_id]`.
-- **Its kind is fixed**: a UUID, an `i64`, or bytes, the kind of `Id`. Any
-  `PartType` can hold one, and changing its type is a declaration change.
+- **It is never encrypted**, because opening the row needs it first.
+- **Its kind is fixed**: a UUID, an `i64`, or bytes, the kind of its type.
+  Changing its type is a declaration change.
 
-A record field whose seal binds no record is bound to the record's scope
-alone, and gets no check of the ID. A `Record` passes the ID to every sealed
-field and binds it only where the seal's scope is `Recorded`.
+## Partition each blind index
 
-## Seal and open under a scope
+A blind index is declared on its field and partitioned by all of the record's
+bound values, except those it spans, named with `across(…)`. Equal values in
+different partitions derive unrelated index bytes; `across` widens the equality
+the index reveals, visibly, in the declaration. A query supplies the partition's
+values:
+
+```rust
+// The email index spans workspaces, so an org-wide search supplies the org.
+let probes = Customer::EMAIL_INDEX.probes("ada@example.com", &org, &keys)?;
+let rows: Vec<StoredCustomer> = select_by_email_index(org, &probes)?;
+
+for hit in Customer::EMAIL_INDEX.open_matching("ada@example.com", &org, rows, &keys)? {
+    let customer = hit?;
+    // The workspace is read from the row and authenticated: authorize on it.
+    authz.require(user, customer.org, customer.workspace)?;
+}
+```
+
+The handle, a const named after the index column, takes its partition: the ID
+type of the one bound value that partitions it, a generated struct with a field
+per bound value for two or more, such as `CustomerNoteIndexPartition`, or `()`
+for an index that spans them all. `open_matching` returns one result per
+candidate it keeps: it opens each row and compares its value with the query, so
+the false candidates of a truncated index are dropped, and it refuses a row of
+another partition without decrypting it, as `Error::OutsidePartition`.
+
+- **Partition by every value a query always knows**, such as the org, when
+  equal values in different ones must not share index bytes.
+- **Span a value a query does not know**, such as a workspace under an
+  org-wide search. The record ID never partitions an index.
+- **Two indexes over one field may partition differently.**
+- **Changing a partition**, such as spanning another bound value, changes that
+  index's bytes, as changing its normalizer does: look up with
+  `migrate::probes_across` over both partitions while a
+  [sweep](reencryption-sweep.md#blind-indexes) derives every stored index again.
+
+## Standalone values
+
+A value that is not a row, such as a message or a cache entry, is sealed with a
+seal of its own, which names its bound ID types and whether it binds a record:
+
+```rust
+#[derive(cryptbox::Seal)]
+#[cryptbox(
+    id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
+    value = String,
+    bound(OrgId),
+    record = Uuid,
+)]
+pub struct InvoiceNote;
+
+let sealed = Sealed::<InvoiceNote>::seal(&note, (&org, &invoice_id), &keys)?;
+let note = sealed.open((&org, &invoice_id), &keys)?;
+```
 
 The binding arguments of a call are typed by the seal
-([`Args<F>`](https://docs.rs/cryptbox/latest/cryptbox/trait.Args.html)): `()` for
-an unscoped seal, `&scope`, `(&scope, &record_id)` for a seal whose scope is
-`Recorded`, or `((), &record_id)` for `Recorded<(), Id>`. A missing or extra
-record is a type error rather than a failed read.
+([`Args<F>`](https://docs.rs/cryptbox/latest/cryptbox/trait.Args.html)): its
+bound values in order, then its record ID: `()`, `&org`, `(&org, &workspace)`,
+`(&org, &id)`. A missing or extra value is a type error rather than a failed
+read. A standalone value's bound values come from the caller, never from the
+value itself: take them from an authorized source, such as the request's
+verified claims.
 
-The [tenant example](../examples/tenant_field.rs) is the complete program: a
-seal bound to `Tenant` with a record, one `EncryptionKeyring` per tenant behind a
-`HashMap<Tenant, _>` key source, and assertions that another record of the same
-tenant fails authentication while another tenant's keyring reports
-`UnknownEncryptionKey`. Run it from a checkout, and expect
-`Tenant-bound round trip succeeded.`:
+The [tenant example](../examples/tenant_field.rs) is a complete program: a
+seal bound to a `TenantId` and a record, one `EncryptionKeyring` per tenant, and
+assertions that another record of the same tenant fails authentication while
+another tenant's keyring reports `UnknownEncryptionKey`. Run it from a checkout,
+and expect `Tenant-bound round trip succeeded.`:
 
 ```sh
 cargo run --locked --example tenant_field
 ```
 
-The crate's [quick start](https://docs.rs/cryptbox/latest/cryptbox/#quick-start)
-shows the same program beside the unscoped tier.
-
-Whole rows are sealed and opened together through the
-[`Record`](https://docs.rs/cryptbox/latest/cryptbox/trait.Record.html) trait and
-derive, which pass one binding and record ID to every sealed field and write each
-seal's blind indexes. A record has one scope and one keys view, so one key
-source serves all of its fields. A field without `#[seal…]` is stored as it is,
-and the [schema manifest](integration.md#guarding-the-schema-in-ci) lists it by
-name, so a field that should have been sealed shows up in review.
-
-## Move a record between scopes
+## Move a record between orgs
 
 Changing a bound value is not an update of a column: the ciphertext is bound to
-the old values. `Sealed::reseal_across` opens under the old binding and keys and
-reseals under the new ones, without decoding the value through the seal's
-codec:
+the old values. Open the record, change the value, and seal it again, or, for a
+standalone value, `Sealed::reseal_across` opens under the old binding and keys
+and reseals under the new ones:
 
-- **Every blind index of the moved value must be derived again**, because
-  each index binding includes the parts of its index scope. A stale index column is
-  not wrong bytes the library can detect; it silently answers queries in the old
-  scope. Derive the new indexes from the authenticated plaintext with
-  `BlindIndexSpec::derive_with`, and write ciphertext and indexes in one atomic
-  write.
-- **A move across keys views crosses custody.** The value leaves the reach of
-  the old scope's keys, so it will survive that scope being
+- **Every blind index of the moved value must be derived again**, because its
+  partition includes the moved value. `Record::seal` derives them; write the
+  sealed fields and indexes in one atomic write.
+- **A move to another org's keys crosses custody.** The value leaves the reach
+  of the old org's keys, so it will survive that org being
   [shredded](shredding.md). Where residency or custody rules apply, treat the
   move as an export.
 - **Nothing rewrites values in place by itself.** Reads never reseal, and a
@@ -247,32 +222,23 @@ codec:
 
 ## Change a binding declaration
 
-Adding a part, adding a record, or changing the keys view is a migration, not a
-deployment. The procedure is a legacy-binding window, a reseal sweep, and
-lookups over both index bindings until the window closes; rows of the old declaration
-are recognized by the fingerprint in their header. Follow
-[binding-declaration changes](reencryption-sweep.md#binding-declaration-changes), and close
-the window only after a complete verification pass counts no legacy-binding
-rows.
+Binding a value to another bound value, into a record, or out of one, is a
+migration, not a deployment. On a record field, `legacy(…)` names the
+declaration it had before: its seal ID (by default the current one), the bound
+fields it bound (by default none), and whether it bound the record ID (by
+default yes). Rows sealed with it keep opening, `Record::seal` writes the new
+declaration, and a [sweep](reencryption-sweep.md#binding-declaration-changes)
+reseals the rest. Rows of the old declaration are recognized by the fingerprint
+in their header. Close the window, by deleting `legacy(…)`, only after a
+complete verification pass counts no legacy-binding rows; the schema manifest
+lists open windows.
 
-Removing a part or changing a part's kind is outside that window: those values
+Removing a bound value or changing its kind is outside that window: those values
 must be resealed under an explicitly planned path of your own.
-
-## Keys follow the keys view
-
-Operations take their keys directly, and the library passes the key source the
-seal and the values of its [keys view](#choose-the-keys-view) (`Seal::Keys`),
-projected from the binding arguments. A key source is typed by the keys view it
-serves, as `EncryptionKeySource<Org>`, and a keys view is `Hash + Eq`, so it can
-key a map of keyrings. A blind index's key source receives the same keys view,
-projected from its index scope. Which keyring protects which scope is
-application code — and sealing with the wrong one succeeds silently. Read
-[choosing keyrings](choosing-keyrings.md) before you wire a scope to a keyring,
-and [shredding](shredding.md) before you rely on destroying one scope's keys.
 
 ## ID hygiene
 
-Seal IDs, index IDs, and part IDs are generated UUIDs, never derived from a
+Seal IDs, index IDs, and kind IDs are generated UUIDs, never derived from a
 Rust type name and never copied from documentation:
 
 ```sh
@@ -280,19 +246,17 @@ uuidgen
 ```
 
 Either case parses; these pages use the lowercase form. Generate one ID per
-seal, index, and part, and keep it unchanged for the life of the data:
-renaming a Rust type does not change an ID, and reusing an ID makes two things
-one. Two examples in this repository share an ID only where they mean one
+seal, index, and kind of bound value, and keep it unchanged for the life of the
+data: renaming a Rust type does not change an ID, and reusing an ID makes two
+things one. Two examples in this repository share an ID only where they mean one
 seal, as the SQLite and searchable examples share the tutorial's `UserEmail`; a
 `UserEmail` marker in another example is a different seal with its own ID,
 because the Rust name is not the identity.
 
-Each check covers a different set: `#[derive(Scope)]` rejects a nil or
-repeated part ID when it expands, and a hand-written binding fails the build on
-the same declaration; `assert_unique_ids!` rejects seal and index IDs shared by
-listed markers; and a
-[manifest snapshot](integration.md#guarding-the-schema-in-ci) makes any change
-to the IDs you have chosen a reviewable diff.
+Each check covers a different set: a bound list that lists one kind twice fails
+the build; `assert_unique_ids!` rejects seal and index IDs shared by listed
+markers; and a [manifest snapshot](integration.md#guarding-the-schema-in-ci)
+makes any change to the IDs you have chosen a reviewable diff.
 
 Key IDs follow separate rules, in [choosing keyrings](choosing-keyrings.md).
 
@@ -300,10 +264,10 @@ Key IDs follow separate rules, in [choosing keyrings](choosing-keyrings.md).
 
 - [Choosing keyrings](choosing-keyrings.md): custody, the failure modes a
   binding cannot catch, and testing the choice.
-- [Shredding a scope](shredding.md): what destroying a scope's keys does and
+- [Shredding a tenant](shredding.md): what destroying a tenant's keys does and
   does not remove.
 - [Integration design](integration.md): persistent schema, storage boundaries,
-  and search.
+  search, and ORMs.
 - [Wire format](wire-format.md#binding): the exact binding bytes and the
   binding fingerprint.
-- [Glossary](glossary.md): binding, scope, keys view, shred unit.
+- [Glossary](glossary.md): binding, bound value, record, partition.

@@ -81,8 +81,9 @@ authentication because the reader has no construction with which to verify it.
 A binding identifies the expected cryptographic domain of a value. Every value is
 bound to a stable `SealId`, so an email seal's ciphertext is not accepted under
 a different seal, even when both use the same root key. A seal declares its
-binding **declaration**: a fixed set of parts, each with a part ID (a UUID) and a
-value kind, and, when it binds a record, the record ID's kind. The declaration is persistent
+binding **declaration**: a fixed set of parts, one per bound ID type, each with a
+part ID (the type's kind ID, a UUID) and a value kind, and, when it binds a record,
+the record ID's kind. The declaration is persistent
 schema. The **values**, such as a tenant ID and a record ID, are supplied at each
 call. See [ADR-0005](adr/0005-runtime-binding-is-the-core.md),
 [ADR-0008](adr/0008-records-declare-their-fields-seals.md), and
@@ -105,8 +106,8 @@ part    = part_id[16] || kind[1] || len[4] || value[len]
 - There is no leading tag or type byte: the binding starts with the seal ID.
 
 The **empty declaration** has no parts and no record. Its binding is the seal ID
-followed by `0000`: an unscoped binding, which identifies a seal alone, not a
-particular row or tenant.
+followed by `0000`: a binding without bound values, which identifies a seal alone,
+not a particular row or tenant.
 
 The seal supplies the expected binding; it is not stored in the envelope.
 This makes the application decide where a value belongs, rather than allowing
@@ -142,19 +143,19 @@ the fingerprint, and a record's part comes first with the nil part ID. Every
 part's role byte is `03`. Codes `01`, the retired keys view, and `02`, the
 retired `index` role, are no longer written: which keys protect a value is key
 management, recorded by the envelope's key ID, and a blind index names its own
-[index scope](#index-binding). The empty declaration's fingerprint is `65640fc8333534b9`. A record's
+[partition](#index-binding). The empty declaration's fingerprint is `65640fc8333534b9`. A record's
 kind is part of the declaration, so a value read with a record ID of another kind
 reports `BindingMismatch`.
 
 #### Presets
 
-Two ready-made scopes fix their declarations permanently:
+These declarations are fixed permanently:
 
-- `()`, the empty scope, has no parts. Without a record it is the empty
-  declaration, so its binding is `seal_id || 0000`. With an `i64` record, as
-  `Recorded<(), i64>`, it binds the record alone; that declaration's fingerprint
+- `()`, no bound values, has no parts. Without a record it is the empty
+  declaration, so its binding is `seal_id || 0000`. With an `i64` record,
+  `Record = i64`, it binds the record alone; that declaration's fingerprint
   is `76081b730530f822`.
-- `Tenant` has one part: part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
+- `(TenantId,)`, the ready-made bound ID type, has one part: part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
   bytes. A tenant ID is non-empty opaque bytes; a UUID tenant is
   its 16 bytes. Without a record, its binding fingerprint is `9b5379b1f03beb17`.
   For seal `12345678-1234-4234-8234-1234567890ab` and tenant `acme`, the
@@ -171,7 +172,8 @@ from its own seal, never from the envelope:
 
 1. After structural parsing, and before any key lookup or AEAD work, compare the
    envelope's fingerprint with the fingerprint of the reader's declaration. A
-   unscoped reader expects the empty declaration's fingerprint. Any difference
+   reader without bound values or a record expects the empty declaration's
+   fingerprint. Any difference
    reports `BindingMismatch`.
 2. Otherwise, decrypt with the binding built from the reader's declaration and the
    caller's values. Different part or record values under a matching declaration fail
@@ -394,9 +396,9 @@ envelope:         434258000201011111111122224333844455555555555565640fc8333534b9
 
 Both decrypt to `"cryptbox vector"` whatever the reader's padding policy. The
 vectors are generated and consumed in separate tests, and were computed
-independently as described under the scoped vectors below.
+independently as described under the bound vectors below.
 
-### Provisional scoped vectors
+### Provisional bound vectors
 
 These vectors use the root key, `KeyId`, `SealId`, plaintext, and nonce above,
 unpadded, with a [binding](#binding) of two parts:
@@ -482,15 +484,15 @@ mac_input = MAC_label || context || normalized_length_be_u64 || normalized_bytes
 ### Index binding
 
 A blind index is derived under its **index binding**: the seal's binding
-restricted to the parts of the index's **index scope**. The seal's other parts
-and the record are left out, because a query knows its index scope but not the
+restricted to the parts of the index's **partition**. The bound values it spans
+and the record are left out, because a query knows its partition but not the
 row. The index binding uses
 the [binding](#binding) encoding:
 
-- It is the seal ID, then the index scope's parts sorted by part ID.
-- With no parts, it is the empty binding, as for the empty scope.
+- It is the seal ID, then the partition's parts sorted by part ID.
+- With no parts, it is the empty binding.
 
-Two bindings that agree on the index scope's values share the index binding, so
+Two bindings that agree on the partition's values share the index binding, so
 their indexes of the same value are equal.
 
 ### Blind-index recipe
@@ -549,10 +551,10 @@ stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000de800
 
 The final byte `00` has its three unused low bits cleared.
 
-### Scoped blind-index vector
+### Bound blind-index vector
 
-The same inputs, for a seal bound to the `Tenant` preset with tenant `acme`.
-The index binding is the seal's `Tenant` binding without a record:
+The same inputs, for a seal bound to a `TenantId` with tenant `acme`.
+The index binding is the seal's binding without a record:
 
 ```text
 binding:      123456781234423482341234567890ab00011e8306bf31354570831c6732f92550e9030000000461636d65

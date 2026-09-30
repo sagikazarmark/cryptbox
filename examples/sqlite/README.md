@@ -49,9 +49,9 @@ The ID is public metadata, not the secret. Do not generate another root under
 the same ID to replace a lost file; it cannot decrypt the stored value.
 
 This file and fixed ID are demonstration provisioning. An application should load
-its stable ID/root pairing from its own key source and access policy; the database
+its stable ID/root pairing from its own secret store and access policy; the database
 does not supply the secret. See
-[keyrings and key sources](../../docs/integration.md#keyrings-and-key-sources)
+[keyrings](../../docs/integration.md#keyrings)
 for the general design. This example uses one encryption generation only.
 
 ## 3. Write the value and exit
@@ -118,7 +118,7 @@ authenticates and decodes, returning the bare `String`. Sealing borrows the
 original plaintext, and no global keys are installed: `keys` supplies the
 key explicitly.
 
-An unscoped binding identifies a seal alone, not a row or tenant. Preserve the
+A binding without bound values identifies a seal alone, not a row or tenant. Preserve the
 seal ID, codec compatibility, and binding choices with your stored data; see
 [persistent schema](../../docs/integration.md#persistent-schema).
 
@@ -129,7 +129,7 @@ continue with [verified searchable storage](../searchable/README.md).
 
 The `write` and `read` functions in [main.rs](main.rs) show the storage boundary.
 Adapt the table and seal declaration, and replace `load_keys` with your application's
-key source. Enable `sqlx-sqlite` and add SQLx with your chosen runtime. The example
+key loading. Enable `sqlx-sqlite` and add SQLx with your chosen runtime. The example
 also uses `hex` and `zeroize` for its file loader; those are choices of this sample,
 not requirements for every integration.
 

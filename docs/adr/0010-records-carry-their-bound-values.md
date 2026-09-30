@@ -4,6 +4,29 @@ status: accepted
 
 # Records carry their bound values; keys are passed in
 
+> Amended when implemented. The open items settled as follows. An `Option<T>`
+> field is stored as `Option<Sealed<F>>`, and its indexes as
+> `Option<BlindIndex<S>>`; `Option` is the only wrapper the derive looks through,
+> so a `Vec` is one sealed value its codec encodes, and nested records are not
+> supported. The stored form's field order follows the record's, which the
+> integration guide names as schema for positional formats. Human-readable serde
+> formats write sealed values and blind indexes as unpadded base64url text. An
+> index partitioned by one bound value takes that value; by two or more, a
+> generated `{Spec}Partition` struct with a field per value; spanning them all,
+> `()`. `Error::OutsidePartition` and `Error::UnexpectedRecord` are distinct, and
+> `From<Sealed<F>> for Vec<u8>` and its `BlindIndex` equivalent exist. Sealing
+> a record that has blind indexes with an encryption keyring alone still fails
+> at run time, with `BlindIndexKeysNotConfigured`: `RecordKeys` is implemented
+> for both key types rather than chosen per record. `Seal::Record` is `()` or a
+> `RecordIdType`, whose kind constant is `RECORD`. A record field names its old
+> declaration with `legacy(seal, bound, record)`, and the derive declares it as
+> a `{Seal}Legacy` seal: its header's fingerprint chooses the declaration, and
+> when only the seal ID changed, so the fingerprints are equal, a value that
+> fails to authenticate is tried under the legacy seal. `restate::ObjectKey`
+> encodes bound values in list order and takes a leading sublist as a prefix, and
+> `RowArgs` owns its values. Record fields no longer take an existing seal or a
+> self-valued seal, and records no longer generate per-field sealers.
+
 A record stores the values its sealed fields are bound to as its own columns,
 and every operation takes the keys to use. Custody, the part of a binding that
 selects keys, is deferred until this foundation is in place:

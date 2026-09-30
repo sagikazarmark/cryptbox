@@ -214,7 +214,7 @@ mod tests {
         assert_eq!(hex::encode(envelope), SCOPED_RECORD_VECTOR);
     }
 
-    // docs/wire-format.md#provisional-scoped-vectors
+    // docs/wire-format.md#provisional-bound-vectors
     const UNSCOPED_CONTEXT: &str = "123456781234423482341234567890ab0000";
     // The empty declaration's fingerprint, which an unscoped binding carries.
     const UNSCOPED_FINGERPRINT: &str = "65640fc8333534b9";

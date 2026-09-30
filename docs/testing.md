@@ -19,7 +19,7 @@ cargo test --lib -- --test-threads=2
 
 Expect two passing tests, including concurrent round trips and verified candidate
 comparison. Predictable roots and reused IDs are isolated test fixtures, never a
-[durable provisioning pattern](integration.md#keyrings-and-key-sources).
+[durable provisioning pattern](integration.md#keyrings).
 
 ## Automatic adapters
 
@@ -60,7 +60,7 @@ before installation return `Error::KeysNotInstalled`, so a test binary that
 installs must sequence every assertion that depends on installation, such as in
 one test function.
 
-An `RwLock` around individual key source calls does not isolate fixture replacement:
+An `RwLock` around individual key lookups does not isolate fixture replacement:
 keys can change between encryption and decryption or ciphertext/index preparation.
 Use separate processes, or serialize each case's entire setup/operation/cleanup
 lifetime, including background work. Separate database connections are insufficient.
@@ -72,9 +72,9 @@ compiles and deploys silently. Pin the schema with golden-bytes fixtures
 (`testing::assert_encoding`), a `schema::Manifest` snapshot, and
 `assert_unique_ids!`. See [guarding the schema in CI](integration.md#guarding-the-schema-in-ci).
 
-Choosing which keyring protects a seal or scope is application code, and a
-wrong choice seals and opens without error. Seal a value through the
-application's key source and check it with
+Choosing which keyring protects which values is application code, and a
+wrong choice seals and opens without error. Seal a value with the keys the
+application resolves and check it with
 `testing::assert_sealed_under::<F>(&sealed, &expected_keyring)`, which fails
 when the value names a key that the keyring does not hold.
 

@@ -89,7 +89,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
         .await?;
     let nickname = Plain::<Nickname>::new(plaintext);
 
-    // Scope Plain exercises automatic sealing with the installed keys.
+    // Plain exercises automatic sealing with the installed keys.
     sqlx::query("INSERT INTO users (nickname) VALUES (?)")
         .bind(&nickname)
         .execute(&mut connection)

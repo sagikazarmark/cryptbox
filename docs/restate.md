@@ -32,7 +32,7 @@ struct Customer {
 impl Customer {
     #[handler]
     async fn update_email(&self, ctx: ObjectContext<'_>, email: String) -> HandlerResult<()> {
-        let tenant = ObjectKey::<Tenant>::parse(ctx.key()).map_err(restate::handler_error)?;
+        let (tenant,) = ObjectKey::<(TenantId,)>::parse(ctx.key()).map_err(restate::handler_error)?;
 
         let sealed = restate::seal::<CustomerEmail>(&ctx, &email, &tenant, &self.keys)
             .name("seal-email")
@@ -44,7 +44,7 @@ impl Customer {
 
     #[handler]
     async fn email_domain(&self, ctx: ObjectContext<'_>) -> HandlerResult<String> {
-        let tenant = ObjectKey::<Tenant>::parse(ctx.key()).map_err(restate::handler_error)?;
+        let (tenant,) = ObjectKey::<(TenantId,)>::parse(ctx.key()).map_err(restate::handler_error)?;
 
         let sealed: Sealed<CustomerEmail> = ctx
             .get("email")
@@ -63,20 +63,20 @@ impl Customer {
   the plaintext is never a `run` result and never reaches the journal. Use it
   for a value loaded from a database or another service.
 - `restate::seal_record` and `restate::seal_record_with` do the same for a
-  whole `Record`. Restate journals the sealed record as JSON, so derive Serde's
-  traits on it: `#[record(attr(derive(serde::Serialize, serde::Deserialize)))]`.
-  Its plaintext fields, such as the record ID, are journaled as they are.
+  whole `Record`. Restate journals its stored form as JSON, so derive Serde's
+  traits on it: `#[cryptbox(stored(derive(serde::Serialize, serde::Deserialize)))]`.
+  Its record ID, bound values, and plaintext fields are journaled as they are.
 
 Each returns Restate's own `run` future, so it can be named and given a retry
 policy.
 
-The context, the value, the binding arguments, and the key source share one
+The context, the value, the binding arguments, and the keys share one
 lifetime, and move into the `run` closure. A `seal_with` fetch closure must own
 what it uses: move a clone or an `Arc` of your database handle into it. Borrows
 held by it would stop the handler's future from being `Send`, which Restate
-requires. For the same reason, `seal` and `seal_with` take the key source
-as `&dyn EncryptionKeySource<F::Keys>`; a keyring or `Keys` converts on its own. The
-record forms need both key roles, so they take any source of both.
+requires. For the same reason, `seal` and `seal_with` take their keys
+as `&dyn EncryptionKeys`; an `EncryptionKeyring` or `Keys` converts on its own.
+The record forms take a record's keys: `Keys` when it has blind indexes.
 
 Opening is deterministic, so it needs no `run`. Open where the plaintext is
 used, and never return plaintext from a `run`, or store it with `ctx.set`.
@@ -103,21 +103,20 @@ message, with code 400 for an invalid object key and 500 otherwise.
 
 ## Object keys
 
-A Virtual Object keyed by a scope, such as one object per org or a blind
-index's index scope, reads it back from its object key with `ObjectKey`:
+A Virtual Object keyed by bound values, such as one object per org and
+workspace, or a blind index's partition, reads them back from its object key
+with `ObjectKey`:
 
 ```rust
-type SearchKey = ObjectKey<OrgSearch, Org>;
+type SearchKey = ObjectKey<(OrgId, WorkspaceId)>;
 
-let search: OrgSearch = SearchKey::parse(ctx.key()).map_err(restate::handler_error)?;
-let key = SearchKey::encode(&search)?;
+let (org, workspace) = SearchKey::parse(ctx.key()).map_err(restate::handler_error)?;
+let key = SearchKey::encode((&org, &workspace));
 ```
 
-An object key encodes every part of its scope, separated by `:`. The parts of
-its second type parameter, a view such as the seal's
-[keys view](bindings.md#keys-follow-the-keys-view) `Org`, come first, and then
-the other parts, each in `PARTS` order; without it, every part is in `PARTS`
-order. Key an object by a view that holds only the parts the object is for.
+An object key encodes the values in list order, separated by `:`, so every
+object key of one org starts with that org's prefix. Lead with the bound value
+you will select objects by, and key an object by only the values it is for.
 
 | Kind | Encoding | Example |
 | --- | --- | --- |
@@ -127,12 +126,12 @@ order. Key an object by a view that holds only the parts the object is for.
 
 Parsing accepts exactly one spelling of each value. A missing or extra part,
 parts out of order, uppercase hex, a missing sign, or any other spelling fails
-with `Error::InvalidObjectKey`, which is terminal. A scope parsed from an object
-key needs `FromParts`; `#[derive(Scope)]` implements it.
+with `Error::InvalidObjectKey`, which is terminal. Each value is read back
+through its bound ID type's `PartType::from_part_value`.
 
 An object key is plaintext wherever Restate shows it: in the journal, the admin
 API, and logs. And a caller chooses the object key it calls. Authorize the caller
-for the scope that the object key names before you bind values to it.
+for the values the object key names before you bind values to them.
 
 ## What the journal exposes
 
@@ -162,11 +161,12 @@ Beyond the journal:
 ## Runbook: shredding an org
 
 These are the Restate-specific steps of
-[shredding a scope](shredding.md), whose prerequisites, cache and backup
+[shredding a tenant](shredding.md), whose prerequisites, cache and backup
 guidance, and verification apply here too.
 
-For a binding whose `org` part is its only [`keys`](shredding.md#prerequisites)
-part, destroying the org's root keys makes every value sealed under them unreadable,
+Where each org has root keys of its own
+([prerequisites](shredding.md#prerequisites)), destroying the org's root keys
+makes every value sealed under them unreadable,
 including those in Restate's journals and state. Restate still holds the
 plaintext around them: ingress input, object keys, and anything the handlers
 did not seal. And an invocation that replays after its keys are gone retries
@@ -179,10 +179,10 @@ destroy the keys.
 2. **Find the org's objects.** Compute the org's object-key prefix:
 
    ```rust
-   let prefix = ObjectKey::<OrgWorkspace, Org>::prefix(&Org { org: org_id })?;
+   let prefix = ObjectKey::<(OrgId, WorkspaceId)>::prefix::<(OrgId,)>(&org);
    ```
 
-   Select the org's invocations for each service keyed by `OrgWorkspace`,
+   Select the org's invocations for each service keyed by `(OrgId, WorkspaceId)`,
    through the admin API's `POST /query` or `restate sql`. The encoding never
    contains a quote or a SQL wildcard:
 
@@ -192,8 +192,8 @@ destroy the keys.
      AND (target_service_key = '<prefix>' OR target_service_key LIKE '<prefix>:%')
    ```
 
-   A keys view without parts, such as `()`, has an empty prefix: every object of
-   the service has it, so select them by service alone.
+   The prefix of no values, `()`, is empty: every object of the service has it,
+   so select them by service alone.
 
    A plain Service has no object key. Find its invocations for the org another
    way, such as by an idempotency key or a header you set.
@@ -212,7 +212,7 @@ destroy the keys.
 
 6. **Destroy the org's root keys**, for both encryption and blind indexes.
 
-7. **Verify.** The query in step 2 returns no rows. The key source reports the
-   org's keys as unavailable. Restate's snapshots and backups, and your
+7. **Verify.** The query in step 2 returns no rows. Your key resolution reports
+   the org's keys as unavailable. Restate's snapshots and backups, and your
    database's, still hold the org's sealed values until they expire; they
    stay unreadable once the keys are gone.

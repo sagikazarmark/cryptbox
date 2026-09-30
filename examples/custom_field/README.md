@@ -1,8 +1,8 @@
 # Declare a custom seal with explicit plaintext ownership
 
 [The example](main.rs) declares `Handle(Secret<String>)`, a seal that is its own
-value, for a 1–64 character ASCII account handle, with a validating codec, normalizer and synchronous
-key source.
+value, for a 1–64 character ASCII account handle, with a validating codec, normalizer and a refreshed
+keyring snapshot.
 [Examples](../README.md) · [Documentation](../../docs/README.md).
 
 ## Run the example
@@ -17,7 +17,7 @@ Expect `Custom field round trip and normalized lookup succeeded.` The program
 uses fresh in-memory keys each time and leaves no files behind. It can be rerun
 without setup.
 
-Keys are ephemeral; use [durable key/ID pairs](../../docs/integration.md#keyrings-and-key-sources)
+Keys are ephemeral; use [durable key/ID pairs](../../docs/integration.md#keyrings)
 before persisting data.
 
 ## Why these implementations?
@@ -34,8 +34,8 @@ before persisting data.
 - **`HandleEquality`** validates the same alphabet and lowercases inside a
   zeroizing buffer. Queries are bare `Secret<String>`s; stored values are handles. Writes, probes and candidate comparison share that rule.
   The 128-bit index leaks equality/frequency and is not a uniqueness constraint.
-- **`CachedEncryptionKeys`** is a key source that serves a local keyring snapshot
-  without I/O on the encryption path. The application owns loading, refresh, synchronization and failure policy.
+- **`CachedEncryptionKeys`** hands out a keyring from a local snapshot, without
+  I/O on the encryption path, and each operation is passed the keyring it hands out. The application owns loading, refresh, synchronization and failure policy.
 - **`Secret<String>`** zeroizes the handle's string on drop, and its redacting
   `Debug` lets `Handle` derive `Debug` safely. Preparation still borrows the
   plaintext; dropping `Prepared` does not erase it. `open` returns the decoded
@@ -57,7 +57,7 @@ Protect failure paths too. See the [ownership contracts](../../docs/ownership.md
 [`Seal`](https://docs.rs/cryptbox/latest/cryptbox/trait.Seal.html) ties these
 together: `Handle` names its ID, value type (itself), codec and padding. With
 the `derive` feature, `#[derive(Seal)]` on `Handle` with
-`#[seal(id = …, codec = HandleCodec)]` writes the same impl, since a type
+`#[cryptbox(id = …, codec = HandleCodec)]` writes the same impl, since a type
 with fields is its own value; `transparent` would instead take a codec for the
 inner `Secret<String>`. This example writes its impls by hand.
 **`Padding` is a closed set**: choose `Padding::NONE`, `Padding::block(n)` or
@@ -69,7 +69,7 @@ when adapting this example, then integrate it into [SQLx storage](../sqlite/READ
 ## Use it in your application
 
 Use `HandleCodec`, `HandleEquality`, and `CachedEncryptionKeys` in [main.rs](main.rs)
-as starting points for your own value type and key source. Add `zeroize` directly
+as starting points for your own value type and refreshed keys. Add `zeroize` directly
 because the extension interfaces return `Zeroizing<Vec<u8>>`. Keep the codec and
 normalizer's validation rules aligned, and replace the demonstration's generated
 keys with your application's durable keyrings. The tests beside the source show

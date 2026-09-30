@@ -49,7 +49,7 @@ This establishes material compatibility, not fleet membership or a whole-store a
 
 1. Prepare a target-encryption/baseline-index canary and retain the baseline one.
 2. Distribute the new encryption pair to all readers, keeping the old pair current.
-   Restart or refresh key sources and collect readiness for both canaries.
+   Restart or refresh key snapshots and collect readiness for both canaries.
 3. Once every reader is ready, promote encryption writers incrementally. During
    overlap, both old and new ciphertext must decrypt and search correctly.
 4. Finish promotion on every writer before planning convergence.
@@ -83,10 +83,10 @@ before sweeping: old-generation writers can reintroduce dependencies behind prog
 The consumer loads `EncryptionKeyring` and `BlindIndexKeyring` once at
 startup. File/environment changes do not replace a running snapshot; drain/restart
 the process. The installed keys (`keys::install`) are immutable and one-time per process.
-Restart, or have the originally installed custom key source refresh its own
-synchronized snapshot. That key source owns consistency, refresh
+Restart to change them. Explicit operations can instead be passed keyrings from
+the application's own synchronized snapshot, which owns consistency, refresh
 failures and readiness; synchronous CryptBox calls do not distribute secrets or
-refresh KMS state. See [key source obligations](../examples/custom_field/README.md#implementor-obligations).
+refresh KMS state. See [refreshed-keys obligations](../examples/custom_field/README.md#implementor-obligations).
 
 ## Sequence and later maintenance
 
