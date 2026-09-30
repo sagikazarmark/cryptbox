@@ -1,10 +1,10 @@
 use cryptbox::BlindIndexError;
 use zeroize::Zeroizing;
-#[seal(
+#[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    scope = cryptbox::Recorded<cryptbox::Tenant,
-    i64>,
+    bound(cryptbox::TenantId),
+    record = i64,
     indexes(EmailLookup),
 )]
 pub struct CustomerEmail;
@@ -17,14 +17,15 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Scope = cryptbox::Recorded<cryptbox::Tenant, i64>;
+        type Bound = (cryptbox::TenantId,);
+        type Record = i64;
         type Indexes = (EmailLookup,);
     }
 };
-#[seal(
+#[cryptbox(
     id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     value = String,
-    scope = cryptbox::Tenant,
+    bound(cryptbox::TenantId),
 )]
 pub struct CustomerNote;
 const _: () = {
@@ -36,14 +37,15 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Scope = cryptbox::Tenant;
+        type Bound = (cryptbox::TenantId,);
+        type Record = ();
         type Indexes = ();
     }
 };
 fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 }
-#[blind_index(
+#[cryptbox(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
     seal = CustomerEmail,
     bits = 32,
@@ -56,7 +58,7 @@ const _: () = {
     #[automatically_derived]
     impl ::cryptbox::BlindIndexSpec for EmailLookup {
         type Seal = CustomerEmail;
-        type Scope = <<CustomerEmail as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts;
+        type Partition = <CustomerEmail as ::cryptbox::Seal>::Bound;
         const ID: ::cryptbox::IndexId = ::cryptbox::IndexId::from_u128(
             0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53,
         );
@@ -157,10 +159,10 @@ const _: () = {
     };
     #[automatically_derived]
     impl Customer {
-        ///Seals `email` alone under `binding` and the record ID `record`, with the blind indexes it stores, for a partial update.
+        ///Seals `email` alone under the bound values `binding` and the record ID `record`, with the blind indexes it stores, for a partial update.
         pub fn seal_email<K>(
             value: &<CustomerEmail as ::cryptbox::Seal>::Value,
-            binding: &<<CustomerEmail as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts,
+            binding: &[::cryptbox::PartValue<'_>],
             record: &i64,
             keys: &K,
         ) -> ::core::result::Result<
@@ -172,17 +174,24 @@ const _: () = {
         {
             let prepared = ::cryptbox::Sealed::<
                 CustomerEmail,
-            >::prepare(value, ::cryptbox::__private::InRecord(binding, record), keys)?
+            >::prepare(
+                    value,
+                    ::cryptbox::__private::InRecord::<
+                        <Self as ::cryptbox::Record>::Bound,
+                        _,
+                    >(::core::marker::PhantomData, binding, record),
+                    keys,
+                )?
                 .with_index_with::<
                     EmailLookup,
                 >(::cryptbox::RecordKeys::record_blind_index_keyring(keys)?)?;
             let email_lookup = prepared.index::<EmailLookup>()?.to_blind_index();
             ::core::result::Result::Ok((prepared.into_sealed(), email_lookup))
         }
-        ///Seals `note` alone under `binding` and the record ID `record`, for a partial update.
+        ///Seals `note` alone under the bound values `binding` and the record ID `record`, for a partial update.
         fn seal_note<K>(
             value: &<CustomerNote as ::cryptbox::Seal>::Value,
-            binding: &<<CustomerNote as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts,
+            binding: &[::cryptbox::PartValue<'_>],
             record: &i64,
             keys: &K,
         ) -> ::core::result::Result<::cryptbox::Sealed<CustomerNote>, ::cryptbox::Error>
@@ -191,34 +200,42 @@ const _: () = {
         {
             ::cryptbox::Sealed::<
                 CustomerNote,
-            >::seal(value, ::cryptbox::__private::InRecord(binding, record), keys)
+            >::seal(
+                value,
+                ::cryptbox::__private::InRecord::<
+                    <Self as ::cryptbox::Record>::Bound,
+                    _,
+                >(::core::marker::PhantomData, binding, record),
+                keys,
+            )
         }
     }
     #[automatically_derived]
     impl ::cryptbox::Record for Customer {
         type Sealed = SealedCustomer;
-        type Scope = <<CustomerEmail as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts;
+        type Bound = <CustomerEmail as ::cryptbox::Seal>::Bound;
         const SEALS: &'static [::cryptbox::SealId] = &[
             <CustomerEmail as ::cryptbox::Seal>::ID,
             <CustomerNote as ::cryptbox::Seal>::ID,
         ];
         const RECORD_ID: &'static str = "id";
         const PLAINTEXT: &'static [&'static str] = &[];
-        fn seal<K>(
+        fn seal<'cryptbox, K>(
             &self,
-            binding: &Self::Scope,
+            binding: impl ::cryptbox::BoundValues<'cryptbox, Self::Bound>,
             keys: &K,
         ) -> ::core::result::Result<SealedCustomer, ::cryptbox::Error>
         where
             K: ::cryptbox::RecordKeys + ?::core::marker::Sized,
         {
+            let binding = ::cryptbox::__private::bound_values(binding);
             let (email, email_lookup) = Self::seal_email(
                 &self.email,
-                binding,
+                &binding,
                 &self.id,
                 keys,
             )?;
-            let note = Self::seal_note(&self.note, binding, &self.id, keys)?;
+            let note = Self::seal_note(&self.note, &binding, &self.id, keys)?;
             ::core::result::Result::Ok(SealedCustomer {
                 id: ::core::clone::Clone::clone(&self.id),
                 email,
@@ -226,31 +243,32 @@ const _: () = {
                 note,
             })
         }
-        fn open<K>(
+        fn open<'cryptbox, K>(
             sealed: SealedCustomer,
-            binding: &Self::Scope,
+            binding: impl ::cryptbox::BoundValues<'cryptbox, Self::Bound>,
             keys: &K,
         ) -> ::core::result::Result<Self, ::cryptbox::Error>
         where
             K: ::cryptbox::EncryptionKeys + ?::core::marker::Sized,
         {
+            let binding = ::cryptbox::__private::bound_values(binding);
             let record_id = &sealed.id;
             let email = sealed
                 .email
                 .open(
                     ::cryptbox::__private::InRecord::<
-                        <<CustomerEmail as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts,
+                        <Self as ::cryptbox::Record>::Bound,
                         _,
-                    >(binding, record_id),
+                    >(::core::marker::PhantomData, &binding, record_id),
                     keys,
                 )?;
             let note = sealed
                 .note
                 .open(
                     ::cryptbox::__private::InRecord::<
-                        <<CustomerNote as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts,
+                        <Self as ::cryptbox::Record>::Bound,
                         _,
-                    >(binding, record_id),
+                    >(::core::marker::PhantomData, &binding, record_id),
                     keys,
                 )?;
             ::core::result::Result::Ok(Self { id: sealed.id, email, note })

@@ -11,7 +11,7 @@ const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("92ba353d-4a5b-419c-be7b-577e
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("1ca61eba-f5d2-4b37-86db-cdc2b8204d88");
 
 #[derive(Seal)]
-#[seal(id = "283e5ff6-40ba-45e9-b55f-20ce5cee88c4", value = String)]
+#[cryptbox(id = "283e5ff6-40ba-45e9-b55f-20ce5cee88c4", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -22,7 +22,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "84651307-589f-4df2-a4b0-f8eaf9e52d3d",
     seal = UserEmail,
     bits = 128,
@@ -50,7 +50,7 @@ fn main() -> Result<(), cryptbox::Error> {
         [old_index_key],
     )?;
     let query = "mark@example.com";
-    let probes = EmailLookup::probes_with(query, &(), &index_keys)?;
+    let probes = EmailLookup::probes_with(query, (), &index_keys)?;
 
     // Stored indexes are lookup tokens, not plaintext secrets, so ordinary
     // equality is appropriate when matching every probe during key rotation.

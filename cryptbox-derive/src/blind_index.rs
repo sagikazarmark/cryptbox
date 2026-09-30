@@ -9,7 +9,7 @@ use crate::attr::{Attrs, Errors, Key, required};
 const KEYS: &[Key] = &[
     Key::Id,
     Key::Seal,
-    Key::Scope,
+    Key::Partition,
     Key::Bits,
     Key::Query,
     Key::Normalize,
@@ -20,7 +20,7 @@ const KEYS: &[Key] = &[
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    let mut attrs = Attrs::parse(&input.attrs, "blind_index", KEYS, &mut errors);
+    let mut attrs = Attrs::parse(&input.attrs, "cryptbox", KEYS, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
 
@@ -95,10 +95,10 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #krate::BlindIndexError,
         >
     };
-    // Without `scope`, the index is partitioned by its seal's whole scope.
-    let scope = attrs.scope.take().map_or_else(
-        || quote!(<<#seal as #krate::Seal>::Scope as #krate::SealScope>::Parts),
-        |scope| quote!(#scope),
+    // Without `partition`, the index is partitioned by every bound value of its seal.
+    let partition = attrs.partition.take().map_or_else(
+        || quote!(<#seal as #krate::Seal>::Bound),
+        |partition| quote!((#(#partition,)*)),
     );
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
@@ -107,7 +107,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #[automatically_derived]
             impl #impl_generics #krate::BlindIndexSpec for #name #type_generics #where_clause {
                 type Seal = #seal;
-                type Scope = #scope;
+                type Partition = #partition;
                 const ID: #krate::IndexId = #krate::IndexId::from_u128(#id);
                 const BITS: u16 = #bits;
                 const NORMALIZER: &'static str = #normalizer_name;

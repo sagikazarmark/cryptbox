@@ -25,7 +25,7 @@ const LEGACY_HEADER: &[u8] = b"legacy-xchacha-v1\0";
 const LEGACY_NONCE_LEN: usize = 24;
 
 #[derive(Seal)]
-#[seal(id = "d743409b-f5db-4e3f-a3a2-7f897845f00c", value = String)]
+#[cryptbox(id = "d743409b-f5db-4e3f-a3a2-7f897845f00c", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -36,7 +36,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "5524ca6c-ec5d-4027-8e8f-b9c73911b304",
     seal = UserEmail,
     bits = 128,
@@ -184,7 +184,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     drop(store);
 
     // Separately demonstrate strict authenticated reading for this lookup.
-    let probes = EmailLookup::probes_with("foreign@example.com", &(), &index_keys)?;
+    let probes = EmailLookup::probes_with("foreign@example.com", (), &index_keys)?;
     let mut matches = 0;
     for probe in probes {
         let rows = sqlx::query("SELECT email_ciphertext FROM users WHERE email_bidx = ?")

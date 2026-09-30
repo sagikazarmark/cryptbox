@@ -57,7 +57,8 @@ use super::{LegacyFormat, legacy};
 ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
 ///     type Value = String;
 ///     type Codec = cryptbox::Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -157,7 +158,8 @@ where
     ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
     ///     type Value = Vec<u8>;
     ///     type Codec = cryptbox::Raw;
-    ///     type Scope = ();
+    ///     type Bound = ();
+    ///     type Record = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -223,7 +225,7 @@ where
 
 impl<F> MaybeEncrypted<F>
 where
-    F: Seal<Scope = ()>,
+    F: Seal<Bound = (), Record = ()>,
 {
     /// Consumes the read and opens it with the [installed keys](crate::keys::installed).
     ///

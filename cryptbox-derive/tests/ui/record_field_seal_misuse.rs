@@ -1,5 +1,5 @@
 #[derive(cryptbox::Seal)]
-#[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
+#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 struct Nickname;
 
 // One seal on two fields: their values could be swapped within a row.
@@ -20,7 +20,7 @@ struct Twice {
 struct WithoutId {
     #[record_id]
     id: i64,
-    #[seal(scope = cryptbox::Tenant)]
+    #[seal(bound(cryptbox::TenantId))]
     email: String,
 }
 

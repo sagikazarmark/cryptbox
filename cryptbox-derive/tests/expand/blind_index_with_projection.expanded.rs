@@ -4,7 +4,7 @@ pub struct Address {
     pub street: String,
 }
 pub struct AddressCodec;
-#[seal(
+#[cryptbox(
     id = "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64",
     value = Address,
     codec = AddressCodec
@@ -19,7 +19,8 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = Address;
         type Codec = AddressCodec;
-        type Scope = ();
+        type Bound = ();
+        type Record = ();
         type Indexes = ();
     }
 };
@@ -29,7 +30,7 @@ fn street(address: &Address) -> &str {
 fn normalize_street(street: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
     Ok(Zeroizing::new(street.trim().to_ascii_lowercase().into_bytes()))
 }
-#[blind_index(
+#[cryptbox(
     id = "3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64",
     seal = HomeAddress,
     bits = 64,
@@ -43,7 +44,7 @@ const _: () = {
     #[automatically_derived]
     impl ::cryptbox::BlindIndexSpec for StreetLookup {
         type Seal = HomeAddress;
-        type Scope = <<HomeAddress as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts;
+        type Partition = <HomeAddress as ::cryptbox::Seal>::Bound;
         const ID: ::cryptbox::IndexId = ::cryptbox::IndexId::from_u128(
             0x3f5d8c2b_6e40_4b97_8c31_8a2f7d9e5b64,
         );

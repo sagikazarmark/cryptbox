@@ -1,60 +1,20 @@
 use std::fmt;
 
-use super::{FromParts, PartKind, PartSpec, PartType, PartValue, PartValues, Scope};
+use super::{PartKind, PartSpec};
 use crate::Error;
 
-// The empty scope: values are bound to their seal ID only. Blind indexes take
-// no arguments.
-impl Scope for () {
-    const PARTS: &'static [PartSpec] = &[];
-
-    fn values(&self) -> PartValues<'_> {
-        PartValues::new()
-    }
-}
-
-impl FromParts for () {
-    fn from_parts(values: &[PartValue<'_>]) -> Result<(), Error> {
-        match values {
-            [] => Ok(()),
-            _ => Err(Error::InvalidBinding),
-        }
-    }
-}
-
-/// A scope with a single tenant part.
-///
-/// A tenant can be [shredded](Scope#shredding) on its own when the application
-/// keeps each tenant's root keys separately. A blind index over a tenant-scoped seal takes
-/// `Tenant` as its index scope, so its queries pass the tenant. Its one part is persistent schema: part ID
-/// `1e8306bf-3135-4570-831c-6732f92550e9`, kind bytes.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Tenant(pub TenantId);
-
-// Persistent schema: never change it. See ../../docs/wire-format.md#presets.
+// The tenant's kind of bound value: persistent schema, never change it. See
+// ../../docs/wire-format.md#presets.
 pub(super) const TENANT_PART: PartSpec = PartSpec::new(
     crate::part_id!("1e8306bf-3135-4570-831c-6732f92550e9"),
     PartKind::Bytes,
 );
 
-impl Scope for Tenant {
-    const PARTS: &'static [PartSpec] = &[TENANT_PART];
-
-    fn values(&self) -> PartValues<'_> {
-        PartValues::from([PartValue::Bytes(self.0.as_bytes())])
-    }
-}
-
-impl FromParts for Tenant {
-    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
-        match values {
-            [tenant] => TenantId::from_part_value(*tenant).map(Self),
-            _ => Err(Error::InvalidBinding),
-        }
-    }
-}
-
-/// An opaque, non-empty tenant identifier.
+/// An opaque, non-empty tenant identifier, a [`BoundId`](super::BoundId).
+///
+/// It binds under the preset part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
+/// bytes, as persistent schema. A tenant can be shredded on its
+/// own when the application keeps each tenant's root keys separately.
 ///
 /// The bytes are bound as given. A UUID tenant is its 16 bytes, so
 /// [`TenantId::from_uuid`] and [`TenantId::new`] over the same bytes name the
@@ -102,13 +62,13 @@ impl fmt::Debug for TenantId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BindingDomain, Recorded, seal_id};
+    use crate::{BindingDomain, PartType, PartValue, seal_id};
 
     const SEAL: [u8; 16] = *seal_id!("12345678-1234-4234-8234-1234567890ab").as_bytes();
 
     #[test]
     fn unscoped_is_the_empty_binding() {
-        let domain = BindingDomain::of::<()>(&SEAL, &(), None).unwrap();
+        let domain = BindingDomain::bound::<(), ()>(&SEAL, &[], None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -119,8 +79,7 @@ mod tests {
 
     #[test]
     fn unscoped_with_a_record_binds_the_record_alone() {
-        let domain =
-            BindingDomain::of::<Recorded<(), i64>>(&SEAL, &(), Some(PartValue::I64(1))).unwrap();
+        let domain = BindingDomain::bound::<(), i64>(&SEAL, &[], Some(PartValue::I64(1))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -138,8 +97,9 @@ mod tests {
 
     #[test]
     fn tenant_binds_one_bytes_part() {
-        let tenant = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
-        let domain = BindingDomain::of::<Tenant>(&SEAL, &tenant, None).unwrap();
+        let tenant = TenantId::new(b"acme".to_vec()).unwrap();
+        let domain =
+            BindingDomain::bound::<(TenantId,), ()>(&SEAL, &[tenant.part_value()], None).unwrap();
 
         // docs/wire-format.md#presets
         assert_eq!(

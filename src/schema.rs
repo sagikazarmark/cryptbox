@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartSpec, Record, Scope, Seal, SealId,
-    SealScope, args::PartsOf, binding::declaration_fingerprint,
+    BlindIndexSpec, BoundList, Codec, IndexId, Padding, PartKind, PartSpec, Record, RecordIdType,
+    Seal, SealId, binding::declaration_fingerprint,
 };
 
 /// Lists seals and blind indexes with their persistent schema.
@@ -25,7 +25,7 @@ use crate::{
 ///   followed by each part's ID and kind, in part ID order.
 ///
 /// Each index lists its index ID, seal ID, bits, normalizer name, and the parts
-/// of its index scope.
+/// of its partition, in part ID order.
 ///
 /// Each record lists the seal IDs of its sealed fields, the field that holds
 /// its record ID, and the names of its other plaintext fields. A field stored
@@ -41,7 +41,7 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Padding, Recorded, Seal, SealId, Tenant, Utf8, schema::Manifest};
+/// use cryptbox::{Padding, Seal, SealId, TenantId, Utf8, schema::Manifest};
 ///
 /// struct Nickname;
 ///
@@ -50,7 +50,8 @@ use crate::{
 ///     const PADDING: Padding = Padding::block(16);
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = Recorded<Tenant, i64>;
+///     type Bound = (TenantId,);
+///     type Record = i64;
 ///     type Indexes = ();
 /// }
 ///
@@ -89,7 +90,7 @@ struct IndexEntry {
     seal: SealId,
     bits: u16,
     normalizer: &'static str,
-    parts: &'static [PartSpec],
+    parts: Vec<PartSpec>,
 }
 
 #[derive(Debug)]
@@ -100,7 +101,7 @@ struct SealEntry {
     codec: &'static str,
     padding: Padding,
     record: Option<PartKind>,
-    parts: &'static [PartSpec],
+    parts: Vec<PartSpec>,
     fingerprint: [u8; 8],
 }
 
@@ -124,9 +125,9 @@ impl Manifest {
                 id: F::ID,
                 codec: <F::Codec as Codec<F::Value>>::ID,
                 padding: F::PADDING,
-                record: <F::Scope as SealScope>::RECORD,
-                parts: <PartsOf<F> as Scope>::PARTS,
-                fingerprint: declaration_fingerprint::<F::Scope>(),
+                record: <F::Record as RecordIdType>::RECORD,
+                parts: sorted(<F::Bound as BoundList>::PARTS),
+                fingerprint: declaration_fingerprint::<F::Bound, F::Record>(),
             });
         }
         self
@@ -147,7 +148,7 @@ impl Manifest {
                 seal: <I::Seal as Seal>::ID,
                 bits: I::BITS,
                 normalizer: I::NORMALIZER,
-                parts: <I::Scope as Scope>::PARTS,
+                parts: sorted(<I::Partition as BoundList>::PARTS),
             });
         }
         self
@@ -251,7 +252,7 @@ impl fmt::Display for Manifest {
                 seal.record.map_or("no", kind_name)
             )?;
             writeln!(formatter, "  binding: {}", hex::encode(seal.fingerprint))?;
-            for part in seal.parts {
+            for part in &seal.parts {
                 writeln!(
                     formatter,
                     "    part {} {}",
@@ -266,11 +267,11 @@ impl fmt::Display for Manifest {
             writeln!(formatter, "  seal: {}", index.seal)?;
             writeln!(formatter, "  bits: {}", index.bits)?;
             writeln!(formatter, "  normalizer: {}", index.normalizer)?;
-            // An index scope without parts leaves the index unpartitioned.
+            // An index without a partition is unpartitioned.
             if !index.parts.is_empty() {
-                writeln!(formatter, "  scope:")?;
+                writeln!(formatter, "  partition:")?;
             }
-            for part in index.parts {
+            for part in &index.parts {
                 writeln!(
                     formatter,
                     "    part {} {}",
@@ -307,6 +308,14 @@ impl fmt::Display for Manifest {
     }
 }
 
+// Parts are listed by part ID, as the binding sorts them, so reordering a
+// bound list changes no snapshot.
+fn sorted(parts: &[PartSpec]) -> Vec<PartSpec> {
+    let mut parts = parts.to_vec();
+    parts.sort_by_key(|part| *part.id().as_bytes());
+    parts
+}
+
 // Manifest spellings are snapshot text: keep them stable.
 const fn kind_name(kind: PartKind) -> &'static str {
     match kind {
@@ -334,7 +343,8 @@ const fn kind_name(kind: PartKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -345,7 +355,8 @@ const fn kind_name(kind: PartKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -362,7 +373,8 @@ const fn kind_name(kind: PartKind) -> &'static str {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Scope = ();
+/// #     type Bound = ();
+/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// struct BillingAddress;
@@ -372,7 +384,8 @@ const fn kind_name(kind: PartKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -390,14 +403,15 @@ const fn kind_name(kind: PartKind) -> &'static str {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Scope = ();
+/// #     type Bound = ();
+/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// struct Exact;
 ///
 /// impl BlindIndexSpec for Exact {
 ///     type Seal = Bytes;
-///     type Scope = ();
+///     type Partition = ();
 ///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -410,7 +424,7 @@ const fn kind_name(kind: PartKind) -> &'static str {
 ///
 /// impl BlindIndexSpec for Prefix {
 ///     type Seal = Bytes;
-///     type Scope = ();
+///     type Partition = ();
 ///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 16;
 ///     const NORMALIZER: &'static str = "prefix/1";

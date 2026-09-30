@@ -2,9 +2,9 @@
 #![cfg(feature = "derive")]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeyring, FromParts, IndexId, IndexKeyId, IndexList,
-    Padding, PartKind, PartSpec, PartType, PartValue, PartValues, Scope, Seal, SealId, Sealed,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, BoundId, BoundList, Codec,
+    CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, IndexId, IndexKeyId, IndexList,
+    Padding, PartId, PartKind, PartSpec, PartType, PartValue, RecordIdType, Seal, SealId, Sealed,
     Utf8, index_id, index_key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
@@ -19,7 +19,7 @@ fn assert_value<F: Seal<Value = V>, V>() {}
 
 /// Primary contact address.
 #[derive(Seal)]
-#[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
+#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 struct UserEmail;
 
 /// The manual equivalent of [`UserEmail`].
@@ -30,7 +30,8 @@ impl Seal for ManualUserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -57,7 +58,7 @@ fn a_derived_seal_opens_values_of_its_manual_equivalent() {
 
 /// [`UserEmail`] as its own value: the same ID, stored as its inner `String`.
 #[derive(Debug, PartialEq, Seal)]
-#[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent)]
+#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent)]
 struct SelfValuedEmail(String);
 
 #[test]
@@ -86,7 +87,7 @@ fn a_transparent_seal_and_a_marker_read_each_other_s_values() {
 
 /// A transparent seal over a named field, with an explicit codec.
 #[derive(Debug, PartialEq, Seal)]
-#[seal(id = "3f5b7d91-2a4c-4e6f-8b1d-5c7e9f1a3b5d", transparent, codec = Utf8)]
+#[cryptbox(id = "3f5b7d91-2a4c-4e6f-8b1d-5c7e9f1a3b5d", transparent, codec = Utf8)]
 struct Nickname {
     nickname: String,
 }
@@ -116,7 +117,7 @@ mod self_valued_json {
 
     /// A whole response sealed as one JSON document.
     #[derive(Debug, PartialEq, Serialize, Deserialize, Seal)]
-    #[seal(id = "8c0e2a46-5b7d-4f91-a3c5-7e9b1d3f5a70", codec = Json)]
+    #[cryptbox(id = "8c0e2a46-5b7d-4f91-a3c5-7e9b1d3f5a70", codec = Json)]
     struct Profile {
         name: String,
         email: String,
@@ -178,7 +179,7 @@ fn address() -> Address {
 }
 
 #[derive(Seal)]
-#[seal(
+#[cryptbox(
     id = "5D2E8A17-4C6B-4F93-8E0A-7B1C9D3F6A25",
     value = Address,
     codec = AddressCodec,
@@ -187,8 +188,8 @@ fn address() -> Address {
 struct BillingAddress;
 
 #[derive(Seal)]
-#[seal(id = "5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25")]
-#[seal(value = Address, codec = AddressCodec, padding = length(64usize))]
+#[cryptbox(id = "5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25")]
+#[cryptbox(value = Address, codec = AddressCodec, padding = length(64usize))]
 struct FixedBillingAddress;
 
 #[test]
@@ -226,7 +227,7 @@ fn normalize_text(text: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
     seal = UserEmail,
     bits = 32,
@@ -241,7 +242,7 @@ struct ManualEmailLookup;
 
 impl BlindIndexSpec for ManualEmailLookup {
     type Seal = ManualUserEmail;
-    type Scope = ();
+    type Partition = ();
     const ID: IndexId = index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "text/1";
@@ -264,16 +265,16 @@ fn a_derived_blind_index_derives_the_same_index_as_its_manual_equivalent() {
     assert_eq!(EmailLookup::ID, ManualEmailLookup::ID);
     assert_eq!(EmailLookup::BITS, 32);
     assert_eq!(
-        EmailLookup::derive_with(&email, &(), &keys)
+        EmailLookup::derive_with(&email, (), &keys)
             .unwrap()
             .as_bytes(),
-        ManualEmailLookup::derive_with(&email, &(), &keys)
+        ManualEmailLookup::derive_with(&email, (), &keys)
             .unwrap()
             .as_bytes()
     );
     assert_eq!(
-        EmailLookup::probes_with("mark@example.com", &(), &keys).unwrap()[0].as_bytes(),
-        ManualEmailLookup::probes_with("mark@example.com", &(), &keys).unwrap()[0].as_bytes()
+        EmailLookup::probes_with("mark@example.com", (), &keys).unwrap()[0].as_bytes(),
+        ManualEmailLookup::probes_with("mark@example.com", (), &keys).unwrap()[0].as_bytes()
     );
     assert!(EmailLookup::verify_candidate("MARK@example.com", &email).unwrap());
 }
@@ -283,7 +284,7 @@ fn street(address: &Address) -> &str {
 }
 
 #[derive(BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64",
     seal = BillingAddress,
     bits = 64,
@@ -299,7 +300,7 @@ struct ManualStreetLookup;
 
 impl BlindIndexSpec for ManualStreetLookup {
     type Seal = BillingAddress;
-    type Scope = ();
+    type Partition = ();
     const ID: IndexId = index_id!("3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64");
     const BITS: u16 = 64;
     const NORMALIZER: &'static str = "street/1";
@@ -319,10 +320,10 @@ fn a_projected_blind_index_normalizes_part_of_the_value() {
     let keys = index_keys();
 
     assert_eq!(
-        StreetLookup::derive_with(&address(), &(), &keys)
+        StreetLookup::derive_with(&address(), (), &keys)
             .unwrap()
             .as_bytes(),
-        ManualStreetLookup::derive_with(&address(), &(), &keys)
+        ManualStreetLookup::derive_with(&address(), (), &keys)
             .unwrap()
             .as_bytes()
     );
@@ -365,7 +366,7 @@ mod renamed {
 }
 
 #[derive(Seal)]
-#[seal(
+#[cryptbox(
     crate = "renamed::encryption",
     id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
     value = Postcode,
@@ -385,89 +386,50 @@ fn a_derived_blind_index_names_its_normalizer() {
     assert_eq!(StreetLookup::NORMALIZER, ManualStreetLookup::NORMALIZER);
 }
 
-/// An org scopes keys, and a project and a workspace are only bound. Declared
-/// out of part-ID order.
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-struct OrgProject {
-    #[part("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
-    workspace: [u8; 16],
-    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-    org: Vec<u8>,
-    #[part("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
-    project: i64,
-}
+/// An org's ID, bound as bytes.
+#[derive(cryptbox::BoundId, Clone, Debug, PartialEq)]
+#[cryptbox(kind = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+struct OrgId(Vec<u8>);
 
-/// A view of [`OrgProject`]: the org and the project, which a project search
-/// knows.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
-struct OrgProjectSearch {
-    #[part("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
-    project: i64,
-    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-    org: Vec<u8>,
-}
+/// A project's ID.
+#[derive(cryptbox::BoundId, Clone, Copy, Debug, PartialEq)]
+#[cryptbox(kind = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
+struct ProjectId(i64);
 
-/// The manual equivalent of [`OrgProject`].
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct ManualOrgProject {
-    org: Vec<u8>,
-    project: i64,
-    workspace: [u8; 16],
-}
+/// A workspace's ID, bound as a UUID.
+#[derive(cryptbox::BoundId, Clone, Copy, Debug, PartialEq)]
+#[cryptbox(kind = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
+struct WorkspaceId([u8; 16]);
 
-impl Scope for ManualOrgProject {
-    const PARTS: &'static [PartSpec] = &[
-        PartSpec::new(
-            part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
-            PartKind::Bytes,
-        ),
-        PartSpec::new(
-            part_id!("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61"),
-            PartKind::I64,
-        ),
-        PartSpec::new(
-            part_id!("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92"),
-            PartKind::Uuid,
-        ),
-    ];
-    fn values(&self) -> PartValues<'_> {
-        PartValues::from([
-            PartValue::Bytes(&self.org),
-            PartValue::I64(self.project),
-            PartValue::Uuid(self.workspace),
-        ])
+/// The manual equivalent of [`OrgId`].
+struct ManualOrgId(Vec<u8>);
+
+impl PartType for ManualOrgId {
+    const KIND: PartKind = PartKind::Bytes;
+
+    fn part_value(&self) -> PartValue<'_> {
+        PartValue::Bytes(&self.0)
+    }
+
+    fn from_part_value(value: PartValue<'_>) -> Result<Self, cryptbox::Error> {
+        Vec::<u8>::from_part_value(value).map(Self)
     }
 }
 
-#[test]
-fn a_derived_binding_declares_its_parts_sorted_by_part_id() {
-    assert_eq!(OrgProject::PARTS, ManualOrgProject::PARTS);
-}
-
-#[test]
-fn a_derived_scope_is_built_back_from_its_part_values() {
-    let scope = OrgProject {
-        workspace: [0x42; 16],
-        org: b"acme".to_vec(),
-        project: 7,
-    };
-
-    assert!(OrgProject::from_parts(scope.values().as_slice()).unwrap() == scope);
-    assert_eq!(
-        OrgProject::from_parts(&[]).err(),
-        Some(cryptbox::Error::InvalidBinding)
-    );
+impl BoundId for ManualOrgId {
+    const KIND_ID: PartId = part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37");
 }
 
 #[derive(Seal)]
-#[seal(
+#[cryptbox(
     id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",
     value = String,
-    scope = cryptbox::Recorded<OrgProject, i64>,
+    bound(OrgId, ProjectId),
+    record = i64,
 )]
 struct ProjectNote;
 
-/// The manual equivalent of [`ProjectNote`].
+/// The manual equivalent of [`ProjectNote`], its bound types in another order.
 struct ManualProjectNote;
 
 impl Seal for ManualProjectNote {
@@ -475,47 +437,58 @@ impl Seal for ManualProjectNote {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = cryptbox::Recorded<ManualOrgProject, i64>;
+    type Bound = (ProjectId, ManualOrgId);
+    type Record = i64;
     type Indexes = ();
+}
+
+#[test]
+fn a_derived_seal_declares_its_bound_types_and_record() {
+    assert_eq!(
+        <<ProjectNote as Seal>::Bound as BoundList>::PARTS,
+        [OrgId::PART, ProjectId::PART]
+    );
+    assert_eq!(
+        <<ProjectNote as Seal>::Record as RecordIdType>::RECORD,
+        Some(PartKind::I64)
+    );
 }
 
 #[test]
 fn a_derived_bound_seal_opens_values_of_its_manual_equivalent() {
     let keys = keyring();
-    let manual_scope = ManualOrgProject {
-        org: b"acme".to_vec(),
-        project: 7,
-        workspace: [0x42; 16],
-    };
-    let scope = OrgProject {
-        workspace: [0x42; 16],
-        org: b"acme".to_vec(),
-        project: 7,
-    };
     let record = &9_i64;
 
-    let manual =
-        Sealed::<ManualProjectNote>::seal(&"ship it".to_owned(), (&manual_scope, record), &keys)
-            .unwrap();
+    let manual = Sealed::<ManualProjectNote>::seal(
+        &"ship it".to_owned(),
+        (&ProjectId(7), &ManualOrgId(b"acme".to_vec()), record),
+        &keys,
+    )
+    .unwrap();
     let derived = Sealed::<ProjectNote>::from_bytes(manual.into_bytes()).unwrap();
 
-    assert_eq!(derived.open((&scope, record), &keys).unwrap(), "ship it");
+    assert_eq!(
+        derived
+            .open((&OrgId(b"acme".to_vec()), &ProjectId(7), record), &keys)
+            .unwrap(),
+        "ship it"
+    );
 }
 
 #[derive(Seal)]
-#[seal(
+#[cryptbox(
     id = "4b8e2d6f-1a3c-4e57-b9d0-6f2a4c8e1b35",
     value = String,
-    scope = OrgProject,
+    bound(OrgId, ProjectId, WorkspaceId),
     indexes(ProjectEmailLookup),
 )]
 struct ProjectEmail;
 
 #[derive(BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "9c1e5a3d-7f2b-4d48-a6e0-3b5d9f1c7e24",
     seal = ProjectEmail,
-    scope = OrgProjectSearch,
+    partition(OrgId, ProjectId),
     bits = 32,
     query = str,
     normalize = normalize_text,
@@ -532,57 +505,49 @@ fn a_derived_seal_declares_its_blind_indexes() {
 }
 
 #[test]
-fn a_derived_blind_index_is_scoped_by_its_index_scope() {
+fn a_derived_blind_index_is_partitioned_by_its_partition() {
     let keys = index_keys();
     let email = "Mark@Example.com".to_owned();
-    let scope = |org: &[u8], workspace| OrgProject {
-        workspace: [workspace; 16],
-        org: org.to_vec(),
-        project: 7,
+    let prepare = |org: &[u8], workspace| {
+        let bound = (
+            OrgId(org.to_vec()),
+            ProjectId(7),
+            WorkspaceId([workspace; 16]),
+        );
+        Sealed::<ProjectEmail>::prepare(&email, (&bound.0, &bound.1, &bound.2), &keyring())
+            .unwrap()
+            .with_index_with::<ProjectEmailLookup>(&keys)
+            .unwrap()
+            .index::<ProjectEmailLookup>()
+            .unwrap()
+            .to_blind_index()
     };
-    let search = OrgProjectSearch {
-        org: b"acme".to_vec(),
-        project: 7,
-    };
 
-    let probes = ProjectEmailLookup::probes_with("mark@example.com", &search, &keys).unwrap();
-    let prepared = Sealed::<ProjectEmail>::prepare(&email, &scope(b"acme", 1), &keyring())
-        .unwrap()
-        .with_index_with::<ProjectEmailLookup>(&keys)
-        .unwrap();
-    let other_org = Sealed::<ProjectEmail>::prepare(&email, &scope(b"globex", 1), &keyring())
-        .unwrap()
-        .with_index_with::<ProjectEmailLookup>(&keys)
-        .unwrap();
+    let probes = ProjectEmailLookup::probes_with(
+        "mark@example.com",
+        (&OrgId(b"acme".to_vec()), &ProjectId(7)),
+        &keys,
+    )
+    .unwrap();
 
-    assert_eq!(
-        prepared.index::<ProjectEmailLookup>().unwrap().as_bytes(),
-        probes[0].as_bytes()
-    );
-    assert_ne!(
-        other_org.index::<ProjectEmailLookup>().unwrap().as_bytes(),
-        probes[0].as_bytes()
-    );
-}
-
-#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
-struct Org {
-    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-    id: [u8; 16],
+    assert_eq!(prepare(b"acme", 1), probes[0]);
+    assert_eq!(prepare(b"acme", 2), probes[0], "the workspace is spanned");
+    assert_ne!(prepare(b"globex", 1), probes[0]);
 }
 
 #[derive(Seal)]
-#[seal(
+#[cryptbox(
     id = "882016eb-21d9-42df-b559-82e4a82151f6",
     value = String,
-    scope = OrgProject,
+    bound(OrgId, ProjectId),
     indexes(ProjectEmailByOrg),
 )]
 struct OrgProjectEmail;
 
-/// Without `scope`, a derived blind index is scoped by its seal's whole scope.
+/// Without `partition`, a derived blind index is partitioned by every bound
+/// value of its seal.
 #[derive(BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "ef3a8a68-92f2-4e45-bebf-c4f112c0d540",
     seal = OrgProjectEmail,
     bits = 32,
@@ -593,109 +558,30 @@ struct OrgProjectEmail;
 struct ProjectEmailByOrg;
 
 #[test]
-fn a_derived_blind_index_defaults_to_its_seals_scope() {
-    fn index_scope<Spec: BlindIndexSpec<Scope = OrgProject>>() {}
+fn a_derived_blind_index_defaults_to_its_seals_bound_list() {
+    fn partition<Spec: BlindIndexSpec<Partition = (OrgId, ProjectId)>>() {}
 
-    index_scope::<ProjectEmailByOrg>();
-}
-
-#[test]
-fn a_derived_view_is_built_back_from_its_part_values() {
-    let search = OrgProjectSearch {
-        org: b"acme".to_vec(),
-        project: 7,
-    };
-    let org = Org { id: [0x42; 16] };
-
-    assert_eq!(
-        OrgProjectSearch::from_parts(search.values().as_slice()),
-        Ok(search)
-    );
-    assert_eq!(Org::from_parts(org.values().as_slice()), Ok(org));
-}
-
-#[test]
-fn derived_views_reject_part_values_that_do_not_fit() {
-    let cases: [(&str, &[PartValue<'_>]); 3] = [
-        ("missing part", &[PartValue::Bytes(b"acme")]),
-        (
-            "extra part",
-            &[
-                PartValue::Bytes(b"acme"),
-                PartValue::I64(7),
-                PartValue::I64(8),
-            ],
-        ),
-        (
-            "wrong kind",
-            &[PartValue::I64(7), PartValue::Bytes(b"acme")],
-        ),
-    ];
-
-    for (case, values) in cases {
-        assert_eq!(
-            OrgProjectSearch::from_parts(values),
-            Err(cryptbox::Error::InvalidBinding),
-            "{case}"
-        );
-    }
+    partition::<ProjectEmailByOrg>();
 }
 
 #[cfg(feature = "uuid")]
 mod uuid_parts {
-    use cryptbox::{FromParts, RecordId, Scope};
+    use cryptbox::{PartType, PartValue, RecordId};
     use uuid::Uuid;
 
-    #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-    struct Org {
-        #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-        id: Uuid,
-    }
+    #[derive(cryptbox::BoundId)]
+    #[cryptbox(kind = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+    struct OrgId(Uuid);
 
     #[test]
-    fn a_uuid_part_binds_its_sixteen_bytes() {
+    fn a_uuid_bound_id_binds_its_sixteen_bytes() {
         let id = Uuid::from_u128(0x0192_3a4b_5c6d_7e8f_9a0b_1c2d_3e4f_5a6b);
 
-        assert_eq!(
-            super::Org::from_parts(Org { id }.values().as_slice()),
-            Ok(super::Org { id: *id.as_bytes() })
+        assert!(
+            matches!(OrgId(id).part_value(), PartValue::Uuid(bytes) if bytes == *id.as_bytes())
         );
         assert_eq!(RecordId::from(id), RecordId::Uuid(*id.as_bytes()));
     }
-}
-
-/// An application's own org ID, bound as a UUID part.
-#[derive(Clone, Copy, Hash, PartialEq, Eq)]
-struct OrgId([u8; 16]);
-
-impl PartType for OrgId {
-    const KIND: PartKind = PartKind::Uuid;
-
-    fn part_value(&self) -> PartValue<'_> {
-        PartValue::Uuid(self.0)
-    }
-
-    fn from_part_value(value: PartValue<'_>) -> Result<Self, cryptbox::Error> {
-        <[u8; 16]>::from_part_value(value).map(Self)
-    }
-}
-
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-struct TypedOrg {
-    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-    id: OrgId,
-}
-
-#[test]
-fn a_newtype_part_binds_like_its_inner_value() {
-    assert_eq!(TypedOrg::PARTS, Org::PARTS);
-    let typed = TypedOrg {
-        id: OrgId([0x42; 16]),
-    };
-    assert_eq!(
-        Org::from_parts(typed.values().as_slice()),
-        Ok(Org { id: [0x42; 16] })
-    );
 }
 
 /// Declares one kind but supplies another.
@@ -714,26 +600,23 @@ impl PartType for Mislabeled {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-struct MislabeledScope {
-    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-    id: Mislabeled,
-}
+/// A bound ID over [`Mislabeled`].
+#[derive(cryptbox::BoundId)]
+#[cryptbox(kind = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+struct MislabeledId(Mislabeled);
 
 #[derive(Seal)]
-#[seal(
+#[cryptbox(
     id = "83824c94-7154-4594-97b2-eb04999e948b",
     value = String,
-    scope = MislabeledScope,
+    bound(MislabeledId),
 )]
 struct MislabeledNote;
 
 #[test]
 fn a_part_value_of_another_kind_is_rejected() {
-    let scope = MislabeledScope { id: Mislabeled(1) };
-
     assert_eq!(
-        Sealed::<MislabeledNote>::seal(&"ada".to_owned(), &scope, &keyring()),
+        Sealed::<MislabeledNote>::seal(&"ada".to_owned(), &MislabeledId(Mislabeled(1)), &keyring()),
         Err(cryptbox::Error::InvalidBinding)
     );
 }
@@ -745,8 +628,6 @@ struct CustomerId([u8; 16]);
 
 #[test]
 fn a_derived_bound_id_binds_as_its_field_under_its_kind() {
-    use cryptbox::{BoundId, BoundList};
-
     let customer = CustomerId([0x42; 16]);
 
     assert_eq!(

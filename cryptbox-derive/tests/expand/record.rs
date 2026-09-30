@@ -2,19 +2,20 @@ use cryptbox::BlindIndexError;
 use zeroize::Zeroizing;
 
 #[derive(cryptbox::Seal)]
-#[seal(
+#[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    scope = cryptbox::Recorded<cryptbox::Tenant, i64>,
+    bound(cryptbox::TenantId),
+    record = i64,
     indexes(EmailLookup),
 )]
 pub struct CustomerEmail;
 
 #[derive(cryptbox::Seal)]
-#[seal(
+#[cryptbox(
     id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     value = String,
-    scope = cryptbox::Tenant,
+    bound(cryptbox::TenantId),
 )]
 pub struct CustomerNote;
 
@@ -23,7 +24,7 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(cryptbox::BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
     seal = CustomerEmail,
     bits = 32,

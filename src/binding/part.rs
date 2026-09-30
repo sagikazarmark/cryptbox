@@ -3,11 +3,9 @@ use crate::Error;
 
 /// A type a binding part can hold, with its fixed [`PartKind`].
 ///
-/// `#[derive(Scope)]` reads each part's kind and value through this trait,
-/// and builds a scope back from its part values with
-/// [`from_part_value`](Self::from_part_value). A hand-written
-/// [`Scope`](super::Scope) can use it too, or name the kinds and values
-/// directly.
+/// A [`BoundId`](super::BoundId) or a record ID binds its value through this
+/// trait, and reads it back with [`from_part_value`](Self::from_part_value).
+/// `#[derive(BoundId)]` implements it for a newtype over one of these types.
 ///
 /// | Type | Kind |
 /// | --- | --- |
@@ -17,7 +15,7 @@ use crate::Error;
 /// | `Vec<u8>`, `Box<[u8]>`, [`TenantId`] | [`PartKind::Bytes`] |
 ///
 /// Implement it for an application's own ID types, such as a newtype over a
-/// UUID, so a scope struct can hold them directly. The kinds stay canonical
+/// UUID; `#[derive(BoundId)]` writes this impl. The kinds stay canonical
 /// whatever the type: there is no text kind, so encode text as bytes.
 ///
 /// ```

@@ -1,8 +1,8 @@
 use std::{fmt::Write as _, marker::PhantomData};
 
 use crate::{
-    Error, FromParts, PartKind, PartValue, Scope,
-    binding::{check_parts, check_values, check_view},
+    BoundList, BoundValues, Error, PartKind, PartSpec, PartValue,
+    binding::{bound_values, from_part_values},
 };
 
 // Never appears in an encoded value, so parts split unambiguously.
@@ -12,18 +12,15 @@ const UUID_HYPHENS: [usize; 4] = [8, 13, 18, 23];
 // A sign and the 19 digits of `i64::MIN`'s magnitude.
 const I64_LEN: usize = 20;
 
-/// The Restate object key of scope `B`, led by its view `K`: a strict,
-/// canonical text encoding of its values, usually those of a blind index's
-/// [index scope](crate::BlindIndexSpec::Scope).
+/// The Restate object key of bound list `B`: a strict, canonical text encoding
+/// of its values, usually those of a blind index's
+/// [partition](crate::BlindIndexSpec::Partition).
 ///
-/// A Virtual Object keyed by a scope, such as one object per org and workspace,
-/// reads it back from its object key with [`Self::parse`]. An object key holds
-/// one segment per part, separated by `:`. The parts of `K`, a view of `B` such
-/// as an org of an org and workspace, come first, then the other
-/// parts, each in [`PARTS`](Scope::PARTS) order, so every object key of one
-/// value of `K` starts with that value's [`Self::prefix`]. `K` defaults to `B`
-/// itself. A `K` that is not a view of `B` fails the build when the object key
-/// is first used.
+/// A Virtual Object keyed by bound values, such as one object per org and
+/// workspace, reads them back from its object key with [`Self::parse`]. An
+/// object key holds one segment per bound value, in list order, separated by
+/// `:`, so every object key of one org of an `(OrgId, WorkspaceId)` list starts
+/// with that org's [`Self::prefix`].
 ///
 /// | Kind | Encoding | Example |
 /// | --- | --- | --- |
@@ -37,63 +34,50 @@ const I64_LEN: usize = 20;
 /// admin API, and logs. Never key an object by a value that must stay secret.
 ///
 /// An object key is only as trustworthy as the caller that chose it. Authorize
-/// the caller for the scope it names before binding values to it.
+/// the caller for the values it names before binding values to them.
 ///
 /// ```
-/// use cryptbox::{Error, Tenant, TenantId, restate::ObjectKey};
+/// use cryptbox::{Error, TenantId, restate::ObjectKey};
 ///
-/// let acme = Tenant(TenantId::new("acme")?);
+/// let acme = TenantId::new("acme")?;
 ///
-/// let key = ObjectKey::<Tenant>::encode(&acme)?;
+/// let key = ObjectKey::<(TenantId,)>::encode(&acme);
 /// assert_eq!(key, "61636d65");
-/// assert_eq!(ObjectKey::<Tenant>::parse(&key)?, acme);
-/// assert_eq!(ObjectKey::<Tenant>::parse("61636D65"), Err(Error::InvalidObjectKey));
+/// assert_eq!(ObjectKey::<(TenantId,)>::parse(&key)?, (acme.clone(),));
+/// assert_eq!(
+///     ObjectKey::<(TenantId,)>::parse("61636D65"),
+///     Err(Error::InvalidObjectKey)
+/// );
 ///
 /// // Every object key of the tenant starts with its prefix.
-/// assert_eq!(ObjectKey::<Tenant>::prefix(&acme)?, key);
+/// assert_eq!(ObjectKey::<(TenantId,)>::prefix::<(TenantId,)>(&acme), key);
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
 ///
-/// A `K` with a part `B` lacks fails the build:
+/// A prefix that is not the list's leading types fails the build:
 ///
 /// ```compile_fail,E0080
-/// use cryptbox::{Tenant, restate::ObjectKey};
+/// use cryptbox::{TenantId, restate::ObjectKey};
 ///
-/// let _ = ObjectKey::<(), Tenant>::encode(&());
+/// let acme = TenantId::new("acme").unwrap();
+/// let _ = ObjectKey::<()>::prefix::<(TenantId,)>(&acme);
 /// ```
-pub struct ObjectKey<B, K = B>(PhantomData<fn() -> (B, K)>);
+pub struct ObjectKey<B>(PhantomData<fn() -> B>);
 
-impl<B: Scope, K: Scope> ObjectKey<B, K> {
-    /// Encodes a scope as an object key.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::InvalidBinding`] when the scope's values do not match
-    /// its parts; see [`Scope`].
-    pub fn encode(scope: &B) -> Result<String, Error> {
-        let values = scope.values();
-        let values = values.as_slice();
-        check_values(B::PARTS, values)?;
-
-        Ok(join(
-            key_order::<B, K>()
-                .into_iter()
-                .map(|position| values[position]),
-        ))
+impl<B: BoundList> ObjectKey<B> {
+    /// Encodes bound values as an object key.
+    pub fn encode<'a>(values: impl BoundValues<'a, B>) -> String {
+        join(bound_values(values).into_iter())
     }
 
-    /// Parses an object key back into the scope it encodes.
+    /// Parses an object key back into the bound values it encodes.
     ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidObjectKey`] for an object key that is not
-    /// exactly the [encoding](Self) of a scope `B`: a missing or
-    /// extra part, parts out of order, another spelling of a value, or a value
-    /// the scope cannot hold.
-    pub fn parse(key: &str) -> Result<B, Error>
-    where
-        B: FromParts,
-    {
+    /// exactly the [encoding](Self) of values of `B`: a missing or extra
+    /// segment, another spelling of a value, or a value its type cannot hold.
+    pub fn parse(key: &str) -> Result<B, Error> {
         let specs = B::PARTS;
         let segments: Vec<_> = if specs.is_empty() && key.is_empty() {
             Vec::new()
@@ -104,73 +88,53 @@ impl<B: Scope, K: Scope> ObjectKey<B, K> {
             return Err(Error::InvalidObjectKey);
         }
 
-        let mut decoded = vec![Decoded::I64(0); specs.len()];
-        for (segment, position) in segments.into_iter().zip(key_order::<B, K>()) {
-            decoded[position] = decode_value(specs[position].kind(), segment)?;
-        }
+        let decoded = segments
+            .into_iter()
+            .zip(specs)
+            .map(|(segment, spec)| decode_value(spec.kind(), segment))
+            .collect::<Result<Vec<_>, _>>()?;
         let values: Vec<_> = decoded.iter().map(Decoded::part_value).collect();
-
-        let args = check_values(specs, &values)
-            .and_then(|()| B::from_parts(&values))
-            .map_err(|_| Error::InvalidObjectKey)?;
         // A part type that does not read back exactly what it binds could
         // otherwise accept a second spelling.
-        match Self::encode(&args) {
-            Ok(canonical) if canonical == key => Ok(args),
-            _ => Err(Error::InvalidObjectKey),
-        }
+        from_part_values::<B>(&values)
+            .ok()
+            .filter(|_| join(values.iter().copied()) == key)
+            .ok_or(Error::InvalidObjectKey)
     }
 
-    /// Returns the object-key prefix of one value of `K`: its parts.
+    /// Returns the object-key prefix of the leading values `values`, of the
+    /// leading types `P` of `B`.
     ///
-    /// Every object key with that value of `K` equals the prefix when `K` has
-    /// every part of `B`, and otherwise starts with the prefix and a `:`. Select
-    /// its objects in Restate's SQL introspection with
+    /// Every object key that starts with those values equals the prefix when
+    /// `P` is `B`, and otherwise starts with the prefix and a `:`. Select their
+    /// objects in Restate's SQL introspection with
     /// `target_service_key = '<prefix>' OR target_service_key LIKE '<prefix>:%'`;
-    /// the encoding never contains a quote or a SQL wildcard.
-    ///
-    /// A `K` without parts, such as `()`, has one value, and its prefix is
-    /// empty: every object of the service has it, so select them by service
+    /// the encoding never contains a quote or a SQL wildcard. The prefix of `()`
+    /// is empty: every object of the service has it, so select them by service
     /// alone.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::InvalidBinding`] when `keys`'s values do not match its
-    /// parts; see [`Scope`].
-    pub fn prefix(keys: &K) -> Result<String, Error> {
-        const {
-            check_parts(B::PARTS);
-            check_parts(K::PARTS);
-            check_view(K::PARTS, B::PARTS);
-        };
+    #[must_use]
+    pub fn prefix<'a, P: BoundList>(values: impl BoundValues<'a, P>) -> String {
+        const { check_prefix(P::PARTS, B::PARTS) };
 
-        let values = keys.values();
-        check_values(K::PARTS, values.as_slice())?;
-
-        Ok(join(values.as_slice().iter().copied()))
+        join(bound_values(values).into_iter())
     }
 }
 
-/// The positions of `B`'s parts in object-key order: the parts of its view `K`
-/// first, then the others, each in `PARTS` order.
-fn key_order<B: Scope, K: Scope>() -> Vec<usize> {
-    const {
-        check_parts(B::PARTS);
-        check_parts(K::PARTS);
-        check_view(K::PARTS, B::PARTS);
-    };
-
-    let in_view = |position: &usize| {
-        let id = B::PARTS[*position].id();
-        K::PARTS.iter().any(|part| part.id() == id)
-    };
-    let positions = 0..B::PARTS.len();
-
-    positions
-        .clone()
-        .filter(in_view)
-        .chain(positions.filter(|position| !in_view(position)))
-        .collect()
+// Panics become build errors in `const` context.
+const fn check_prefix(prefix: &[PartSpec], parts: &[PartSpec]) {
+    assert!(
+        prefix.len() <= parts.len(),
+        "an object-key prefix has the leading types of its bound list"
+    );
+    let mut index = 0;
+    while index < prefix.len() {
+        assert!(
+            u128::from_be_bytes(*prefix[index].id().as_bytes())
+                == u128::from_be_bytes(*parts[index].id().as_bytes()),
+            "an object-key prefix has the leading types of its bound list"
+        );
+        index += 1;
+    }
 }
 
 /// Encodes `values` in order, separated by `:`.

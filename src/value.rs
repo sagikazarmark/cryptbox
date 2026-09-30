@@ -2,7 +2,7 @@ use std::{fmt, marker::PhantomData};
 
 use crate::{
     Args, BindingDomain, Codec, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal,
-    args::{domain, domain_and_scope},
+    args::{domain, domain_and_values},
     bound,
     envelope::validated_key_id,
     keys,
@@ -37,7 +37,8 @@ use crate::{
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -159,12 +160,12 @@ impl<F: Seal> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Prepared<'a, F>, Error> {
-        let (target, scope) = domain_and_scope(args)?;
+        let (target, bound) = domain_and_values(args)?;
 
         Ok(Prepared::new(
             value,
             Self::seal_in(value, &target, keys)?,
-            scope,
+            bound,
         ))
     }
 
@@ -254,11 +255,11 @@ impl<F: Seal> Sealed<F> {
     }
 }
 
-impl<F: Seal<Scope = ()>> Sealed<F> {
+impl<F: Seal<Bound = (), Record = ()>> Sealed<F> {
     /// Seals `value` with the [installed keys](keys::installed).
     ///
     /// This is exactly `Self::seal(value, (), keys::installed()?)`. The
-    /// process-wide keys serve only unscoped seals without a record.
+    /// process-wide keys serve only seals without bound values or a record.
     ///
     /// # Errors
     ///
@@ -318,9 +319,9 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// A plaintext value of seal `F` that an automatic `SQLx` column seals on
 /// encode and opens on decode.
 ///
-/// A column decoder sees neither a row nor a scope, so `Plain` serves only
-/// unscoped seals without a record or blind indexes: its constructors
-/// and column impls require `F::Scope = ()` and `F::Indexes = ()`, and a
+/// A column decoder sees neither a row nor its bound values, so `Plain` serves
+/// only seals without bound values, a record, or blind indexes: its constructors
+/// and column impls require `F::Bound = ()`, `F::Record = ()`, and `F::Indexes = ()`, and a
 /// seal that binds a record fails the build.
 /// Use [`Sealed`] explicitly for every other seal.
 ///
@@ -343,7 +344,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -354,7 +356,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// A bound seal is rejected:
 ///
 /// ```compile_fail,E0271
-/// use cryptbox::{Seal, SealId, Padding, Plain, Tenant, Utf8};
+/// use cryptbox::{Seal, SealId, Padding, Plain, TenantId, Utf8};
 ///
 /// struct CustomerEmail;
 ///
@@ -363,7 +365,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = Tenant;
+///     type Bound = (TenantId,);
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -385,7 +388,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = (EmailLookup,);
 /// }
 ///
@@ -393,7 +397,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///
 /// impl BlindIndexSpec for EmailLookup {
 ///     type Seal = UserEmail;
-///     type Scope = ();
+///     type Partition = ();
 ///     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -414,7 +418,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// And a seal that binds a record is a type error:
 ///
 /// ```compile_fail,E0599
-/// # use cryptbox::{Padding, Plain, Recorded, Seal, SealId, Utf8};
+/// # use cryptbox::{Padding, Plain, Seal, SealId, Utf8};
 /// struct RowNote;
 ///
 /// impl Seal for RowNote {
@@ -422,7 +426,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = Recorded<(), i64>;
+///     type Bound = ();
+///     type Record = i64;
 ///     type Indexes = ();
 /// }
 ///
@@ -439,7 +444,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Scope = ();
+/// #     type Bound = ();
+/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// let left = Plain::<UserEmail>::new("secret");
@@ -458,7 +464,7 @@ pub struct Plain<F: Seal, K = GlobalKeys> {
 
 impl<F, K> Plain<F, K>
 where
-    F: Seal<Scope = (), Indexes = ()>,
+    F: Seal<Bound = (), Record = (), Indexes = ()>,
 {
     /// Wraps a plaintext value.
     ///
@@ -500,7 +506,7 @@ where
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 impl<F, K> Plain<F, K>
 where
-    F: Seal<Scope = (), Indexes = ()>,
+    F: Seal<Bound = (), Record = (), Indexes = ()>,
     K: crate::ColumnKeys,
 {
     pub(crate) fn seal_for_column(&self) -> Result<Sealed<F>, Error> {

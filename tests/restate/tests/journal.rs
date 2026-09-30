@@ -19,7 +19,7 @@ use std::{
 };
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Keys, Record, Sealed, Tenant, TenantId,
+    EncryptionKey, EncryptionKeyring, Keys, Record, Sealed, TenantId,
     restate::{self, ObjectKey},
 };
 use restate_e2e_harness::{Call, Restate, ReusePolicy, ServerSpec, launcher_or_skip};
@@ -38,18 +38,19 @@ const EMAIL: &str = "ada@example.com";
 const JOURNAL_MISMATCH: &str = "[570 Journal mismatch]";
 
 #[derive(cryptbox::Seal)]
-#[seal(
+#[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    scope = Tenant,
+    bound(TenantId),
 )]
 struct CustomerEmail;
 
 #[derive(cryptbox::Seal)]
-#[seal(
+#[cryptbox(
     id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     value = String,
-    scope = cryptbox::Recorded<Tenant, i64>,
+    bound(TenantId),
+    record = i64,
 )]
 struct CustomerNote;
 
@@ -75,8 +76,10 @@ static STORE_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
 static RECORD_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
 static UNSAFE_ATTEMPTS: AtomicUsize = AtomicUsize::new(0);
 
-fn tenant(key: &str) -> Result<Tenant, HandlerError> {
-    ObjectKey::<Tenant>::parse(key).map_err(restate::handler_error)
+fn tenant(key: &str) -> Result<TenantId, HandlerError> {
+    let (tenant,) = ObjectKey::<(TenantId,)>::parse(key).map_err(restate::handler_error)?;
+
+    Ok(tenant)
 }
 
 /// Keeps one tenant's customer data. Its short inactivity timeout suspends an
@@ -199,7 +202,7 @@ impl Checker {
 }
 
 fn acme() -> String {
-    ObjectKey::<Tenant>::encode(&Tenant(TenantId::new("acme").unwrap())).unwrap()
+    ObjectKey::<(TenantId,)>::encode(&TenantId::new("acme").unwrap())
 }
 
 #[tokio::test(flavor = "multi_thread")]

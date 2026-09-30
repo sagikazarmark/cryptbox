@@ -1,4 +1,4 @@
-error: missing `normalizer`: add `#[blind_index(normalizer = "email/1")]`
+error: missing `normalizer`: add `#[cryptbox(normalizer = "email/1")]`
   --> tests/ui/missing_normalizer.rs:20:8
    |
 20 | struct EmailLookup;

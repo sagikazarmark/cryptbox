@@ -1,5 +1,0 @@
-error: unknown `seal` key `keys`; expected one of `id`, `value`, `codec`, `transparent`, `padding`, `scope`, `indexes`, `crate`
- --> tests/ui/seal_bare_keys.rs:6:5
-  |
-6 |     keys,
-  |     ^^^^

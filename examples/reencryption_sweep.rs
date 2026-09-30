@@ -18,7 +18,7 @@ const BATCH_SIZE: i64 = 2;
 const MIGRATION_NAME: &str = "users-email-e2-i2-attempt-1";
 
 #[derive(Seal)]
-#[seal(id = "14b44964-cb41-4716-ab47-af19c86929a0", value = String)]
+#[cryptbox(id = "14b44964-cb41-4716-ab47-af19c86929a0", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -29,7 +29,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "0892ee51-dc3e-4863-9668-55cbf96f735c",
     seal = UserEmail,
     bits = 128,
@@ -122,7 +122,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let current_index_keys = BlindIndexKeyring::new(current_index_key, [])?;
     assert!(verify_sweep(&mut connection, &current_keys, &current_index_keys).await?);
     assert_eq!(
-        EmailLookup::probes_with("first@example.com", &(), &current_index_keys)?.len(),
+        EmailLookup::probes_with("first@example.com", (), &current_index_keys)?.len(),
         1
     );
 
@@ -205,7 +205,7 @@ async fn sweep_batch(
         };
         let rewritten_index = if index_is_stale {
             let plaintext = rewritten_ciphertext.open((), keys)?;
-            EmailLookup::derive_with(&plaintext, &(), index_keys)?
+            EmailLookup::derive_with(&plaintext, (), index_keys)?
         } else {
             index
         };

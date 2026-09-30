@@ -1,13 +1,13 @@
 #[derive(cryptbox::Seal)]
-#[seal(
+#[cryptbox(
     id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
     value = String,
-    scope = cryptbox::Tenant,
+    bound(cryptbox::TenantId),
 )]
 struct UserEmail;
 
 #[derive(cryptbox::Seal)]
-#[seal(id = "5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01", value = String)]
+#[cryptbox(id = "5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01", value = String)]
 struct UserNote;
 
 #[derive(cryptbox::Record)]

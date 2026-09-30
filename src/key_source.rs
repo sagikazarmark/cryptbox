@@ -108,7 +108,7 @@ impl RecordKeys for Keys {
 /// [`keys::install`](crate::keys::install). Implement this trait over your own
 /// static to use other keys (a second deployment, a test fixture) without
 /// installing the global. Like the column, it serves only
-/// unscoped seals: a value bound to a tenant is sealed
+/// seals without bound values: a value bound to a tenant is sealed
 /// explicitly with that tenant's keys.
 ///
 /// # Examples
@@ -128,7 +128,8 @@ impl RecordKeys for Keys {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///

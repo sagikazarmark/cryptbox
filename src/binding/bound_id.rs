@@ -1,4 +1,5 @@
-use super::{PartId, PartSpec, PartType, TenantId, presets::TENANT_PART};
+use super::{PartId, PartSpec, PartType, PartValue, TenantId, presets::TENANT_PART};
+use crate::Error;
 
 /// An application ID type whose values a seal's values are bound to, such as
 /// an org or a workspace ID.
@@ -72,7 +73,78 @@ pub trait BoundList: sealed::Sealed + 'static {
 }
 
 mod sealed {
-    pub trait Sealed {}
+    use super::{BoundList, PartValue};
+    use crate::Error;
+
+    pub trait Sealed: Sized {
+        /// Reads the list's values back, in list order.
+        fn from_part_values(values: &[PartValue<'_>]) -> Result<Self, Error>;
+    }
+
+    pub trait Values<'a, L: BoundList> {
+        fn part_values(self) -> Vec<PartValue<'a>>;
+    }
+}
+
+/// The values of bound list `L`, borrowed and in list order: `()`, `&org`, or
+/// `(&org, &workspace)`.
+///
+/// A value of another type, or values in another order, is a type error.
+/// This trait is sealed: those forms are its only implementations.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` are not the values of bound list `{L}`",
+    label = "pass `()`, `&value`, or a tuple of references in the list's order"
+)]
+pub trait BoundValues<'a, L: BoundList>: sealed::Values<'a, L> {}
+
+impl<'a, L: BoundList, V: sealed::Values<'a, L>> BoundValues<'a, L> for V {}
+
+/// Returns the part values of `values`, in list order.
+pub fn bound_values<'a, L: BoundList>(values: impl BoundValues<'a, L>) -> Vec<PartValue<'a>> {
+    sealed::Values::part_values(values)
+}
+
+/// Reads the values of list `L` back from its part values, in list order.
+#[cfg(feature = "restate")]
+pub(crate) fn from_part_values<L: BoundList>(values: &[PartValue<'_>]) -> Result<L, Error> {
+    sealed::Sealed::from_part_values(values)
+}
+
+/// Bound values that outlive the arguments they were read from.
+#[derive(Clone, Debug)]
+pub(crate) struct OwnedBinding(Vec<OwnedValue>);
+
+#[derive(Clone, Debug)]
+enum OwnedValue {
+    Uuid([u8; 16]),
+    I64(i64),
+    Bytes(Vec<u8>),
+}
+
+impl OwnedBinding {
+    pub(crate) fn new(values: &[PartValue<'_>]) -> Self {
+        Self(
+            values
+                .iter()
+                .map(|value| match *value {
+                    PartValue::Uuid(uuid) => OwnedValue::Uuid(uuid),
+                    PartValue::I64(value) => OwnedValue::I64(value),
+                    PartValue::Bytes(bytes) => OwnedValue::Bytes(bytes.to_vec()),
+                })
+                .collect(),
+        )
+    }
+
+    pub(crate) fn values(&self) -> Vec<PartValue<'_>> {
+        self.0
+            .iter()
+            .map(|value| match value {
+                OwnedValue::Uuid(uuid) => PartValue::Uuid(*uuid),
+                OwnedValue::I64(value) => PartValue::I64(*value),
+                OwnedValue::Bytes(bytes) => PartValue::Bytes(bytes),
+            })
+            .collect()
+    }
 }
 
 // Panics become build errors in `const` context.
@@ -93,15 +165,35 @@ const fn check_bound_parts(parts: &[PartSpec]) {
     }
 }
 
-impl sealed::Sealed for () {}
+impl sealed::Sealed for () {
+    fn from_part_values(values: &[PartValue<'_>]) -> Result<Self, Error> {
+        match values {
+            [] => Ok(()),
+            _ => Err(Error::InvalidBinding),
+        }
+    }
+}
+
+impl sealed::Values<'_, ()> for () {
+    fn part_values(self) -> Vec<PartValue<'static>> {
+        Vec::new()
+    }
+}
 
 impl BoundList for () {
     const PARTS: &'static [PartSpec] = &[];
 }
 
 macro_rules! bound_list {
-    ($($ty:ident),+) => {
-        impl<$($ty: BoundId),+> sealed::Sealed for ($($ty,)+) {}
+    ($($ty:ident $value:ident),+) => {
+        impl<$($ty: BoundId),+> sealed::Sealed for ($($ty,)+) {
+            fn from_part_values(values: &[PartValue<'_>]) -> Result<Self, Error> {
+                match *values {
+                    [$($value),+] => Ok(($($ty::from_part_value($value)?,)+)),
+                    _ => Err(Error::InvalidBinding),
+                }
+            }
+        }
 
         impl<$($ty: BoundId),+> BoundList for ($($ty,)+) {
             const PARTS: &'static [PartSpec] = {
@@ -110,20 +202,40 @@ macro_rules! bound_list {
                 parts
             };
         }
+
+        impl<'a, $($ty: BoundId),+> sealed::Values<'a, ($($ty,)+)> for ($(&'a $ty,)+) {
+            fn part_values(self) -> Vec<PartValue<'a>> {
+                let ($($value,)+) = self;
+                vec![$($value.part_value()),+]
+            }
+        }
     };
 }
 
-bound_list!(A);
-bound_list!(A, B);
-bound_list!(A, B, C);
-bound_list!(A, B, C, D);
+bound_list!(A a);
+bound_list!(A a, B b);
+bound_list!(A a, B b, C c);
+bound_list!(A a, B b, C c, D d);
+
+// Values already read, and checked against the list when they are bound.
+impl<'a, L: BoundList> sealed::Values<'a, L> for &'a OwnedBinding {
+    fn part_values(self) -> Vec<PartValue<'a>> {
+        self.values()
+    }
+}
+
+// One value is passed alone, not as a one-tuple.
+impl<'a, A: BoundId> sealed::Values<'a, (A,)> for &'a A {
+    fn part_values(self) -> Vec<PartValue<'a>> {
+        vec![self.part_value()]
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        BindingDomain, PartKind, PartValue, Scope, Tenant, binding::BindingDeclaration, part_id,
-        seal_id,
+        BindingDomain, PartKind, PartValue, binding::BindingDeclaration, part_id, seal_id,
     };
 
     const SEAL: [u8; 16] = *seal_id!("12345678-1234-4234-8234-1234567890ab").as_bytes();
@@ -153,12 +265,14 @@ mod tests {
     #[test]
     fn a_tenant_id_binds_as_the_tenant_preset() {
         let tenant = TenantId::new("acme").unwrap();
-        let scoped = BindingDomain::of::<Tenant>(&SEAL, &Tenant(tenant.clone()), None).unwrap();
         let bound = domain::<(TenantId,)>(&[tenant.part_value()]);
 
-        assert_eq!(bound.as_bytes(), scoped.as_bytes());
-        assert_eq!(bound.fingerprint(), scoped.fingerprint());
-        assert_eq!(<(TenantId,)>::PARTS, Tenant::PARTS);
+        // docs/wire-format.md#presets
+        assert_eq!(
+            hex::encode(bound.as_bytes()),
+            "123456781234423482341234567890ab00011e8306bf31354570831c6732f92550e9030000000461636d65"
+        );
+        assert_eq!(<(TenantId,)>::PARTS, [TENANT_PART]);
     }
 
     #[test]

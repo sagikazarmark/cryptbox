@@ -9,8 +9,8 @@ use std::{
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, IndexId, Padding, RecordId, Recorded, Seal, Sealed, Tenant, TenantId,
-    Utf8, index_id, index_key_id, key_id,
+    EncryptionKeyring, Error, IndexId, Padding, RecordId, Seal, Sealed, TenantId, Utf8, index_id,
+    index_key_id, key_id,
     migrate::{
         RowArgs, RowPlanner, RowState, RowWrite, Sweep, SweepRow, SweepStore, open_across,
         probes_across,
@@ -28,7 +28,8 @@ impl Seal for CustomerEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = Recorded<Tenant, i64>;
+    type Bound = (TenantId,);
+    type Record = i64;
     type Indexes = (EmailLookup,);
 }
 
@@ -40,7 +41,8 @@ impl Seal for UnscopedEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = (UnscopedEmailLookup,);
 }
 
@@ -54,7 +56,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = CustomerEmail;
-    type Scope = Tenant;
+    type Partition = (TenantId,);
     const ID: IndexId = LOOKUP_ID;
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -74,7 +76,7 @@ struct UnscopedEmailLookup;
 
 impl BlindIndexSpec for UnscopedEmailLookup {
     type Seal = UnscopedEmail;
-    type Scope = ();
+    type Partition = ();
     const ID: IndexId = LOOKUP_ID;
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -103,15 +105,12 @@ fn row(tenant: &[u8], id: i64) -> Columns {
     }
 }
 
-fn tenant(name: &[u8]) -> Tenant {
-    Tenant(TenantId::new(name.to_vec()).unwrap())
+fn tenant(name: &[u8]) -> TenantId {
+    TenantId::new(name.to_vec()).unwrap()
 }
 
-fn row_args(row: &Columns) -> Result<RowArgs<'_, Tenant>, Error> {
-    Ok(
-        RowArgs::new(Tenant(TenantId::new(row.tenant.clone())?))
-            .with_record(RecordId::from(row.id)),
-    )
+fn row_args(row: &Columns) -> Result<RowArgs<'_, (TenantId,)>, Error> {
+    Ok(RowArgs::new(&TenantId::new(row.tenant.clone())?).with_record(RecordId::from(row.id)))
 }
 
 /// The keys the application used before the migration.
@@ -194,7 +193,7 @@ fn planner_skips_a_current_row_bound_to_its_scope_and_record() {
 fn planner_rejects_row_args_without_the_seals_record() {
     let (keys, index_keys) = (acme_keys(), acme_index_keys());
     let planner = RowPlanner::<CustomerEmail, Columns>::for_rows(&keys, |row| {
-        Ok(RowArgs::new(Tenant(TenantId::new(row.tenant.clone())?)))
+        Ok(RowArgs::new(&TenantId::new(row.tenant.clone())?))
     })
     .with_index_with::<EmailLookup>(&index_keys);
     let row = row(b"acme", 7);
@@ -229,7 +228,7 @@ fn migrating_planner<'a>(
     old_keys: &'a EncryptionKeyring,
     index_keys: &'a BlindIndexKeyring,
 ) -> RowPlanner<'a, CustomerEmail, Columns> {
-    planner(keys, index_keys).legacy_binding::<()>(old_keys)
+    planner(keys, index_keys).legacy_binding::<(), ()>(old_keys)
 }
 
 #[test]
@@ -293,7 +292,8 @@ impl Seal for TenantEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = Tenant;
+    type Bound = (TenantId,);
+    type Record = ();
     type Indexes = ();
 }
 
@@ -307,7 +307,7 @@ fn a_legacy_binding_takes_its_parts_from_the_rows_binding() {
             .into_bytes();
     // Adding a record leaves the index binding, and so the index, unchanged.
     let index = seal_current(&row, "ada@example.com").1;
-    let planner = planner(&keys, &index_keys).legacy_binding::<Tenant>(&keys);
+    let planner = planner(&keys, &index_keys).legacy_binding::<(TenantId,), ()>(&keys);
 
     let write = planner
         .plan_row(&row, &ciphertext, &[&index])
@@ -332,7 +332,7 @@ fn a_legacy_binding_moves_rows_out_of_their_record() {
     // Sealed while the seal bound its record.
     let (ciphertext, _) = seal_current(&row, "ada@example.com");
     let planner = RowPlanner::<TenantEmail, Columns>::for_rows(&keys, row_args)
-        .legacy_binding::<Recorded<Tenant, i64>>(&keys);
+        .legacy_binding::<(TenantId,), i64>(&keys);
 
     assert_eq!(
         planner.classify_row(&row, &ciphertext, &[]).unwrap(),
@@ -353,9 +353,9 @@ fn a_legacy_binding_moves_rows_out_of_their_record() {
 
     // The old declaration binds the record, so its rows must still pass it.
     let without_record = RowPlanner::<TenantEmail, Columns>::for_rows(&keys, |row| {
-        Ok(RowArgs::new(tenant(&row.tenant)))
+        Ok(RowArgs::new(&tenant(&row.tenant)))
     })
-    .legacy_binding::<Recorded<Tenant, i64>>(&keys);
+    .legacy_binding::<(TenantId,), i64>(&keys);
     assert_eq!(
         without_record.plan_row(&row, &ciphertext, &[]).unwrap_err(),
         Error::InvalidBinding
@@ -378,18 +378,23 @@ fn a_record_for_a_seal_that_binds_none_is_invalid_without_a_window_that_does() {
     );
 }
 
-/// A binding whose one part the current binding does not have.
-#[derive(Clone, Hash, PartialEq, Eq)]
+/// A bound ID the current binding does not have.
 struct Region;
 
-impl cryptbox::Scope for Region {
-    const PARTS: &'static [cryptbox::PartSpec] = &[cryptbox::PartSpec::new(
-        cryptbox::part_id!("8c000000-0000-4000-8000-00000000000c"),
-        cryptbox::PartKind::Bytes,
-    )];
-    fn values(&self) -> cryptbox::PartValues<'_> {
-        cryptbox::PartValues::from([cryptbox::PartValue::Bytes(b"eu")])
+impl cryptbox::PartType for Region {
+    const KIND: cryptbox::PartKind = cryptbox::PartKind::Bytes;
+
+    fn part_value(&self) -> cryptbox::PartValue<'_> {
+        cryptbox::PartValue::Bytes(b"eu")
     }
+
+    fn from_part_value(_: cryptbox::PartValue<'_>) -> Result<Self, Error> {
+        Ok(Self)
+    }
+}
+
+impl cryptbox::BoundId for Region {
+    const KIND_ID: cryptbox::PartId = cryptbox::part_id!("8c000000-0000-4000-8000-00000000000c");
 }
 
 #[test]
@@ -399,7 +404,7 @@ fn a_legacy_binding_with_a_part_the_current_binding_lacks_is_invalid() {
     let ciphertext = Sealed::<RegionEmail>::seal(&"ada@example.com".into(), &Region, &keys)
         .unwrap()
         .into_bytes();
-    let planner = planner(&keys, &index_keys).legacy_binding::<Region>(&keys);
+    let planner = planner(&keys, &index_keys).legacy_binding::<(Region,), ()>(&keys);
 
     assert_eq!(
         planner.classify_row(&row, &ciphertext, &[b""]).unwrap(),
@@ -418,7 +423,8 @@ impl Seal for RegionEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = Region;
+    type Bound = (Region,);
+    type Record = ();
     type Indexes = ();
 }
 
@@ -569,7 +575,7 @@ fn look_up(store: &MemoryStore, email: &str) -> Vec<(i64, String)> {
             let sealed = Sealed::<CustomerEmail>::from_bytes(row.ciphertext.clone()).unwrap();
             let args = (&acme, &row.columns.id);
             let value =
-                open_across::<(), _>(&sealed, args, &acme_keys(), &unscoped_keys()).unwrap();
+                open_across::<(), (), _>(&sealed, args, &acme_keys(), &unscoped_keys()).unwrap();
             assert!(EmailLookup::verify_candidate(email, &value).unwrap());
             (row.columns.id, value)
         })
@@ -614,7 +620,7 @@ fn probes_across_cover_the_old_and_the_new_index_declarations() {
     .unwrap();
     let new = EmailLookup::probes_with("ada@example.com", &acme, &acme_index_keys()).unwrap();
     let old =
-        UnscopedEmailLookup::probes_with("ada@example.com", &(), &unscoped_index_keys()).unwrap();
+        UnscopedEmailLookup::probes_with("ada@example.com", (), &unscoped_index_keys()).unwrap();
 
     let probes: Vec<_> = probes
         .iter()
@@ -632,7 +638,7 @@ fn probes_across_cover_the_old_and_the_new_index_declarations() {
 fn a_probe_both_index_declarations_share_is_returned_once() {
     // Adding a record leaves the index binding unchanged.
     let acme = tenant(b"acme");
-    let probes = probes_across::<Tenant, EmailLookup>(
+    let probes = probes_across::<(TenantId,), EmailLookup>(
         "ada@example.com",
         &acme,
         &acme_index_keys(),
@@ -654,37 +660,29 @@ fn open_across_reports_a_value_of_neither_declaration_as_a_binding_mismatch() {
     let sealed = Sealed::<CustomerEmail>::from_bytes(sealed.into_bytes()).unwrap();
 
     assert_eq!(
-        open_across::<(), _>(&sealed, (&tenant(b"acme"), &7_i64), &keys, &unscoped_keys(),)
+        open_across::<(), (), _>(&sealed, (&tenant(b"acme"), &7_i64), &keys, &unscoped_keys(),)
             .unwrap_err(),
         Error::BindingMismatch
     );
 }
 
-/// A tenant plus a bound-only workspace: [`Tenant`]'s part, and one more.
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct TenantWorkspace {
-    tenant: Vec<u8>,
-    workspace: i64,
+/// A workspace, bound beside the tenant.
+struct Workspace(i64);
+
+impl cryptbox::PartType for Workspace {
+    const KIND: cryptbox::PartKind = cryptbox::PartKind::I64;
+
+    fn part_value(&self) -> cryptbox::PartValue<'_> {
+        cryptbox::PartValue::I64(self.0)
+    }
+
+    fn from_part_value(value: cryptbox::PartValue<'_>) -> Result<Self, Error> {
+        i64::from_part_value(value).map(Self)
+    }
 }
 
-impl cryptbox::Scope for TenantWorkspace {
-    const PARTS: &'static [cryptbox::PartSpec] = &[
-        // The part ID of `Tenant`.
-        cryptbox::PartSpec::new(
-            cryptbox::part_id!("1e8306bf-3135-4570-831c-6732f92550e9"),
-            cryptbox::PartKind::Bytes,
-        ),
-        cryptbox::PartSpec::new(
-            cryptbox::part_id!("8d000000-0000-4000-8000-00000000000d"),
-            cryptbox::PartKind::I64,
-        ),
-    ];
-    fn values(&self) -> cryptbox::PartValues<'_> {
-        cryptbox::PartValues::from([
-            cryptbox::PartValue::Bytes(&self.tenant),
-            cryptbox::PartValue::I64(self.workspace),
-        ])
-    }
+impl cryptbox::BoundId for Workspace {
+    const KIND_ID: cryptbox::PartId = cryptbox::part_id!("8d000000-0000-4000-8000-00000000000d");
 }
 
 /// The seal after a workspace part is added to a binding that already binds a record.
@@ -695,7 +693,8 @@ impl Seal for WorkspaceEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = Recorded<TenantWorkspace, i64>;
+    type Bound = (TenantId, Workspace);
+    type Record = i64;
     type Indexes = ();
 }
 
@@ -705,13 +704,10 @@ fn a_legacy_binding_keeps_the_record_its_rows_were_sealed_with() {
     let row = row(b"acme", 7);
     let (ciphertext, _) = seal_current(&row, "ada@example.com");
     let planner = RowPlanner::<WorkspaceEmail, Columns>::for_rows(&keys, |row| {
-        let binding = TenantWorkspace {
-            tenant: row.tenant.clone(),
-            workspace: 3,
-        };
-        Ok(RowArgs::new(binding).with_record(RecordId::from(row.id)))
+        let tenant = TenantId::new(row.tenant.clone())?;
+        Ok(RowArgs::new((&tenant, &Workspace(3))).with_record(RecordId::from(row.id)))
     })
-    .legacy_binding::<Recorded<Tenant, i64>>(&keys);
+    .legacy_binding::<(TenantId,), i64>(&keys);
 
     assert_eq!(
         planner.classify_row(&row, &ciphertext, &[]).unwrap(),
@@ -722,23 +718,21 @@ fn a_legacy_binding_keeps_the_record_its_rows_were_sealed_with() {
         .unwrap()
         .into_write()
         .unwrap();
-    let binding = TenantWorkspace {
-        tenant: b"acme".to_vec(),
-        workspace: 3,
-    };
+    let (acme, workspace) = (tenant(b"acme"), Workspace(3));
     let sealed = Sealed::<WorkspaceEmail>::from_bytes(write.ciphertext()).unwrap();
     assert_eq!(
-        sealed.open((&binding, &7_i64), &keys).unwrap(),
+        sealed.open((&acme, &workspace, &7_i64), &keys).unwrap(),
         "ada@example.com"
     );
 
     let old = Sealed::<WorkspaceEmail>::from_bytes(ciphertext).unwrap();
     assert_eq!(
-        open_across::<Recorded<Tenant, i64>, _>(&old, (&binding, &7_i64), &keys, &keys).unwrap(),
+        open_across::<(TenantId,), i64, _>(&old, (&acme, &workspace, &7_i64), &keys, &keys)
+            .unwrap(),
         "ada@example.com"
     );
     assert_eq!(
-        open_across::<Recorded<Tenant, i64>, _>(&old, (&binding, &8_i64), &keys, &keys)
+        open_across::<(TenantId,), i64, _>(&old, (&acme, &workspace, &8_i64), &keys, &keys)
             .unwrap_err(),
         Error::AuthenticationFailed
     );

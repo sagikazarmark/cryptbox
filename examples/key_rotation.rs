@@ -7,7 +7,7 @@ const CURRENT_KEY_ID: KeyId = key_id!("e5d53b60-9e45-4ef9-9198-9bc88ac7409e");
 
 /// A user's email, its own value: stored with exactly the bytes of its `String`.
 #[derive(Debug, PartialEq, Seal)]
-#[seal(id = "9758e010-b78a-43e6-9686-0b0f6790d8eb", transparent)]
+#[cryptbox(id = "9758e010-b78a-43e6-9686-0b0f6790d8eb", transparent)]
 struct UserEmail(String);
 
 fn main() -> Result<(), cryptbox::Error> {

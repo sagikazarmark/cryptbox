@@ -50,7 +50,7 @@ pub struct Org {
 }
 
 #[derive(cryptbox::Seal)]
-#[seal(
+#[cryptbox(
     id = "2cef6a47-3e20-42dc-a319-56022cb4cf30",
     value = String,
     scope = cryptbox::Recorded<OrgWorkspace, [u8; 16]>,
@@ -121,7 +121,7 @@ under the same values, projected from the scope its value was sealed under:
 
 ```rust
 #[derive(cryptbox::BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "ab78afa9-7aaa-499c-8239-037b7e136130",
     seal = CustomerEmail,
     scope = Org,

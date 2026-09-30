@@ -30,7 +30,8 @@ use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -67,7 +68,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 
 /// Asserts that `sealed` names a key that `keyring` holds, current or previous.
 ///
-/// Choosing which keyring protects a seal or scope is application code, and a
+/// Choosing which keyring protects which values is application code, and a
 /// wrong choice fails silently at write time: the value seals and opens with the
 /// wrong keys, and survives destroying the right ones. Seal a value with the keys the
 /// application chooses and assert the keyring it should have chosen.
@@ -96,7 +97,8 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///

@@ -14,7 +14,7 @@ use crate::seal::seal_items;
 const KEYS: &[Key] = &[Key::Sealed, Key::Attr, Key::Crate];
 
 /// The keys of a field's own `#[seal(…)]`.
-const OWN_SEAL_KEYS: &[Key] = &[Key::Id, Key::Scope, Key::Codec, Key::Padding, Key::Name];
+const OWN_SEAL_KEYS: &[Key] = &[Key::Id, Key::Bound, Key::Codec, Key::Padding, Key::Name];
 
 /// One struct field of the record, and how it is stored.
 struct Member<'a> {
@@ -38,17 +38,16 @@ struct Sealing {
 struct OwnSeal {
     name: Ident,
     id: UuidLiteral,
-    scope: Option<Type>,
+    bound: Option<Vec<Type>>,
     codec: Option<Type>,
     padding: Option<Padding>,
 }
 
 impl OwnSeal {
-    /// The declared scope, without the record.
-    fn scope(&self) -> TokenStream {
-        self.scope
-            .as_ref()
-            .map_or_else(|| quote!(()), |scope| quote!(#scope))
+    /// The declared bound list.
+    fn bound(&self) -> TokenStream {
+        let bound = self.bound.as_deref().unwrap_or_default();
+        quote!((#(#bound,)*))
     }
 }
 
@@ -94,13 +93,13 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let Some(first) = members.iter().find_map(|member| member.sealing.as_ref()) else {
         unreachable!("a record without sealed fields is reported above");
     };
-    // A field's own seal may be private, so the record names its declared scope
-    // rather than a projection through it.
-    let record_scope = if let Some(own) = &first.own {
-        own.scope()
+    // A field's own seal may be private, so the record names its declared bound
+    // list rather than a projection through it.
+    let record_bound = if let Some(own) = &first.own {
+        own.bound()
     } else {
         let seal = &first.seal;
-        quote!(<<#seal as #krate::Seal>::Scope as #krate::SealScope>::Parts)
+        quote!(<#seal as #krate::Seal>::Bound)
     };
     let own_seals = members
         .iter()
@@ -135,7 +134,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #[automatically_derived]
             impl #krate::Record for #name {
                 type Sealed = #sealed_name;
-                type Scope = #record_scope;
+                type Bound = #record_bound;
 
                 #schema
 
@@ -324,7 +323,7 @@ fn parse_seal(
         own: Some(OwnSeal {
             name: seal_name,
             id,
-            scope: attrs.scope.take(),
+            bound: attrs.bound.take(),
             codec: attrs.codec.take(),
             padding: attrs.padding.take(),
         }),
@@ -533,13 +532,18 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
     let sealer = sealer_name(ident);
     let [value, binding, record, keys, prepared] =
         ["value", "binding", "record", "keys", "prepared"].map(hygienic);
-    let args = quote!(#krate::__private::InRecord(#binding, #record));
+    let args = quote!(#krate::__private::InRecord::<<Self as #krate::Record>::Bound, _>(
+        ::core::marker::PhantomData,
+        #binding,
+        #record,
+    ));
     let specs: Vec<_> = indexes.iter().map(|index| &index.spec).collect();
 
     let (doc, bounds, output, body) = if indexes.is_empty() {
         (
             format!(
-                "Seals `{ident}` alone under `binding` and the record ID `record`, for a partial update."
+                "Seals `{ident}` alone under the bound values `binding` and the record ID `record`, for \
+                 a partial update."
             ),
             quote!(#krate::EncryptionKeys),
             quote!(#krate::Sealed<#seal>),
@@ -552,8 +556,8 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
             .collect();
         (
             format!(
-                "Seals `{ident}` alone under `binding` and the record ID `record`, with the blind \
-                 indexes it stores, for a partial update."
+                "Seals `{ident}` alone under the bound values `binding` and the record ID `record`, \
+                 with the blind indexes it stores, for a partial update."
             ),
             quote!(#krate::RecordKeys),
             quote!((#krate::Sealed<#seal>, #(#krate::BlindIndex<#specs>),*)),
@@ -571,7 +575,7 @@ fn field_sealer(krate: &Path, record_ty: &Type, member: &Member<'_>) -> Option<T
         #[doc = #doc]
         #vis fn #sealer<K>(
             #value: &<#seal as #krate::Seal>::Value,
-            #binding: &<<#seal as #krate::Seal>::Scope as #krate::SealScope>::Parts,
+            #binding: &[#krate::PartValue<'_>],
             #record: &#record_ty,
             #keys: &K,
         ) -> ::core::result::Result<#output, #krate::Error>
@@ -604,7 +608,7 @@ fn seal_fn(
         let binding = hygienic_at("binding", seal.span());
         // Spanned on the seal, so a seal of another binding is reported there.
         let call = quote_spanned! {seal.span()=>
-            Self::#sealer(&self.#ident, #binding, &self.#record, #keys)?
+            Self::#sealer(&self.#ident, &#binding, &self.#record, #keys)?
         };
 
         Some(if indexes.is_empty() {
@@ -624,14 +628,15 @@ fn seal_fn(
     });
 
     quote! {
-        fn seal<K>(
+        fn seal<'cryptbox, K>(
             &self,
-            #binding: &Self::Scope,
+            #binding: impl #krate::BoundValues<'cryptbox, Self::Bound>,
             #keys: &K,
         ) -> ::core::result::Result<#sealed_name, #krate::Error>
         where
             K: #krate::RecordKeys + ?::core::marker::Sized,
         {
+            let #binding = #krate::__private::bound_values(#binding);
             #(#seals)*
 
             ::core::result::Result::Ok(#sealed_name {
@@ -658,7 +663,11 @@ fn open_fn(
         // Naming the seal's binding reports a seal of another binding here.
         Some(quote_spanned! {seal.span()=>
             let #ident = #sealed.#ident.open(
-                #krate::__private::InRecord::<<<#seal as #krate::Seal>::Scope as #krate::SealScope>::Parts, _>(#binding, #record_id),
+                #krate::__private::InRecord::<<Self as #krate::Record>::Bound, _>(
+                    ::core::marker::PhantomData,
+                    &#binding,
+                    #record_id,
+                ),
                 #keys,
             )?;
         })
@@ -673,14 +682,15 @@ fn open_fn(
     });
 
     quote! {
-        fn open<K>(
+        fn open<'cryptbox, K>(
             #sealed: #sealed_name,
-            #binding: &Self::Scope,
+            #binding: impl #krate::BoundValues<'cryptbox, Self::Bound>,
             #keys: &K,
         ) -> ::core::result::Result<Self, #krate::Error>
         where
             K: #krate::EncryptionKeys + ?::core::marker::Sized,
         {
+            let #binding = #krate::__private::bound_values(#binding);
             let #record_id = &#sealed.#record;
             #(#opens)*
 
@@ -716,7 +726,7 @@ fn indexed_by<'a>(
 
 /// The seal a field declares for itself: a unit struct with the field's
 /// visibility, the least at which the sealed struct can name it, bound to the
-/// field's scope and the record's ID.
+/// field's bound values and the record's ID.
 fn own_seal(
     krate: &Path,
     record: &Ident,
@@ -755,10 +765,18 @@ fn own_seal(
         || quote!(#krate::Padding::NONE),
         |padding| padding.to_tokens(krate),
     );
-    let scope = own.scope();
-    let scope = quote!(#krate::Recorded<#scope, #record_ty>);
+    let bound = own.bound();
     let specs: Vec<_> = indexes.iter().map(|index| index.spec.clone()).collect();
-    let items = seal_items(krate, id, &padding, &quote!(#value), &codec, &scope, &specs);
+    let items = seal_items(
+        krate,
+        id,
+        &padding,
+        &quote!(#value),
+        &codec,
+        &bound,
+        &quote!(#record_ty),
+        &specs,
+    );
 
     Some(quote! {
         #[doc = #doc]

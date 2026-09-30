@@ -56,7 +56,8 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -88,7 +89,7 @@ Expect `Seal-bound round trip succeeded.` and exit status 0.
   plaintext `String`.
 - `UserEmail` is a seal. Its `ID` binds the sealed value to this seal; it stores
   a `String` value with the `Utf8` codec and no padding.
-- `()` is the binding argument: `Scope = ()` with no record binds the
+- `()` is the binding argument: `Bound = ()` with no record binds the
   value to its seal ID alone. A seal can declare a binding such as a tenant, and
   a record, and then every call must pass their values; see
   [bind values to a scope](bindings.md).

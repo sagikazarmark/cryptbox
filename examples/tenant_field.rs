@@ -4,8 +4,7 @@
 use std::collections::HashMap;
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Error, Padding, Recorded, Seal, SealId, Sealed, Tenant,
-    TenantId, Utf8,
+    EncryptionKey, EncryptionKeyring, Error, Padding, Seal, SealId, Sealed, TenantId, Utf8,
 };
 
 struct CustomerEmail;
@@ -15,16 +14,17 @@ impl Seal for CustomerEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = Recorded<Tenant, [u8; 16]>;
+    type Bound = (TenantId,);
+    type Record = [u8; 16];
     type Indexes = ();
 }
 
 /// One keyring per tenant, so one tenant's data can be shredded on its own.
-struct TenantKeyrings(HashMap<Tenant, EncryptionKeyring>);
+struct TenantKeyrings(HashMap<TenantId, EncryptionKeyring>);
 
 impl TenantKeyrings {
     /// The keyring of `tenant`. An unknown tenant fails closed.
-    fn of(&self, tenant: &Tenant) -> Result<&EncryptionKeyring, Error> {
+    fn of(&self, tenant: &TenantId) -> Result<&EncryptionKeyring, Error> {
         self.0.get(tenant).ok_or(Error::KeysUnavailable)
     }
 }
@@ -39,8 +39,8 @@ const GRACE: [u8; 16] = [
 
 fn main() -> Result<(), Error> {
     // Tenants come from the request's authorized claims, never from a stored row.
-    let acme = Tenant(TenantId::new("acme")?);
-    let globex = Tenant(TenantId::new("globex")?);
+    let acme = TenantId::new("acme")?;
+    let globex = TenantId::new("globex")?;
     // Ephemeral demo keys: an independent keyring per tenant on every run.
     let keys = TenantKeyrings(HashMap::from([
         (
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn an_unknown_tenant_fails_closed() -> Result<(), Error> {
-        let acme = Tenant(TenantId::new("acme")?);
+        let acme = TenantId::new("acme")?;
         let keys = TenantKeyrings(HashMap::new());
 
         assert!(matches!(keys.of(&acme), Err(Error::KeysUnavailable)));

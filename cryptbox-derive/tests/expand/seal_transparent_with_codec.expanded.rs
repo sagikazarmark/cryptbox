@@ -1,7 +1,11 @@
 pub struct Address {
     pub street: String,
 }
-#[seal(id = "2e4a6c8e-0b1d-4f3a-a5c7-9e1b3d5f7a90", transparent, codec = cryptbox::Json)]
+#[cryptbox(
+    id = "2e4a6c8e-0b1d-4f3a-a5c7-9e1b3d5f7a90",
+    transparent,
+    codec = cryptbox::Json
+)]
 pub struct HomeAddress {
     address: Address,
 }
@@ -14,7 +18,8 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = Self;
         type Codec = Self;
-        type Scope = ();
+        type Bound = ();
+        type Record = ();
         type Indexes = ();
     }
     #[automatically_derived]

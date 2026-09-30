@@ -1,8 +1,8 @@
-error: unknown `seal` key `record`; expected one of `id`, `value`, `codec`, `transparent`, `padding`, `scope`, `indexes`, `crate`
- --> tests/ui/seal_record_and_indexes_misuse.rs:5:5
+error: expected one of: `for`, parentheses, `unsafe`, `fn`, `extern`, identifier, `::`, `<`, `dyn`, square brackets, `*`, `&`, `!`, `impl`, `_`, lifetime
+ --> tests/ui/seal_record_and_indexes_misuse.rs:5:14
   |
 5 |     record = true,
-  |     ^^^^^^
+  |              ^^^^
 
 error: list at least one blind index, or omit `indexes`
  --> tests/ui/seal_record_and_indexes_misuse.rs:6:12

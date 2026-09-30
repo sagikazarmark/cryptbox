@@ -12,7 +12,8 @@ const KEYS: &[Key] = &[
     Key::Codec,
     Key::Transparent,
     Key::Padding,
-    Key::Scope,
+    Key::Bound,
+    Key::Record,
     Key::Indexes,
     Key::Crate,
 ];
@@ -33,7 +34,7 @@ enum Form<'a> {
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    let mut attrs = Attrs::parse(&input.attrs, "seal", KEYS, &mut errors);
+    let mut attrs = Attrs::parse(&input.attrs, "cryptbox", KEYS, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
 
@@ -55,9 +56,12 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         || quote!(#krate::Padding::NONE),
         |padding| padding.to_tokens(&krate),
     );
-    let scope = attrs
-        .scope
-        .map_or_else(|| quote!(()), |scope| quote!(#scope));
+    let bound = attrs.bound.take().unwrap_or_default();
+    let bound = quote!((#(#bound,)*));
+    let record = attrs
+        .record
+        .take()
+        .map_or_else(|| quote!(()), |record| quote!(#record));
     let indexes = attrs.indexes.unwrap_or_default();
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
@@ -99,7 +103,9 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
-    let items = seal_items(&krate, &id, &padding, &value, &codec, &scope, &indexes);
+    let items = seal_items(
+        &krate, &id, &padding, &value, &codec, &bound, &record, &indexes,
+    );
 
     Ok(quote! {
         const _: () = {
@@ -114,13 +120,15 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 }
 
 /// The items of a `Seal` impl, as every derive that declares a seal writes them.
+#[expect(clippy::too_many_arguments, reason = "one per item of the impl")]
 pub(crate) fn seal_items(
     krate: &Path,
     id: &UuidLiteral,
     padding: &TokenStream,
     value: &TokenStream,
     codec: &TokenStream,
-    scope: &TokenStream,
+    bound: &TokenStream,
+    record: &TokenStream,
     indexes: &[Type],
 ) -> TokenStream {
     quote! {
@@ -128,7 +136,8 @@ pub(crate) fn seal_items(
         const PADDING: #krate::Padding = #padding;
         type Value = #value;
         type Codec = #codec;
-        type Scope = #scope;
+        type Bound = #bound;
+        type Record = #record;
         type Indexes = (#(#indexes,)*);
     }
 }
@@ -194,8 +203,8 @@ fn form<'a>(input: &'a DeriveInput, attrs: &mut Attrs, errors: &mut Errors) -> O
             errors.push(syn::Error::new(
                 name.span(),
                 "missing `codec`: a type with fields is its own value, so name how it is \
-                 encoded with `#[seal(codec = Codec)]`, or store its single field with \
-                 `#[seal(transparent)]`",
+                 encoded with `#[cryptbox(codec = Codec)]`, or store its single field with \
+                 `#[cryptbox(transparent)]`",
             ));
         }
         return None;

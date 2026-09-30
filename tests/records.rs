@@ -1,9 +1,9 @@
 //! Public-boundary tests for records: whole rows sealed and opened under one binding.
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, EncryptionKeys, Error, IndexId, Keys, Padding, Record, RecordKeys, Recorded,
-    Seal, SealId, Sealed, Tenant, TenantId, Utf8,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, BoundValues,
+    EncryptionKey, EncryptionKeyring, EncryptionKeys, Error, IndexId, Keys, Padding, PartType,
+    Record, RecordKeys, Seal, SealId, Sealed, TenantId, Utf8,
 };
 use zeroize::Zeroizing;
 
@@ -15,7 +15,8 @@ impl Seal for CustomerEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = Recorded<Tenant, i64>;
+    type Bound = (TenantId,);
+    type Record = i64;
     type Indexes = (EmailLookup,);
 }
 
@@ -27,7 +28,8 @@ impl Seal for CustomerNote {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = Tenant;
+    type Bound = (TenantId,);
+    type Record = ();
     type Indexes = ();
 }
 
@@ -36,7 +38,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = CustomerEmail;
-    type Scope = Tenant;
+    type Partition = (TenantId,);
     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
     const BITS: u16 = 1;
     const NORMALIZER: &'static str = "email/1";
@@ -72,7 +74,7 @@ struct SealedCustomer {
 impl Customer {
     fn seal_email<K>(
         value: &String,
-        binding: &Tenant,
+        binding: &TenantId,
         record: &i64,
         keys: &K,
     ) -> Result<(Sealed<CustomerEmail>, BlindIndex<EmailLookup>), Error>
@@ -88,7 +90,7 @@ impl Customer {
 
     fn seal_note<K>(
         value: &String,
-        binding: &Tenant,
+        binding: &TenantId,
         _record: &i64,
         keys: &K,
     ) -> Result<Sealed<CustomerNote>, Error>
@@ -101,16 +103,22 @@ impl Customer {
 
 impl Record for Customer {
     type Sealed = SealedCustomer;
-    type Scope = Tenant;
+    type Bound = (TenantId,);
 
     const SEALS: &'static [SealId] = &[CustomerEmail::ID, CustomerNote::ID];
     const RECORD_ID: &'static str = "id";
     const PLAINTEXT: &'static [&'static str] = &[];
 
-    fn seal<K>(&self, binding: &Tenant, keys: &K) -> Result<SealedCustomer, Error>
+    fn seal<'a, K>(
+        &self,
+        binding: impl BoundValues<'a, (TenantId,)>,
+        keys: &K,
+    ) -> Result<SealedCustomer, Error>
     where
         K: RecordKeys + ?Sized,
     {
+        let binding = tenant_of(binding);
+        let binding = &binding;
         let (email, email_lookup) = Self::seal_email(&self.email, binding, &self.id, keys)?;
         let note = Self::seal_note(&self.note, binding, &self.id, keys)?;
 
@@ -122,10 +130,16 @@ impl Record for Customer {
         })
     }
 
-    fn open<K>(sealed: SealedCustomer, binding: &Tenant, keys: &K) -> Result<Self, Error>
+    fn open<'a, K>(
+        sealed: SealedCustomer,
+        binding: impl BoundValues<'a, (TenantId,)>,
+        keys: &K,
+    ) -> Result<Self, Error>
     where
         K: EncryptionKeys + ?Sized,
     {
+        let binding = tenant_of(binding);
+        let binding = &binding;
         let email = sealed.email.open((binding, &sealed.id), keys)?;
         let note = sealed.note.open(binding, keys)?;
 
@@ -143,6 +157,11 @@ impl cryptbox::IndexedBy<EmailLookup> for Customer {
     }
 }
 
+/// Reads the tenant back from a record's bound values.
+fn tenant_of<'a>(bound: impl BoundValues<'a, (TenantId,)>) -> TenantId {
+    TenantId::from_part_value(cryptbox::__private::bound_values(bound)[0]).unwrap()
+}
+
 // Fixed index keys keep the false candidates of the one-bit index deterministic.
 fn keys() -> Keys {
     let encryption = EncryptionKey::new(
@@ -158,8 +177,8 @@ fn keys() -> Keys {
         .with_blind_indexes(BlindIndexKeyring::new(blind_indexes, []).unwrap())
 }
 
-fn tenant(name: &[u8]) -> Tenant {
-    Tenant(TenantId::new(name.to_vec()).unwrap())
+fn tenant(name: &[u8]) -> TenantId {
+    TenantId::new(name.to_vec()).unwrap()
 }
 
 fn customer(id: i64, email: &str) -> Customer {
@@ -259,8 +278,8 @@ fn open_matching_drops_false_candidates() {
 #[cfg(feature = "derive")]
 mod derived {
     use super::{
-        BlindIndexSpec, Customer, CustomerEmail, CustomerNote, EmailLookup, Record, SealedCustomer,
-        keys, tenant,
+        BlindIndexSpec, Customer, CustomerEmail, CustomerNote, EmailLookup, PartType, Record,
+        SealedCustomer, keys, tenant,
     };
 
     /// The derived equivalent of [`Customer`].
@@ -335,9 +354,16 @@ mod derived {
         let acme = tenant(b"acme");
         let row = derived(7, "ada@example.com").seal(&acme, &keys).unwrap();
 
-        let (email, email_lookup) =
-            DerivedCustomer::seal_email(&"ada@example.org".to_owned(), &acme, &7, &keys).unwrap();
-        let note = DerivedCustomer::seal_note(&"updated".to_owned(), &acme, &7, &keys).unwrap();
+        let (email, email_lookup) = DerivedCustomer::seal_email(
+            &"ada@example.org".to_owned(),
+            &[acme.part_value()],
+            &7,
+            &keys,
+        )
+        .unwrap();
+        let note =
+            DerivedCustomer::seal_note(&"updated".to_owned(), &[acme.part_value()], &7, &keys)
+                .unwrap();
 
         let updated = SealedDerivedCustomer {
             email,
@@ -384,7 +410,9 @@ mod derived {
 
 #[cfg(feature = "derive")]
 mod own_seals {
-    use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Record, Seal, Sealed, Tenant};
+    use cryptbox::{
+        BlindIndex, BlindIndexError, BlindIndexSpec, PartType, Record, Seal, Sealed, TenantId,
+    };
     use zeroize::Zeroizing;
 
     use super::{
@@ -398,10 +426,7 @@ mod own_seals {
     pub struct InlineCustomer {
         #[record_id]
         id: i64,
-        #[seal(
-            id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-            scope = Tenant,
-        )]
+        #[seal(id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", bound(TenantId))]
         #[blind_index(InlineEmailLookup as email_lookup)]
         email: String,
         #[seal(CustomerNote)]
@@ -414,7 +439,7 @@ mod own_seals {
 
     /// [`EmailLookup`] over the field's own seal.
     #[derive(cryptbox::BlindIndexSpec)]
-    #[blind_index(
+    #[cryptbox(
         id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
         seal = InlineCustomerEmail,
         bits = 1,
@@ -473,8 +498,13 @@ mod own_seals {
     fn a_field_seal_is_bound_to_its_record() {
         let keys = keys();
         let acme = tenant(b"acme");
-        let (email, _) =
-            InlineCustomer::seal_email(&"ada@example.com".to_owned(), &acme, &7, &keys).unwrap();
+        let (email, _) = InlineCustomer::seal_email(
+            &"ada@example.com".to_owned(),
+            &[acme.part_value()],
+            &7,
+            &keys,
+        )
+        .unwrap();
 
         assert_eq!(email.open((&acme, &7), &keys).unwrap(), "ada@example.com");
         assert_eq!(
@@ -485,24 +515,25 @@ mod own_seals {
             id: 1,
             nickname: "ada".to_owned(),
         };
-        let row = renamed.seal(&(), &keys).unwrap();
-        assert_eq!(row.nickname.open(((), &1), &keys).unwrap(), "ada");
+        let row = renamed.seal((), &keys).unwrap();
+        assert_eq!(row.nickname.open(&1, &keys).unwrap(), "ada");
     }
 }
 
 #[cfg(feature = "derive")]
 mod self_valued {
-    use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Record, Tenant};
+    use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Record, TenantId};
     use zeroize::Zeroizing;
 
     use super::{Customer, CustomerNote, EmailLookup, SealedCustomer, customer, keys, tenant};
 
     /// [`super::CustomerEmail`] as its own value: the same ID, bytes, and index.
     #[derive(Clone, Debug, PartialEq, cryptbox::Seal)]
-    #[seal(
+    #[cryptbox(
         id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
         transparent,
-        scope = cryptbox::Recorded<Tenant, i64>,
+        bound(TenantId),
+        record = i64,
         indexes(OwnEmailLookup),
     )]
     struct OwnEmail(String);
@@ -519,7 +550,7 @@ mod self_valued {
 
     /// [`EmailLookup`] over [`OwnEmail`].
     #[derive(cryptbox::BlindIndexSpec)]
-    #[blind_index(
+    #[cryptbox(
         id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
         seal = OwnEmail,
         bits = 1,

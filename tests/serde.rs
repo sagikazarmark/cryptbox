@@ -17,7 +17,8 @@ impl Seal for EmailSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -25,7 +26,7 @@ struct EmailExact;
 
 impl BlindIndexSpec for EmailExact {
     type Seal = EmailSeal;
-    type Scope = ();
+    type Partition = ();
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -50,7 +51,7 @@ fn blind_index() -> BlindIndex<EmailExact> {
     )
     .unwrap();
 
-    EmailExact::derive_with(&"mark@example.com".to_owned(), &(), &keys).unwrap()
+    EmailExact::derive_with(&"mark@example.com".to_owned(), (), &keys).unwrap()
 }
 
 fn encryption_keys() -> EncryptionKeyring {

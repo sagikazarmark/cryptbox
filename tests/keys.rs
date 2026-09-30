@@ -21,7 +21,8 @@ impl Seal for Email {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -32,7 +33,8 @@ impl Seal for Iban {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -40,7 +42,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = Email;
-    type Scope = ();
+    type Partition = ();
     const ID: IndexId = index_id!("90000000-0000-4000-8000-000000000009");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "exact/1";
@@ -122,7 +124,7 @@ fn a_blind_index_keyring_lists_its_current_key_first() {
     let ids: Vec<_> = keyring.readable().map(BlindIndexKey::id).collect();
     assert_eq!(ids, [PAYMENTS_INDEX_KEY_ID, GENERAL_INDEX_KEY_ID]);
 
-    let probes = EmailLookup::probes_with(b"ada", &(), &keyring).unwrap();
+    let probes = EmailLookup::probes_with(b"ada", (), &keyring).unwrap();
     let probe_ids: Vec<_> = probes
         .iter()
         .map(|probe| {
@@ -194,7 +196,7 @@ fn keys_without_a_blind_index_keyring_reject_index_operations() {
     let keys = Keys::new(keyring(GENERAL_KEY_ID, 1));
 
     assert_eq!(
-        EmailLookup::probes_with(b"ada", &(), &keys).unwrap_err(),
+        EmailLookup::probes_with(b"ada", (), &keys).unwrap_err(),
         Error::BlindIndexKeysNotConfigured
     );
     assert_eq!(

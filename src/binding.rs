@@ -1,6 +1,3 @@
-use std::hash::Hash;
-use std::marker::PhantomData;
-
 use crate::Error;
 use crate::id::identifier;
 
@@ -9,224 +6,51 @@ mod encoding;
 mod part;
 mod presets;
 
-pub use bound_id::{BoundId, BoundList};
+pub(crate) use bound_id::OwnedBinding;
+pub use bound_id::bound_values;
+#[cfg(feature = "restate")]
+pub(crate) use bound_id::from_part_values;
+pub use bound_id::{BoundId, BoundList, BoundValues};
 pub use part::PartType;
-pub use presets::{Tenant, TenantId};
+pub use presets::TenantId;
 
 identifier!(
     PartId,
     "A stable binding-part identifier, independent of Rust names."
 );
 
-/// The declared scope a seal's values are bound to, such as a tenant, or an
-/// org plus a workspace.
+/// The type of the record ID a seal binds its values to, or `()` for a seal
+/// that binds no record.
 ///
-/// A scope is data only. [`PARTS`](Self::PARTS) is its declaration: each
-/// part's ID and value kind. [`values`](Self::values) supplies the runtime
-/// values in the same order. `CryptBox` frames and validates them;
-/// implementations never write bytes. The declaration is persistent schema:
-/// changing a part ID or kind is a migration. See [ADR-0005], [ADR-0009], and
-/// the [wire format].
-///
-/// Parts have no roles. A scope can be a **view** of another: a scope whose
-/// parts are a subset of the other's, matched by part ID and kind, and built
-/// from its values with [`FromParts`]. A blind index's
-/// [index scope](crate::BlindIndexSpec::Scope) is a view of its seal's scope:
-/// the parts a query supplies.
-///
-/// A record ID is not a part. A seal binds one with the seal scope
-/// [`Recorded`], and the record is always bound only: it is in no view, since
-/// a record-scoped index could not be searched.
-///
-/// # Checks
-///
-/// `PARTS` must be sorted by part ID in ascending byte order, without
-/// duplicates or nil IDs. A violation fails the build when the scope is first
-/// used. The check runs after monomorphization, so `cargo check` does not
-/// report it; `cargo build` and `cargo test` do.
-///
-/// Supplied values are checked at each call: [`Error::InvalidBinding`] reports
-/// a missing or extra value, or a value of the wrong kind.
-///
-/// # Shredding
-///
-/// Destroying root keys makes every value sealed under them unreadable. Which
-/// keys protect which values is application code: with one keyring per org,
-/// one org can be shredded; binding a value to a workspace does not give the
-/// workspace keys of its own.
-///
-/// # Examples
-///
-/// ```
-/// use cryptbox::{FromParts, PartKind, PartSpec, PartValue, PartValues, Scope};
-///
-/// /// Values bound to an org and a workspace.
-/// #[derive(Clone, Hash, PartialEq, Eq)]
-/// struct OrgWorkspace {
-///     org: [u8; 16],
-///     workspace: [u8; 16],
-/// }
-///
-/// impl Scope for OrgWorkspace {
-///     // Sorted by part ID.
-///     const PARTS: &'static [PartSpec] = &[
-///         PartSpec::new(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::Uuid),
-///         PartSpec::new(cryptbox::part_id!("c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48"), PartKind::Uuid),
-///     ];
-///
-///     fn values(&self) -> PartValues<'_> {
-///         PartValues::from([PartValue::Uuid(self.org), PartValue::Uuid(self.workspace)])
-///     }
-/// }
-///
-/// impl FromParts for OrgWorkspace {
-///     fn from_parts(values: &[PartValue<'_>]) -> Result<Self, cryptbox::Error> {
-///         match values {
-///             [PartValue::Uuid(org), PartValue::Uuid(workspace)] => Ok(Self {
-///                 org: *org,
-///                 workspace: *workspace,
-///             }),
-///             _ => Err(cryptbox::Error::InvalidBinding),
-///         }
-///     }
-/// }
-///
-/// let scope = OrgWorkspace { org: [1; 16], workspace: [2; 16] };
-///
-/// // A scope is built back from its values, as its views are.
-/// assert!(OrgWorkspace::from_parts(scope.values().as_slice())? == scope);
-/// # Ok::<(), cryptbox::Error>(())
-/// ```
-///
-/// With the `derive` feature, `#[derive(Scope)]` writes exactly these impls from
-/// `#[part("3a1f0c6e-…")]` on `org` and
-/// `#[part("c7d24e19-…")]` on `workspace`. It sorts the parts and
-/// checks their IDs when it expands; [`PartType`] maps each field's type to its
-/// kind.
-///
-/// Unsorted parts fail the build:
-///
-/// ```compile_fail,E0080
-/// use cryptbox::{PartKind, PartSpec, PartValue, PartValues, Scope};
-/// # use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Raw, Seal, SealId, Sealed};
-///
-/// #[derive(Clone, Hash, PartialEq, Eq)]
-/// struct Unsorted;
-///
-/// impl Scope for Unsorted {
-///     const PARTS: &'static [PartSpec] = &[
-///         PartSpec::new(cryptbox::part_id!("c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48"), PartKind::I64),
-///         PartSpec::new(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
-///     ];
-///
-///     fn values(&self) -> PartValues<'_> {
-///         PartValues::from([PartValue::I64(1), PartValue::I64(2)])
-///     }
-/// }
-/// # struct Bytes;
-/// # impl Seal for Bytes {
-/// #     const ID: SealId = SealId::from_bytes([1; 16]);
-/// #     const PADDING: Padding = Padding::NONE;
-/// #     type Value = Vec<u8>;
-/// #     type Codec = Raw;
-/// #     type Scope = Unsorted;
-/// #     type Indexes = ();
-/// # }
-/// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-///
-/// // `Bytes` is a seal whose scope is `Unsorted`.
-/// let _ = Sealed::<Bytes>::seal(&Vec::new(), &Unsorted, &keys);
-/// # Ok::<(), cryptbox::Error>(())
-/// ```
-///
-/// So do duplicate part IDs:
-///
-/// ```compile_fail,E0080
-/// use cryptbox::{PartKind, PartSpec, PartValue, PartValues, Scope};
-/// # use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Raw, Seal, SealId, Sealed};
-///
-/// #[derive(Clone, Hash, PartialEq, Eq)]
-/// struct Duplicate;
-///
-/// impl Scope for Duplicate {
-///     const PARTS: &'static [PartSpec] = &[
-///         PartSpec::new(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
-///         PartSpec::new(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
-///     ];
-///
-///     fn values(&self) -> PartValues<'_> {
-///         PartValues::from([PartValue::I64(1), PartValue::I64(2)])
-///     }
-/// }
-/// # struct Bytes;
-/// # impl Seal for Bytes {
-/// #     const ID: SealId = SealId::from_bytes([1; 16]);
-/// #     const PADDING: Padding = Padding::NONE;
-/// #     type Value = Vec<u8>;
-/// #     type Codec = Raw;
-/// #     type Scope = Duplicate;
-/// #     type Indexes = ();
-/// # }
-/// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-///
-/// // `Bytes` is a seal whose scope is `Duplicate`.
-/// let _ = Sealed::<Bytes>::seal(&Vec::new(), &Duplicate, &keys);
-/// # Ok::<(), cryptbox::Error>(())
-/// ```
-///
-#[doc = concat!(
-    "[ADR-0005]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0005-runtime-binding-is-the-core.md\n",
-    "[ADR-0009]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0009-scopes-have-views.md\n",
-    "[wire format]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#binding",
-)]
-pub trait Scope: Clone + Hash + Eq + Send + Sync + 'static {
-    /// The declared parts, sorted by part ID.
-    const PARTS: &'static [PartSpec];
-
-    /// Returns one value for each of [`PARTS`](Self::PARTS), in the same order.
-    fn values(&self) -> PartValues<'_>;
+/// It is [`Seal::Record`](crate::Seal::Record). Every [`PartType`] is one: a
+/// seal whose `Record` is `i64` binds every value to the `i64` ID of the row it
+/// is stored in, so a value copied to another row fails to open. The record is
+/// bound as one more part, under the nil part ID, with the ID type's kind: a
+/// declaration change when it changes. Record IDs are generated by the client,
+/// such as version 7 UUIDs, before the value is sealed, and are never reused. A
+/// record never partitions a blind index, since a query cannot know it.
+pub trait RecordIdType: 'static {
+    /// The kind of the record ID, or `None` without a record.
+    const RECORD: Option<PartKind>;
 }
 
-/// A [`Scope`] that can be built back from its part values.
-///
-/// This is the inverse of [`Scope::values`]: given one value per part of
-/// [`PARTS`](Scope::PARTS), in order, it returns the scope that supplies them.
-/// It is how a **view** is built: a scope whose parts are a subset of another
-/// scope's, matched by part ID and kind, takes its values from that scope's
-/// values by part ID. `#[derive(Scope)]` implements it; a hand-written scope can
-/// read each value with [`PartType::from_part_value`].
-///
-/// ```
-/// use cryptbox::{FromParts, PartValue, Tenant, TenantId};
-///
-/// let acme = Tenant(TenantId::new("acme")?);
-///
-/// assert_eq!(Tenant::from_parts(&[PartValue::Bytes(b"acme")])?, acme);
-/// assert!(Tenant::from_parts(&[]).is_err());
-/// # Ok::<(), cryptbox::Error>(())
-/// ```
-pub trait FromParts: Scope {
-    /// Builds the scope from one value per part, in `PARTS` order.
-    ///
-    /// Building then reading back with [`Scope::values`] must return the same
-    /// values.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::InvalidBinding`] for a missing or extra value, or a value
-    /// its part's type cannot hold, such as one of another kind.
-    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error>;
+impl RecordIdType for () {
+    const RECORD: Option<PartKind> = None;
 }
 
-// Whether every part of `view` is a part of `scope`, with the same ID and kind.
-const fn is_view(view: &[PartSpec], scope: &[PartSpec]) -> bool {
+impl<T: PartType + 'static> RecordIdType for T {
+    const RECORD: Option<PartKind> = Some(T::KIND);
+}
+
+// Whether every part of `view` is a part of `parts`, with the same ID and kind.
+const fn is_view(view: &[PartSpec], parts: &[PartSpec]) -> bool {
     let mut index = 0;
     while index < view.len() {
         let mut found = false;
         let mut candidate = 0;
-        while candidate < scope.len() {
-            if u128::from_be_bytes(view[index].id) == u128::from_be_bytes(scope[candidate].id)
-                && view[index].kind as u8 == scope[candidate].kind as u8
+        while candidate < parts.len() {
+            if u128::from_be_bytes(view[index].id) == u128::from_be_bytes(parts[candidate].id)
+                && view[index].kind as u8 == parts[candidate].kind as u8
             {
                 found = true;
             }
@@ -242,120 +66,12 @@ const fn is_view(view: &[PartSpec], scope: &[PartSpec]) -> bool {
 }
 
 // Panics become build errors in `const` context.
-pub(crate) const fn check_view(view: &[PartSpec], scope: &[PartSpec]) {
+pub(crate) const fn check_partition(partition: &[PartSpec], bound: &[PartSpec]) {
     assert!(
-        is_view(view, scope),
-        "a view's parts must be parts of its scope, with the same part IDs and kinds"
+        is_view(partition, bound),
+        "a blind index is partitioned by bound values its seal binds: each of its \
+         partition's types must be one of the seal's bound types"
     );
-}
-
-// Panics become build errors in `const` context.
-pub(crate) const fn check_index_scope(index: &[PartSpec], scope: &[PartSpec]) {
-    assert!(
-        is_view(index, scope),
-        "a blind index's scope must be a view of its seal's scope: its parts must be parts \
-         of the seal's scope, with the same part IDs and kinds"
-    );
-}
-
-/// Builds the view `V` of `scope`, taking each of its parts' values from
-/// `scope`'s by part ID.
-///
-/// A `V` that is not a view of `S` fails the build when the projection is first
-/// used; like the [`Scope`] checks, it runs after monomorphization.
-pub(crate) fn project_view<V: FromParts, S: Scope>(scope: &S) -> Result<V, Error> {
-    const {
-        check_parts(V::PARTS);
-        check_parts(S::PARTS);
-        check_view(V::PARTS, S::PARTS);
-    };
-
-    let values = scope.values();
-    check_values(S::PARTS, &values.0)?;
-    let projected = project(V::PARTS, &S::PARTS.iter().zip(&values.0))?;
-
-    V::from_parts(&projected)
-}
-
-/// What a seal's values are bound to beyond its seal ID: a [`Scope`], or a scope
-/// and a record, [`Recorded<S, Id>`](Recorded).
-///
-/// Every [`Scope`] is a seal scope that binds no record. A seal names its seal
-/// scope as [`Seal::Scope`](crate::Seal::Scope), and its [binding
-/// arguments](crate::Args) follow from it.
-pub trait SealScope: 'static {
-    /// The declared parts, without the record.
-    type Parts: Scope;
-
-    /// The kind of the record ID a value is bound to, or `None` without one.
-    const RECORD: Option<PartKind>;
-}
-
-impl<S: Scope> SealScope for S {
-    type Parts = S;
-    const RECORD: Option<PartKind> = None;
-}
-
-/// Scope `S` together with a record whose ID has type `Id`.
-///
-/// A seal whose scope is `Recorded<S, Id>` binds every value to the ID of the
-/// record it is stored in, as well as to `S`: a value copied to another row of
-/// the same table fails to open. The record is bound as one more part, which is
-/// never partitions a blind index, since a query cannot know it. Its kind is `Id`'s [`PartType::KIND`], so changing the ID's type is
-/// a declaration change. Record IDs are generated by the client, such as version
-/// 7 UUIDs, before the value is sealed, and are never reused.
-///
-/// A `Recorded` value is never constructed: the binding arguments carry the scope
-/// and the record ID, as `(&scope, &id)`, or `((), &id)` for the empty scope. A
-/// [`Record`](crate::Record) passes each row's ID to the seals of its fields.
-///
-/// ```
-/// use cryptbox::{
-///     EncryptionKey, EncryptionKeyring, Padding, Recorded, Seal, SealId, Sealed, Tenant,
-///     TenantId, Utf8,
-/// };
-///
-/// struct CustomerEmail;
-///
-/// impl Seal for CustomerEmail {
-///     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
-///     const PADDING: Padding = Padding::NONE;
-///     type Value = String;
-///     type Codec = Utf8;
-///     type Scope = Recorded<Tenant, i64>;
-///     type Indexes = ();
-/// }
-///
-/// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-/// let acme = Tenant(TenantId::new(b"acme".to_vec())?);
-///
-/// let sealed = Sealed::<CustomerEmail>::seal(&"ada@example.com".into(), (&acme, &42), &keys)?;
-/// assert_eq!(sealed.open((&acme, &42), &keys)?, "ada@example.com");
-/// assert!(sealed.open((&acme, &43), &keys).is_err());
-/// # Ok::<(), cryptbox::Error>(())
-/// ```
-pub struct Recorded<S, Id: ?Sized>(PhantomData<S>, PhantomData<Id>);
-
-impl<S: Scope, Id: PartType + ?Sized + 'static> SealScope for Recorded<S, Id> {
-    type Parts = S;
-    const RECORD: Option<PartKind> = Some(Id::KIND);
-}
-
-// Rejects declarations whose bytes or fingerprint would depend on part order,
-// or that could not be encoded. Panics become build errors in `const` context.
-pub(crate) const fn check_parts(parts: &[PartSpec]) {
-    let mut index = 0;
-    while index < parts.len() {
-        let id = u128::from_be_bytes(parts[index].id);
-        assert!(id != 0, "binding part IDs must not be nil");
-        if index > 0 {
-            assert!(
-                u128::from_be_bytes(parts[index - 1].id) < id,
-                "binding PARTS must be sorted by part ID without duplicates"
-            );
-        }
-        index += 1;
-    }
 }
 
 /// Checks that `values` holds exactly one value per spec, in order, of the
@@ -378,17 +94,21 @@ pub(crate) fn check_values<'s>(
     }
 }
 
-/// Takes the value of each of `specs` from `parts` by part ID; a missing part or
-/// another kind is [`Error::InvalidBinding`].
-fn project<'v>(
+/// Takes the value of each of `specs` from `parts`, by part ID; a missing part
+/// or another kind is [`Error::InvalidBinding`].
+pub(crate) fn project<'v>(
     specs: &[PartSpec],
-    parts: &(impl Iterator<Item = (&'v PartSpec, &'v PartValue<'v>)> + Clone),
+    parts: &[PartSpec],
+    values: &[PartValue<'v>],
 ) -> Result<Vec<PartValue<'v>>, Error> {
+    check_values(parts, values)?;
+
     specs
         .iter()
         .map(|spec| {
             parts
-                .clone()
+                .iter()
+                .zip(values)
                 .find(|(part, _)| part.id == spec.id && part.kind == spec.kind)
                 .map(|(_, value)| *value)
                 .ok_or(Error::InvalidBinding)
@@ -396,9 +116,10 @@ fn project<'v>(
         .collect()
 }
 
-/// The binding fingerprint of seal scope `S`, as the envelope header carries it.
-pub(crate) fn declaration_fingerprint<S: SealScope>() -> [u8; 8] {
-    BindingDeclaration::of::<S>().fingerprint()
+/// The binding fingerprint of a seal that binds `L` and record `R`, as the
+/// envelope header carries it.
+pub(crate) fn declaration_fingerprint<L: BoundList, R: RecordIdType>() -> [u8; 8] {
+    BindingDeclaration::new(L::PARTS, R::RECORD).fingerprint()
 }
 
 /// The canonical kind of a part or record value.
@@ -414,10 +135,8 @@ pub enum PartKind {
     Bytes,
 }
 
-/// One declared part of a scope: its ID and value kind.
-///
-/// A part has no role: whether it partitions a blind index is up to the index's
-/// [index scope](crate::BlindIndexSpec::Scope).
+/// One declared part of a binding: its ID and value kind, such as a
+/// [`BoundId`]'s [`PART`](BoundId::PART).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PartSpec {
     id: [u8; 16],
@@ -466,36 +185,6 @@ impl PartValue<'_> {
             Self::I64(_) => PartKind::I64,
             Self::Bytes(_) => PartKind::Bytes,
         }
-    }
-}
-
-/// The values of a binding's parts, in declared order.
-#[derive(Clone, Debug, Default)]
-pub struct PartValues<'a>(Vec<PartValue<'a>>);
-
-impl<'a> PartValues<'a> {
-    /// Returns no values, for a binding without parts.
-    #[must_use]
-    pub const fn new() -> Self {
-        Self(Vec::new())
-    }
-
-    /// Returns the values, in declared order.
-    #[must_use]
-    pub fn as_slice(&self) -> &[PartValue<'a>] {
-        &self.0
-    }
-}
-
-impl<'a, const N: usize> From<[PartValue<'a>; N]> for PartValues<'a> {
-    fn from(values: [PartValue<'a>; N]) -> Self {
-        Self(values.into())
-    }
-}
-
-impl<'a> FromIterator<PartValue<'a>> for PartValues<'a> {
-    fn from_iter<I: IntoIterator<Item = PartValue<'a>>>(values: I) -> Self {
-        Self(values.into_iter().collect())
     }
 }
 
@@ -583,11 +272,6 @@ impl<'a> BindingDeclaration<'a> {
         Self { parts, record }
     }
 
-    /// The declaration of seal scope `S`.
-    pub(crate) const fn of<S: SealScope>() -> Self {
-        Self::new(<S::Parts as Scope>::PARTS, S::RECORD)
-    }
-
     /// Checks the declaration's own invariants: unique, non-nil part IDs.
     ///
     /// Without parts or a record, the declaration is empty: the seal is
@@ -667,53 +351,53 @@ impl BindingDomain {
         })
     }
 
-    /// Encodes the binding of seal `id`, whose seal scope is `S`, under the
-    /// declared parts' values and the record if `S` binds one.
-    pub(crate) fn of<S: SealScope>(
+    /// Encodes the binding of seal `id`, which binds `L` and record `R`, under
+    /// `L`'s values, in list order, and the record if `R` is one.
+    pub(crate) fn bound<L: BoundList, R: RecordIdType>(
         id: &[u8; 16],
-        scope: &S::Parts,
+        values: &[PartValue<'_>],
         record: Option<PartValue<'_>>,
     ) -> Result<Self, Error> {
-        const { check_parts(<S::Parts as Scope>::PARTS) };
-
-        let values = scope.values();
-        Self::scoped(id, BindingDeclaration::of::<S>(), &values.0, record)
+        Self::scoped(
+            id,
+            BindingDeclaration::new(L::PARTS, R::RECORD),
+            values,
+            record,
+        )
     }
 
-    /// Encodes the blind-index domain of seal `id` under an index scope: every
-    /// part of `scope`, without a record, or the empty binding without parts.
+    /// Encodes the blind-index domain of seal `id` under partition `P`'s
+    /// values: every part of `P`, without a record, or the empty binding
+    /// without parts.
     // See ../docs/wire-format.md#index-binding.
-    pub(crate) fn index<I: Scope>(id: &[u8; 16], scope: &I) -> Result<Self, Error> {
-        const { check_parts(I::PARTS) };
-
-        let values = scope.values();
-        Self::scoped(id, BindingDeclaration::new(I::PARTS, None), &values.0, None)
+    pub(crate) fn index<P: BoundList>(
+        id: &[u8; 16],
+        values: &[PartValue<'_>],
+    ) -> Result<Self, Error> {
+        Self::scoped(id, BindingDeclaration::new(P::PARTS, None), values, None)
     }
 
-    /// Encodes the binding of seal `id` under the older declaration `Old`, taking
-    /// each of `Old`'s parts from `scope` by part ID, and binding `record` when
-    /// `Old` binds one.
+    /// Encodes the binding of seal `id` under the older declaration of `Old` and
+    /// record `OldRecord`, taking each of `Old`'s values from `values`, of
+    /// `parts`, by part ID, and binding `record` when `OldRecord` is one.
     ///
-    /// A part of `Old` that `scope` lacks, or holds with another kind, and a
-    /// record `Old` binds but `record` lacks, are [`Error::InvalidBinding`].
+    /// A part of `Old` that `parts` lacks, or holds with another kind, and a
+    /// record `OldRecord` binds but `record` lacks, are [`Error::InvalidBinding`].
     #[cfg(feature = "migrate")]
-    pub(crate) fn projected<Old: SealScope, B: Scope>(
+    pub(crate) fn projected<Old: BoundList, OldRecord: RecordIdType>(
         id: &[u8; 16],
-        scope: &B,
+        parts: &[PartSpec],
+        values: &[PartValue<'_>],
         record: Option<PartValue<'_>>,
     ) -> Result<Self, Error> {
-        const { check_parts(<Old::Parts as Scope>::PARTS) };
-        const { check_parts(B::PARTS) };
+        let values = project(Old::PARTS, parts, values)?;
+        let record = if OldRecord::RECORD.is_some() {
+            record
+        } else {
+            None
+        };
 
-        let values = scope.values();
-        check_values(B::PARTS, &values.0)?;
-        let values = project(
-            <Old::Parts as Scope>::PARTS,
-            &B::PARTS.iter().zip(&values.0),
-        )?;
-        let record = if Old::RECORD.is_some() { record } else { None };
-
-        Self::scoped(id, BindingDeclaration::of::<Old>(), &values, record)
+        Self::bound::<Old, OldRecord>(id, &values, record)
     }
 
     /// The binding fingerprint the envelope header carries.
@@ -1006,40 +690,14 @@ mod tests {
         assert_eq!(domain.fingerprint(), hex_array("76081b730530f822"));
     }
 
-    /// An org scopes keys; a workspace is only bound.
-    #[derive(Clone, Hash, PartialEq, Eq)]
-    struct OrgWorkspace {
-        org: [u8; 16],
-        workspace: Vec<u8>,
-    }
-
-    impl Scope for OrgWorkspace {
-        const PARTS: &'static [PartSpec] = &[
-            PartSpec::new(
-                part_id!("11111111-1111-1111-1111-111111111111"),
-                PartKind::Uuid,
-            ),
-            PartSpec::new(
-                part_id!("22222222-2222-2222-2222-222222222222"),
-                PartKind::Bytes,
-            ),
-        ];
-        fn values(&self) -> PartValues<'_> {
-            PartValues::from([PartValue::Uuid(self.org), PartValue::Bytes(&self.workspace)])
-        }
-    }
-
-    fn ws1() -> OrgWorkspace {
-        OrgWorkspace {
-            org: [0x33; 16],
-            workspace: b"ws-1".to_vec(),
-        }
-    }
+    const ORG: PartSpec = PartSpec::from_bytes([0x11; 16], PartKind::Uuid);
+    const WORKSPACE: PartSpec = PartSpec::from_bytes([0x22; 16], PartKind::Bytes);
+    const WS1: [PartValue<'static>; 2] = [PartValue::Uuid([0x33; 16]), PartValue::Bytes(b"ws-1")];
 
     #[test]
-    fn a_two_part_scope_encodes_the_documented_vector() {
+    fn a_two_part_binding_encodes_the_documented_vector() {
         // docs/wire-format.md#provisional-scoped-vectors
-        let domain = BindingDomain::of::<OrgWorkspace>(&SEAL, &ws1(), None).unwrap();
+        let domain = scoped(&[ORG, WORKSPACE], None, &WS1, None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -1049,10 +707,11 @@ mod tests {
     }
 
     #[test]
-    fn a_two_part_scope_binds_the_record_first_documented_vector() {
-        let domain = BindingDomain::of::<Recorded<OrgWorkspace, i64>>(
-            &SEAL,
-            &ws1(),
+    fn a_two_part_binding_binds_the_record_first_documented_vector() {
+        let domain = scoped(
+            &[ORG, WORKSPACE],
+            Some(PartKind::I64),
+            &WS1,
             Some(PartValue::I64(7)),
         )
         .unwrap();
@@ -1064,81 +723,26 @@ mod tests {
         assert_eq!(domain.fingerprint(), hex_array("27689c2e3de5d291"));
     }
 
-    const LOW: [u8; 16] = [0x11; 16];
-    const HIGH: [u8; 16] = [0x22; 16];
-
-    fn part(id: [u8; 16]) -> PartSpec {
-        PartSpec::from_bytes(id, PartKind::I64)
-    }
-
     #[test]
-    fn sorted_unique_parts_pass() {
-        check_parts(&[]);
-        check_parts(&[part(LOW), part(HIGH)]);
-    }
+    fn a_projection_takes_values_by_part_id() {
+        let projected = project(&[WORKSPACE], &[ORG, WORKSPACE], &WS1).unwrap();
 
-    #[test]
-    #[should_panic(expected = "sorted by part ID without duplicates")]
-    fn unsorted_parts_fail() {
-        check_parts(&[part(HIGH), part(LOW)]);
-    }
-
-    #[test]
-    #[should_panic(expected = "sorted by part ID without duplicates")]
-    fn duplicate_parts_fail() {
-        check_parts(&[part(LOW), part(LOW)]);
-    }
-
-    #[test]
-    #[should_panic(expected = "must not be nil")]
-    fn nil_parts_fail() {
-        check_parts(&[part([0; 16])]);
-    }
-
-    /// The org of an [`OrgWorkspace`]: a view of it.
-    #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-    struct Org {
-        org: [u8; 16],
-    }
-
-    impl Scope for Org {
-        const PARTS: &'static [PartSpec] = &[PartSpec::new(
-            part_id!("11111111-1111-1111-1111-111111111111"),
-            PartKind::Uuid,
-        )];
-        fn values(&self) -> PartValues<'_> {
-            PartValues::from([PartValue::Uuid(self.org)])
-        }
-    }
-
-    impl FromParts for Org {
-        fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
-            match values {
-                [PartValue::Uuid(org)] => Ok(Self { org: *org }),
-                _ => Err(Error::InvalidBinding),
-            }
-        }
-    }
-
-    #[test]
-    fn a_view_takes_its_parts_values_from_the_scope_by_part_id() {
+        assert!(matches!(projected.as_slice(), [PartValue::Bytes(b"ws-1")]));
+        assert!(project(&[], &[ORG, WORKSPACE], &WS1).unwrap().is_empty());
         assert_eq!(
-            project_view::<Org, OrgWorkspace>(&ws1()).unwrap(),
-            Org { org: [0x33; 16] }
+            project(&[SEQUENCE], &[ORG, WORKSPACE], &WS1).unwrap_err(),
+            Error::InvalidBinding
         );
-        assert_eq!(project_view::<(), OrgWorkspace>(&ws1()).unwrap(), ());
     }
 
     #[test]
     fn a_view_matches_parts_by_id_and_kind() {
-        let org = part(LOW);
-        let org_as_bytes = PartSpec::from_bytes(LOW, PartKind::Bytes);
-        let workspace = part(HIGH);
+        let org_as_bytes = PartSpec::from_bytes([0x11; 16], PartKind::Bytes);
 
-        assert!(is_view(&[], &[org, workspace]));
-        assert!(is_view(&[org], &[org, workspace]));
-        assert!(is_view(&[org, workspace], &[org, workspace]));
-        assert!(!is_view(&[org], &[workspace]));
-        assert!(!is_view(&[org_as_bytes], &[org, workspace]));
+        assert!(is_view(&[], &[ORG, WORKSPACE]));
+        assert!(is_view(&[ORG], &[ORG, WORKSPACE]));
+        assert!(is_view(&[ORG, WORKSPACE], &[ORG, WORKSPACE]));
+        assert!(!is_view(&[ORG], &[WORKSPACE]));
+        assert!(!is_view(&[org_as_bytes], &[ORG, WORKSPACE]));
     }
 }

@@ -1,5 +1,5 @@
-//! Parses the derives' helper attributes: `#[seal(…)]`, `#[blind_index(…)]`,
-//! `#[scope(…)]`, `#[record(…)]`, `#[cryptbox(…)]`, and the keys each accepts.
+//! Parses the derives' helper attributes: `#[seal(…)]` on a record's fields,
+//! `#[record(…)]`, `#[cryptbox(…)]`, and the keys each accepts.
 
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote_spanned};
@@ -22,7 +22,9 @@ pub(crate) enum Key {
     Normalize,
     Normalizer,
     Project,
-    Scope,
+    Bound,
+    Record,
+    Partition,
     Indexes,
     Sealed,
     Attr,
@@ -32,7 +34,7 @@ pub(crate) enum Key {
 }
 
 impl Key {
-    const ALL: [Self; 18] = [
+    const ALL: [Self; 20] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -44,7 +46,9 @@ impl Key {
         Self::Normalize,
         Self::Normalizer,
         Self::Project,
-        Self::Scope,
+        Self::Bound,
+        Self::Record,
+        Self::Partition,
         Self::Indexes,
         Self::Sealed,
         Self::Attr,
@@ -66,7 +70,9 @@ impl Key {
             Self::Normalize => "normalize",
             Self::Normalizer => "normalizer",
             Self::Project => "project",
-            Self::Scope => "scope",
+            Self::Bound => "bound",
+            Self::Record => "record",
+            Self::Partition => "partition",
             Self::Indexes => "indexes",
             Self::Sealed => "sealed",
             Self::Attr => "attr",
@@ -81,16 +87,6 @@ impl Key {
 pub(crate) struct UuidLiteral {
     value: u128,
     span: Span,
-}
-
-impl UuidLiteral {
-    pub(crate) fn value(&self) -> u128 {
-        self.value
-    }
-
-    pub(crate) fn span(&self) -> Span {
-        self.span
-    }
 }
 
 impl ToTokens for UuidLiteral {
@@ -145,7 +141,9 @@ pub(crate) struct Attrs {
     pub(crate) normalize: Option<Path>,
     pub(crate) normalizer: Option<LitStr>,
     pub(crate) project: Option<Path>,
-    pub(crate) scope: Option<Type>,
+    pub(crate) bound: Option<Vec<Type>>,
+    pub(crate) record: Option<Type>,
+    pub(crate) partition: Option<Vec<Type>>,
     pub(crate) indexes: Option<Vec<Type>>,
     pub(crate) sealed: Option<Ident>,
     pub(crate) name: Option<Ident>,
@@ -178,7 +176,9 @@ impl Attrs {
             normalize: None,
             normalizer: None,
             project: None,
-            scope: None,
+            bound: None,
+            record: None,
+            partition: None,
             indexes: None,
             sealed: None,
             name: None,
@@ -224,9 +224,12 @@ impl Attrs {
                             Err(meta.error("`transparent` takes no value"))
                         }
                     }
-                    Key::Indexes => {
-                        parse_indexes(meta.input).map(|list| parsed.indexes = Some(list))
-                    }
+                    Key::Indexes => parse_list(meta.input, "blind index", "indexes")
+                        .map(|list| parsed.indexes = Some(list)),
+                    Key::Bound => parse_list(meta.input, "bound ID type", "bound")
+                        .map(|list| parsed.bound = Some(list)),
+                    Key::Partition => parse_list(meta.input, "bound ID type", "partition")
+                        .map(|list| parsed.partition = Some(list)),
                     Key::Attr => parse_attr(meta.input).map(|list| parsed.attr = Some(list)),
                     _ if !meta.input.peek(Token![=]) => Err(meta.error(format!(
                         "`{name}` needs a value: `{name} = …`",
@@ -268,11 +271,11 @@ impl Attrs {
             Key::Normalize => self.normalize = Some(input.parse()?),
             Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
-            Key::Scope => self.scope = Some(input.parse()?),
+            Key::Record => self.record = Some(input.parse()?),
             Key::Sealed => self.sealed = Some(input.parse()?),
             Key::Name => self.name = Some(input.parse()?),
             Key::Kind => self.kind = Some(parse_uuid(key.name(), input)?),
-            Key::Transparent | Key::Indexes | Key::Attr => {
+            Key::Transparent | Key::Indexes | Key::Bound | Key::Partition | Key::Attr => {
                 unreachable!("flags and lists have no `= value`")
             }
         }
@@ -355,14 +358,14 @@ fn skip_value(input: ParseStream) -> syn::Result<()> {
 }
 
 /// Parses `indexes(A, B, …)`: at least one blind index.
-fn parse_indexes(input: ParseStream) -> syn::Result<Vec<Type>> {
+fn parse_list(input: ParseStream, item: &str, key: &str) -> syn::Result<Vec<Type>> {
     let content;
     let parens = parenthesized!(content in input);
     let list = Punctuated::<Type, Token![,]>::parse_terminated(&content)?;
     if list.is_empty() {
         return Err(syn::Error::new(
             parens.span.join(),
-            "list at least one blind index, or omit `indexes`",
+            format!("list at least one {item}, or omit `{key}`"),
         ));
     }
 
@@ -397,11 +400,6 @@ pub(crate) fn parse_index_columns(attr: &Attribute) -> syn::Result<Vec<IndexColu
     }
 
     Ok(list.into_iter().collect())
-}
-
-/// Parses a scope field's `#[part("…")]`: the part ID, a UUID string literal.
-pub(crate) fn parse_part(attr: &Attribute) -> syn::Result<UuidLiteral> {
-    attr.parse_args_with(|input: ParseStream| parse_uuid("part", input))
 }
 
 /// Parses `attr(…)`: attributes for a generated item, without their `#[…]`.

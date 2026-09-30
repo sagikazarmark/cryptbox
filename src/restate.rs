@@ -24,8 +24,8 @@
 //!
 //! [`handler_error`] maps an [`Error`] to a Restate error: faults of the data
 //! or the request are terminal, and faults of the environment are retried.
-//! [`ObjectKey`] encodes a scope, such as a blind index's index scope, as a
-//! Virtual Object key and parses it back strictly.
+//! [`ObjectKey`] encodes bound values, such as a blind index's partition, as a
+//! Virtual Object key and parses them back strictly.
 //!
 //! Journal entries are plaintext to Restate unless the handler sealed them.
 //! Ingress input in particular arrives as the caller sent it. See the
@@ -34,7 +34,7 @@
 //!
 //! ```no_run
 //! use cryptbox::{
-//!     EncryptionKeyring, Seal, SealId, Padding, Tenant, Utf8,
+//!     EncryptionKeyring, Seal, SealId, Padding, TenantId, Utf8,
 //!     restate::{self, ObjectKey},
 //! };
 //! use restate_sdk::prelude::*;
@@ -46,7 +46,8 @@
 //!     const PADDING: Padding = Padding::NONE;
 //!     type Value = String;
 //!     type Codec = Utf8;
-//!     type Scope = Tenant;
+//!     type Bound = (TenantId,);
+//!     type Record = ();
 //!     type Indexes = ();
 //! }
 //!
@@ -60,7 +61,8 @@
 //! impl Customer {
 //!     #[handler]
 //!     async fn import(&self, ctx: ObjectContext<'_>) -> HandlerResult<()> {
-//!         let tenant = ObjectKey::<Tenant>::parse(ctx.key()).map_err(restate::handler_error)?;
+//!         let (tenant,) =
+//!             ObjectKey::<(TenantId,)>::parse(ctx.key()).map_err(restate::handler_error)?;
 //!
 //!         // Fetched and sealed in one `run`: the journal holds only the envelope.
 //!         let email = restate::seal_with::<CustomerEmail, _>(&ctx, load_email, &tenant, &self.keys)
@@ -88,7 +90,11 @@ use restate_sdk::{
     serde::Json,
 };
 
-use crate::{Args, EncryptionKeys, Error, Record, RecordKeys, Seal, Sealed, args::domain};
+use crate::{
+    Args, BoundValues, EncryptionKeys, Error, Record, RecordKeys, Seal, Sealed,
+    args::domain,
+    binding::{OwnedBinding, bound_values},
+};
 
 mod codec;
 mod object_key;
@@ -232,14 +238,17 @@ where
 pub fn seal_record<'a, R>(
     ctx: &'a impl RunContext,
     record: &'a R,
-    binding: &'a R::Scope,
+    bound: impl BoundValues<'a, R::Bound>,
     keys: &'a (impl RecordKeys + ?Sized),
 ) -> impl RunFuture<Result<Json<R::Sealed>, TerminalError>> + 'a
 where
     R: Record + Sync,
     R::Sealed: serde::Serialize + serde::de::DeserializeOwned + 'static,
 {
-    ctx.run_for(move || async move { record.seal(binding, keys).map(Json).map_err(handler_error) })
+    // Read before the `run`, so the future holds no borrow of `bound`.
+    let bound = OwnedBinding::new(&bound_values(bound));
+
+    ctx.run_for(move || async move { record.seal(&bound, keys).map(Json).map_err(handler_error) })
 }
 
 /// Fetches a [`Record`] and seals it inside one `ctx.run`, as [`seal_with`]
@@ -251,7 +260,7 @@ where
 pub fn seal_record_with<'a, R, Fut>(
     ctx: &'a impl RunContext,
     fetch: impl FnOnce() -> Fut + Send + 'static,
-    binding: &'a R::Scope,
+    bound: impl BoundValues<'a, R::Bound>,
     keys: &'a (impl RecordKeys + ?Sized),
 ) -> impl RunFuture<Result<Json<R::Sealed>, TerminalError>> + 'a
 where
@@ -259,9 +268,11 @@ where
     R::Sealed: serde::Serialize + serde::de::DeserializeOwned + 'static,
     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
 {
+    let bound = OwnedBinding::new(&bound_values(bound));
+
     ctx.run_for(move || async move {
         let record = fetch().await?;
-        record.seal(binding, keys).map(Json).map_err(handler_error)
+        record.seal(&bound, keys).map(Json).map_err(handler_error)
     })
 }
 

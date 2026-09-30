@@ -5,39 +5,38 @@
 use bytes::Bytes;
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, Sealed, Tenant, TenantId,
+    EncryptionKeyring, Error, Sealed, TenantId,
     restate::{self, ObjectKey},
 };
 use restate_sdk::serde::{Deserialize, PayloadMetadata, Serialize};
 use zeroize::Zeroizing;
 
-/// An org scopes keys, and a region and a shard are only bound. The org's part
-/// ID sorts last, so an object key led by [`Org`] moves it first.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
-struct OrgSearch {
-    #[part("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
-    org: [u8; 16],
-    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-    region: i64,
-    #[part("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
-    shard: Vec<u8>,
-}
+/// An org's ID.
+#[derive(cryptbox::BoundId, Clone, Copy, Debug, PartialEq)]
+#[cryptbox(kind = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
+struct OrgId([u8; 16]);
 
-/// A view of [`OrgSearch`]: its org.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
-struct Org {
-    #[part("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
-    org: [u8; 16],
-}
+/// A region.
+#[derive(cryptbox::BoundId, Clone, Copy, Debug, PartialEq)]
+#[cryptbox(kind = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+struct RegionId(i64);
 
-/// An object key of an org search, led by its org.
-type SearchKey = ObjectKey<OrgSearch, Org>;
+/// A shard.
+#[derive(cryptbox::BoundId, Clone, Debug, PartialEq)]
+#[cryptbox(kind = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
+struct ShardId(Vec<u8>);
+
+/// An org search's bound values, led by its org.
+type Search = (OrgId, RegionId, ShardId);
+
+/// The object key of an org search.
+type SearchKey = ObjectKey<Search>;
 
 #[derive(cryptbox::Seal)]
-#[seal(
+#[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    scope = Tenant,
+    bound(TenantId),
     indexes(EmailLookup),
 )]
 struct CustomerEmail;
@@ -48,7 +47,7 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(cryptbox::BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
     seal = CustomerEmail,
     bits = 32,
@@ -63,16 +62,16 @@ const ORG: [u8; 16] = [
 ];
 const ORG_KEY: &str = "01923a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b";
 
-fn search() -> OrgSearch {
-    OrgSearch {
-        org: ORG,
-        region: -42,
-        shard: vec![0x01, 0xab],
-    }
+fn search() -> Search {
+    (OrgId(ORG), RegionId(-42), ShardId(vec![0x01, 0xab]))
 }
 
-fn tenant() -> Tenant {
-    Tenant(TenantId::new("acme").unwrap())
+fn encode(search: &Search) -> String {
+    SearchKey::encode((&search.0, &search.1, &search.2))
+}
+
+fn tenant() -> TenantId {
+    TenantId::new("acme").unwrap()
 }
 
 fn sealed() -> Sealed<CustomerEmail> {
@@ -150,28 +149,20 @@ fn sealed_payloads_are_octet_streams_without_a_schema() {
 }
 
 #[test]
-fn an_object_key_leads_with_its_keys_view() {
+fn an_object_key_holds_its_values_in_list_order() {
     assert_eq!(
-        SearchKey::encode(&search()).unwrap(),
+        encode(&search()),
         format!("{ORG_KEY}:-0000000000000000042:01ab")
     );
-    assert_eq!(ObjectKey::<Tenant>::encode(&tenant()).unwrap(), "61636d65");
+    assert_eq!(ObjectKey::<(TenantId,)>::encode(&tenant()), "61636d65");
 }
 
 #[test]
-fn an_object_key_without_a_keys_view_follows_part_order() {
-    assert_eq!(
-        ObjectKey::<OrgSearch>::encode(&search()).unwrap(),
-        format!("-0000000000000000042:01ab:{ORG_KEY}")
-    );
-}
-
-#[test]
-fn an_object_key_parses_back_into_its_scope() {
-    let key = SearchKey::encode(&search()).unwrap();
+fn an_object_key_parses_back_into_its_values() {
+    let key = encode(&search());
 
     assert_eq!(SearchKey::parse(&key), Ok(search()));
-    assert_eq!(ObjectKey::<Tenant>::parse("61636d65"), Ok(tenant()));
+    assert_eq!(ObjectKey::<(TenantId,)>::parse("61636d65"), Ok((tenant(),)));
 }
 
 #[test]
@@ -183,11 +174,11 @@ fn object_key_integers_are_fixed_width() {
         (i64::MAX, "+9223372036854775807"),
         (i64::MIN, "-9223372036854775808"),
     ] {
-        let args = OrgSearch { region, ..search() };
+        let values = (OrgId(ORG), RegionId(region), search().2);
         let key = format!("{ORG_KEY}:{encoded}:01ab");
 
-        assert_eq!(SearchKey::encode(&args).unwrap(), key);
-        assert_eq!(SearchKey::parse(&key), Ok(args));
+        assert_eq!(encode(&values), key);
+        assert_eq!(SearchKey::parse(&key), Ok(values));
     }
 }
 
@@ -243,35 +234,32 @@ fn tampered_or_non_canonical_object_keys_are_rejected() {
         assert!(!restate::is_retryable(&error), "{case} is terminal");
     }
     assert_eq!(
-        ObjectKey::<Tenant>::parse(""),
+        ObjectKey::<(TenantId,)>::parse(""),
         Err(Error::InvalidObjectKey),
-        "an empty keys part"
+        "an empty tenant"
     );
 }
 
 #[test]
-fn an_object_key_encodes_only_valid_scopes() {
-    assert_eq!(
-        ObjectKey::<Tenant>::encode(&Tenant(TenantId::new("acme").unwrap())).map(|_| ()),
-        Ok(())
-    );
-    assert_eq!(
-        ObjectKey::<()>::encode(&()).unwrap(),
-        "",
-        "no parts, no key"
-    );
+fn an_object_key_of_no_values_is_empty() {
+    assert_eq!(ObjectKey::<()>::encode(()), "", "no values, no key");
     assert_eq!(ObjectKey::<()>::parse(""), Ok(()));
 }
 
 #[test]
-fn a_keys_view_prefix_selects_every_object_key_of_its_value() {
-    let key = SearchKey::encode(&search()).unwrap();
+fn a_prefix_selects_every_object_key_of_its_leading_values() {
+    let key = encode(&search());
 
-    let prefix = SearchKey::prefix(&Org { org: ORG }).unwrap();
+    let prefix = SearchKey::prefix::<(OrgId,)>(&OrgId(ORG));
+    let longer = SearchKey::prefix::<(OrgId, RegionId)>((&OrgId(ORG), &RegionId(-42)));
 
     assert_eq!(prefix, ORG_KEY);
     assert!(key.starts_with(&format!("{prefix}:")));
-    assert_eq!(ObjectKey::<Tenant>::prefix(&tenant()).unwrap(), "61636d65");
+    assert!(key.starts_with(&format!("{longer}:")));
+    assert_eq!(
+        ObjectKey::<(TenantId,)>::prefix::<(TenantId,)>(&tenant()),
+        "61636d65"
+    );
 }
 
 #[test]

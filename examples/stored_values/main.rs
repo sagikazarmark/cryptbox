@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 #[derive(Seal)]
-#[seal(id = "181642fe-59de-4fe3-9576-cb1cb66116ef", value = String)]
+#[cryptbox(id = "181642fe-59de-4fe3-9576-cb1cb66116ef", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -22,7 +22,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(BlindIndexSpec)]
-#[blind_index(
+#[cryptbox(
     id = "2ce82e31-6001-4b05-b4e2-8fc262997209",
     seal = UserEmail,
     // Demonstration precision; choose precision and normalization for your domain.
@@ -79,19 +79,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(plaintext, "Mark@Example.com");
 
     // Separately check index consistency, here after convergence to the current key.
-    let recomputed = EmailLookup::derive_with(&plaintext, &(), &index_keys)?;
+    let recomputed = EmailLookup::derive_with(&plaintext, (), &index_keys)?;
     assert_eq!(restored.email_lookup, recomputed);
 
     // Lookup searches every readable generation and compares authenticated plaintext.
     let query = "mark@example.com";
-    let probes = EmailLookup::probes_with(query, &(), &index_keys)?;
+    let probes = EmailLookup::probes_with(query, (), &index_keys)?;
     let matches = probes.iter().any(|probe| probe == &restored.email_lookup)
         && EmailLookup::verify_candidate(query, &plaintext)?;
     assert!(matches);
 
     // Plaintext comparison alone cannot detect a stored index for another value.
     let unrelated_index =
-        EmailLookup::derive_with(&"other@example.com".to_owned(), &(), &index_keys)?;
+        EmailLookup::derive_with(&"other@example.com".to_owned(), (), &index_keys)?;
     assert_ne!(unrelated_index, recomputed);
     assert!(EmailLookup::verify_candidate(query, &plaintext)?);
 

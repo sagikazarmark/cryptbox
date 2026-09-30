@@ -1,4 +1,6 @@
-use crate::{BlindIndexSpec, EncryptionKeys, Error, RecordKeys, Scope, Seal, SealId};
+use crate::{
+    BlindIndexSpec, BoundList, BoundValues, EncryptionKeys, Error, RecordKeys, Seal, SealId,
+};
 
 /// A row of plaintext values sealed and opened together under one binding.
 ///
@@ -7,11 +9,11 @@ use crate::{BlindIndexSpec, EncryptionKeys, Error, RecordKeys, Scope, Seal, Seal
 /// each field's blind indexes; [`Self::open`] authenticates and opens them.
 /// Plaintext fields, such as the record ID, are copied as they are.
 ///
-/// Every sealed field shares the record's [`Scope`], and each
-/// field whose seal scope is [`Recorded`](crate::Recorded) is also bound to the
-/// record's ID. The
-/// record ID is never encrypted, so it can be read before the row is opened. The
-/// binding must come from an authorized source, never from the stored row.
+/// Every sealed field shares the record's [bound ID types](Self::Bound), and
+/// each field whose seal binds a [record](Seal::Record) is also bound to the
+/// record's ID. The record ID is never encrypted, so it can be read before the
+/// row is opened. The bound values must come from an authorized source, never
+/// from the stored row.
 ///
 /// [`Self::open`] takes the record ID from the row itself. A value copied from
 /// another record fails authentication, but a whole row returned in place of
@@ -20,7 +22,7 @@ use crate::{BlindIndexSpec, EncryptionKeys, Error, RecordKeys, Scope, Seal, Seal
 ///
 /// With the `derive` feature, `#[derive(Record)]` generates the sealed struct,
 /// this impl, per-field sealers for partial updates, and the seals its fields
-/// declare with `#[seal(id = "…")]`, each bound to its field, scope, and row;
+/// declare with `#[seal(id = "…")]`, each bound to its field, bound values, and row;
 /// and it checks that each field writes exactly the blind indexes its seal
 /// declares. See its documentation for the expansion, which a hand-written impl
 /// can follow.
@@ -29,8 +31,8 @@ pub trait Record: Sized {
     /// blind indexes.
     type Sealed;
 
-    /// The binding every sealed field of the record shares.
-    type Scope: Scope;
+    /// The bound ID types every sealed field of the record is bound to.
+    type Bound: BoundList;
 
     /// The seal ID of each sealed field, in field order.
     ///
@@ -48,18 +50,22 @@ pub trait Record: Sized {
     /// have been sealed shows up in its snapshot.
     const PLAINTEXT: &'static [&'static str];
 
-    /// Encrypts every sealed field under `binding` and the record's ID, and
-    /// derives its blind indexes.
+    /// Encrypts every sealed field under the bound values `bound` and the
+    /// record's ID, and derives its blind indexes.
     ///
     /// # Errors
     ///
     /// Returns any error of sealing a field or deriving one of its indexes.
-    fn seal<K>(&self, binding: &Self::Scope, keys: &K) -> Result<Self::Sealed, Error>
+    fn seal<'a, K>(
+        &self,
+        bound: impl BoundValues<'a, Self::Bound>,
+        keys: &K,
+    ) -> Result<Self::Sealed, Error>
     where
         K: RecordKeys + ?Sized;
 
-    /// Opens the sealed fields of `sealed` under `binding` and the record's
-    /// ID.
+    /// Opens the sealed fields of `sealed` under the bound values `bound` and
+    /// the record's ID.
     ///
     /// Stored blind indexes are neither read nor checked.
     ///
@@ -67,7 +73,11 @@ pub trait Record: Sized {
     ///
     /// Returns any error of opening a field, such as
     /// [`Error::AuthenticationFailed`] for a value of another record or binding.
-    fn open<K>(sealed: Self::Sealed, binding: &Self::Scope, keys: &K) -> Result<Self, Error>
+    fn open<'a, K>(
+        sealed: Self::Sealed,
+        bound: impl BoundValues<'a, Self::Bound>,
+        keys: &K,
+    ) -> Result<Self, Error>
     where
         K: EncryptionKeys + ?Sized;
 }
@@ -85,7 +95,7 @@ pub trait IndexedBy<S: BlindIndexSpec>: Record {
 ///
 /// `rows` are the rows a store selected with the probes of `S`
 /// ([`BlindIndexSpec::probes_with`]). A truncated index selects false
-/// candidates too, so each row is opened under `binding` and its indexed value
+/// candidates too, so each row is opened under `bound` and its indexed value
 /// compared with `query` by [`BlindIndexSpec::verify_candidate`]; rows that do
 /// not match are dropped. Matches keep the order of `rows`.
 ///
@@ -95,10 +105,10 @@ pub trait IndexedBy<S: BlindIndexSpec>: Record {
 /// [`Error::AuthenticationFailed`] for a row of another binding, or of
 /// normalizing `query` or a value. A row that fails to open is never treated
 /// as a non-match.
-pub fn open_matching<R, S>(
+pub fn open_matching<'a, R, S>(
     rows: impl IntoIterator<Item = R::Sealed>,
     query: &S::Query,
-    binding: &R::Scope,
+    bound: impl BoundValues<'a, R::Bound> + Copy,
     keys: &(impl EncryptionKeys + ?Sized),
 ) -> Result<Vec<R>, Error>
 where
@@ -108,7 +118,7 @@ where
     let mut matches = Vec::new();
 
     for row in rows {
-        let record = R::open(row, binding, keys)?;
+        let record = R::open(row, bound, keys)?;
         if S::verify_candidate(query, record.indexed_value())? {
             matches.push(record);
         }

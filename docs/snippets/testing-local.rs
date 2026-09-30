@@ -14,7 +14,8 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = (EmailLookup,);
 }
 
@@ -22,7 +23,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = UserEmail;
-    type Scope = ();
+    type Partition = ();
     const ID: cryptbox::IndexId = cryptbox::index_id!("558e7d43-9926-498c-962a-19959dddbfc8");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -77,7 +78,7 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
 
     let prepared = Sealed::<UserEmail>::prepare(&value, (), &keys)?
         .with_index_with::<EmailLookup>(&indexes)?;
-    let probes = EmailLookup::probes_with(plaintext, &(), &indexes)?;
+    let probes = EmailLookup::probes_with(plaintext, (), &indexes)?;
     let stored_index = prepared.index::<EmailLookup>()?;
     assert!(
         probes

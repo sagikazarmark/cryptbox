@@ -31,7 +31,8 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -42,7 +43,8 @@ impl Seal for PaddedUserEmail {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -52,7 +54,7 @@ struct EmailDomain;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = UserEmail;
-    type Scope = ();
+    type Partition = ();
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -71,7 +73,7 @@ impl BlindIndexSpec for EmailLookup {
 
 impl BlindIndexSpec for EmailDomain {
     type Seal = UserEmail;
-    type Scope = ();
+    type Partition = ();
     const ID: IndexId = index_id!("70000000-0000-4000-8000-000000000007");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email-domain/1";
@@ -123,13 +125,13 @@ fn encrypt_email(email: &str, keys: &EncryptionKeyring) -> Vec<u8> {
 }
 
 fn derive_email_index(email: &str, index_keys: &BlindIndexKeyring) -> Vec<u8> {
-    EmailLookup::derive_with(&email.to_owned(), &(), index_keys)
+    EmailLookup::derive_with(&email.to_owned(), (), index_keys)
         .unwrap()
         .into_bytes()
 }
 
 fn derive_email_domain_index(email: &str, index_keys: &BlindIndexKeyring) -> Vec<u8> {
-    EmailDomain::derive_with(&email.to_owned(), &(), index_keys)
+    EmailDomain::derive_with(&email.to_owned(), (), index_keys)
         .unwrap()
         .into_bytes()
 }
