@@ -76,8 +76,9 @@ Treat a scope whose custody map is undocumented or untested as not shreddable.
    | Long-lived processes that loaded the root at startup | Drain and restart them |
    | Log lines, traces, and error payloads with plaintext | Follow your log retention; treat as a separate disposal |
 
-   `KeyScope::of_keys::<B>(&[…])` builds the scope from its `keys` values alone,
-   so caches and admin tooling can address one scope without a whole binding.
+   A key source is asked by the seal's keys view, such as an `Org`, which holds
+   the `keys` values alone, so caches and admin tooling can address one scope
+   by it without a whole binding.
 
 4. **Account for the plaintext around the sealed values.** Shredding removes no
    plaintext. Delete or redact, per the inventory: scope identifiers and object

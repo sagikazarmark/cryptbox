@@ -19,6 +19,7 @@ const _: () = {
         type Value = Self;
         type Codec = Self;
         type Scope = ();
+        type Keys = ();
         type Indexes = ();
     }
     #[automatically_derived]

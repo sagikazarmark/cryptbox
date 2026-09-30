@@ -18,6 +18,10 @@ const _: () = {
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Scope = cryptbox::Recorded<cryptbox::Tenant, i64>;
+        type Keys = <cryptbox::Recorded<
+            cryptbox::Tenant,
+            i64,
+        > as ::cryptbox::SealScope>::Parts;
         type Indexes = (EmailLookup,);
     }
 };
@@ -37,6 +41,7 @@ const _: () = {
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Scope = cryptbox::Tenant;
+        type Keys = <cryptbox::Tenant as ::cryptbox::SealScope>::Parts;
         type Indexes = ();
     }
 };
@@ -167,8 +172,10 @@ const _: () = {
             ::cryptbox::Error,
         >
         where
-            K: ::cryptbox::EncryptionKeySource + ::cryptbox::BlindIndexKeySource
-                + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeySource<<CustomerEmail as ::cryptbox::Seal>::Keys>
+                + ::cryptbox::BlindIndexKeySource<
+                    <CustomerEmail as ::cryptbox::Seal>::Keys,
+                > + ?::core::marker::Sized,
         {
             let prepared = ::cryptbox::Sealed::<
                 CustomerEmail,
@@ -185,7 +192,8 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<::cryptbox::Sealed<CustomerNote>, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeySource<<CustomerNote as ::cryptbox::Seal>::Keys>
+                + ?::core::marker::Sized,
         {
             ::cryptbox::Sealed::<
                 CustomerNote,
@@ -196,14 +204,15 @@ const _: () = {
     impl ::cryptbox::Record for Customer {
         type Sealed = SealedCustomer;
         type Scope = <<CustomerEmail as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts;
+        type Keys = <CustomerEmail as ::cryptbox::Seal>::Keys;
         fn seal<K>(
             &self,
             binding: &Self::Scope,
             keys: &K,
         ) -> ::core::result::Result<SealedCustomer, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource + ::cryptbox::BlindIndexKeySource
-                + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeySource<Self::Keys>
+                + ::cryptbox::BlindIndexKeySource<Self::Keys> + ?::core::marker::Sized,
         {
             let (email, email_lookup) = Self::seal_email(
                 &self.email,
@@ -225,7 +234,7 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<Self, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeySource<Self::Keys> + ?::core::marker::Sized,
         {
             let record_id = &sealed.id;
             let email = sealed

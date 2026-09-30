@@ -11,6 +11,7 @@ impl Seal for Nickname {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -48,6 +49,7 @@ impl Seal for DriftingNickname {
     type Value = String;
     type Codec = DriftingCodec;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -90,6 +92,7 @@ mod json {
         type Value = before::Address;
         type Codec = Json;
         type Scope = ();
+        type Keys = ();
         type Indexes = ();
     }
 
@@ -101,6 +104,7 @@ mod json {
         type Value = Address;
         type Codec = Json;
         type Scope = ();
+        type Keys = ();
         type Indexes = ();
     }
 
@@ -131,6 +135,7 @@ mod json {
         type Value = f64;
         type Codec = Json;
         type Scope = ();
+        type Keys = ();
         type Indexes = ();
     }
 

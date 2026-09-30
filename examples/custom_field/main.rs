@@ -5,8 +5,8 @@ use std::sync::{PoisonError, RwLock};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, KeyScope,
-    Padding, Seal, SealId, Sealed, Secret,
+    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Padding, Seal,
+    SealId, Sealed, Secret,
 };
 use zeroize::Zeroizing;
 
@@ -56,6 +56,7 @@ impl Seal for Handle {
     type Value = Self;
     type Codec = HandleCodec;
     type Scope = ();
+    type Keys = ();
     type Indexes = (HandleEquality,);
 }
 
@@ -107,8 +108,9 @@ impl CachedEncryptionKeys {
     }
 }
 
-impl EncryptionKeySource for CachedEncryptionKeys {
-    fn encryption_keyring(&self, _: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+// One keyring for every seal and keys view, as a keyring itself serves.
+impl<K> EncryptionKeySource<K> for CachedEncryptionKeys {
+    fn encryption_keyring(&self, _: SealId, _: &K) -> Result<EncryptionKeyring, Error> {
         // Cloning shares the keys; it does not copy key material.
         self.snapshot
             .read()
@@ -189,7 +191,7 @@ mod tests {
             current.clone(),
             [old.clone()],
         )?));
-        let snapshot = reader.encryption_keyring(Handle::ID, &KeyScope::of(&())?)?;
+        let snapshot = reader.encryption_keyring(Handle::ID, &())?;
         assert_eq!(snapshot.current().id(), current.id());
         assert_eq!(snapshot.get(old.id()).unwrap().id(), old.id());
         assert_eq!(snapshot.get(current.id()).unwrap().id(), current.id());
@@ -274,6 +276,7 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
             type Value = String;
             type Codec = cryptbox::Utf8;
             type Scope = ();
+            type Keys = ();
             type Indexes = ();
         }
 

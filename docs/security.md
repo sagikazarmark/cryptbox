@@ -13,7 +13,7 @@ tests do not indicate security approval. [Documentation](README.md).
 flowchart TB
     subgraph trusted["Trusted application boundary"]
         K["Keyrings: independent encryption and index roots"]
-        A["Application: plaintext, seals, authorization"]
+        A["Application: plaintext, fields, authorization"]
         C["CryptBox: encode, encrypt, authenticate, decode"]
         K --> C
         A <--> C

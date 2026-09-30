@@ -25,6 +25,7 @@ const _: () = {
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Scope = ::cryptbox::Recorded<cryptbox::Tenant, i64>;
+        type Keys = cryptbox::Tenant;
         type Indexes = ();
     }
 };
@@ -40,6 +41,7 @@ const _: () = {
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Scope = ::cryptbox::Recorded<cryptbox::Tenant, i64>;
+        type Keys = cryptbox::Tenant;
         type Indexes = ();
     }
 };
@@ -89,7 +91,8 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<::cryptbox::Sealed<CustomerEmail>, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeySource<<CustomerEmail as ::cryptbox::Seal>::Keys>
+                + ?::core::marker::Sized,
         {
             ::cryptbox::Sealed::<
                 CustomerEmail,
@@ -103,7 +106,8 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<::cryptbox::Sealed<PrivateNote>, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeySource<<PrivateNote as ::cryptbox::Seal>::Keys>
+                + ?::core::marker::Sized,
         {
             ::cryptbox::Sealed::<
                 PrivateNote,
@@ -114,14 +118,15 @@ const _: () = {
     impl ::cryptbox::Record for Customer {
         type Sealed = SealedCustomer;
         type Scope = cryptbox::Tenant;
+        type Keys = cryptbox::Tenant;
         fn seal<K>(
             &self,
             binding: &Self::Scope,
             keys: &K,
         ) -> ::core::result::Result<SealedCustomer, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource + ::cryptbox::BlindIndexKeySource
-                + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeySource<Self::Keys>
+                + ::cryptbox::BlindIndexKeySource<Self::Keys> + ?::core::marker::Sized,
         {
             let email = Self::seal_email(&self.email, binding, &self.id, keys)?;
             let note = Self::seal_note(&self.note, binding, &self.id, keys)?;
@@ -137,7 +142,7 @@ const _: () = {
             keys: &K,
         ) -> ::core::result::Result<Self, ::cryptbox::Error>
         where
-            K: ::cryptbox::EncryptionKeySource + ?::core::marker::Sized,
+            K: ::cryptbox::EncryptionKeySource<Self::Keys> + ?::core::marker::Sized,
         {
             let record_id = &sealed.id;
             let email = sealed

@@ -3,9 +3,9 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeyring, FromParts, IndexId, IndexKeyId, IndexList,
-    KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues, Scope, Seal, SealId,
-    Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
+    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, FromParts, IndexId,
+    IndexKeyId, IndexList, Padding, PartKind, PartSpec, PartType, PartValue, PartValues, Scope,
+    Seal, SealId, Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -31,6 +31,7 @@ impl Seal for ManualUserEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -397,6 +398,13 @@ struct OrgProject {
     project: i64,
 }
 
+/// The keys view of [`OrgProject`]: its org.
+#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
+struct ProjectOrg {
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    org: Vec<u8>,
+}
+
 /// A view of [`OrgProject`]: the org and the project, which a project search
 /// knows.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
@@ -464,6 +472,7 @@ fn a_derived_scope_is_built_back_from_its_part_values() {
     id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",
     value = String,
     scope = cryptbox::Recorded<OrgProject, i64>,
+    keys = ProjectOrg,
 )]
 struct ProjectNote;
 
@@ -476,6 +485,7 @@ impl Seal for ManualProjectNote {
     type Value = String;
     type Codec = Utf8;
     type Scope = cryptbox::Recorded<ManualOrgProject, i64>;
+    type Keys = ProjectOrg;
     type Indexes = ();
 }
 
@@ -502,22 +512,36 @@ fn a_derived_bound_seal_opens_values_of_its_manual_equivalent() {
     assert_eq!(derived.open((&scope, record), &keys).unwrap(), "ship it");
 }
 
+/// Records the keys views it is asked by.
+struct SeenOrgs(std::sync::Mutex<Vec<ProjectOrg>>, EncryptionKeyring);
+
+impl EncryptionKeySource<ProjectOrg> for SeenOrgs {
+    fn encryption_keyring(
+        &self,
+        _: SealId,
+        org: &ProjectOrg,
+    ) -> Result<EncryptionKeyring, cryptbox::Error> {
+        self.0.lock().unwrap().push(org.clone());
+        Ok(self.1.clone())
+    }
+}
+
 #[test]
-fn a_derived_view_shares_its_scopes_key_scope() {
-    let scope = OrgProject {
-        workspace: [0x42; 16],
+fn a_derived_seal_asks_its_key_source_by_its_keys_view() {
+    let keys = SeenOrgs(std::sync::Mutex::default(), keyring());
+    let scope = |project, workspace| OrgProject {
+        workspace: [workspace; 16],
         org: b"acme".to_vec(),
-        project: 7,
-    };
-    let search = OrgProjectSearch {
-        org: b"acme".to_vec(),
-        project: 7,
+        project,
     };
 
-    assert_eq!(
-        KeyScope::of(&search).unwrap(),
-        KeyScope::of(&scope).unwrap()
-    );
+    Sealed::<ProjectEmail>::seal(&"ada".to_owned(), &scope(7, 1), &keys).unwrap();
+    Sealed::<ProjectEmail>::seal(&"ada".to_owned(), &scope(8, 2), &keys).unwrap();
+
+    let acme = ProjectOrg {
+        org: b"acme".to_vec(),
+    };
+    assert_eq!(*keys.0.lock().unwrap(), [acme.clone(), acme]);
 }
 
 #[derive(Seal)]
@@ -525,6 +549,7 @@ fn a_derived_view_shares_its_scopes_key_scope() {
     id = "4b8e2d6f-1a3c-4e57-b9d0-6f2a4c8e1b35",
     value = String,
     scope = OrgProject,
+    keys = ProjectOrg,
     indexes(ProjectEmailLookup),
 )]
 struct ProjectEmail;
@@ -594,6 +619,7 @@ struct Org {
     id = "3e7a9c1f-5b2d-4f60-8e14-a2c6d0b8f375",
     value = String,
     scope = OrgProject,
+    keys = ProjectOrg,
     indexes(ProjectEmailByOrg),
 )]
 struct OrgProjectEmail;
@@ -661,7 +687,7 @@ fn derived_views_reject_part_values_that_do_not_fit() {
 
 #[cfg(feature = "uuid")]
 mod uuid_parts {
-    use cryptbox::{KeyScope, RecordId};
+    use cryptbox::{FromParts, RecordId, Scope};
     use uuid::Uuid;
 
     #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
@@ -675,8 +701,8 @@ mod uuid_parts {
         let id = Uuid::from_u128(0x0192_3a4b_5c6d_7e8f_9a0b_1c2d_3e4f_5a6b);
 
         assert_eq!(
-            KeyScope::of(&Org { id }).unwrap(),
-            KeyScope::of(&super::Org { id: *id.as_bytes() }).unwrap()
+            super::Org::from_parts(Org { id }.values().as_slice()),
+            Ok(super::Org { id: *id.as_bytes() })
         );
         assert_eq!(RecordId::from(id), RecordId::Uuid(*id.as_bytes()));
     }
@@ -707,12 +733,12 @@ struct TypedOrg {
 #[test]
 fn a_newtype_part_binds_like_its_inner_value() {
     assert_eq!(TypedOrg::PARTS, Org::PARTS);
+    let typed = TypedOrg {
+        id: OrgId([0x42; 16]),
+    };
     assert_eq!(
-        KeyScope::of(&TypedOrg {
-            id: OrgId([0x42; 16])
-        })
-        .unwrap(),
-        KeyScope::of(&Org { id: [0x42; 16] }).unwrap()
+        Org::from_parts(typed.values().as_slice()),
+        Ok(Org { id: [0x42; 16] })
     );
 }
 
@@ -738,10 +764,20 @@ struct MislabeledScope {
     id: Mislabeled,
 }
 
+#[derive(Seal)]
+#[cryptbox(
+    id = "83824c94-7154-4594-97b2-eb04999e948b",
+    value = String,
+    scope = MislabeledScope,
+)]
+struct MislabeledNote;
+
 #[test]
 fn a_part_value_of_another_kind_is_rejected() {
+    let scope = MislabeledScope { id: Mislabeled(1) };
+
     assert_eq!(
-        KeyScope::of(&MislabeledScope { id: Mislabeled(1) }),
+        Sealed::<MislabeledNote>::seal(&"ada".to_owned(), &scope, &keyring()),
         Err(cryptbox::Error::InvalidBinding)
     );
 }

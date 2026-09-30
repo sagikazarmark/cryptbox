@@ -501,8 +501,8 @@ the [binding](#binding) encoding:
 - With no parts, it is the empty binding, as for the empty scope.
 
 Two bindings that agree on the index scope's values share the index binding, so
-their indexes of the same value are equal. The key source receives the key scope
-of the `keys` parts.
+their indexes of the same value are equal. The key source receives the seal's
+keys view, projected from the index scope.
 
 ### Blind-index recipe
 

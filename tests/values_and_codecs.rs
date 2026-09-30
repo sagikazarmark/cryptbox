@@ -16,6 +16,7 @@ impl Seal for ExampleSeal {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 

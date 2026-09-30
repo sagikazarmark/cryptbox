@@ -107,14 +107,17 @@ A Virtual Object keyed by a scope, such as one object per org or a blind
 index's index scope, reads it back from its object key with `ObjectKey`:
 
 ```rust
-let search: OrgSearch = ObjectKey::<OrgSearch>::parse(ctx.key())
-    .map_err(restate::handler_error)?;
-let key = ObjectKey::<OrgSearch>::encode(&search)?;
+type SearchKey = ObjectKey<OrgSearch, Org>;
+
+let search: OrgSearch = SearchKey::parse(ctx.key()).map_err(restate::handler_error)?;
+let key = SearchKey::encode(&search)?;
 ```
 
-An object key encodes every part of its scope, separated by `:`. The `keys`
-parts come first, and then the other parts, each in `PARTS` order. Key an object
-by a view that holds only the parts the object is for.
+An object key encodes every part of its scope, separated by `:`. The parts of
+its second type parameter, a view such as the seal's
+[keys view](bindings.md#keys-follow-the-keys-view) `Org`, come first, and then
+the other parts, each in `PARTS` order; without it, every part is in `PARTS`
+order. Key an object by a view that holds only the parts the object is for.
 
 | Kind | Encoding | Example |
 | --- | --- | --- |
@@ -173,11 +176,10 @@ destroy the keys.
 1. **Stop new work.** Revoke the org's access, so no caller is authorized for
    its object keys.
 
-2. **Find the org's objects.** Compute the key scope's object-key prefix:
+2. **Find the org's objects.** Compute the org's object-key prefix:
 
    ```rust
-   let org = KeyScope::of_keys::<OrgWorkspace>(&[PartValue::Uuid(*org_id.as_bytes())])?;
-   let prefix = ObjectKey::<OrgWorkspace>::prefix(&org)?;
+   let prefix = ObjectKey::<OrgWorkspace, Org>::prefix(&Org { org: org_id })?;
    ```
 
    Select the org's invocations for each service keyed by `OrgWorkspace`,
@@ -190,8 +192,8 @@ destroy the keys.
      AND (target_service_key = '<prefix>' OR target_service_key LIKE '<prefix>:%')
    ```
 
-   A binding without `keys` parts has an empty prefix: every object of the
-   service is in its one key scope, so select them by service alone.
+   A keys view without parts, such as `()`, has an empty prefix: every object of
+   the service has it, so select them by service alone.
 
    A plain Service has no object key. Find its invocations for the org another
    way, such as by an idempotency key or a header you set.

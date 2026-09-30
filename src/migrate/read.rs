@@ -58,6 +58,7 @@ use super::{LegacyFormat, legacy};
 ///     type Value = String;
 ///     type Codec = cryptbox::Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -158,6 +159,7 @@ where
     ///     type Value = Vec<u8>;
     ///     type Codec = cryptbox::Raw;
     ///     type Scope = ();
+    ///     type Keys = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -188,7 +190,7 @@ where
     pub fn open(
         self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
     ) -> Result<F::Value, Error> {
         match self.state {
             State::Sealed(sealed) => sealed.open(args, keys),
@@ -210,7 +212,7 @@ where
     pub fn open_legacy(
         self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
         legacy: &dyn LegacyFormat,
     ) -> Result<F::Value, Error> {
         match self.state {

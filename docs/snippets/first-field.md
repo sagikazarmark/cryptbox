@@ -1,7 +1,5 @@
 ```rust
-use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Seal, SealId, Padding, Sealed, Utf8,
-};
+use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8};
 
 struct UserEmail;
 
@@ -11,6 +9,7 @@ impl Seal for UserEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 

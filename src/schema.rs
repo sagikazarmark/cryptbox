@@ -7,7 +7,9 @@ use std::{
 
 use crate::{
     BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartRole, PartSpec, Scope, Seal, SealId,
-    SealScope, args::PartsOf, binding::declaration_fingerprint,
+    SealScope,
+    args::{KeysOf, PartsOf},
+    binding::{check_keys_view, declaration_fingerprint},
 };
 
 /// Lists seals and blind indexes with their persistent schema.
@@ -24,9 +26,9 @@ use crate::{
 /// - `binding`: the [binding fingerprint](crate::CiphertextInfo::context_fingerprint),
 ///   order;
 /// - `shred unit`: the finest unit that destroying root keys can shred, if the
-///   application stores root keys per [key scope](crate::KeyScope): the
-///   [`keys`](crate::PartRole::Keys) parts, joined by `+`, or `keyring` when
-///   there are none and only the whole keyring can be. The library cannot see
+///   application stores root keys per value of the seal's
+///   [keys view](crate::Seal::Keys): its parts, joined by `+`, or `keyring`
+///   when it has none and only the whole keyring can be. The library cannot see
 ///   how keys are stored, so a coarser choice, such as one keyring for every
 ///   tenant, shreds only that coarser unit; say so in the custody label;
 /// - `custody`: the label given with [`Self::custody`], if any.
@@ -51,6 +53,7 @@ use crate::{
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Recorded<Tenant, i64>;
+///     type Keys = Tenant;
 ///     type Indexes = ();
 /// }
 ///
@@ -96,6 +99,8 @@ struct SealEntry {
     padding: Padding,
     record: Option<PartKind>,
     parts: &'static [PartSpec],
+    /// The parts of the keys view.
+    keys: &'static [PartSpec],
     fingerprint: [u8; 8],
     custody: Option<String>,
 }
@@ -132,6 +137,8 @@ impl Manifest {
     }
 
     fn seal_entry<F: Seal>(&mut self) -> &mut SealEntry {
+        const { check_keys_view(<KeysOf<F> as Scope>::PARTS, <PartsOf<F> as Scope>::PARTS) };
+
         let marker = TypeId::of::<F>();
         let position = self
             .seals
@@ -146,6 +153,7 @@ impl Manifest {
                     padding: F::PADDING,
                     record: <F::Scope as SealScope>::RECORD,
                     parts: <PartsOf<F> as Scope>::PARTS,
+                    keys: <KeysOf<F> as Scope>::PARTS,
                     fingerprint: declaration_fingerprint::<F::Scope>(),
                     custody: None,
                 });
@@ -265,12 +273,9 @@ impl fmt::Display for Manifest {
                 )?;
             }
             write!(formatter, "  shred unit: ")?;
-            let mut keys = seal
-                .parts
-                .iter()
-                .filter(|part| part.role() == PartRole::Keys);
+            let mut keys = seal.keys.iter();
             match keys.next() {
-                // Without `keys` parts, only the whole keyring can be destroyed.
+                // Without a keys view, only the whole keyring can be destroyed.
                 None => writeln!(formatter, "keyring")?,
                 Some(first) => {
                     write!(formatter, "{}", first.id())?;
@@ -360,6 +365,7 @@ const fn role_name(role: PartRole) -> &'static str {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -371,6 +377,7 @@ const fn role_name(role: PartRole) -> &'static str {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -388,6 +395,7 @@ const fn role_name(role: PartRole) -> &'static str {
 /// #     type Value = String;
 /// #     type Codec = Utf8;
 /// #     type Scope = ();
+/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// struct BillingAddress;
@@ -398,6 +406,7 @@ const fn role_name(role: PartRole) -> &'static str {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -416,6 +425,7 @@ const fn role_name(role: PartRole) -> &'static str {
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = ();
+/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// struct Exact;

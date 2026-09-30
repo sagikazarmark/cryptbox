@@ -47,6 +47,7 @@
 //!     type Value = String;
 //!     type Codec = Utf8;
 //!     type Scope = Tenant;
+//!     type Keys = Tenant;
 //!     type Indexes = ();
 //! }
 //!
@@ -165,7 +166,7 @@ mod private {
 /// Use it for a value the handler already holds, such as a field of its
 /// input. The context, value, arguments, and keys share one lifetime, and
 /// move into the `run` closure. The key source is a trait object, so a source
-/// that borrows, such as an `Arc<dyn EncryptionKeySource>`, keeps the handler's
+/// that borrows, such as an `Arc<dyn EncryptionKeySource<Tenant>>`, keeps the handler's
 /// future `Send`. The returned future is Restate's
 /// own: name it or give it a retry policy before awaiting it.
 ///
@@ -178,7 +179,7 @@ pub fn seal<'a, F>(
     ctx: &'a impl RunContext,
     value: &'a F::Value,
     args: impl Args<F>,
-    keys: &'a dyn EncryptionKeySource,
+    keys: &'a dyn EncryptionKeySource<F::Keys>,
 ) -> impl RunFuture<Result<Sealed<F>, TerminalError>> + 'a
 where
     F: Seal,
@@ -208,7 +209,7 @@ pub fn seal_with<'a, F, Fut>(
     ctx: &'a impl RunContext,
     fetch: impl FnOnce() -> Fut + Send + 'static,
     args: impl Args<F>,
-    keys: &'a dyn EncryptionKeySource,
+    keys: &'a dyn EncryptionKeySource<F::Keys>,
 ) -> impl RunFuture<Result<Sealed<F>, TerminalError>> + 'a
 where
     F: Seal,
@@ -236,7 +237,7 @@ pub fn seal_record<'a, R>(
     ctx: &'a impl RunContext,
     record: &'a R,
     binding: &'a R::Scope,
-    keys: &'a (impl EncryptionKeySource + BlindIndexKeySource + ?Sized),
+    keys: &'a (impl EncryptionKeySource<R::Keys> + BlindIndexKeySource<R::Keys> + ?Sized),
 ) -> impl RunFuture<Result<Json<R::Sealed>, TerminalError>> + 'a
 where
     R: Record + Sync,
@@ -255,7 +256,7 @@ pub fn seal_record_with<'a, R, Fut>(
     ctx: &'a impl RunContext,
     fetch: impl FnOnce() -> Fut + Send + 'static,
     binding: &'a R::Scope,
-    keys: &'a (impl EncryptionKeySource + BlindIndexKeySource + ?Sized),
+    keys: &'a (impl EncryptionKeySource<R::Keys> + BlindIndexKeySource<R::Keys> + ?Sized),
 ) -> impl RunFuture<Result<Json<R::Sealed>, TerminalError>> + 'a
 where
     R: Record,

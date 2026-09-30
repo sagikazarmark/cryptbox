@@ -38,6 +38,7 @@ use crate::{
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -103,15 +104,15 @@ impl<F: Seal> Sealed<F> {
     pub fn seal(
         value: &F::Value,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
     ) -> Result<Self, Error> {
         Self::seal_in(value, &domain(args)?, keys)
     }
 
     pub(crate) fn seal_in(
         value: &F::Value,
-        target: &Target,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        target: &Target<F::Keys>,
+        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
     ) -> Result<Self, Error> {
         let plaintext = F::Codec::encode(value)?;
         let sealed = bound::seal(&target.domain, F::PADDING, &plaintext, || {
@@ -139,7 +140,7 @@ impl<F: Seal> Sealed<F> {
     pub fn open(
         &self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
     ) -> Result<F::Value, Error> {
         let target = domain(args)?;
         let plaintext = bound::open(&target.domain, &self.bytes, || target.keyring(F::ID, keys))?;
@@ -159,7 +160,7 @@ impl<F: Seal> Sealed<F> {
     pub fn prepare<'a>(
         value: &'a F::Value,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
     ) -> Result<Prepared<'a, F>, Error> {
         let (target, scope) = domain_and_scope(args)?;
 
@@ -191,7 +192,7 @@ impl<F: Seal> Sealed<F> {
     pub fn needs_reseal(
         &self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
     ) -> Result<bool, Error> {
         let target = domain(args)?;
         bound::needs_reseal(&target.domain, F::PADDING, &self.bytes, || {
@@ -214,7 +215,7 @@ impl<F: Seal> Sealed<F> {
     pub fn reseal(
         &self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
     ) -> Result<Self, Error> {
         let target = domain(args)?;
         let keyring = || target.keyring(F::ID, keys);
@@ -242,9 +243,9 @@ impl<F: Seal> Sealed<F> {
     pub fn reseal_across(
         &self,
         from: impl Args<F>,
-        from_keys: &(impl EncryptionKeySource + ?Sized),
+        from_keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
         to: impl Args<F>,
-        to_keys: &(impl EncryptionKeySource + ?Sized),
+        to_keys: &(impl EncryptionKeySource<F::Keys> + ?Sized),
     ) -> Result<Self, Error> {
         let (from, to) = (domain(from)?, domain(to)?);
         let (_, sealed) = bound::reseal(
@@ -348,6 +349,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -368,6 +370,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Tenant;
+///     type Keys = Tenant;
 ///     type Indexes = ();
 /// }
 ///
@@ -390,6 +393,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = (EmailLookup,);
 /// }
 ///
@@ -427,6 +431,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Recorded<(), i64>;
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -444,6 +449,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// #     type Value = String;
 /// #     type Codec = Utf8;
 /// #     type Scope = ();
+/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// let left = Plain::<UserEmail>::new("secret");

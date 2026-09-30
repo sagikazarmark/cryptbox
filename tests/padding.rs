@@ -21,6 +21,7 @@ impl Seal for Unpadded {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -32,6 +33,7 @@ impl Seal for SharedSealPadded {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -43,6 +45,7 @@ impl Seal for FixedLength {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -54,6 +57,7 @@ impl Seal for WiderBlockPadded {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -65,6 +69,7 @@ impl Seal for BlockPadded {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -76,6 +81,7 @@ impl Seal for PolicyFixedLength {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -155,6 +161,7 @@ impl Seal for RawUnpadded {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -166,6 +173,7 @@ impl Seal for RawPadded {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 

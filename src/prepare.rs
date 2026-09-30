@@ -80,7 +80,7 @@ where
     /// The index is scoped by its [index scope](BlindIndexSpec::Scope),
     /// projected from the scope the value was sealed under, so probes with the
     /// same index scope find it. The key source receives the seal's
-    /// [`KeyScope`](crate::KeyScope).
+    /// [keys view](Seal::Keys), projected from the index scope.
     ///
     /// The index must be declared over this seal. Attaching another seal's
     /// index is a type error:
@@ -100,6 +100,7 @@ where
     ///     type Value = String;
     ///     type Codec = Utf8;
     ///     type Scope = ();
+    ///     type Keys = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -111,6 +112,7 @@ where
     ///     type Value = String;
     ///     type Codec = Utf8;
     ///     type Scope = ();
+    ///     type Keys = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -150,7 +152,7 @@ where
     /// invalid precision, or unavailable keys.
     pub fn with_index_with<Spec>(
         mut self,
-        keys: &(impl BlindIndexKeySource + ?Sized),
+        keys: &(impl BlindIndexKeySource<F::Keys> + ?Sized),
     ) -> Result<Self, Error>
     where
         Spec: BlindIndexSpec<Seal = F>,

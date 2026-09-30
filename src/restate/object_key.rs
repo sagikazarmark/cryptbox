@@ -1,8 +1,8 @@
 use std::{fmt::Write as _, marker::PhantomData};
 
 use crate::{
-    Error, FromParts, KeyScope, PartKind, PartRole, PartSpec, PartValue, Scope,
-    binding::check_values,
+    Error, FromParts, PartKind, PartValue, Scope,
+    binding::{check_parts, check_values, check_view},
 };
 
 // Never appears in an encoded value, so parts split unambiguously.
@@ -12,16 +12,18 @@ const UUID_HYPHENS: [usize; 4] = [8, 13, 18, 23];
 // A sign and the 19 digits of `i64::MIN`'s magnitude.
 const I64_LEN: usize = 20;
 
-/// The Restate object key of scope `B`: a strict, canonical text encoding of
-/// its values, usually those of a blind index's
+/// The Restate object key of scope `B`, led by its keys view `K`: a strict,
+/// canonical text encoding of its values, usually those of a blind index's
 /// [index scope](crate::BlindIndexSpec::Scope).
 ///
 /// A Virtual Object keyed by a scope, such as one object per org and workspace,
 /// reads it back from its object key with [`Self::parse`]. An object key holds
-/// one segment per part, separated by `:`. The [`keys`](PartRole::Keys) parts
-/// come first, then the other parts, each in [`PARTS`](Scope::PARTS) order, so
-/// every object key of a key scope starts with that key scope's
-/// [`Self::prefix`].
+/// one segment per part, separated by `:`. The parts of `K`, a view of `B` such
+/// as its seal's [keys view](crate::Seal::Keys), come first, then the other
+/// parts, each in [`PARTS`](Scope::PARTS) order, so every object key of one
+/// value of `K` starts with that value's [`Self::prefix`]. `K` defaults to `B`
+/// itself. A `K` that is not a view of `B` fails the build when the object key
+/// is first used.
 ///
 /// | Kind | Encoding | Example |
 /// | --- | --- | --- |
@@ -38,7 +40,7 @@ const I64_LEN: usize = 20;
 /// the caller for the scope it names before binding values to it.
 ///
 /// ```
-/// use cryptbox::{Error, KeyScope, Tenant, TenantId, restate::ObjectKey};
+/// use cryptbox::{Error, Tenant, TenantId, restate::ObjectKey};
 ///
 /// let acme = Tenant(TenantId::new("acme")?);
 ///
@@ -47,13 +49,21 @@ const I64_LEN: usize = 20;
 /// assert_eq!(ObjectKey::<Tenant>::parse(&key)?, acme);
 /// assert_eq!(ObjectKey::<Tenant>::parse("61636D65"), Err(Error::InvalidObjectKey));
 ///
-/// // Every object key of the tenant's key scope starts with its prefix.
-/// assert_eq!(ObjectKey::<Tenant>::prefix(&KeyScope::of(&acme)?)?, key);
+/// // Every object key of the tenant starts with its prefix.
+/// assert_eq!(ObjectKey::<Tenant>::prefix(&acme)?, key);
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
-pub struct ObjectKey<B>(PhantomData<fn() -> B>);
+///
+/// A `K` with a part `B` lacks fails the build:
+///
+/// ```compile_fail,E0080
+/// use cryptbox::{Tenant, restate::ObjectKey};
+///
+/// let _ = ObjectKey::<(), Tenant>::encode(&());
+/// ```
+pub struct ObjectKey<B, K = B>(PhantomData<fn() -> (B, K)>);
 
-impl<B: Scope> ObjectKey<B> {
+impl<B: Scope, K: Scope> ObjectKey<B, K> {
     /// Encodes a scope as an object key.
     ///
     /// # Errors
@@ -66,7 +76,7 @@ impl<B: Scope> ObjectKey<B> {
         check_values(B::PARTS, values)?;
 
         Ok(join(
-            key_order::<B>()
+            key_order::<B, K>()
                 .into_iter()
                 .map(|position| values[position]),
         ))
@@ -95,7 +105,7 @@ impl<B: Scope> ObjectKey<B> {
         }
 
         let mut decoded = vec![Decoded::I64(0); specs.len()];
-        for (segment, position) in segments.into_iter().zip(key_order::<B>()) {
+        for (segment, position) in segments.into_iter().zip(key_order::<B, K>()) {
             decoded[position] = decode_value(specs[position].kind(), segment)?;
         }
         let values: Vec<_> = decoded.iter().map(Decoded::part_value).collect();
@@ -111,50 +121,55 @@ impl<B: Scope> ObjectKey<B> {
         }
     }
 
-    /// Returns the object-key prefix of a key scope: its `keys` parts.
+    /// Returns the object-key prefix of one value of `K`: its parts.
     ///
-    /// Every object key of the key scope equals the prefix when `B` has only
-    /// `keys` parts, and otherwise starts with the prefix and a `:`. Select a
-    /// key scope's objects in Restate's SQL introspection with
+    /// Every object key with that value of `K` equals the prefix when `K` has
+    /// every part of `B`, and otherwise starts with the prefix and a `:`. Select
+    /// its objects in Restate's SQL introspection with
     /// `target_service_key = '<prefix>' OR target_service_key LIKE '<prefix>:%'`;
     /// the encoding never contains a quote or a SQL wildcard.
     ///
-    /// A binding without `keys` parts has one key scope, the empty one, and its
-    /// prefix is empty: every object of the service belongs to it, so select
-    /// them by service alone.
+    /// A `K` without parts, such as `()`, has one value, and its prefix is
+    /// empty: every object of the service has it, so select them by service
+    /// alone.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidBinding`] when `scope` is not a key scope of `B`.
-    pub fn prefix(scope: &KeyScope) -> Result<String, Error> {
-        let specs = B::PARTS.iter().filter(|spec| spec.role() == PartRole::Keys);
-        let values: Vec<_> = scope.parts().collect();
-        let matches = values.len() == specs.clone().count()
-            && specs
-                .zip(&values)
-                .all(|(spec, (id, value))| *id == spec.id() && value.kind() == spec.kind());
-        if !matches {
-            return Err(Error::InvalidBinding);
-        }
+    /// Returns [`Error::InvalidBinding`] when `keys`'s values do not match its
+    /// parts; see [`Scope`].
+    pub fn prefix(keys: &K) -> Result<String, Error> {
+        const {
+            check_parts(B::PARTS);
+            check_parts(K::PARTS);
+            check_view(K::PARTS, B::PARTS);
+        };
 
-        Ok(join(values.into_iter().map(|(_, value)| value)))
+        let values = keys.values();
+        check_values(K::PARTS, values.as_slice())?;
+
+        Ok(join(values.as_slice().iter().copied()))
     }
 }
 
-/// The positions of `B`'s parts in object-key order: `keys` parts first, then
-/// the others, each in `PARTS` order.
-fn key_order<B: Scope>() -> Vec<usize> {
-    let roles: Vec<_> = B::PARTS.iter().map(PartSpec::role).collect();
-    let positions_of = |role| {
-        roles
-            .iter()
-            .enumerate()
-            .filter(move |&(_, &other)| other == role)
-            .map(|(position, _)| position)
+/// The positions of `B`'s parts in object-key order: the parts of its view `K`
+/// first, then the others, each in `PARTS` order.
+fn key_order<B: Scope, K: Scope>() -> Vec<usize> {
+    const {
+        check_parts(B::PARTS);
+        check_parts(K::PARTS);
+        check_view(K::PARTS, B::PARTS);
     };
 
-    positions_of(PartRole::Keys)
-        .chain(positions_of(PartRole::Bound))
+    let in_view = |position: &usize| {
+        let id = B::PARTS[*position].id();
+        K::PARTS.iter().any(|part| part.id() == id)
+    };
+    let positions = 0..B::PARTS.len();
+
+    positions
+        .clone()
+        .filter(in_view)
+        .chain(positions.filter(|position| !in_view(position)))
         .collect()
 }
 

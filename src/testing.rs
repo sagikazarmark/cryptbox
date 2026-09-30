@@ -31,6 +31,7 @@ use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -86,7 +87,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 /// ```
 /// use cryptbox::{
 ///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId,
-///     KeyScope, Padding, Sealed, Utf8, testing::assert_sealed_under,
+///     Padding, Sealed, Utf8, testing::assert_sealed_under,
 /// };
 ///
 /// struct Iban;
@@ -97,6 +98,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -106,8 +108,8 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     payments: EncryptionKeyring,
 /// }
 ///
-/// impl EncryptionKeySource for AppKeys {
-///     fn encryption_keyring(&self, seal: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+/// impl EncryptionKeySource<()> for AppKeys {
+///     fn encryption_keyring(&self, seal: SealId, (): &()) -> Result<EncryptionKeyring, Error> {
 ///         Ok(if seal == Iban::ID { self.payments.clone() } else { self.general.clone() })
 ///     }
 /// }

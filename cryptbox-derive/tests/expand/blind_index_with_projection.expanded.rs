@@ -20,6 +20,7 @@ const _: () = {
         type Value = Address;
         type Codec = AddressCodec;
         type Scope = ();
+        type Keys = ();
         type Indexes = ();
     }
 };

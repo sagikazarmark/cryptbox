@@ -7,11 +7,9 @@ use crate::id::identifier;
 mod encoding;
 mod part;
 mod presets;
-mod scope;
 
 pub use part::PartType;
 pub use presets::{Tenant, TenantId};
-pub use scope::KeyScope;
 
 identifier!(
     PartId,
@@ -58,7 +56,7 @@ identifier!(
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{FromParts, KeyScope, PartKind, PartSpec, PartValue, PartValues, Scope};
+/// use cryptbox::{FromParts, PartKind, PartSpec, PartValue, PartValues, Scope};
 ///
 /// /// An org scopes keys; a workspace is only bound.
 /// #[derive(Clone, Hash, PartialEq, Eq)]
@@ -92,10 +90,9 @@ identifier!(
 /// }
 ///
 /// let scope = OrgWorkspace { org: [1; 16], workspace: [2; 16] };
-/// let other_workspace = OrgWorkspace { org: [1; 16], workspace: [3; 16] };
 ///
-/// // Both share the org's key scope.
-/// assert_eq!(KeyScope::of(&scope)?, KeyScope::of(&other_workspace)?);
+/// // A scope is built back from its values, as its views are.
+/// assert!(OrgWorkspace::from_parts(scope.values().as_slice())? == scope);
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
 ///
@@ -108,14 +105,15 @@ identifier!(
 /// Unsorted parts fail the build:
 ///
 /// ```compile_fail,E0080
-/// use cryptbox::{KeyScope, PartKind, PartSpec, PartValue, PartValues, Scope};
+/// use cryptbox::{PartKind, PartSpec, PartValue, PartValues, Scope};
+/// # use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Raw, Seal, SealId, Sealed};
 ///
 /// #[derive(Clone, Hash, PartialEq, Eq)]
 /// struct Unsorted;
 ///
 /// impl Scope for Unsorted {
 ///     const PARTS: &'static [PartSpec] = &[
-///         PartSpec::keys(cryptbox::part_id!("c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48"), PartKind::I64),
+///         PartSpec::bound(cryptbox::part_id!("c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48"), PartKind::I64),
 ///         PartSpec::bound(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
 ///     ];
 ///
@@ -123,21 +121,35 @@ identifier!(
 ///         PartValues::from([PartValue::I64(1), PartValue::I64(2)])
 ///     }
 /// }
+/// # struct Bytes;
+/// # impl Seal for Bytes {
+/// #     const ID: SealId = SealId::from_bytes([1; 16]);
+/// #     const PADDING: Padding = Padding::NONE;
+/// #     type Value = Vec<u8>;
+/// #     type Codec = Raw;
+/// #     type Scope = Unsorted;
+/// #     type Keys = ();
+/// #     type Indexes = ();
+/// # }
+/// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 ///
-/// let _ = KeyScope::of(&Unsorted);
+/// // `Bytes` is a seal whose scope is `Unsorted`.
+/// let _ = Sealed::<Bytes>::seal(&Vec::new(), &Unsorted, &keys);
+/// # Ok::<(), cryptbox::Error>(())
 /// ```
 ///
 /// So do duplicate part IDs:
 ///
 /// ```compile_fail,E0080
-/// use cryptbox::{KeyScope, PartKind, PartSpec, PartValue, PartValues, Scope};
+/// use cryptbox::{PartKind, PartSpec, PartValue, PartValues, Scope};
+/// # use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Raw, Seal, SealId, Sealed};
 ///
 /// #[derive(Clone, Hash, PartialEq, Eq)]
 /// struct Duplicate;
 ///
 /// impl Scope for Duplicate {
 ///     const PARTS: &'static [PartSpec] = &[
-///         PartSpec::keys(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
+///         PartSpec::bound(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
 ///         PartSpec::bound(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
 ///     ];
 ///
@@ -145,8 +157,21 @@ identifier!(
 ///         PartValues::from([PartValue::I64(1), PartValue::I64(2)])
 ///     }
 /// }
+/// # struct Bytes;
+/// # impl Seal for Bytes {
+/// #     const ID: SealId = SealId::from_bytes([1; 16]);
+/// #     const PADDING: Padding = Padding::NONE;
+/// #     type Value = Vec<u8>;
+/// #     type Codec = Raw;
+/// #     type Scope = Duplicate;
+/// #     type Keys = ();
+/// #     type Indexes = ();
+/// # }
+/// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 ///
-/// let _ = KeyScope::of(&Duplicate);
+/// // `Bytes` is a seal whose scope is `Duplicate`.
+/// let _ = Sealed::<Bytes>::seal(&Vec::new(), &Duplicate, &keys);
+/// # Ok::<(), cryptbox::Error>(())
 /// ```
 ///
 #[doc = concat!(
@@ -224,24 +249,39 @@ pub(crate) const fn check_view(view: &[PartSpec], scope: &[PartSpec]) {
     );
 }
 
+// Panics become build errors in `const` context. The fingerprint covers the
+// scope's roles, so the keys view custody follows must be exactly its `keys`
+// parts.
+pub(crate) const fn check_keys_view(keys: &[PartSpec], scope: &[PartSpec]) {
+    assert!(
+        is_view(keys, scope),
+        "a seal's keys view must be a view of its scope: its parts must be parts of the \
+         scope, with the same part IDs and kinds"
+    );
+    let mut position = 0;
+    while position < scope.len() {
+        assert!(
+            matches!(scope[position].role, PartRole::Keys)
+                == is_view(std::slice::from_ref(&scope[position]), keys),
+            "a seal's keys view must hold exactly the `keys` parts of its scope"
+        );
+        position += 1;
+    }
+}
+
 // Panics become build errors in `const` context. A query selects index keys
-// from its index scope, so the scope must hold every `keys` part.
-pub(crate) const fn check_index_scope(index: &[PartSpec], scope: &[PartSpec]) {
+// by the keys view projected from its index scope, so the index scope must hold
+// every part of the keys view.
+pub(crate) const fn check_index_scope(index: &[PartSpec], scope: &[PartSpec], keys: &[PartSpec]) {
     assert!(
         is_view(index, scope),
         "a blind index's scope must be a view of its seal's scope: its parts must be parts \
          of the seal's scope, with the same part IDs and kinds"
     );
-    let mut position = 0;
-    while position < scope.len() {
-        if matches!(scope[position].role, PartRole::Keys) {
-            assert!(
-                is_view(std::slice::from_ref(&scope[position]), index),
-                "a blind index's scope must include every `keys` part of its seal's scope"
-            );
-        }
-        position += 1;
-    }
+    assert!(
+        is_view(keys, index),
+        "a blind index's scope must include every part of its seal's keys view"
+    );
 }
 
 /// Builds the view `V` of `scope`, taking each of its parts' values from
@@ -310,6 +350,7 @@ impl<S: Scope> SealScope for S {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = Recorded<Tenant, i64>;
+///     type Keys = Tenant;
 ///     type Indexes = ();
 /// }
 ///
@@ -775,7 +816,6 @@ mod tests {
             hex::encode(domain.as_bytes()),
             "123456781234423482341234567890ab0000"
         );
-        assert_eq!(KeyScope::of(&()).unwrap(), KeyScope::empty());
     }
 
     const TENANT: PartSpec = PartSpec::new([0x11; 16], PartKind::Uuid, PartRole::Keys);
@@ -1035,7 +1075,7 @@ mod tests {
         assert_eq!(domain.fingerprint(), hex_array("76081b730530f822"));
     }
 
-    /// An org is the key scope; a workspace is only bound.
+    /// An org scopes keys; a workspace is only bound.
     #[derive(Clone, Hash, PartialEq, Eq)]
     struct OrgWorkspace {
         org: [u8; 16],

@@ -16,6 +16,7 @@ impl Seal for CustomerEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Recorded<Tenant, i64>;
+    type Keys = Tenant;
     type Indexes = (EmailLookup,);
 }
 
@@ -28,6 +29,7 @@ impl Seal for CustomerNote {
     type Value = String;
     type Codec = Utf8;
     type Scope = Tenant;
+    type Keys = Tenant;
     type Indexes = ();
 }
 
@@ -77,7 +79,7 @@ impl Customer {
         keys: &K,
     ) -> Result<(Sealed<CustomerEmail>, BlindIndex<EmailLookup>), Error>
     where
-        K: EncryptionKeySource + BlindIndexKeySource + ?Sized,
+        K: EncryptionKeySource<Tenant> + BlindIndexKeySource<Tenant> + ?Sized,
     {
         let prepared = Sealed::<CustomerEmail>::prepare(value, (binding, record), keys)?
             .with_index_with::<EmailLookup>(keys)?;
@@ -93,7 +95,7 @@ impl Customer {
         keys: &K,
     ) -> Result<Sealed<CustomerNote>, Error>
     where
-        K: EncryptionKeySource + ?Sized,
+        K: EncryptionKeySource<Tenant> + ?Sized,
     {
         Sealed::<CustomerNote>::seal(value, binding, keys)
     }
@@ -102,10 +104,11 @@ impl Customer {
 impl Record for Customer {
     type Sealed = SealedCustomer;
     type Scope = Tenant;
+    type Keys = Tenant;
 
     fn seal<K>(&self, binding: &Tenant, keys: &K) -> Result<SealedCustomer, Error>
     where
-        K: EncryptionKeySource + BlindIndexKeySource + ?Sized,
+        K: EncryptionKeySource<Tenant> + BlindIndexKeySource<Tenant> + ?Sized,
     {
         let (email, email_lookup) = Self::seal_email(&self.email, binding, &self.id, keys)?;
         let note = Self::seal_note(&self.note, binding, &self.id, keys)?;
@@ -120,7 +123,7 @@ impl Record for Customer {
 
     fn open<K>(sealed: SealedCustomer, binding: &Tenant, keys: &K) -> Result<Self, Error>
     where
-        K: EncryptionKeySource + ?Sized,
+        K: EncryptionKeySource<Tenant> + ?Sized,
     {
         let email = sealed.email.open((binding, &sealed.id), keys)?;
         let note = sealed.note.open(binding, keys)?;

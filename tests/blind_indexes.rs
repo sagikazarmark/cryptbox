@@ -20,6 +20,7 @@ impl Seal for EmailSeal {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -31,6 +32,7 @@ impl Seal for PhoneSeal {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -227,6 +229,7 @@ impl Seal for PersonSeal {
     type Value = Person;
     type Codec = PersonCodec;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -461,6 +464,29 @@ struct OrgWorkspace {
     workspace: Vec<u8>,
 }
 
+/// The keys view of [`OrgWorkspace`]: its org.
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct Org([u8; 16]);
+
+impl Scope for Org {
+    const PARTS: &'static [PartSpec] = &[PartSpec::keys(
+        part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
+        PartKind::Uuid,
+    )];
+    fn values(&self) -> PartValues<'_> {
+        PartValues::from([PartValue::Uuid(self.0)])
+    }
+}
+
+impl FromParts for Org {
+    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
+        match *values {
+            [PartValue::Uuid(org)] => Ok(Self(org)),
+            _ => Err(Error::InvalidBinding),
+        }
+    }
+}
+
 /// The index scope of a ticket search: the org and the region.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct OrgRegion {
@@ -526,6 +552,7 @@ impl Seal for TicketEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Recorded<OrgWorkspace, i64>;
+    type Keys = Org;
     type Indexes = (TicketEmailExact,);
 }
 
@@ -692,6 +719,7 @@ impl Seal for TeamEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Team;
+    type Keys = Team;
     type Indexes = (TeamEmailExact,);
 }
 

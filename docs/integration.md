@@ -151,7 +151,7 @@ test or application component to own its dependencies.
 
 Choosing which keyring protects which seal or scope is application code. Pass
 the payments keyring when sealing an IBAN and the general keyring when sealing an
-email, or implement a key source that picks one by seal or key scope. Opening
+email, or implement a key source that picks one by seal or keys view. Opening
 with the wrong keyring fails loudly with `Error::UnknownEncryptionKey`, as long
 as key IDs are generated UUIDs, unique within a keyring, and never shared across
 keyrings. Sealing with the wrong keyring succeeds silently, so test the choice:

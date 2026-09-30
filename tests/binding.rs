@@ -1,8 +1,11 @@
-//! Public-boundary tests for declared binding scopes and their key scopes.
+//! Public-boundary tests for declared scopes, their keys views, and part types.
+
+use std::sync::Mutex;
 
 use cryptbox::{
-    Error, FromParts, KeyScope, PartKind, PartSpec, PartType, PartValue, PartValues, Scope, Tenant,
-    TenantId, part_id,
+    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, FromParts, Padding, PartKind,
+    PartSpec, PartType, PartValue, PartValues, Raw, Scope, Seal, SealId, Sealed, Tenant, TenantId,
+    part_id, seal_id,
 };
 
 /// An org scopes keys, and a project and a workspace are only bound.
@@ -11,13 +14,6 @@ struct OrgProject {
     org: Vec<u8>,
     project: i64,
     workspace: [u8; 16],
-}
-
-/// A view of `OrgProject`: the org and the project.
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct OrgProjectSearch {
-    org: Vec<u8>,
-    project: i64,
 }
 
 impl Scope for OrgProject {
@@ -44,19 +40,59 @@ impl Scope for OrgProject {
     }
 }
 
-impl Scope for OrgProjectSearch {
-    const PARTS: &'static [PartSpec] = &[
-        PartSpec::keys(
-            part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
-            PartKind::Bytes,
-        ),
-        PartSpec::bound(
-            part_id!("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61"),
-            PartKind::I64,
-        ),
-    ];
+/// The keys view of `OrgProject`: its org.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+struct Org(Vec<u8>);
+
+impl Scope for Org {
+    const PARTS: &'static [PartSpec] = &[PartSpec::keys(
+        part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
+        PartKind::Bytes,
+    )];
     fn values(&self) -> PartValues<'_> {
-        PartValues::from([PartValue::Bytes(&self.org), PartValue::I64(self.project)])
+        PartValues::from([PartValue::Bytes(&self.0)])
+    }
+}
+
+impl FromParts for Org {
+    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
+        match *values {
+            [PartValue::Bytes(org)] => Ok(Self(org.to_vec())),
+            _ => Err(Error::InvalidBinding),
+        }
+    }
+}
+
+struct ProjectNote;
+
+impl Seal for ProjectNote {
+    const ID: SealId = seal_id!("f312c91d-681e-4575-8d29-efdefae5adf3");
+    const PADDING: Padding = Padding::NONE;
+    type Value = Vec<u8>;
+    type Codec = Raw;
+    type Scope = OrgProject;
+    type Keys = Org;
+    type Indexes = ();
+}
+
+/// Records the keys views it is asked by.
+struct SeenOrgs(Mutex<Vec<Org>>, EncryptionKeyring);
+
+impl SeenOrgs {
+    fn new() -> Self {
+        let key = EncryptionKey::generate().unwrap();
+        Self(Mutex::default(), EncryptionKeyring::new(key, []).unwrap())
+    }
+
+    fn seen(self) -> Vec<Org> {
+        self.0.into_inner().unwrap()
+    }
+}
+
+impl EncryptionKeySource<Org> for SeenOrgs {
+    fn encryption_keyring(&self, _: SealId, org: &Org) -> Result<EncryptionKeyring, Error> {
+        self.0.lock().unwrap().push(org.clone());
+        Ok(self.1.clone())
     }
 }
 
@@ -68,60 +104,24 @@ fn scope(org: &[u8], project: i64, workspace: u8) -> OrgProject {
     }
 }
 
-fn key_scope(org: &[u8], project: i64, workspace: u8) -> KeyScope {
-    KeyScope::of(&scope(org, project, workspace)).unwrap()
-}
-
 #[test]
-fn key_scope_is_the_keys_parts_only() {
-    let scope = key_scope(b"acme", 1, 1);
+fn a_key_source_is_asked_by_the_keys_view_alone() {
+    let keys = SeenOrgs::new();
 
-    assert_eq!(key_scope(b"acme", 1, 2), scope, "bound-only workspace");
-    assert_eq!(key_scope(b"acme", 2, 1), scope, "bound-only project");
-    assert_ne!(key_scope(b"globex", 1, 1), scope, "keys org");
-}
+    for scope in [
+        scope(b"acme", 1, 1),
+        scope(b"acme", 1, 2),
+        scope(b"acme", 2, 1),
+        scope(b"globex", 1, 1),
+    ] {
+        Sealed::<ProjectNote>::seal(&b"note".to_vec(), &scope, &keys).unwrap();
+    }
 
-#[test]
-fn key_scope_of_a_view_matches_the_scope() {
-    let search = OrgProjectSearch {
-        org: b"acme".to_vec(),
-        project: 9,
-    };
-
-    assert_eq!(KeyScope::of(&search).unwrap(), key_scope(b"acme", 1, 1));
-}
-
-#[test]
-fn key_scope_hashes_like_it_compares() {
-    let scopes: std::collections::HashSet<_> = [
-        key_scope(b"acme", 1, 1),
-        key_scope(b"acme", 2, 2),
-        key_scope(b"globex", 1, 1),
-    ]
-    .into();
-
-    assert_eq!(scopes.len(), 2);
-}
-
-#[test]
-fn unscoped_bindings_share_one_key_scope() {
-    assert_ne!(
-        KeyScope::of(&()).unwrap(),
-        KeyScope::of(&Tenant(TenantId::from_uuid([1; 16]))).unwrap()
-    );
-}
-
-#[test]
-fn tenants_have_their_own_key_scopes() {
-    let acme = Tenant(TenantId::new("acme").unwrap());
-
+    let (acme, globex) = (Org(b"acme".to_vec()), Org(b"globex".to_vec()));
     assert_eq!(
-        KeyScope::of(&acme).unwrap(),
-        KeyScope::of_keys::<Tenant>(&[PartValue::Bytes(b"acme")]).unwrap()
-    );
-    assert_ne!(
-        KeyScope::of(&acme).unwrap(),
-        KeyScope::of(&Tenant(TenantId::new("globex").unwrap())).unwrap()
+        keys.seen(),
+        [acme.clone(), acme.clone(), acme, globex],
+        "bound-only projects and workspaces share the org's keys view"
     );
 }
 
@@ -153,12 +153,26 @@ impl Scope for Supplied {
     }
 }
 
+struct SuppliedNote;
+
+impl Seal for SuppliedNote {
+    const ID: SealId = seal_id!("2ad30df3-8b86-47cf-9115-b0c78c14aae1");
+    const PADDING: Padding = Padding::NONE;
+    type Value = Vec<u8>;
+    type Codec = Raw;
+    type Scope = Supplied;
+    type Keys = Org;
+    type Indexes = ();
+}
+
 #[test]
-fn key_scope_rejects_invalid_values() {
+fn invalid_scope_values_are_rejected_before_keys_are_asked() {
+    let keys = SeenOrgs::new();
+    let seal = |values| Sealed::<SuppliedNote>::seal(&b"note".to_vec(), &values, &keys);
     let org = || SuppliedValue::Bytes(b"acme".to_vec());
     let workspace = || SuppliedValue::Uuid([1; 16]);
     let valid = Supplied(vec![org(), SuppliedValue::I64(1), workspace()]);
-    assert!(KeyScope::of(&valid).is_ok(), "control");
+    assert!(seal(valid).is_ok(), "control");
 
     let cases = [
         ("missing part", Supplied(vec![org(), SuppliedValue::I64(1)])),
@@ -190,8 +204,9 @@ fn key_scope_rejects_invalid_values() {
     ];
 
     for (case, values) in cases {
-        assert_eq!(KeyScope::of(&values), Err(Error::InvalidBinding), "{case}");
+        assert_eq!(seal(values), Err(Error::InvalidBinding), "{case}");
     }
+    assert_eq!(keys.seen().len(), 1, "only the control asks for keys");
 }
 
 #[test]
@@ -256,34 +271,4 @@ fn presets_reject_part_values_that_do_not_fit() {
         Tenant::from_parts(&[PartValue::Uuid([1; 16])]),
         Err(Error::InvalidBinding)
     );
-}
-
-#[test]
-fn key_scope_of_keys_matches_the_binding() {
-    assert_eq!(
-        KeyScope::of_keys::<OrgProject>(&[PartValue::Bytes(b"acme")]),
-        Ok(key_scope(b"acme", 1, 1))
-    );
-    assert_eq!(KeyScope::of_keys::<()>(&[]), KeyScope::of(&()));
-}
-
-#[test]
-fn key_scope_of_keys_rejects_invalid_values() {
-    let cases: [(&str, &[PartValue<'_>]); 4] = [
-        ("missing part", &[]),
-        (
-            "index part supplied",
-            &[PartValue::Bytes(b"acme"), PartValue::I64(1)],
-        ),
-        ("wrong kind", &[PartValue::I64(1)]),
-        ("empty keys value", &[PartValue::Bytes(b"")]),
-    ];
-
-    for (case, values) in cases {
-        assert_eq!(
-            KeyScope::of_keys::<OrgProject>(values),
-            Err(Error::InvalidBinding),
-            "{case}"
-        );
-    }
 }

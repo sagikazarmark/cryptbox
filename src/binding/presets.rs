@@ -4,7 +4,7 @@ use super::{FromParts, PartKind, PartSpec, PartType, PartValue, PartValues, Scop
 use crate::Error;
 
 // The empty scope: values are bound to their seal ID only. Blind indexes take
-// no arguments, and every value shares one `KeyScope`.
+// no arguments, and every value shares the empty keys view.
 impl Scope for () {
     const PARTS: &'static [PartSpec] = &[];
 

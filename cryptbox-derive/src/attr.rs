@@ -180,6 +180,8 @@ pub(crate) struct Attrs {
     pub(crate) index_args: Option<Ident>,
     pub(crate) part: Option<UuidLiteral>,
     pub(crate) keys: Option<Span>,
+    /// `keys = Type`, a seal's keys view, rather than the `keys` flag of a part.
+    pub(crate) keys_view: Option<Type>,
     pub(crate) index: Option<Span>,
     pub(crate) record_id: Option<Ident>,
     pub(crate) sealed: Option<Ident>,
@@ -246,7 +248,12 @@ impl Attrs {
                 }
                 parsed.seen.push(key);
 
-                let result = if key.is_flag() {
+                let result = if key == Key::Keys && meta.input.peek(Token![=]) {
+                    meta.value().and_then(|input| {
+                        parsed.keys_view = Some(input.parse()?);
+                        Ok(())
+                    })
+                } else if key.is_flag() {
                     parsed.parse_flag(key, &meta)
                 } else if key == Key::Indexes {
                     parse_indexes(meta.input).map(|list| parsed.indexes = Some(list))
@@ -332,6 +339,18 @@ impl Attrs {
         }
 
         Ok(())
+    }
+
+    /// Reports a bare `keys`, which marks a part, where a seal's keys view is
+    /// expected.
+    pub(crate) fn reject_keys_flag(&self, errors: &mut Errors) {
+        if let Some(span) = self.keys {
+            errors.push(syn::Error::new(
+                span,
+                "`keys` needs a value: `keys = View`, the view of the scope that key custody \
+                 follows",
+            ));
+        }
     }
 
     /// Whether `key` appeared, even when its value was invalid and already reported.

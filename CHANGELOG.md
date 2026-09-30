@@ -239,6 +239,23 @@
   change; a seal whose scope had `index` parts gets a new binding fingerprint,
   since those parts are now bound only.
 
+- **Breaking:** key sources are typed by a seal's keys view (ADR-0009).
+  `Seal::Keys` names the view of the scope that key custody follows: exactly its
+  `keys` parts, checked when the seal is first used. `#[derive(Seal)]` and a
+  `#[derive(Record)]` field take `keys = …`, defaulting to the scope, and
+  `Record::Keys` is the keys view all of a record's fields share.
+  `EncryptionKeySource<K>::encryption_keyring(&self, seal, keys: &K)` and
+  `BlindIndexKeySource<K>::blind_index_keyring(&self, index, keys: &K)` receive
+  its values, projected from the binding arguments or a blind index's scope;
+  keyrings and `Keys` implement both for every `K`. `KeyScope` is removed: a
+  keys view is `Hash + Eq`, so a source keys its map by it, such as
+  `HashMap<Tenant, EncryptionKeyring>`. `RowPlanner::for_key_scope` becomes
+  `RowPlanner::for_keys(view, keys, row_args)`; `legacy_binding`,
+  `open_across`, and `probes_across` also name the old keys view, as
+  `legacy_binding::<Old, OldKeys>`. `restate::ObjectKey<B, K = B>` leads with
+  the parts of `K` and takes `prefix(&K)`. The schema manifest's shred unit is
+  the keys view's parts. Stored bytes do not change.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

@@ -107,7 +107,7 @@ original generation. This is the foundation of key rotation.
 Operations take the keyring to use directly. Choosing which keyring protects a
 seal, such as a payments key hierarchy for an IBAN and a general one for an
 email, is application code: pass the right keyring, or implement a **key source**
-that picks one by seal or key scope.
+that picks one by seal or keys view.
 
 The quickstart passes a keyring explicitly as `&keys`, so no global
 installation is needed. For keyring and key-context choices, see

@@ -142,6 +142,12 @@ fn parse_parts<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Part<'
         if attrs.seen(Key::Record) || attrs.seen(Key::Index) {
             continue;
         }
+        if let Some(keys) = &attrs.keys_view {
+            errors.push(syn::Error::new_spanned(
+                keys,
+                "`keys` takes no value on a part: it marks the part as a `keys` part",
+            ));
+        }
         let Some(id) = required(
             attrs.part.take(),
             &attrs,

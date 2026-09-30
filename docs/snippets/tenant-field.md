@@ -2,8 +2,8 @@
 use std::collections::HashMap;
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId, KeyScope,
-    Padding, Recorded, Sealed, Tenant, TenantId, Utf8,
+    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Padding, Recorded, Seal, SealId,
+    Sealed, Tenant, TenantId, Utf8,
 };
 
 struct CustomerEmail;
@@ -14,16 +14,18 @@ impl Seal for CustomerEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = Recorded<Tenant, [u8; 16]>;
+    type Keys = Tenant;
     type Indexes = ();
 }
 
 /// One keyring per tenant, so one tenant's data can be shredded on its own.
-struct TenantKeyrings(HashMap<KeyScope, EncryptionKeyring>);
+struct TenantKeyrings(HashMap<Tenant, EncryptionKeyring>);
 
-impl EncryptionKeySource for TenantKeyrings {
-    fn encryption_keyring(&self, _: SealId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
-        // Cloning a keyring shares its keys. An unknown scope fails closed.
-        self.0.get(scope).cloned().ok_or(Error::KeysUnavailable)
+// Asked by the seal's keys view, `Tenant`.
+impl EncryptionKeySource<Tenant> for TenantKeyrings {
+    fn encryption_keyring(&self, _: SealId, tenant: &Tenant) -> Result<EncryptionKeyring, Error> {
+        // Cloning a keyring shares its keys. An unknown tenant fails closed.
+        self.0.get(tenant).cloned().ok_or(Error::KeysUnavailable)
     }
 }
 
@@ -42,11 +44,11 @@ fn main() -> Result<(), Error> {
     // Ephemeral demo keys: an independent keyring per tenant on every run.
     let keys = TenantKeyrings(HashMap::from([
         (
-            KeyScope::of(&acme)?,
+            acme.clone(),
             EncryptionKeyring::new(EncryptionKey::generate()?, [])?,
         ),
         (
-            KeyScope::of(&globex)?,
+            globex.clone(),
             EncryptionKeyring::new(EncryptionKey::generate()?, [])?,
         ),
     ]));

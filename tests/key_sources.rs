@@ -8,8 +8,8 @@ use std::{
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, IndexId, IndexKeyId, KeyError,
-    KeyId, KeyScope, Keys, Padding, Raw, Seal, SealId, Sealed, Tenant, TenantId, index_id,
-    index_key_id, inspect_blind_index, key_id, seal_id, testing::assert_sealed_under,
+    KeyId, Keys, Padding, Raw, Seal, SealId, Sealed, Tenant, TenantId, index_id, index_key_id,
+    inspect_blind_index, key_id, seal_id, testing::assert_sealed_under,
 };
 use zeroize::Zeroizing;
 
@@ -27,6 +27,7 @@ impl Seal for Email {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -38,6 +39,7 @@ impl Seal for Iban {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -49,6 +51,7 @@ impl Seal for TenantNote {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = Tenant;
+    type Keys = Tenant;
     type Indexes = ();
 }
 
@@ -175,8 +178,8 @@ struct BySeal {
     payments: EncryptionKeyring,
 }
 
-impl EncryptionKeySource for BySeal {
-    fn encryption_keyring(&self, seal: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+impl<K> EncryptionKeySource<K> for BySeal {
+    fn encryption_keyring(&self, seal: SealId, _: &K) -> Result<EncryptionKeyring, Error> {
         Ok(if seal == Iban::ID {
             self.payments.clone()
         } else {
@@ -240,22 +243,22 @@ fn a_keyring_test_fails_for_a_value_sealed_under_another_keyring() {
 }
 
 /// An application source that keeps one keyring per tenant.
-struct ByTenant(HashMap<KeyScope, EncryptionKeyring>);
+struct ByTenant(HashMap<Tenant, EncryptionKeyring>);
 
-impl EncryptionKeySource for ByTenant {
-    fn encryption_keyring(&self, _: SealId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
-        self.0.get(scope).cloned().ok_or(Error::KeysUnavailable)
+impl EncryptionKeySource<Tenant> for ByTenant {
+    fn encryption_keyring(&self, _: SealId, tenant: &Tenant) -> Result<EncryptionKeyring, Error> {
+        self.0.get(tenant).cloned().ok_or(Error::KeysUnavailable)
     }
 }
 
 #[test]
-fn a_source_receives_the_key_scope_of_the_binding() {
+fn a_source_receives_the_keys_view_of_the_binding() {
     let acme = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
     let globex = Tenant(TenantId::new(b"globex".to_vec()).unwrap());
     let initech = Tenant(TenantId::new(b"initech".to_vec()).unwrap());
     let keys = ByTenant(HashMap::from([
-        (KeyScope::of(&acme).unwrap(), keyring(GENERAL_KEY_ID, 1)),
-        (KeyScope::of(&globex).unwrap(), keyring(PAYMENTS_KEY_ID, 2)),
+        (acme.clone(), keyring(GENERAL_KEY_ID, 1)),
+        (globex.clone(), keyring(PAYMENTS_KEY_ID, 2)),
     ]));
 
     let note = b"renewal due".to_vec();
@@ -274,14 +277,13 @@ fn a_source_receives_the_key_scope_of_the_binding() {
 /// An application source that loads each tenant's keyring on first use, as
 /// from a KMS, and caches it behind a lock.
 struct LazyTenants {
-    cache: RwLock<HashMap<KeyScope, EncryptionKeyring>>,
+    cache: RwLock<HashMap<Tenant, EncryptionKeyring>>,
     loads: Mutex<usize>,
 }
 
 impl LazyTenants {
-    fn load(scope: &KeyScope) -> EncryptionKeyring {
-        let acme = KeyScope::of(&Tenant(TenantId::new(b"acme".to_vec()).unwrap())).unwrap();
-        if *scope == acme {
+    fn load(tenant: &Tenant) -> EncryptionKeyring {
+        if *tenant == Tenant(TenantId::new(b"acme".to_vec()).unwrap()) {
             keyring(GENERAL_KEY_ID, 1)
         } else {
             keyring(PAYMENTS_KEY_ID, 2)
@@ -289,9 +291,9 @@ impl LazyTenants {
     }
 }
 
-impl EncryptionKeySource for LazyTenants {
-    fn encryption_keyring(&self, _: SealId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
-        if let Some(keyring) = self.cache.read().unwrap().get(scope) {
+impl EncryptionKeySource<Tenant> for LazyTenants {
+    fn encryption_keyring(&self, _: SealId, tenant: &Tenant) -> Result<EncryptionKeyring, Error> {
+        if let Some(keyring) = self.cache.read().unwrap().get(tenant) {
             return Ok(keyring.clone());
         }
 
@@ -300,8 +302,8 @@ impl EncryptionKeySource for LazyTenants {
             .cache
             .write()
             .unwrap()
-            .entry(scope.clone())
-            .or_insert_with(|| Self::load(scope))
+            .entry(tenant.clone())
+            .or_insert_with(|| Self::load(tenant))
             .clone())
     }
 }
@@ -327,24 +329,21 @@ fn a_source_can_hand_out_keyrings_from_behind_a_lock() {
 }
 
 #[test]
-fn an_unscoped_binding_passes_the_empty_key_scope() {
-    struct SeenScopes(Mutex<Vec<KeyScope>>, EncryptionKeyring);
+fn an_unscoped_seal_passes_the_empty_keys_view() {
+    /// Serves only the empty keys view, and counts how often it is asked.
+    struct EmptyView(Mutex<usize>, EncryptionKeyring);
 
-    impl EncryptionKeySource for SeenScopes {
-        fn encryption_keyring(
-            &self,
-            _: SealId,
-            scope: &KeyScope,
-        ) -> Result<EncryptionKeyring, Error> {
-            self.0.lock().unwrap().push(scope.clone());
+    impl EncryptionKeySource<()> for EmptyView {
+        fn encryption_keyring(&self, _: SealId, (): &()) -> Result<EncryptionKeyring, Error> {
+            *self.0.lock().unwrap() += 1;
             Ok(self.1.clone())
         }
     }
 
-    let keys = SeenScopes(Mutex::default(), keyring(GENERAL_KEY_ID, 1));
+    let keys = EmptyView(Mutex::default(), keyring(GENERAL_KEY_ID, 1));
     Sealed::<Email>::seal(&b"ada".to_vec(), (), &keys).unwrap();
 
-    assert_eq!(*keys.0.lock().unwrap(), [KeyScope::of(&()).unwrap()]);
+    assert_eq!(*keys.0.lock().unwrap(), 1);
 }
 
 /// An application source that keeps payment indexes under their own keyring.
@@ -353,12 +352,8 @@ struct ByIndex {
     payments: BlindIndexKeyring,
 }
 
-impl BlindIndexKeySource for ByIndex {
-    fn blind_index_keyring(
-        &self,
-        index: IndexId,
-        _: &KeyScope,
-    ) -> Result<BlindIndexKeyring, Error> {
+impl<K> BlindIndexKeySource<K> for ByIndex {
+    fn blind_index_keyring(&self, index: IndexId, _: &K) -> Result<BlindIndexKeyring, Error> {
         Ok(if index == IbanLookup::ID {
             self.payments.clone()
         } else {
@@ -431,14 +426,14 @@ fn keys_serve_both_roles() {
 
 #[test]
 fn references_and_shared_encryption_sources_are_sources() {
-    fn seal_with(keys: impl EncryptionKeySource) -> KeyId {
+    fn seal_with(keys: impl EncryptionKeySource<()>) -> KeyId {
         Sealed::<Email>::seal(&b"ada".to_vec(), (), &keys)
             .unwrap()
             .key_id()
     }
 
     let general = keyring(GENERAL_KEY_ID, 1);
-    let dynamic: Arc<dyn EncryptionKeySource> = Arc::new(BySeal {
+    let dynamic: Arc<dyn EncryptionKeySource<()>> = Arc::new(BySeal {
         general: keyring(GENERAL_KEY_ID, 1),
         payments: keyring(PAYMENTS_KEY_ID, 2),
     });
@@ -456,7 +451,7 @@ fn references_and_shared_encryption_sources_are_sources() {
 
 #[test]
 fn references_and_shared_blind_index_sources_are_sources() {
-    fn probe_with(keys: impl BlindIndexKeySource) -> IndexKeyId {
+    fn probe_with(keys: impl BlindIndexKeySource<()>) -> IndexKeyId {
         let probes = EmailLookup::probes_with(b"ada", &(), &keys).unwrap();
         inspect_blind_index(probes[0].as_bytes())
             .unwrap()
@@ -488,32 +483,22 @@ impl BlindIndexSpec for TenantNoteLookup {
 }
 
 /// An application source that keeps one blind-index keyring per tenant.
-struct IndexesByTenant(HashMap<KeyScope, BlindIndexKeyring>);
+struct IndexesByTenant(HashMap<Tenant, BlindIndexKeyring>);
 
-impl BlindIndexKeySource for IndexesByTenant {
-    fn blind_index_keyring(
-        &self,
-        _: IndexId,
-        scope: &KeyScope,
-    ) -> Result<BlindIndexKeyring, Error> {
-        self.0.get(scope).cloned().ok_or(Error::KeysUnavailable)
+impl BlindIndexKeySource<Tenant> for IndexesByTenant {
+    fn blind_index_keyring(&self, _: IndexId, tenant: &Tenant) -> Result<BlindIndexKeyring, Error> {
+        self.0.get(tenant).cloned().ok_or(Error::KeysUnavailable)
     }
 }
 
 #[test]
-fn a_blind_index_source_receives_the_key_scope_of_the_index_arguments() {
+fn a_blind_index_source_receives_the_keys_view_of_the_index_scope() {
     let acme = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
     let globex = Tenant(TenantId::new(b"globex".to_vec()).unwrap());
     let initech = Tenant(TenantId::new(b"initech".to_vec()).unwrap());
     let index_keys = IndexesByTenant(HashMap::from([
-        (
-            KeyScope::of(&acme).unwrap(),
-            index_keyring(GENERAL_INDEX_KEY_ID, 3),
-        ),
-        (
-            KeyScope::of(&globex).unwrap(),
-            index_keyring(PAYMENTS_INDEX_KEY_ID, 4),
-        ),
+        (acme.clone(), index_keyring(GENERAL_INDEX_KEY_ID, 3)),
+        (globex.clone(), index_keyring(PAYMENTS_INDEX_KEY_ID, 4)),
     ]));
     let key_of = |index: &[u8]| inspect_blind_index(index).unwrap().index_key_id();
     let note = b"renewal due".to_vec();

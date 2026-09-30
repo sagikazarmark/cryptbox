@@ -1,9 +1,9 @@
 //! Public-boundary tests for the schema manifest and unique-ID checks.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, IndexId, Padding, PartKind,
-    PartSpec, PartValue, PartValues, Raw, Recorded, Scope, Seal, SealId, Sealed, Tenant, Utf8,
-    index_id, inspect_ciphertext, part_id,
+    BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, FromParts, IndexId, Padding,
+    PartKind, PartSpec, PartValue, PartValues, Raw, Recorded, Scope, Seal, SealId, Sealed, Tenant,
+    Utf8, index_id, inspect_ciphertext, part_id,
     schema::{Duplicate, Manifest},
     seal_id,
 };
@@ -17,6 +17,7 @@ impl Seal for Nickname {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -28,6 +29,7 @@ impl Seal for Avatar {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -62,6 +64,7 @@ impl Seal for TenantNote {
     type Value = String;
     type Codec = Utf8;
     type Scope = Tenant;
+    type Keys = Tenant;
     type Indexes = ();
 }
 
@@ -184,6 +187,38 @@ impl Scope for ProjectScope {
     }
 }
 
+/// The keys view of [`ProjectScope`]: its two `keys` parts.
+#[derive(Clone, Hash, PartialEq, Eq)]
+struct ProjectKeys {
+    region: i64,
+    org: [u8; 16],
+}
+
+impl Scope for ProjectKeys {
+    const PARTS: &'static [PartSpec] = &[
+        PartSpec::keys(
+            part_id!("1a2b3c4d-0000-4000-8000-000000000001"),
+            PartKind::I64,
+        ),
+        PartSpec::keys(
+            part_id!("2b3c4d5e-0000-4000-8000-000000000002"),
+            PartKind::Uuid,
+        ),
+    ];
+    fn values(&self) -> PartValues<'_> {
+        PartValues::from([PartValue::I64(self.region), PartValue::Uuid(self.org)])
+    }
+}
+
+impl FromParts for ProjectKeys {
+    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, cryptbox::Error> {
+        match *values {
+            [PartValue::I64(region), PartValue::Uuid(org)] => Ok(Self { region, org }),
+            _ => Err(cryptbox::Error::InvalidBinding),
+        }
+    }
+}
+
 struct WorkspaceNote;
 
 impl Seal for WorkspaceNote {
@@ -192,6 +227,7 @@ impl Seal for WorkspaceNote {
     type Value = String;
     type Codec = Utf8;
     type Scope = Recorded<ProjectScope, i64>;
+    type Keys = ProjectKeys;
     type Indexes = ();
 }
 
@@ -275,6 +311,7 @@ impl Seal for DisplayName {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -363,6 +400,7 @@ mod serde_codecs {
         type Value = Address;
         type Codec = cryptbox::Json;
         type Scope = ();
+        type Keys = ();
         type Indexes = ();
     }
 
@@ -392,6 +430,7 @@ seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
         type Value = Address;
         type Codec = cryptbox::Postcard;
         type Scope = ();
+        type Keys = ();
         type Indexes = ();
     }
 

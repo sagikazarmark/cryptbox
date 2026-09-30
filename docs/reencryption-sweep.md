@@ -148,32 +148,35 @@ persistent schema, so changing it is a migration: an explicit legacy-binding
 window, a reseal sweep, and lookups over both index declarations until the window
 closes ([ADR-0005](adr/0005-runtime-binding-is-the-core.md)).
 
-A bound seal's sweep is **partitioned by key scope**, because its keys are.
-Configure one planner per key scope with
-`RowPlanner::for_key_scope(key_scope, keys, row_args)`. The key scope comes from
+A bound seal's sweep is **partitioned by its
+[keys view](bindings.md#keys-follow-the-keys-view)**, because its keys are.
+Configure one planner per value of the keys view, such as one org, with
+`RowPlanner::for_keys(view, keys, row_args)`. The keys view comes from
 the job, never from the rows; `row_args` builds each row's `RowArgs` (its
 binding and record ID) from the columns the store loads into
-`SweepRow::columns`. The store selects only that key scope's rows. A row whose
-arguments name another key scope is left alone and counted as `out_of_scope`:
+`SweepRow::columns`. The store selects only that value's rows. A row whose
+arguments project another keys view is left alone and counted as `out_of_scope`:
 an anomaly to investigate, not a row to rewrite. Packaged stores load no
 columns, so a bound seal needs an application-owned `SweepStore`.
 
-Open the window with `RowPlanner::legacy_binding::<Old>(old_keys)`, where `Old`
-is the seal scope the seal had before, such as `()`, `Tenant`, or
-`Recorded<Tenant, i64>`. Its parts take their values from each row's current
-scope by part ID, and when `Old` binds a record, from the row's record ID, which
-a row moving out of a record still passes with `RowArgs::with_record`. The
-window covers adding parts, moving into or out of a record, and changing a role,
-not removing a part or changing its kind. Rows
+Open the window with `RowPlanner::legacy_binding::<Old, OldKeys>(old_keys)`,
+where `Old` is the seal scope the seal had before, such as `()`, `Tenant`, or
+`Recorded<Tenant, i64>`, and `OldKeys` its keys view then, such as `()` or
+`Tenant`. Their parts take their values from each row's current scope by part
+ID, and when `Old` binds a record, from the row's record ID, which a row moving
+out of a record still passes with `RowArgs::with_record`; `old_keys` is asked by
+`OldKeys`. The window covers adding parts, moving into or out of a record, and
+changing the keys view, not removing a part or changing its kind. Rows
 are classified by the binding fingerprint in their header: a row of the old declaration is
 opened under it with `old_keys`, resealed under the current binding, and every
 index derived again, since the index binding may have changed. Rows of any
 other declaration still fail with `Error::BindingMismatch`.
 
-While the window is open, readers use `migrate::probes_across::<Old, S>`, where
-`Old` is the [index scope](bindings.md#choose-each-blind-indexs-scope) `S` had
-before, for probes over both [index bindings](wire-format.md#index-binding) and
-`migrate::open_across::<Old, _>` to open a candidate of either declaration. Close the
+While the window is open, readers use `migrate::probes_across::<Old, OldKeys, S>`,
+where `Old` is the [index scope](bindings.md#choose-each-blind-indexs-scope) `S`
+had before and `OldKeys` its seal's keys view then, for probes over both
+[index bindings](wire-format.md#index-binding) and
+`migrate::open_across::<Old, OldKeys, _>` to open a candidate of either declaration. Close the
 window, and drop the old keys from the readers,
 only after a complete verification pass counts zero `legacy_binding` rows.
 

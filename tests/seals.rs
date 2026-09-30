@@ -57,6 +57,7 @@ impl Seal for HomeAddress {
     type Value = Address;
     type Codec = AddressCodec;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -69,6 +70,7 @@ impl Seal for BillingAddress {
     type Value = Address;
     type Codec = AddressCodec;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -122,6 +124,7 @@ impl Seal for UserEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -133,6 +136,7 @@ impl Seal for SecretUserEmail {
     type Value = Secret<String>;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -144,6 +148,7 @@ impl Seal for ApiToken {
     type Value = Vec<u8>;
     type Codec = Raw;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -155,6 +160,7 @@ impl Seal for SecretApiToken {
     type Value = Secret<Vec<u8>>;
     type Codec = Raw;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 

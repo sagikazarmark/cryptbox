@@ -35,7 +35,7 @@ bytes. With the `derive` feature, each field of the struct is one part:
 ```rust
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 pub struct OrgWorkspace {
-    /// The key scope and shred unit.
+    /// Scopes keys; the shred unit.
     #[cryptbox(part = "59881c28-3003-4047-847f-d7cc73b140e5", keys)]
     pub org: [u8; 16],
     /// Bound only: it separates ciphertext without scoping keys.
@@ -48,12 +48,16 @@ pub struct OrgWorkspace {
     id = "2cef6a47-3e20-42dc-a319-56022cb4cf30",
     value = String,
     scope = cryptbox::Recorded<OrgWorkspace, [u8; 16]>,
+    keys = Org,
     indexes(EmailLookup),
 )]
 pub struct CustomerEmail;
 ```
 
-`EmailLookup` is a blind index over the seal, declared as in the
+`keys = Org` names the seal's [keys view](#keys-follow-the-keys-view): `Org`,
+declared [below](#choose-each-blind-indexs-scope), holds the scope's `keys`
+part. Without `keys`, the keys view is the whole scope, which fits `()` and
+`Tenant`. `EmailLookup` is a blind index over the seal, declared as in the
 [blind-index example](../examples/blind_indexes.rs) with its own
 [index scope](#choose-each-blind-indexs-scope). The derive also implements
 `FromParts`, which builds a scope back from its part values, so a blind index's
@@ -82,9 +86,9 @@ key custody, and it is the decision with the most consequences:
 Two consequences follow from the table:
 
 - **A `keys` part must be known before rows are read.** Keys are resolved from
-  the key scope, and the key scope comes from the `keys` values, so a read that
-  cannot name them has no keyring to open anything with. Every query, job, and sweep is
-  partitioned by key scope; a cross-scope report has to be assembled per scope.
+  the keys view, whose values are the `keys` values, so a read that cannot name
+  them has no keyring to open anything with. Every query, job, and sweep is
+  partitioned by keys view; a cross-scope report has to be assembled per scope.
 - **A role change is a migration** even though the binding bytes do not change,
   because it changes custody. The binding fingerprint covers roles for exactly
   that reason.
@@ -160,8 +164,8 @@ when you asked for one record, compare the opened ID with the one you asked for.
 
 A [migration sweep](reencryption-sweep.md#binding-declaration-changes) has no request
 to take a binding from, so it builds each row's binding from the row's own
-columns. Its key scope still comes from the job, and a row whose `keys` columns
-name another key scope is reported out of scope and left alone. Resealing a
+columns. Its keys view still comes from the job, and a row whose `keys` columns
+project another keys view is reported out of scope and left alone. Resealing a
 value from a declaration that did not bind those columns trusts them once, so sweep
 such a change only over columns the application already trusts.
 
@@ -194,7 +198,7 @@ record is a type error rather than a failed read.
 
 The [tenant example](../examples/tenant_field.rs) is the complete program: a
 seal bound to `Tenant` with a record, one `EncryptionKeyring` per tenant behind a
-`HashMap<KeyScope, _>` key source, and assertions that another record of the same
+`HashMap<Tenant, _>` key source, and assertions that another record of the same
 tenant fails authentication while another tenant's keyring reports
 `UnknownEncryptionKey`. Run it from a checkout, and expect
 `Tenant-bound round trip succeeded.`:
@@ -224,7 +228,7 @@ codec:
   scope. Derive the new indexes from the authenticated plaintext with
   `BlindIndexSpec::derive_with`, and write ciphertext and indexes in one atomic
   write.
-- **A move across key scopes crosses custody.** The value leaves the reach of
+- **A move across keys views crosses custody.** The value leaves the reach of
   the old scope's keys, so it will survive that scope being
   [shredded](shredding.md). Where residency or custody rules apply, treat the
   move as an export.
@@ -244,10 +248,15 @@ rows.
 Removing a part or changing a part's kind is outside that window: those values
 must be resealed under an explicitly planned path of your own.
 
-## Keys follow the key scope
+## Keys follow the keys view
 
-Operations take their keys directly, and the library passes the key source the
-seal and the binding's key scope. Which keyring protects which scope is
+A seal names its **keys view** (`Seal::Keys`, `keys = …`): a view of its scope
+that holds exactly its `keys` parts. Operations take their keys directly, and
+the library passes the key source the seal and the values of its keys view,
+projected from the binding arguments; a key source is typed by it, as
+`EncryptionKeySource<Org>`, and a keys view is `Hash + Eq`, so it can key a map
+of keyrings. A blind index's key source receives the same keys view, projected
+from its index scope. Which keyring protects which scope is
 application code — and sealing with the wrong one succeeds silently. Read
 [choosing keyrings](choosing-keyrings.md) before you wire a scope to a keyring,
 and [shredding](shredding.md) before you rely on destroying one scope's keys.
@@ -288,4 +297,4 @@ Key IDs follow separate rules, in [choosing keyrings](choosing-keyrings.md).
   and search.
 - [Wire format](wire-format.md#binding): the exact binding bytes and the
   binding fingerprint.
-- [Glossary](glossary.md): binding, scope, key scope, shred unit.
+- [Glossary](glossary.md): binding, scope, keys view, shred unit.

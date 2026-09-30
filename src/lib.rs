@@ -98,7 +98,7 @@
 //! `(&tenant, &record)`; a missing or extra record is a type error. Bound
 //! values come from an authorized source, such as the request's verified claims,
 //! never from the stored row. The library passes the key source the seal and the
-//! binding's [`KeyScope`], and choosing which keyring protects which scope is
+//! values of its [keys view](Seal::Keys), here the tenant, and choosing which keyring protects which scope is
 //! application code: sealing with the wrong one succeeds silently, while opening
 //! with it fails loudly. See the [binding guide], [choosing keyrings], and the
 //! [shredding runbook].
@@ -206,8 +206,8 @@ mod value;
 pub use args::Args;
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    FromParts, KeyScope, PartId, PartKind, PartRole, PartSpec, PartType, PartValue, PartValues,
-    RecordId, Recorded, Scope, SealScope, Tenant, TenantId,
+    FromParts, PartId, PartKind, PartRole, PartSpec, PartType, PartValue, PartValues, RecordId,
+    Recorded, Scope, SealScope, Tenant, TenantId,
 };
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexId, IndexList,

@@ -127,10 +127,11 @@ derives every registered index. Stale CryptBox components are rewritten; current
 ones are retained under the [sweep rules](reencryption-sweep.md#sweep-loop).
 
 `RowPlanner::new` serves an unscoped seal without a record. A
-bound seal uses `RowPlanner::for_key_scope(key_scope, keys, row_args)`, one
-planner per key scope, because its keys are scoped too. The key scope comes from
-the job's configuration, never from the rows: a row whose `keys` columns name
-another scope is counted out of scope and left alone. The remaining binding
+bound seal uses `RowPlanner::for_keys(view, keys, row_args)`, one planner per
+value of the seal's [keys view](bindings.md#keys-follow-the-keys-view), such as
+one org, because its keys are scoped too. The keys view comes from the job's
+configuration, never from the rows: a row whose `keys` columns project another
+one is counted out of scope and left alone. The remaining binding
 values and the record do come from the row's own columns, so a migration trusts
 those columns once, in exchange for having no request to authorize them against.
 Migrate only over columns the application already trusts, and establish their

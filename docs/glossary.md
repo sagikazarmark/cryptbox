@@ -9,7 +9,7 @@ or tenant. The binding's *declaration* (its parts and whether it binds a record)
 is persistent schema, declared by the seal; its values are supplied at each call as
 the seal's binding arguments (`Args`). Opening under other values fails
 authentication; opening under another declaration reports a binding mismatch.
-<!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “key scope” is only the `keys` parts. Avoid “context” for any of them: it names only the envelope's input (see Context), and a user-authored context was rejected in ADR-0005. -->
+<!-- Agent guidance: “binding” is the whole domain; “scope” is the declared parts; “keys view” is only the `keys` parts. Avoid “context” for any of them: it names only the envelope's input (see Context), and a user-authored context was rejected in ADR-0005. -->
 
 **Binding arguments**:
 The binding values of one sealing or opening call, typed by the seal (`Args<F>`):
@@ -68,9 +68,10 @@ its binding's encoding and binding fingerprint;
 The generation selected for new encryption or new stored blind indexes.
 
 **Custody**:
-Which keyring's root material protects a seal's values in a key scope. It is an
-application decision that the library neither records nor checks: sealing under
-the wrong keyring succeeds. Record it per seal and key scope, and test it; see
+Which keyring's root material protects a seal's values for a value of its keys
+view. It is an application decision that the library neither records nor
+checks: sealing under the wrong keyring succeeds. Record it per seal and keys
+view, and test it; see
 [choosing keyrings](choosing-keyrings.md).
 <!-- Agent guidance: custody is about whose keys, not about access control or storage location. Sealing with the wrong keyring is a silent write-time error, not an authentication failure. -->
 
@@ -112,16 +113,12 @@ other operation takes keys explicitly.
 An immutable pairing of a generation identifier and root key material. Encryption
 and blind-index generations are separate roles with independently generated keys.
 
-**Key scope**:
-The `keys` parts of a binding, which key custody follows (`KeyScope`). Bindings
-with equal `keys` values share a key scope whatever their other parts; a binding
-without `keys` parts has the empty key scope.
-
 **Key source**:
-What an operation takes its keys from (`EncryptionKeySource`,
-`BlindIndexKeySource`). The operation passes it the seal or index and the key
-scope; a keyring and `Keys` ignore both and return themselves, and an
-application source may pick a keyring by either.
+What an operation takes its keys from (`EncryptionKeySource<K>`,
+`BlindIndexKeySource<K>`). The operation passes it the seal or index and the
+values of the seal's keys view `K`; a keyring and `Keys` ignore both and return
+themselves for every `K`, and an application source may pick a keyring by
+either.
 <!-- Agent guidance: “key provider”, `Router`, and “route” are retired (ADR-0006); choosing which keyring protects a seal is application code, not library routing. -->
 
 **Keyring**:
@@ -129,6 +126,14 @@ The current key generation of one key role plus the previous generations that
 stored data still needs (`EncryptionKeyring`, `BlindIndexKeyring`); `Keys`
 pairs the two roles. Key IDs are generated UUIDs, unique within a keyring and
 never shared across keyrings, so opening with the wrong keyring fails loudly.
+
+**Keys view**:
+The view of a seal's scope that key custody follows (`Seal::Keys`): exactly its
+`keys` parts. Key sources receive its values and are typed by it, so bindings
+with equal `keys` values share one whatever their other parts, and a scope
+without `keys` parts has the empty keys view, `()`. A record has one keys view
+for all of its fields (`Record::Keys`).
+<!-- Agent guidance: `KeyScope`, “key scope”, is the retired, untyped form of the keys view (ADR-0009); do not reintroduce it. -->
 
 **Legacy-binding window**:
 The bounded period in which a seal's values may still be sealed with the
@@ -151,8 +156,8 @@ the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 **Object key**:
 The canonical text form of a scope, usually a blind index's index scope, that
 keys a Restate Virtual Object (`restate::ObjectKey`): the `keys` parts, then the
-other parts, each spelled exactly one way. Every object key of a key scope starts
-with that scope's prefix. It is plaintext to Restate, and it names a scope
+other parts, each spelled exactly one way. Every object key of one value of the
+keys view starts with that value's prefix. It is plaintext to Restate, and it names a scope
 only as far as its caller was authorized for it.
 <!-- Agent guidance: “object key” is Restate's term for the key of a Virtual Object; do not call it a “key” alone, which reads as key material. -->
 
@@ -200,7 +205,7 @@ Applications compare it with a committed snapshot in CI.
 
 **Scope**:
 The declared parts of a binding, such as a tenant, or an org plus a workspace
-(`Scope`). Parts have roles: `keys` parts form the key scope, and other parts
+(`Scope`). Parts have roles: `keys` parts form the keys view, and other parts
 are bound only. A scope struct owns
 its values; a record is never part of it. `()` is the empty scope, with no
 parts: a seal with it is *unscoped*, and binds its values to its seal ID alone.
@@ -233,10 +238,9 @@ only.
 The finest `keys` part whose root keys are stored independently. Destroying
 those root keys makes every value sealed under them unreadable; bound-only
 parts are never shredded on their own. The schema manifest reports the
-finest possible unit, the key scope (all `keys` parts, or the whole keyring
-when there are none), since only the application knows how its root keys are
-stored.
-<!-- Agent guidance: the manifest's shred unit assumes root keys per key scope; a coarser application choice belongs in the seal's custody label. -->
+finest possible unit, the keys view (its parts, or the whole keyring when it
+has none), since only the application knows how its root keys are stored.
+<!-- Agent guidance: the manifest's shred unit assumes root keys per value of the keys view; a coarser application choice belongs in the seal's custody label. -->
 
 **Suite**:
 A complete encryption construction identified by a suite ID, specifying key

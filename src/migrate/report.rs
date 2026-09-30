@@ -20,7 +20,7 @@ pub struct SweepReport {
     ///
     /// A legacy-binding window closes only once a verification pass counts none.
     pub legacy_binding: u64,
-    /// Rows whose binding arguments name another key scope than the planner's.
+    /// Rows whose binding arguments project another keys view than the planner's.
     ///
     /// Such rows are an anomaly, left unread and unwritten; see
     /// [`RowState::OutOfScope`].

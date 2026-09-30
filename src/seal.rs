@@ -1,5 +1,5 @@
 use crate::id::identifier;
-use crate::{Codec, IndexList, Padding, SealScope};
+use crate::{Codec, FromParts, IndexList, Padding, SealScope};
 
 identifier!(SealId, "A stable seal identifier.");
 
@@ -53,6 +53,7 @@ identifier!(SealId, "A stable seal identifier.");
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 /// ```
@@ -60,8 +61,8 @@ identifier!(SealId, "A stable seal identifier.");
 /// With the `derive` feature, `#[derive(Seal)]` writes this impl from
 /// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
 /// taking `String`'s built-in default codec, `Utf8`.
-/// Add `scope = Tenant` or `indexes(EmailLookup)` to set [`Self::Scope`] or
-/// [`Self::Indexes`]. On a type with
+/// Add `scope = Tenant`, `keys = Org`, or `indexes(EmailLookup)` to set
+/// [`Self::Scope`], [`Self::Keys`], or [`Self::Indexes`]. On a type with
 /// fields, the derive makes the type its own value: `codec = Json` encodes it
 /// whole, and `transparent` stores its single field.
 ///
@@ -111,6 +112,44 @@ pub trait Seal: 'static {
     /// The binding's declaration is persistent schema; its values are supplied at
     /// each call. See [`Scope`](crate::Scope) and [`SealScope`].
     type Scope: SealScope;
+
+    /// The keys view: the parts of the scope that key custody follows, which
+    /// key sources receive.
+    ///
+    /// It is a view of the scope, without the record: a scope whose parts are
+    /// parts of [`Self::Scope`], matched by part ID and kind, and whose values
+    /// are projected from the binding arguments by part ID. It must hold exactly
+    /// the scope's `keys` parts, or the build fails when the seal is first used.
+    /// Use the scope itself, such as `()` or `Tenant`, when every part is a
+    /// `keys` part. `#[derive(Seal)]` defaults to the scope. Custody follows it,
+    /// a sweep is partitioned by it, and the schema manifest reports its parts
+    /// as the shred unit. See [`EncryptionKeySource`](crate::EncryptionKeySource).
+    ///
+    /// A keys view that leaves out a `keys` part fails the build:
+    ///
+    /// ```compile_fail,E0080
+    /// use cryptbox::{
+    ///     EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Tenant, TenantId, Utf8,
+    /// };
+    ///
+    /// struct TenantEmail;
+    ///
+    /// impl Seal for TenantEmail {
+    ///     const ID: SealId = SealId::from_bytes([1; 16]);
+    ///     const PADDING: Padding = Padding::NONE;
+    ///     type Value = String;
+    ///     type Codec = Utf8;
+    ///     type Scope = Tenant;
+    ///     type Keys = ();
+    ///     type Indexes = ();
+    /// }
+    ///
+    /// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+    /// let acme = Tenant(TenantId::new("acme")?);
+    /// let _ = Sealed::<TenantEmail>::seal(&"ada".to_owned(), &acme, &keys);
+    /// # Ok::<(), cryptbox::Error>(())
+    /// ```
+    type Keys: FromParts;
 
     /// The blind indexes declared over this seal, as a tuple of
     /// [`BlindIndexSpec`](crate::BlindIndexSpec)s, or `()` for none.

@@ -1,4 +1,6 @@
-use crate::{BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Scope, Seal};
+use crate::{
+    BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, FromParts, Scope, Seal,
+};
 
 /// A row of plaintext values sealed and opened together under one binding.
 ///
@@ -7,8 +9,10 @@ use crate::{BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Sco
 /// each field's blind indexes; [`Self::open`] authenticates and opens them.
 /// Plaintext fields, such as the record ID, are copied as they are.
 ///
-/// Every sealed field shares the record's [`Scope`], and each field whose seal
-/// scope is [`Recorded`](crate::Recorded) is also bound to the record's ID. The
+/// Every sealed field shares the record's [`Scope`] and its
+/// [keys view](Self::Keys), so one key source serves the whole record, and each
+/// field whose seal scope is [`Recorded`](crate::Recorded) is also bound to the
+/// record's ID. The
 /// record ID is never encrypted, so it can be read before the row is opened. The
 /// binding must come from an authorized source, never from the stored row.
 ///
@@ -31,6 +35,10 @@ pub trait Record: Sized {
     /// The binding every sealed field of the record shares.
     type Scope: Scope;
 
+    /// The keys view every sealed field's seal shares, [`Seal::Keys`], by which
+    /// the key source is asked.
+    type Keys: FromParts;
+
     /// Encrypts every sealed field under `binding` and the record's ID, and
     /// derives its blind indexes.
     ///
@@ -39,7 +47,7 @@ pub trait Record: Sized {
     /// Returns any error of sealing a field or deriving one of its indexes.
     fn seal<K>(&self, binding: &Self::Scope, keys: &K) -> Result<Self::Sealed, Error>
     where
-        K: EncryptionKeySource + BlindIndexKeySource + ?Sized;
+        K: EncryptionKeySource<Self::Keys> + BlindIndexKeySource<Self::Keys> + ?Sized;
 
     /// Opens the sealed fields of `sealed` under `binding` and the record's
     /// ID.
@@ -52,7 +60,7 @@ pub trait Record: Sized {
     /// [`Error::AuthenticationFailed`] for a value of another record or binding.
     fn open<K>(sealed: Self::Sealed, binding: &Self::Scope, keys: &K) -> Result<Self, Error>
     where
-        K: EncryptionKeySource + ?Sized;
+        K: EncryptionKeySource<Self::Keys> + ?Sized;
 }
 
 /// A [`Record`] that stores blind index `S` of one of its fields.
@@ -82,7 +90,7 @@ pub fn open_matching<R, S>(
     rows: impl IntoIterator<Item = R::Sealed>,
     query: &S::Query,
     binding: &R::Scope,
-    keys: &(impl EncryptionKeySource + ?Sized),
+    keys: &(impl EncryptionKeySource<R::Keys> + ?Sized),
 ) -> Result<Vec<R>, Error>
 where
     R: IndexedBy<S>,

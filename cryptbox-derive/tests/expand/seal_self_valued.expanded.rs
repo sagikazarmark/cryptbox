@@ -13,6 +13,7 @@ const _: () = {
         type Value = Self;
         type Codec = cryptbox::Json;
         type Scope = ();
+        type Keys = ();
         type Indexes = ();
     }
 };

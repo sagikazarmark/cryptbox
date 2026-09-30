@@ -17,7 +17,7 @@ how to test the choice.
 | A seal's values are sealed under the custody it requires | Your code: never checked |
 
 A keyring, and the `Keys` pair, serve every seal and scope alike: they ignore
-the seal and key scope the library passes them and return themselves. To keep
+the seal and keys view the library passes them and return themselves. To keep
 seals or scopes apart, pass each call the keyring it needs, or implement a key
 source that picks one.
 
@@ -80,17 +80,21 @@ table of one row per seal:
 Derive that table from the same constant your key source reads, so the code and
 the review artifact cannot drift, and treat a diff to it as a review gate: a
 seal moving between custody labels is a migration of who can read the data, not
-a refactor. A seal with no `keys` part has the empty key scope and cannot be
+a refactor. A seal with no `keys` part has the empty keys view, `()`, and cannot be
 shredded on its own; say so explicitly rather than leaving it blank.
 
 ## Implement a key source
 
 A key source is synchronous and must not do I/O on the sealing path. Load and
 refresh keys outside these calls and serve a local snapshot:
-`encryption_keyring(seal, scope)` receives the seal and the binding's key scope
-and returns the keyring that protects them, or an error. The
-[tenant example](../examples/tenant_field.rs) implements it over a
-`HashMap<KeyScope, EncryptionKeyring>` in six lines.
+`encryption_keyring(seal, keys)` receives the seal and the values of its
+[keys view](bindings.md#keys-follow-the-keys-view), `Seal::Keys`, and returns
+the keyring that protects them, or an error. A source is typed by the keys view
+it serves, `EncryptionKeySource<K>`; one that serves any seal alike implements
+it for every `K`, as a keyring does. The
+[tenant example](../examples/tenant_field.rs) implements
+`EncryptionKeySource<Tenant>` over a `HashMap<Tenant, EncryptionKeyring>` in
+six lines.
 
 The signature returns the keyring **by value**, and cloning one shares its keys
 rather than copying material, which is what makes refreshing simple:
@@ -101,9 +105,9 @@ rather than copying material, which is what makes refreshing simple:
   [custom-field example](../examples/custom_field/main.rs)'s
   `CachedEncryptionKeys` holds its snapshot in an `RwLock` and replaces it
   wholesale.
-- **Cache per scope.** `KeyScope` is owned and implements `Hash + Eq`, so it is
-  a map key: the [tenant example](../examples/tenant_field.rs) resolves one
-  keyring per tenant through a `HashMap<KeyScope, EncryptionKeyring>`.
+- **Cache per scope.** A keys view is a scope, so it is owned and implements
+  `Hash + Eq`, and is a map key: the [tenant example](../examples/tenant_field.rs)
+  resolves one keyring per tenant through a `HashMap<Tenant, EncryptionKeyring>`.
 - **Fail closed.** Return `Error::KeysUnavailable` when the snapshot is not
   loaded or the scope is unknown, rather than falling back to another scope's
   keys. A refresh that fails must not widen access.
@@ -161,7 +165,7 @@ plaintext, and copies outside the inventory are unaffected by any of it. See
 
 ## What to read next
 
-- [Bindings](bindings.md): what a key scope is and which part defines it.
+- [Bindings](bindings.md): what a keys view is and which parts define it.
 - [Shredding a scope](shredding.md): the runbook and its prerequisites.
 - [Key lifecycle](key-rotation.md): staging, promotion, rollback, retirement.
 - [Custom-field example](../examples/custom_field/README.md#implementor-obligations):

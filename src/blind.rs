@@ -5,9 +5,9 @@ use zeroize::Zeroizing;
 
 use crate::{
     BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, Error,
-    FromParts, IndexKeyId, KeyScope, Scope, Seal,
-    args::{PartsOf, Target},
-    binding::{check_index_scope, project_view},
+    FromParts, IndexKeyId, Scope, Seal,
+    args::{KeysOf, PartsOf, Target},
+    binding::{check_index_scope, check_keys_view, project_view},
     id::identifier,
     keys,
 };
@@ -36,7 +36,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// selects index keys from it. Each operation takes a value of that index scope
 /// and derives in it; an unscoped index passes `&()`. Equal values under other
 /// index-scope values derive unrelated indexes, and the key source receives the
-/// index scope's [`KeyScope`](crate::KeyScope). Parts left out of the index
+/// seal's [keys view](Seal::Keys), projected from the index scope. Parts left out of the index
 /// scope and the record never scope an index, and two indexes over one seal may
 /// partition differently. See the [index binding].
 ///
@@ -59,6 +59,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -99,6 +100,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = ();
+/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// struct ZeroBits;
@@ -127,6 +129,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = ();
+/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// struct TooManyBits;
@@ -158,6 +161,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = Tenant;
+/// #     type Keys = Tenant;
 /// #     type Indexes = ();
 /// # }
 /// struct AcrossTenants;
@@ -190,6 +194,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
 /// #     type Scope = ();
+/// #     type Keys = ();
 /// #     type Indexes = ();
 /// # }
 /// struct PerTenant;
@@ -302,7 +307,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     fn derive_with(
         value: &<Self::Seal as Seal>::Value,
         scope: &Self::Scope,
-        keys: &(impl BlindIndexKeySource + ?Sized),
+        keys: &(impl BlindIndexKeySource<<Self::Seal as Seal>::Keys> + ?Sized),
     ) -> Result<BlindIndex<Self>, Error> {
         derive_value::<Self>(value, &index_target::<Self>(scope)?, keys)
     }
@@ -325,7 +330,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     fn probes_with(
         query: &Self::Query,
         scope: &Self::Scope,
-        keys: &(impl BlindIndexKeySource + ?Sized),
+        keys: &(impl BlindIndexKeySource<<Self::Seal as Seal>::Keys> + ?Sized),
     ) -> Result<Vec<BlindIndex<Self>>, Error> {
         derive_probes::<Self>(query, scope, keys)
     }
@@ -390,7 +395,7 @@ pub trait BlindIndexSpec: Sized + 'static {
         value: &<Self::Seal as Seal>::Value,
         stored: &BlindIndex<Self>,
         scope: &Self::Scope,
-        keys: &(impl BlindIndexKeySource + ?Sized),
+        keys: &(impl BlindIndexKeySource<<Self::Seal as Seal>::Keys> + ?Sized),
     ) -> Result<bool, Error> {
         check_consistency::<Self>(value, stored, scope, keys)
     }
@@ -416,6 +421,7 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = (InviteEmailLookup,);
 /// }
 ///
@@ -427,6 +433,7 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Scope = ();
+///     type Keys = ();
 ///     type Indexes = (InviteEmailLookup,);
 /// }
 ///
@@ -634,10 +641,10 @@ impl<Spec> fmt::Debug for BlindIndexRef<'_, Spec> {
 /// `Spec`'s seal.
 pub(crate) fn derive_value<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
-    target: &Target,
-    keys: &(impl BlindIndexKeySource + ?Sized),
+    target: &IndexTarget<Spec>,
+    keys: &(impl BlindIndexKeySource<KeysOf<Spec::Seal>> + ?Sized),
 ) -> Result<BlindIndex<Spec>, Error> {
-    let key = keyring::<Spec>(keys, target)?.current().clone();
+    let key = keyring::<Spec, _>(keys, target)?.current().clone();
 
     derive_value_with_key::<Spec>(value, &target.domain, &key)
 }
@@ -646,10 +653,10 @@ pub(crate) fn derive_value<Spec: BlindIndexSpec>(
 /// `domain`, an index domain of `Spec`'s seal.
 #[cfg(feature = "migrate")]
 pub(crate) fn current_key_id<Spec: BlindIndexSpec>(
-    target: &Target,
-    keys: &dyn BlindIndexKeySource,
+    target: &IndexTarget<Spec>,
+    keys: &dyn BlindIndexKeySource<KeysOf<Spec::Seal>>,
 ) -> Result<IndexKeyId, Error> {
-    Ok(keyring::<Spec>(keys, target)?.current().id())
+    Ok(keyring::<Spec, _>(keys, target)?.current().id())
 }
 
 fn derive_value_with_key<Spec: BlindIndexSpec>(
@@ -665,21 +672,21 @@ fn derive_value_with_key<Spec: BlindIndexSpec>(
 fn derive_probes<Spec: BlindIndexSpec>(
     query: &Spec::Query,
     scope: &Spec::Scope,
-    keys: &(impl BlindIndexKeySource + ?Sized),
+    keys: &(impl BlindIndexKeySource<KeysOf<Spec::Seal>> + ?Sized),
 ) -> Result<Vec<BlindIndex<Spec>>, Error> {
-    probes_in::<Spec>(query, &index_target::<Spec>(scope)?, keys)
+    probes_in::<Spec, _>(query, &index_target::<Spec>(scope)?, keys)
 }
 
-/// Derives one probe of `Spec` in `domain`, an index domain of `Spec`'s seal,
-/// for every readable index generation.
-pub(crate) fn probes_in<Spec: BlindIndexSpec>(
+/// Derives one probe of `Spec` in `target`, an index target of `Spec`'s seal
+/// under any keys view, for every readable index generation.
+pub(crate) fn probes_in<Spec: BlindIndexSpec, K>(
     query: &Spec::Query,
-    target: &Target,
-    keys: &(impl BlindIndexKeySource + ?Sized),
+    target: &Target<K>,
+    keys: &(impl BlindIndexKeySource<K> + ?Sized),
 ) -> Result<Vec<BlindIndex<Spec>>, Error> {
     let normalized = Spec::normalize_query(query)?;
 
-    keyring::<Spec>(keys, target)?
+    keyring::<Spec, _>(keys, target)?
         .readable()
         .map(|key| derive_normalized::<Spec>(&normalized, &target.domain, key))
         .collect()
@@ -689,11 +696,11 @@ fn check_consistency<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
     stored: &BlindIndex<Spec>,
     scope: &Spec::Scope,
-    keys: &(impl BlindIndexKeySource + ?Sized),
+    keys: &(impl BlindIndexKeySource<KeysOf<Spec::Seal>> + ?Sized),
 ) -> Result<bool, Error> {
     let target = index_target::<Spec>(scope)?;
     let id = stored.index_key_id();
-    let key = keyring::<Spec>(keys, &target)?
+    let key = keyring::<Spec, _>(keys, &target)?
         .get(id)
         .cloned()
         .ok_or(Error::UnknownBlindIndexKey(id))?;
@@ -703,21 +710,30 @@ fn check_consistency<Spec: BlindIndexSpec>(
     Ok(derived.as_bytes().ct_eq(stored.as_bytes()).into())
 }
 
+/// The index binding of `Spec`, with its seal's keys view.
+pub(crate) type IndexTarget<Spec> = Target<KeysOf<<Spec as BlindIndexSpec>::Seal>>;
+
 // Blind indexes are domain-separated by their seal and their index scope, never
 // by the parts it leaves out or a record.
-pub(crate) fn index_target<Spec: BlindIndexSpec>(scope: &Spec::Scope) -> Result<Target, Error> {
+pub(crate) fn index_target<Spec: BlindIndexSpec>(
+    scope: &Spec::Scope,
+) -> Result<IndexTarget<Spec>, Error> {
     const {
+        check_keys_view(
+            <KeysOf<Spec::Seal> as Scope>::PARTS,
+            <PartsOf<Spec::Seal> as Scope>::PARTS,
+        );
         check_index_scope(
             <Spec::Scope as Scope>::PARTS,
             <PartsOf<Spec::Seal> as Scope>::PARTS,
+            <KeysOf<Spec::Seal> as Scope>::PARTS,
         );
     };
 
     Ok(Target {
         domain: BindingDomain::index(<Spec::Seal as Seal>::ID.as_bytes(), scope)?,
-        // The index scope holds every `keys` part of the seal's scope, with the
-        // seal's roles.
-        key_scope: KeyScope::projected::<PartsOf<Spec::Seal>, _>(scope)?,
+        // The index scope holds every part of the keys view.
+        keys: project_view(scope)?,
     })
 }
 
@@ -725,16 +741,16 @@ pub(crate) fn index_target<Spec: BlindIndexSpec>(scope: &Spec::Scope) -> Result<
 /// seal is sealed under, and encodes its index target.
 pub(crate) fn projected_target<Spec: BlindIndexSpec>(
     scope: &PartsOf<Spec::Seal>,
-) -> Result<Target, Error> {
+) -> Result<IndexTarget<Spec>, Error> {
     index_target::<Spec>(&project_view::<Spec::Scope, _>(scope)?)
 }
 
-// Asks the source for the keyring of the index in the target's key scope.
-fn keyring<Spec: BlindIndexSpec>(
-    keys: &(impl BlindIndexKeySource + ?Sized),
-    target: &Target,
+// Asks the source for the keyring of the index for the target's keys view.
+fn keyring<Spec: BlindIndexSpec, K>(
+    keys: &(impl BlindIndexKeySource<K> + ?Sized),
+    target: &Target<K>,
 ) -> Result<BlindIndexKeyring, Error> {
-    keys.blind_index_keyring(Spec::ID, &target.key_scope)
+    keys.blind_index_keyring(Spec::ID, &target.keys)
 }
 
 fn compare_normalized<Spec: BlindIndexSpec>(

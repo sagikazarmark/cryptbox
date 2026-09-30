@@ -10,7 +10,7 @@ use std::{
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId,
-    KeyScope, Padding, Seal, SealId, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
+    Padding, Seal, SealId, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
     inspect_ciphertext, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
@@ -33,6 +33,7 @@ impl Seal for UserEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -44,6 +45,7 @@ impl Seal for PaddedUserEmail {
     type Value = String;
     type Codec = Utf8;
     type Scope = ();
+    type Keys = ();
     type Indexes = ();
 }
 
@@ -1026,14 +1028,14 @@ fn assert_verification_aborts_without_keys(sweep: &Sweep<'_, UserEmail>) {
 /// A key source whose keys are not loaded.
 struct UnloadedKeys;
 
-impl EncryptionKeySource for UnloadedKeys {
-    fn encryption_keyring(&self, _: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+impl<K> EncryptionKeySource<K> for UnloadedKeys {
+    fn encryption_keyring(&self, _: SealId, _: &K) -> Result<EncryptionKeyring, Error> {
         Err(Error::KeysUnavailable)
     }
 }
 
-impl BlindIndexKeySource for UnloadedKeys {
-    fn blind_index_keyring(&self, _: IndexId, _: &KeyScope) -> Result<BlindIndexKeyring, Error> {
+impl<K> BlindIndexKeySource<K> for UnloadedKeys {
+    fn blind_index_keyring(&self, _: IndexId, _: &K) -> Result<BlindIndexKeyring, Error> {
         Err(Error::KeysUnavailable)
     }
 }
