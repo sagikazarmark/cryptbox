@@ -28,9 +28,10 @@ use crate::{
 /// of its partition, in part ID order.
 ///
 /// Each record lists the seal IDs of its sealed fields, the field that holds
-/// its record ID, its bound fields, and its plaintext fields. A field stored as
-/// it is has no ID, so the manifest names it, and a field that should have been
-/// sealed shows up in the snapshot.
+/// its record ID, its bound fields, its plaintext fields, and the fields whose
+/// legacy declaration is still opened. A field stored as it is has no ID, so
+/// the manifest names it, and a field that should have been sealed shows up in
+/// the snapshot.
 ///
 /// The output names IDs, never Rust types, so it is the same on every
 /// toolchain and survives renaming or moving a marker; a record's field names
@@ -81,6 +82,7 @@ struct RecordEntry {
     record_id: &'static str,
     bound: &'static [&'static str],
     plaintext: &'static [&'static str],
+    legacy: &'static [&'static str],
 }
 
 #[derive(Debug)]
@@ -170,6 +172,7 @@ impl Manifest {
                 record_id: R::RECORD_ID,
                 bound: R::BOUND,
                 plaintext: R::PLAINTEXT,
+                legacy: R::LEGACY,
             });
         }
         self
@@ -299,6 +302,10 @@ impl fmt::Display for Manifest {
             match record.plaintext {
                 [] => writeln!(formatter, "  plaintext: none")?,
                 fields => writeln!(formatter, "  plaintext: {}", fields.join(", "))?,
+            }
+            // Listed only while a window is open, so closing one shows in the diff.
+            if !record.legacy.is_empty() {
+                writeln!(formatter, "  legacy: {}", record.legacy.join(", "))?;
             }
         }
 

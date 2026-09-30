@@ -383,6 +383,22 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 /// | `across(field, …)` | no | The bound fields the index spans. It is partitioned by the others. |
 /// | `column = name` | no | The stored form's index column. Defaults to the field's name and `_index`. |
 ///
+/// A sealed field's `legacy(…)` names the declaration it had before, so rows
+/// sealed with it still open while their values are resealed:
+///
+/// | `legacy(…)` key | Meaning |
+/// | --- | --- |
+/// | `seal = "…"` | Its seal ID. Defaults to the current one. |
+/// | `bound(field, …)` | The bound fields it bound, in order. Defaults to none. |
+/// | `record = bool` | Whether it bound the record ID. Defaults to `true`. |
+///
+/// `Record::open` opens a value under the declaration its header names, and
+/// `Record::seal` always writes the current one. The derive declares the old
+/// declaration as a seal, named after the field's and `Legacy`, such as
+/// `CustomerEmailLegacy`, for a sweep's `RowPlanner::legacy_seal`. The
+/// schema manifest lists the fields whose window is open; delete `legacy(…)`
+/// to close it once a verification pass counts no legacy rows.
+///
 /// On the record, `#[cryptbox(stored(…))]` names the stored form, with
 /// `name = Name` (by default `Stored` and the record's name, such as
 /// `StoredCustomer`), and forwards every other attribute to it, such as

@@ -7,7 +7,7 @@ mod part;
 mod presets;
 
 pub(crate) use bound_id::OwnedBinding;
-pub use bound_id::bound_values;
+pub(crate) use bound_id::bound_values;
 #[cfg(feature = "restate")]
 pub(crate) use bound_id::from_part_values;
 pub use bound_id::{BoundId, BoundList, BoundValues};

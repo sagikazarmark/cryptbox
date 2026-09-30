@@ -100,7 +100,9 @@ pub trait BoundValues<'a, L: BoundList>: sealed::Values<'a, L> {}
 impl<'a, L: BoundList, V: sealed::Values<'a, L>> BoundValues<'a, L> for V {}
 
 /// Returns the part values of `values`, in list order.
-pub fn bound_values<'a, L: BoundList>(values: impl BoundValues<'a, L>) -> Vec<PartValue<'a>> {
+pub(crate) fn bound_values<'a, L: BoundList>(
+    values: impl BoundValues<'a, L>,
+) -> Vec<PartValue<'a>> {
     sealed::Values::part_values(values)
 }
 

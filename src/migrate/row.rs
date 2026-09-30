@@ -302,6 +302,34 @@ where
         self
     }
 
+    /// Opens a legacy window for the declaration of seal `L`, such as the legacy
+    /// seal `#[derive(Record)]` declares for a field's `legacy(…)`: rows sealed
+    /// with it are opened under `L`'s seal ID and binding declaration with `keys`,
+    /// and resealed under the current seal.
+    ///
+    /// It is [`Self::legacy_binding`] for a legacy declaration that may name
+    /// another seal ID. Rows are found by their header's binding fingerprint, so a
+    /// declaration that differs only in its seal ID is not detected: its rows are
+    /// classified as the current declaration's.
+    #[must_use]
+    pub fn legacy_seal<L: Seal<Value = F::Value>>(mut self, keys: &'a EncryptionKeyring) -> Self {
+        self.legacy_declarations.push(LegacyDeclaration {
+            fingerprint: declaration_fingerprint::<L::Bound, L::Record>(),
+            recorded: <L::Record as RecordIdType>::RECORD.is_some(),
+            domain: |values, record| {
+                BindingDomain::projected::<L::Bound, L::Record>(
+                    L::ID.as_bytes(),
+                    <F::Bound as BoundList>::PARTS,
+                    values,
+                    record,
+                )
+            },
+            keys,
+        });
+
+        self
+    }
+
     /// Registers the next blind-index column.
     ///
     /// Columns are positional: registration order must match the order in

@@ -242,8 +242,7 @@ pub mod __private {
     pub use uuid;
     pub use zeroize::Zeroizing;
 
-    pub use crate::args::InRecord;
-    pub use crate::binding::bound_values;
     pub use crate::codec::DefaultCodec;
+    pub use crate::record::open_legacy;
     pub use crate::schema::{has_duplicate, writes_declared_indexes};
 }

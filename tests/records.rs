@@ -468,3 +468,139 @@ mod sqlite {
         );
     }
 }
+
+/// A contact's email, as it was sealed before it moved into its record:
+/// unbound.
+struct UnboundEmail;
+
+impl Seal for UnboundEmail {
+    const ID: SealId = cryptbox::seal_id!("9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
+    type Bound = ();
+    type Record = ();
+    type Indexes = ();
+}
+
+/// A contact whose email is now bound to its org and record, and whose note
+/// moved from another seal ID.
+#[derive(Debug, PartialEq, Record)]
+#[cryptbox(stored(derive(Clone)))]
+struct Contact {
+    #[cryptbox(record_id)]
+    id: i64,
+    #[cryptbox(bound)]
+    org: OrgId,
+    #[cryptbox(seal = "9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24")]
+    #[cryptbox(legacy(record = false))]
+    email: String,
+    #[cryptbox(seal = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38")]
+    #[cryptbox(legacy(seal = "4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95", bound(org)))]
+    note: String,
+}
+
+/// The seal `Contact::note` had before: another ID, the same binding.
+struct OldNote;
+
+impl Seal for OldNote {
+    const ID: SealId = cryptbox::seal_id!("4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
+    type Bound = (OrgId,);
+    type Record = i64;
+    type Indexes = ();
+}
+
+fn legacy_contact(keys: &EncryptionKeyring) -> StoredContact {
+    let email = Sealed::<UnboundEmail>::seal(&"ada@example.com".to_owned(), (), keys).unwrap();
+    let note = Sealed::<OldNote>::seal(&"VIP".to_owned(), (&ACME, &7), keys).unwrap();
+
+    StoredContact {
+        id: 7,
+        org: ACME,
+        email: Sealed::from_bytes(email.into_bytes()).unwrap(),
+        note: Sealed::from_bytes(note.into_bytes()).unwrap(),
+    }
+}
+
+#[test]
+fn a_legacy_window_opens_rows_sealed_with_the_old_declaration() {
+    let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+    let contact = Contact {
+        id: 7,
+        org: ACME,
+        email: "ada@example.com".to_owned(),
+        note: "VIP".to_owned(),
+    };
+
+    assert_eq!(
+        Contact::open(legacy_contact(&keys), &keys).unwrap(),
+        contact
+    );
+    // New rows are written with the current declaration, and read back.
+    assert_eq!(
+        Contact::open(contact.seal(&keys).unwrap(), &keys).unwrap(),
+        contact
+    );
+}
+
+#[test]
+fn a_legacy_window_still_authenticates_the_row() {
+    let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+    let moved = StoredContact {
+        org: GLOBEX,
+        ..legacy_contact(&keys)
+    };
+
+    assert_eq!(
+        Contact::open(moved, &keys).unwrap_err(),
+        Error::AuthenticationFailed
+    );
+}
+
+#[test]
+fn the_manifest_lists_open_legacy_windows() {
+    let manifest = cryptbox::schema::Manifest::new()
+        .record::<Contact>()
+        .to_string();
+
+    assert!(manifest.ends_with("  legacy: email, note\n"), "{manifest}");
+}
+
+#[cfg(feature = "migrate")]
+mod sweep {
+    use cryptbox::{
+        EncryptionKey, EncryptionKeyring, Record,
+        migrate::{RowArgs, RowPlanner, RowState},
+    };
+
+    use super::{ACME, Contact, ContactEmail, ContactEmailLegacy, StoredContact, legacy_contact};
+
+    #[test]
+    fn a_planner_reseals_rows_of_a_legacy_seal() {
+        let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+        let row = legacy_contact(&keys);
+        let planner = RowPlanner::<ContactEmail, StoredContact>::for_rows(&keys, |row| {
+            Ok(RowArgs::new(&row.org).with_record(row.id.into()))
+        })
+        .legacy_seal::<ContactEmailLegacy>(&keys);
+
+        let outcome = planner.plan_row(&row, row.email.as_bytes(), &[]).unwrap();
+
+        assert_eq!(outcome.state(), RowState::LegacyBinding);
+        let resealed = StoredContact {
+            email: cryptbox::Sealed::from_bytes(outcome.write().unwrap().ciphertext()).unwrap(),
+            ..row
+        };
+        assert_eq!(
+            resealed.email.open((&ACME, &7), &keys).unwrap(),
+            "ada@example.com"
+        );
+        assert_eq!(
+            Contact::open(resealed, &keys).unwrap().email,
+            "ada@example.com"
+        );
+    }
+}

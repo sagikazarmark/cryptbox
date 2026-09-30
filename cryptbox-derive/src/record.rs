@@ -32,6 +32,19 @@ struct Sealing {
     padding: Option<Padding>,
     name: Option<Ident>,
     indexes: Vec<IndexDecl>,
+    legacy: Option<LegacyDecl>,
+}
+
+/// The declaration a sealed field had before, which values sealed with it are
+/// still opened under.
+struct LegacyDecl {
+    span: Span,
+    /// Its seal ID, or `None` for the current one.
+    seal: Option<UuidLiteral>,
+    /// The bound fields it bound.
+    bound: Vec<Ident>,
+    /// Whether it bound the record ID.
+    record: bool,
 }
 
 /// A blind index a sealed field writes.
@@ -125,6 +138,7 @@ struct FieldAttrs {
     padding: Option<(Span, Padding)>,
     name: Option<(Span, Ident)>,
     indexes: Vec<IndexDecl>,
+    legacy: Option<LegacyDecl>,
     stored: Vec<Meta>,
     malformed: bool,
 }
@@ -152,6 +166,8 @@ fn parse_field_attrs(field: &syn::Field, ident: &Ident, errors: &mut Errors) -> 
                 parsed.name = Some((span, meta.value()?.parse()?));
             } else if meta.path.is_ident("blind_index") {
                 parsed.indexes.push(parse_index(ident, &meta)?);
+            } else if meta.path.is_ident("legacy") {
+                parsed.legacy = Some(parse_legacy(&meta)?);
             } else if meta.path.is_ident("stored") {
                 parsed.stored.extend(parse_stored(&meta)?);
             } else {
@@ -211,6 +227,7 @@ fn parse_field<'a>(field: &'a syn::Field, errors: &mut Errors) -> Option<Field<'
             padding: attrs.padding.take().map(|(_, padding)| padding),
             name: attrs.name.take().map(|(_, name)| name),
             indexes: std::mem::take(&mut attrs.indexes),
+            legacy: attrs.legacy.take(),
         }))
     } else {
         let configured = [
@@ -222,6 +239,12 @@ fn parse_field<'a>(field: &'a syn::Field, errors: &mut Errors) -> Option<Field<'
             errors.push(syn::Error::new(
                 span,
                 format!("`{key}` configures a field's seal; `{ident}` is not sealed"),
+            ));
+        }
+        if let Some(legacy) = &attrs.legacy {
+            errors.push(syn::Error::new(
+                legacy.span,
+                format!("`{ident}` is not sealed, so it has no legacy declaration"),
             ));
         }
         for index in &attrs.indexes {
@@ -249,6 +272,37 @@ fn parse_field<'a>(field: &'a syn::Field, errors: &mut Errors) -> Option<Field<'
         role,
         stored: attrs.stored,
     })
+}
+
+fn parse_legacy(meta: &ParseNestedMeta<'_>) -> syn::Result<LegacyDecl> {
+    let mut legacy = LegacyDecl {
+        span: meta.path.span(),
+        seal: None,
+        bound: Vec::new(),
+        record: true,
+    };
+
+    meta.parse_nested_meta(|inner| {
+        if inner.path.is_ident("seal") {
+            legacy.seal = Some(parse_uuid("seal", inner.value()?)?);
+        } else if inner.path.is_ident("bound") {
+            let content;
+            syn::parenthesized!(content in inner.input);
+            legacy
+                .bound
+                .extend(Punctuated::<Ident, Token![,]>::parse_terminated(&content)?);
+        } else if inner.path.is_ident("record") {
+            legacy.record = inner.value()?.parse::<syn::LitBool>()?.value;
+        } else {
+            return Err(inner.error(format!(
+                "unknown `legacy` key `{}`; expected one of `seal`, `bound`, or `record`",
+                path_string(&inner.path)
+            )));
+        }
+        Ok(())
+    })?;
+
+    Ok(legacy)
 }
 
 fn parse_index(field: &Ident, meta: &ParseNestedMeta<'_>) -> syn::Result<IndexDecl> {
@@ -423,6 +477,19 @@ fn check_record(name: &Ident, fields: &[Field<'_>], errors: &mut Errors) {
 
     let mut columns: Vec<&Ident> = fields.iter().map(|f| f.ident).collect();
     for field in fields {
+        if let Some(legacy) = field.sealing().and_then(|s| s.legacy.as_ref()) {
+            for old in &legacy.bound {
+                if !bound.iter().any(|b| b.ident == old) {
+                    errors.push(syn::Error::new(
+                        old.span(),
+                        format!(
+                            "`{old}` is not a bound value of `{name}`; a legacy declaration \
+                             binds some of the record's bound values"
+                        ),
+                    ));
+                }
+            }
+        }
         for index in field.sealing().map_or(&[][..], |s| &s.indexes) {
             for across in &index.across {
                 if !bound.iter().any(|b| b.ident == across) {
@@ -491,6 +558,79 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     Ok(Expansion::new(input, attrs, &fields).tokens())
 }
 
+/// Runs `body` on the value `value` of `field` in `from`, which may be absent.
+fn each_value(
+    field: &Field<'_>,
+    from: &TokenStream,
+    value: &Ident,
+    body: &TokenStream,
+) -> TokenStream {
+    let ident = field.ident;
+    if field.optional_inner().is_none() {
+        return quote!({ let #value = &#from.#ident; #body });
+    }
+
+    quote! {
+        match &#from.#ident {
+            ::core::option::Option::Some(#value) => ::core::option::Option::Some(#body),
+            ::core::option::Option::None => ::core::option::Option::None,
+        }
+    }
+}
+
+/// The name of the legacy seal of `seal`.
+fn legacy_name(seal: &Ident) -> Ident {
+    format_ident!("{}Legacy", seal, span = seal.span())
+}
+
+/// What a field's seals share: its visibility, value, codec, and padding.
+struct SealItem<'t> {
+    vis: &'t Visibility,
+    value: &'t Type,
+    codec: &'t TokenStream,
+    padding: &'t TokenStream,
+}
+
+impl SealItem<'_> {
+    #[expect(clippy::too_many_arguments, reason = "one per item of the impl")]
+    fn tokens(
+        &self,
+        krate: &Path,
+        name: &Ident,
+        doc: &str,
+        id: &UuidLiteral,
+        bound: &[&Type],
+        record: &TokenStream,
+        indexes: &TokenStream,
+    ) -> TokenStream {
+        let Self {
+            vis,
+            value,
+            codec,
+            padding,
+        } = self;
+        let bound = bound.iter().map(|ty| quote_spanned!(ty.span()=> #ty));
+
+        quote! {
+            #[doc = #doc]
+            #vis struct #name;
+
+            const _: () = {
+                #[automatically_derived]
+                impl #krate::Seal for #name {
+                    const ID: #krate::SealId = #krate::SealId::from_u128(#id);
+                    const PADDING: #krate::Padding = #padding;
+                    type Value = #value;
+                    type Codec = #codec;
+                    type Bound = (#(#bound,)*);
+                    type Record = #record;
+                    type Indexes = #indexes;
+                }
+            };
+        }
+    }
+}
+
 /// Everything the expansion names, computed once.
 struct Expansion<'a> {
     input: &'a DeriveInput,
@@ -535,6 +675,15 @@ impl<'a> Expansion<'a> {
         })
     }
 
+    /// The bound field named `ident`, which the record checks exists.
+    fn bound_field(&self, ident: &Ident) -> &'a Field<'a> {
+        self.bound
+            .iter()
+            .copied()
+            .find(|b| b.ident == ident)
+            .expect("legacy bound fields are checked above")
+    }
+
     fn spec_name(&self, index: &IndexDecl) -> Ident {
         format_ident!(
             "{}{}",
@@ -551,6 +700,46 @@ impl<'a> Expansion<'a> {
             .copied()
             .filter(|b| !index.across.iter().any(|a| a == b.ident))
             .collect()
+    }
+
+    /// Opens `value`, a sealed field's value in `stored`, under its current
+    /// declaration or its legacy one.
+    fn open_value(
+        &self,
+        sealing: &Sealing,
+        seal: &Ident,
+        stored: &Ident,
+        value: &Ident,
+        keys: &Ident,
+    ) -> TokenStream {
+        let krate = &self.krate;
+        let from_stored = self.args(&quote!(#stored));
+        let Some(legacy) = &sealing.legacy else {
+            return quote!(#value.open(#from_stored, #keys)?);
+        };
+
+        let name = legacy_name(seal);
+        let old = self.legacy_args(legacy, &quote!(#stored));
+        quote! {
+            #krate::__private::open_legacy::<#seal, #name>(#value, #from_stored, #old, #keys)?
+        }
+    }
+
+    /// The binding arguments of a legacy declaration, read from `source`: the
+    /// bound values it bound, then the record ID if it bound one.
+    fn legacy_args(&self, legacy: &LegacyDecl, source: &TokenStream) -> TokenStream {
+        let record_id = legacy.record.then_some(self.record_id.ident);
+        let values: Vec<_> = legacy
+            .bound
+            .iter()
+            .chain(record_id)
+            .map(|ident| quote!(&#source.#ident))
+            .collect();
+        match values.as_slice() {
+            [] => quote!(()),
+            [one] => one.clone(),
+            many => quote!((#(#many),*)),
+        }
     }
 
     /// The partition values of `index`, read from the record: `()`, one bound
@@ -606,15 +795,14 @@ impl<'a> Expansion<'a> {
         }
     }
 
-    /// A sealed field's seal and the specs of its blind indexes.
+    /// A sealed field's seal, the specs of its blind indexes, and its legacy
+    /// seal.
     fn seal_items(&self, field: &Field<'_>) -> Option<TokenStream> {
         let sealing = field.sealing()?;
         let krate = &self.krate;
         let record = &self.input.ident;
-        let vis = field.vis;
         let seal = self.seal_name(field, sealing);
         let value = field.value_type();
-        let id = &sealing.id;
         // Never inferred from a shape: without a codec, the value type's
         // built-in default applies, and a type without one reports it.
         let codec = sealing.codec.as_ref().map_or_else(
@@ -625,11 +813,6 @@ impl<'a> Expansion<'a> {
             || quote!(#krate::Padding::NONE),
             |padding| padding.to_tokens(krate),
         );
-        // Spanned at each field, so a type that is no bound ID is reported there.
-        let bound = self.bound.iter().map(|f| {
-            let ty = f.ty;
-            quote_spanned!(ty.span()=> #ty)
-        });
         let record_ty = self.record_id.ty;
         let record_ty = quote_spanned!(record_ty.span()=> #record_ty);
         let specs: Vec<Ident> = sealing
@@ -637,84 +820,127 @@ impl<'a> Expansion<'a> {
             .iter()
             .map(|index| self.spec_name(index))
             .collect();
-        let doc = format!(
-            "The seal of `{record}::{}`, which `#[derive(Record)]` declares.",
-            field.ident
+        let item = SealItem {
+            vis: field.vis,
+            value,
+            codec: &codec,
+            padding: &padding,
+        };
+
+        let current = item.tokens(
+            krate,
+            &seal,
+            &format!(
+                "The seal of `{record}::{}`, which `#[derive(Record)]` declares.",
+                field.ident
+            ),
+            &sealing.id,
+            // Spanned at each field, so a type that is no bound ID is reported there.
+            &self.bound.iter().map(|f| f.ty).collect::<Vec<_>>(),
+            &record_ty,
+            &quote!((#(#specs,)*)),
         );
-
-        let indexes = sealing.indexes.iter().zip(&specs).map(|(index, spec)| {
-            let IndexDecl {
-                id,
-                bits,
-                normalize,
-                normalizer,
-                query,
-                project,
-                column,
-                ..
-            } = index;
-            let partition = self.partition(index).into_iter().map(|f| f.ty);
-            let query_arg = Ident::new("query", Span::mixed_site());
-            let value_arg = Ident::new("value", Span::mixed_site());
-            let normalize_value = project.as_ref().map_or_else(
-                || quote_spanned!(normalize.span()=> #normalize(#value_arg)),
-                |project| {
-                    let projected = quote_spanned!(project.span()=> &#project(#value_arg));
-                    quote_spanned!(normalize.span()=> #normalize(#projected))
+        let indexes = sealing
+            .indexes
+            .iter()
+            .zip(&specs)
+            .map(|(index, spec)| self.index_spec(field, &seal, index, spec));
+        let legacy = sealing.legacy.as_ref().map(|legacy| {
+            let bound: Vec<_> = legacy
+                .bound
+                .iter()
+                .map(|old| self.bound_field(old).ty)
+                .collect();
+            item.tokens(
+                krate,
+                &legacy_name(&seal),
+                &format!(
+                    "The declaration `{record}::{}` had before, which `legacy(…)` names: \
+                     values sealed with it are opened while its window is open.",
+                    field.ident
+                ),
+                legacy.seal.as_ref().unwrap_or(&sealing.id),
+                &bound,
+                &if legacy.record {
+                    record_ty.clone()
+                } else {
+                    quote!(())
                 },
-            );
-            let normalized = quote! {
-                ::core::result::Result<
-                    #krate::__private::Zeroizing<::std::vec::Vec<u8>>,
-                    #krate::BlindIndexError,
-                >
-            };
-            let doc = format!("The `{column}` blind index of `{record}::{}`.", field.ident);
-            quote! {
-                #[doc = #doc]
-                #vis struct #spec;
-
-                const _: () = {
-                    #[automatically_derived]
-                    impl #krate::BlindIndexSpec for #spec {
-                        type Seal = #seal;
-                        type Partition = (#(#partition,)*);
-                        const ID: #krate::IndexId = #krate::IndexId::from_u128(#id);
-                        const BITS: u16 = #bits;
-                        const NORMALIZER: &'static str = #normalizer;
-                        type Query = #query;
-
-                        fn normalize_query(#query_arg: &#query) -> #normalized {
-                            #normalize(#query_arg)
-                        }
-
-                        fn normalize_value(#value_arg: &#value) -> #normalized {
-                            #normalize_value
-                        }
-                    }
-                };
-            }
+                &quote!(()),
+            )
         });
 
         Some(quote! {
+            #current
+            #(#indexes)*
+            #legacy
+        })
+    }
+
+    /// The spec of a blind index `field` writes.
+    fn index_spec(
+        &self,
+        field: &Field<'_>,
+        seal: &Ident,
+        index: &IndexDecl,
+        spec: &Ident,
+    ) -> TokenStream {
+        let krate = &self.krate;
+        let record = &self.input.ident;
+        let vis = field.vis;
+        let value = field.value_type();
+        let IndexDecl {
+            id,
+            bits,
+            normalize,
+            normalizer,
+            query,
+            project,
+            column,
+            ..
+        } = index;
+        let partition = self.partition(index).into_iter().map(|f| f.ty);
+        let query_arg = Ident::new("query", Span::mixed_site());
+        let value_arg = Ident::new("value", Span::mixed_site());
+        let normalize_value = project.as_ref().map_or_else(
+            || quote_spanned!(normalize.span()=> #normalize(#value_arg)),
+            |project| {
+                let projected = quote_spanned!(project.span()=> &#project(#value_arg));
+                quote_spanned!(normalize.span()=> #normalize(#projected))
+            },
+        );
+        let normalized = quote! {
+            ::core::result::Result<
+                #krate::__private::Zeroizing<::std::vec::Vec<u8>>,
+                #krate::BlindIndexError,
+            >
+        };
+        let doc = format!("The `{column}` blind index of `{record}::{}`.", field.ident);
+
+        quote! {
             #[doc = #doc]
-            #vis struct #seal;
+            #vis struct #spec;
 
             const _: () = {
                 #[automatically_derived]
-                impl #krate::Seal for #seal {
-                    const ID: #krate::SealId = #krate::SealId::from_u128(#id);
-                    const PADDING: #krate::Padding = #padding;
-                    type Value = #value;
-                    type Codec = #codec;
-                    type Bound = (#(#bound,)*);
-                    type Record = #record_ty;
-                    type Indexes = (#(#specs,)*);
+                impl #krate::BlindIndexSpec for #spec {
+                    type Seal = #seal;
+                    type Partition = (#(#partition,)*);
+                    const ID: #krate::IndexId = #krate::IndexId::from_u128(#id);
+                    const BITS: u16 = #bits;
+                    const NORMALIZER: &'static str = #normalizer;
+                    type Query = #query;
+
+                    fn normalize_query(#query_arg: &#query) -> #normalized {
+                        #normalize(#query_arg)
+                    }
+
+                    fn normalize_value(#value_arg: &#value) -> #normalized {
+                        #normalize_value
+                    }
                 }
             };
-
-            #(#indexes)*
-        })
+        }
     }
 
     /// The stored form: every field as it is, sealed fields as `Sealed<F>`, and
@@ -777,7 +1003,6 @@ impl<'a> Expansion<'a> {
         let stored = Ident::new("stored", Span::mixed_site());
         let value = Ident::new("value", Span::mixed_site());
         let from_self = self.args(&quote!(self));
-        let from_stored = self.args(&quote!(#stored));
 
         let mut seals = Vec::new();
         let mut opens = Vec::new();
@@ -794,28 +1019,17 @@ impl<'a> Expansion<'a> {
                 continue;
             };
 
-            let optional = field.optional_inner().is_some();
             let seal = self.seal_name(field, sealing);
-            // Both run on each value of the field, which may be absent.
-            let each = |from: TokenStream, body: TokenStream| {
-                if optional {
-                    quote! {
-                        match &#from.#ident {
-                            ::core::option::Option::Some(#value) => {
-                                ::core::option::Option::Some(#body)
-                            }
-                            ::core::option::Option::None => ::core::option::Option::None,
-                        }
-                    }
-                } else {
-                    quote!({ let #value = &#from.#ident; #body })
-                }
-            };
+            let each =
+                |from: TokenStream, body: TokenStream| each_value(field, &from, &value, &body);
             let sealed = each(
                 quote!(self),
                 quote!(#krate::Sealed::<#seal>::seal(#value, #from_self, #keys)?),
             );
-            let opened = each(quote!(#stored), quote!(#value.open(#from_stored, #keys)?));
+            let opened = each(
+                quote!(#stored),
+                self.open_value(sealing, &seal, &stored, &value, &keys),
+            );
             seals.push(quote!(let #ident = #sealed;));
             opens.push(quote!(let #ident = #opened;));
             stored_fields.push(quote!(#ident));
@@ -904,8 +1118,15 @@ impl<'a> Expansion<'a> {
         };
         let bound = names(|role| matches!(role, Role::Bound));
         let plaintext = names(|role| matches!(role, Role::Plaintext));
+        let legacy: Vec<LitStr> = self
+            .fields
+            .iter()
+            .filter(|f| f.sealing().is_some_and(|s| s.legacy.is_some()))
+            .map(|f| LitStr::new(&f.ident.unraw().to_string(), f.ident.span()))
+            .collect();
 
         quote! {
+            const LEGACY: &'static [&'static str] = &[#(#legacy),*];
             const SEALS: &'static [#krate::SealId] = &[#(#seal_ids),*];
             const RECORD_ID: &'static str = #record_id;
             const BOUND: &'static [&'static str] = &[#(#bound),*];

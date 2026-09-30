@@ -1,12 +1,7 @@
 //! The typed layer's binding arguments: what a seal's callers pass, and the
 //! binding the typed layer resolves from them.
 
-use std::marker::PhantomData;
-
-use crate::{
-    BindingDomain, BoundId, Error, PartKind, PartType, PartValue, RecordIdType, Seal,
-    binding::OwnedBinding,
-};
+use crate::{BindingDomain, BoundId, Error, PartType, PartValue, Seal, binding::OwnedBinding};
 
 /// The binding arguments of one sealing or opening call under seal `F`: the
 /// values of its bound ID types, in the order of [`Seal::Bound`], then the
@@ -200,38 +195,6 @@ recorded_args!(A a, B b, C c, D d);
 bound_args!(A a, B b);
 bound_args!(A a, B b, C c);
 bound_args!(A a, B b, C c, D d);
-
-/// The binding arguments of a sealed field of a [`Record`](crate::Record): the
-/// record's bound values, of list `L`, and its ID, with the ID bound exactly when
-/// the field's seal binds a record.
-///
-/// `#[derive(Record)]` passes it to every sealed field. Not public API.
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct InRecord<'a, L, Id: ?Sized>(pub PhantomData<L>, pub &'a [PartValue<'a>], pub &'a Id);
-
-impl<L, R, Id> sealed::ArgsFor<L, R> for InRecord<'_, L, Id>
-where
-    R: RecordIdType,
-    Id: PartType + ?Sized,
-{
-    fn with_values<T>(self, f: impl FnOnce(&[PartValue<'_>], Option<PartValue<'_>>) -> T) -> T {
-        const { check_record_kind(R::RECORD, Id::KIND) };
-
-        let record = R::RECORD.map(|_| self.2.part_value());
-        f(self.1, record)
-    }
-}
-
-// Panics become build errors in `const` context.
-const fn check_record_kind(declared: Option<PartKind>, id: PartKind) {
-    if let Some(declared) = declared {
-        assert!(
-            declared as u8 == id as u8,
-            "this seal binds a record ID of another type than the record's"
-        );
-    }
-}
 
 /// Encodes the binding of seal `F` under `values` and `record`.
 pub(crate) fn target<F: Seal>(

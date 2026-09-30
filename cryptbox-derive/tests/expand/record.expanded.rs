@@ -71,6 +71,7 @@ pub struct Customer {
     #[cryptbox(stored(sqlx(rename = "email_ciphertext")))]
     pub email: String,
     #[cryptbox(seal = "5d1f0c3a-8f6e-4b1d-9a7c-2e4b6d8f0a13", padding = block(16))]
+    #[cryptbox(legacy(bound(org), record = false))]
     #[cryptbox(
         blind_index(
             id = "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0",
@@ -189,6 +190,22 @@ const _: () = {
         }
     }
 };
+///The declaration `Customer::note` had before, which `legacy(…)` names: values sealed with it are opened while its window is open.
+struct CustomerNoteLegacy;
+const _: () = {
+    #[automatically_derived]
+    impl ::cryptbox::Seal for CustomerNoteLegacy {
+        const ID: ::cryptbox::SealId = ::cryptbox::SealId::from_u128(
+            0x5d1f0c3a_8f6e_4b1d_9a7c_2e4b6d8f0a13,
+        );
+        const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
+        type Value = String;
+        type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
+        type Bound = (OrgId,);
+        type Record = ();
+        type Indexes = ();
+    }
+};
 ///The stored form of [`Customer`].
 #[sqlx(rename_all = "snake_case")]
 pub struct StoredCustomer {
@@ -242,6 +259,7 @@ const _: () = {
     #[automatically_derived]
     impl ::cryptbox::Record for Customer {
         type Stored = StoredCustomer;
+        const LEGACY: &'static [&'static str] = &["note"];
         const SEALS: &'static [::cryptbox::SealId] = &[
             <CustomerEmail as ::cryptbox::Seal>::ID,
             <CustomerNote as ::cryptbox::Seal>::ID,
@@ -317,7 +335,15 @@ const _: () = {
             let note = match &stored.note {
                 ::core::option::Option::Some(value) => {
                     ::core::option::Option::Some(
-                        value.open((&stored.org, &stored.workspace, &stored.id), keys)?,
+                        ::cryptbox::__private::open_legacy::<
+                            CustomerNote,
+                            CustomerNoteLegacy,
+                        >(
+                            value,
+                            (&stored.org, &stored.workspace, &stored.id),
+                            &stored.org,
+                            keys,
+                        )?,
                     )
                 }
                 ::core::option::Option::None => ::core::option::Option::None,

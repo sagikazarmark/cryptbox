@@ -33,3 +33,9 @@ error: the stored form already has a field `id`: name the index column with `col
    |
 62 |         column = id,
    |                  ^^
+
+error: `tenant` is not a bound value of `BadLegacy`; a legacy declaration binds some of the record's bound values
+  --> tests/ui/record_shape_misuse.rs:74:76
+   |
+74 |     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30", legacy(bound(tenant)))]
+   |                                                                            ^^^^^^

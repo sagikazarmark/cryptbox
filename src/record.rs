@@ -1,9 +1,11 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    BlindIndex, BlindIndexKeys, BlindIndexSpec, EncryptionKeys, Error, PartValue, RecordKeys, Seal,
-    SealId,
+    Args, BlindIndex, BlindIndexKeys, BlindIndexSpec, EncryptionKeys, Error, PartValue, RecordKeys,
+    Seal, SealId, Sealed,
+    binding::declaration_fingerprint,
     blind::{index_domain, probes_in},
+    inspect_ciphertext,
 };
 
 /// A row whose sealed fields are bound to their seals, to the row's bound
@@ -48,6 +50,13 @@ pub trait Record: Sized {
     /// manifest](crate::schema::Manifest::record) lists, so a field that should
     /// have been sealed shows up in its snapshot.
     const PLAINTEXT: &'static [&'static str];
+
+    /// The names of the sealed fields whose legacy declaration is still
+    /// opened, named by `legacy(…)`, in field order.
+    ///
+    /// The [schema manifest](crate::schema::Manifest::record) lists them, so
+    /// closing a window shows up in its snapshot.
+    const LEGACY: &'static [&'static str] = &[];
 
     /// Encrypts every sealed field under the record's bound values and ID, and
     /// derives its blind indexes.
@@ -220,4 +229,44 @@ impl<R: Record, S: BlindIndexSpec, P> fmt::Debug for Index<R, S, P> {
             .field("id", &S::ID)
             .finish_non_exhaustive()
     }
+}
+
+/// Opens a record field that may still be sealed with its legacy declaration,
+/// `L`: the declaration it had before, named by `legacy(…)`. Not public API:
+/// `#[derive(Record)]` calls it.
+///
+/// The header's binding fingerprint chooses the declaration to try; either way
+/// the value must authenticate under it. When only the seal ID changed, the
+/// declarations share a fingerprint, so a value that fails to authenticate
+/// under the current seal is tried under the legacy one.
+///
+/// # Errors
+///
+/// Returns [`Error::BindingMismatch`] for a value of neither declaration, or any
+/// error of opening it.
+#[doc(hidden)]
+pub fn open_legacy<F, L>(
+    sealed: &Sealed<F>,
+    args: impl Args<F>,
+    legacy: impl Args<L>,
+    keys: &(impl EncryptionKeys + ?Sized),
+) -> Result<F::Value, Error>
+where
+    F: Seal,
+    L: Seal<Value = F::Value>,
+{
+    let stored = inspect_ciphertext(sealed.as_bytes())?.context_fingerprint();
+    let current = declaration_fingerprint::<F::Bound, F::Record>();
+    let old = declaration_fingerprint::<L::Bound, L::Record>();
+
+    if stored == current {
+        match sealed.open(args, keys) {
+            Err(Error::AuthenticationFailed) if old == current && L::ID != F::ID => {}
+            opened => return opened,
+        }
+    } else if stored != old {
+        return Err(Error::BindingMismatch);
+    }
+
+    Sealed::<L>::from_bytes(sealed.as_bytes().to_vec())?.open(legacy, keys)
 }
