@@ -32,9 +32,9 @@
 //!   keyring protects which values is application code.
 //! - [`Prepared`] borrows a source value and derives sealed value and indexes for
 //!   an application-owned atomic write; it does not persist them.
-//! - A [`Record`] seals and opens a whole row under one binding and its
-//!   plaintext record ID, writing every blind index its seals declare;
-//!   [`open_matching`] opens the candidate rows of a lookup and keeps the matches.
+//! - A [`Record`] is a row that stores its record ID and bound values, such as
+//!   an org, beside its sealed fields; it seals and opens the whole row, and its
+//!   [`Index`] handles derive probes and open the candidate rows of a lookup.
 //! - A [`BlindIndexSpec`] binds a blind index to one seal. A [`BlindIndex`] is a
 //!   candidate selector: use every [`BlindIndexSpec::probes_with`]
 //!   result, open candidates, and compare normalized plaintext.
@@ -231,7 +231,7 @@ pub use key::{
 pub use key_source::{BlindIndexKeys, ColumnKeys, EncryptionKeys, GlobalKeys, RecordKeys};
 pub use padding::Padding;
 pub use prepare::Prepared;
-pub use record::{IndexedBy, Record, open_matching};
+pub use record::{Index, Record};
 pub use seal::{Seal, SealId};
 pub use secret::Secret;
 pub use value::{Plain, Sealed};

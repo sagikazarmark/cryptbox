@@ -168,7 +168,7 @@ impl PartSpec {
 }
 
 /// A runtime part value.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PartValue<'a> {
     /// A 16-byte UUID.
     Uuid([u8; 16]),

@@ -45,24 +45,21 @@ const JOURNAL_MISMATCH: &str = "[570 Journal mismatch]";
 )]
 struct CustomerEmail;
 
-#[derive(cryptbox::Seal)]
-#[cryptbox(
-    id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
-    value = String,
-    bound(TenantId),
-    record = i64,
-)]
-struct CustomerNote;
+/// A tenant, carried in the journal: the `Tenant` preset's kind, so it binds as
+/// a [`TenantId`] does.
+#[derive(cryptbox::BoundId, Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cryptbox(kind = "1e8306bf-3135-4570-831c-6732f92550e9")]
+#[serde(transparent)]
+struct Tenant(Vec<u8>);
 
 #[derive(Debug, PartialEq, cryptbox::Record)]
-#[record(
-    sealed = SealedCustomer,
-    attr(derive(serde::Serialize, serde::Deserialize)),
-)]
+#[cryptbox(stored(derive(serde::Serialize, serde::Deserialize)))]
 struct Customer {
-    #[record_id]
+    #[cryptbox(record_id)]
     id: i64,
-    #[seal(CustomerNote)]
+    #[cryptbox(bound)]
+    tenant: Tenant,
+    #[cryptbox(seal = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38")]
     note: String,
 }
 
@@ -151,18 +148,27 @@ impl Vault {
         RECORD_ATTEMPTS.fetch_add(1, Ordering::SeqCst);
         let tenant = tenant(ctx.key())?;
 
-        let fetch = move || async move { Ok(Customer { id: 7, note }) };
-        let sealed = restate::seal_record_with::<Customer, _>(&ctx, fetch, &tenant, &*KEYS)
+        let owner = Tenant(tenant.as_bytes().to_vec());
+        let fetch = move || async move {
+            Ok(Customer {
+                id: 7,
+                tenant: owner,
+                note,
+            })
+        };
+        let sealed = restate::seal_record_with::<Customer, _>(&ctx, fetch, &*KEYS)
             .name("seal-customer")
             .await?;
         ctx.set("customer", sealed);
         ctx.sleep(Duration::from_millis(500)).await?;
 
         let Json(stored) = ctx
-            .get::<Json<SealedCustomer>>("customer")
+            .get::<Json<StoredCustomer>>("customer")
             .await?
             .ok_or_else(|| TerminalError::new("the customer was not kept"))?;
-        let customer = Customer::open(stored, &tenant, &*KEYS).map_err(restate::handler_error)?;
+        let customer =
+            Customer::open_expecting(stored, &*KEYS, |row| row.tenant.0 == tenant.as_bytes())
+                .map_err(restate::handler_error)?;
 
         Ok(customer.note)
     }

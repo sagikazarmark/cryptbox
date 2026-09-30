@@ -28,9 +28,9 @@ use crate::{
 /// of its partition, in part ID order.
 ///
 /// Each record lists the seal IDs of its sealed fields, the field that holds
-/// its record ID, and the names of its other plaintext fields. A field stored
-/// as it is has no ID, so the manifest names it, and a field that should have
-/// been sealed shows up in the snapshot.
+/// its record ID, its bound fields, and its plaintext fields. A field stored as
+/// it is has no ID, so the manifest names it, and a field that should have been
+/// sealed shows up in the snapshot.
 ///
 /// The output names IDs, never Rust types, so it is the same on every
 /// toolchain and survives renaming or moving a marker; a record's field names
@@ -79,6 +79,7 @@ struct RecordEntry {
     marker: TypeId,
     seals: &'static [SealId],
     record_id: &'static str,
+    bound: &'static [&'static str],
     plaintext: &'static [&'static str],
 }
 
@@ -154,8 +155,8 @@ impl Manifest {
         self
     }
 
-    /// Registers record `R`: its sealed fields' seal IDs and its plaintext
-    /// fields' names.
+    /// Registers record `R`: its sealed fields' seal IDs, and the names of its
+    /// record ID, bound, and plaintext fields.
     ///
     /// Register its seals separately with [`Self::seal`]. Registering it again
     /// changes nothing.
@@ -167,6 +168,7 @@ impl Manifest {
                 marker,
                 seals: R::SEALS,
                 record_id: R::RECORD_ID,
+                bound: R::BOUND,
                 plaintext: R::PLAINTEXT,
             });
         }
@@ -290,6 +292,10 @@ impl fmt::Display for Manifest {
             }
             writeln!(formatter)?;
             writeln!(formatter, "  record id: {}", record.record_id)?;
+            match record.bound {
+                [] => writeln!(formatter, "  bound: none")?,
+                fields => writeln!(formatter, "  bound: {}", fields.join(", "))?,
+            }
             match record.plaintext {
                 [] => writeln!(formatter, "  plaintext: none")?,
                 fields => writeln!(formatter, "  plaintext: {}", fields.join(", "))?,

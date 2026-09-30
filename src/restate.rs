@@ -90,11 +90,7 @@ use restate_sdk::{
     serde::Json,
 };
 
-use crate::{
-    Args, BoundValues, EncryptionKeys, Error, Record, RecordKeys, Seal, Sealed,
-    args::domain,
-    binding::{OwnedBinding, bound_values},
-};
+use crate::{Args, EncryptionKeys, Error, Record, RecordKeys, Seal, Sealed, args::domain};
 
 mod codec;
 mod object_key;
@@ -227,10 +223,10 @@ where
 
 /// Seals a whole [`Record`] inside `ctx.run`, as [`seal`] does for one value.
 ///
-/// Restate journals the sealed record through [`Json`], so its sealed struct
+/// Restate journals the stored record through [`Json`], so its stored form
 /// needs Serde's traits: with `#[derive(Record)]`, add
-/// `attr(derive(serde::Serialize, serde::Deserialize))`. Its plaintext
-/// fields, such as the record ID, are journaled as they are.
+/// `#[cryptbox(stored(derive(serde::Serialize, serde::Deserialize)))]`. Its
+/// record ID, bound values, and plaintext fields are journaled as they are.
 ///
 /// # Errors
 ///
@@ -238,17 +234,13 @@ where
 pub fn seal_record<'a, R>(
     ctx: &'a impl RunContext,
     record: &'a R,
-    bound: impl BoundValues<'a, R::Bound>,
     keys: &'a (impl RecordKeys + ?Sized),
-) -> impl RunFuture<Result<Json<R::Sealed>, TerminalError>> + 'a
+) -> impl RunFuture<Result<Json<R::Stored>, TerminalError>> + 'a
 where
     R: Record + Sync,
-    R::Sealed: serde::Serialize + serde::de::DeserializeOwned + 'static,
+    R::Stored: serde::Serialize + serde::de::DeserializeOwned + 'static,
 {
-    // Read before the `run`, so the future holds no borrow of `bound`.
-    let bound = OwnedBinding::new(&bound_values(bound));
-
-    ctx.run_for(move || async move { record.seal(&bound, keys).map(Json).map_err(handler_error) })
+    ctx.run_for(move || async move { record.seal(keys).map(Json).map_err(handler_error) })
 }
 
 /// Fetches a [`Record`] and seals it inside one `ctx.run`, as [`seal_with`]
@@ -260,19 +252,16 @@ where
 pub fn seal_record_with<'a, R, Fut>(
     ctx: &'a impl RunContext,
     fetch: impl FnOnce() -> Fut + Send + 'static,
-    bound: impl BoundValues<'a, R::Bound>,
     keys: &'a (impl RecordKeys + ?Sized),
-) -> impl RunFuture<Result<Json<R::Sealed>, TerminalError>> + 'a
+) -> impl RunFuture<Result<Json<R::Stored>, TerminalError>> + 'a
 where
     R: Record,
-    R::Sealed: serde::Serialize + serde::de::DeserializeOwned + 'static,
+    R::Stored: serde::Serialize + serde::de::DeserializeOwned + 'static,
     Fut: Future<Output = HandlerResult<R>> + Send + 'static,
 {
-    let bound = OwnedBinding::new(&bound_values(bound));
-
     ctx.run_for(move || async move {
         let record = fetch().await?;
-        record.seal(&bound, keys).map(Json).map_err(handler_error)
+        record.seal(keys).map(Json).map_err(handler_error)
     })
 }
 
@@ -338,6 +327,8 @@ pub fn is_retryable(error: &Error) -> bool {
         | Error::InvalidPadding
         | Error::InvalidBinding
         | Error::InvalidBlindIndex
+        | Error::OutsidePartition
+        | Error::UnexpectedRecord
         | Error::InvalidObjectKey => false,
         #[cfg(feature = "migrate")]
         Error::LegacyRecoveryFailed(_) => false,

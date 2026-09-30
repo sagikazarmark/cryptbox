@@ -115,6 +115,14 @@ pub enum Error {
     /// [`Keys::with_blind_indexes`](crate::Keys::with_blind_indexes).
     #[error("no blind-index keyring is configured")]
     BlindIndexKeysNotConfigured,
+    /// A stored row is outside the partition of the lookup that selected it,
+    /// so it was not decrypted; see [`Index::open_matching`](crate::Index::open_matching).
+    #[error("stored record is outside the lookup's partition")]
+    OutsidePartition,
+    /// A stored row is not the one the caller expected, so it was not
+    /// decrypted; see [`Record::open_expecting`](crate::Record::open_expecting).
+    #[error("stored record is not the one expected")]
+    UnexpectedRecord,
     /// A keyring contains the same encryption key ID more than once.
     #[error("duplicate encryption key ID {0}")]
     DuplicateEncryptionKey(KeyId),

@@ -1,10 +1,9 @@
-//! Parses the derives' helper attributes: `#[seal(…)]` on a record's fields,
-//! `#[record(…)]`, `#[cryptbox(…)]`, and the keys each accepts.
+//! Parses the derives' `#[cryptbox(…)]` attributes and the keys each accepts.
 
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote_spanned};
 use syn::{
-    Attribute, Ident, LitInt, LitStr, Meta, Path, Token, Type, parenthesized, parse::ParseStream,
+    Attribute, Ident, LitInt, LitStr, Path, Token, Type, parenthesized, parse::ParseStream,
     punctuated::Punctuated, spanned::Spanned,
 };
 
@@ -26,15 +25,12 @@ pub(crate) enum Key {
     Record,
     Partition,
     Indexes,
-    Sealed,
-    Attr,
     Transparent,
-    Name,
     Kind,
 }
 
 impl Key {
-    const ALL: [Self; 20] = [
+    const ALL: [Self; 17] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -50,10 +46,7 @@ impl Key {
         Self::Record,
         Self::Partition,
         Self::Indexes,
-        Self::Sealed,
-        Self::Attr,
         Self::Transparent,
-        Self::Name,
         Self::Kind,
     ];
 
@@ -74,10 +67,7 @@ impl Key {
             Self::Record => "record",
             Self::Partition => "partition",
             Self::Indexes => "indexes",
-            Self::Sealed => "sealed",
-            Self::Attr => "attr",
             Self::Transparent => "transparent",
-            Self::Name => "name",
             Self::Kind => "kind",
         }
     }
@@ -145,10 +135,7 @@ pub(crate) struct Attrs {
     pub(crate) record: Option<Type>,
     pub(crate) partition: Option<Vec<Type>>,
     pub(crate) indexes: Option<Vec<Type>>,
-    pub(crate) sealed: Option<Ident>,
-    pub(crate) name: Option<Ident>,
     pub(crate) kind: Option<UuidLiteral>,
-    pub(crate) attr: Option<Vec<Meta>>,
     pub(crate) transparent: Option<Span>,
     seen: Vec<Key>,
 }
@@ -180,10 +167,7 @@ impl Attrs {
             record: None,
             partition: None,
             indexes: None,
-            sealed: None,
-            name: None,
             kind: None,
-            attr: None,
             transparent: None,
             seen: Vec::new(),
         };
@@ -230,7 +214,6 @@ impl Attrs {
                         .map(|list| parsed.bound = Some(list)),
                     Key::Partition => parse_list(meta.input, "bound ID type", "partition")
                         .map(|list| parsed.partition = Some(list)),
-                    Key::Attr => parse_attr(meta.input).map(|list| parsed.attr = Some(list)),
                     _ if !meta.input.peek(Token![=]) => Err(meta.error(format!(
                         "`{name}` needs a value: `{name} = …`",
                         name = key.name()
@@ -272,10 +255,8 @@ impl Attrs {
             Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
             Key::Record => self.record = Some(input.parse()?),
-            Key::Sealed => self.sealed = Some(input.parse()?),
-            Key::Name => self.name = Some(input.parse()?),
             Key::Kind => self.kind = Some(parse_uuid(key.name(), input)?),
-            Key::Transparent | Key::Indexes | Key::Bound | Key::Partition | Key::Attr => {
+            Key::Transparent | Key::Indexes | Key::Bound | Key::Partition => {
                 unreachable!("flags and lists have no `= value`")
             }
         }
@@ -372,46 +353,7 @@ fn parse_list(input: ParseStream, item: &str, key: &str) -> syn::Result<Vec<Type
     Ok(list.into_iter().collect())
 }
 
-/// A blind index a record field writes, and the sealed struct's field that stores it.
-pub(crate) struct IndexColumn {
-    pub(crate) spec: Type,
-    pub(crate) column: Ident,
-}
-
-impl syn::parse::Parse for IndexColumn {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let spec = input.parse()?;
-        input.parse::<Token![as]>()?;
-        let column = input.parse()?;
-
-        Ok(Self { spec, column })
-    }
-}
-
-/// Parses a record field's `#[blind_index(A as a, B as b, …)]`: at least one
-/// blind index and its column.
-pub(crate) fn parse_index_columns(attr: &Attribute) -> syn::Result<Vec<IndexColumn>> {
-    let list = attr.parse_args_with(Punctuated::<IndexColumn, Token![,]>::parse_terminated)?;
-    if list.is_empty() {
-        return Err(syn::Error::new_spanned(
-            attr,
-            "list at least one `Index as column`, or omit `#[blind_index]`",
-        ));
-    }
-
-    Ok(list.into_iter().collect())
-}
-
-/// Parses `attr(…)`: attributes for a generated item, without their `#[…]`.
-fn parse_attr(input: ParseStream) -> syn::Result<Vec<Meta>> {
-    let content;
-    parenthesized!(content in input);
-    let list = Punctuated::<Meta, Token![,]>::parse_terminated(&content)?;
-
-    Ok(list.into_iter().collect())
-}
-
-fn parse_uuid(name: &str, input: ParseStream) -> syn::Result<UuidLiteral> {
+pub(crate) fn parse_uuid(name: &str, input: ParseStream) -> syn::Result<UuidLiteral> {
     if !input.peek(LitStr) {
         let mut tokens = TokenStream::new();
         while !input.is_empty() && !input.peek(Token![,]) {
@@ -464,7 +406,7 @@ fn uuid_value(text: &str) -> Option<u128> {
     Some(value)
 }
 
-fn parse_padding(input: ParseStream) -> syn::Result<Padding> {
+pub(crate) fn parse_padding(input: ParseStream) -> syn::Result<Padding> {
     let policy: Ident = input.parse()?;
     let expected = "expected `none`, `block(size)`, or `length(len)`";
 
@@ -500,7 +442,7 @@ fn parse_padding(input: ParseStream) -> syn::Result<Padding> {
     }
 }
 
-fn parse_bits(input: ParseStream) -> syn::Result<LitInt> {
+pub(crate) fn parse_bits(input: ParseStream) -> syn::Result<LitInt> {
     let bits: LitInt = input.parse()?;
     let value = bits.base10_parse::<u16>()?;
 

@@ -217,13 +217,6 @@ bound_list!(A a, B b);
 bound_list!(A a, B b, C c);
 bound_list!(A a, B b, C c, D d);
 
-// Values already read, and checked against the list when they are bound.
-impl<'a, L: BoundList> sealed::Values<'a, L> for &'a OwnedBinding {
-    fn part_values(self) -> Vec<PartValue<'a>> {
-        self.values()
-    }
-}
-
 // One value is passed alone, not as a one-tuple.
 impl<'a, A: BoundId> sealed::Values<'a, (A,)> for &'a A {
     fn part_values(self) -> Vec<PartValue<'a>> {

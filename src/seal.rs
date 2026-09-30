@@ -81,7 +81,7 @@ identifier!(SealId, "A stable seal identifier.");
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a seal",
     label = "not a seal",
-    note = "declare one with `#[derive(cryptbox::Seal)]`; in a `#[derive(Record)]`, declare a field's own seal with `#[seal(id = \"…\")]`, or store it as it is without `#[seal]`"
+    note = "declare one with `#[derive(cryptbox::Seal)]`; in a `#[derive(Record)]`, mark a field `#[cryptbox(seal = \"<uuid>\")]`"
 )]
 pub trait Seal: 'static {
     /// The stable identifier, independent of Rust and database names.

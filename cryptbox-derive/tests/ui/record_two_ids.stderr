@@ -1,5 +1,0 @@
-error: a record has one record ID: mark only one field `#[record_id]`
-  --> tests/ui/record_two_ids.rs:16:5
-   |
-16 |     legacy_id: i64,
-   |     ^^^^^^^^^

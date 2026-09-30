@@ -418,6 +418,8 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::PaddingOverflow
         | Error::InvalidPadding
         | Error::InvalidBlindIndex
+        | Error::OutsidePartition
+        | Error::UnexpectedRecord
         | Error::LegacyRecoveryFailed(_) => true,
         Error::KeysUnavailable
         | Error::KeysNotInstalled
