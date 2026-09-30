@@ -1,11 +1,11 @@
 //! Public-boundary tests for declared binding scopes and their key scopes.
 
 use cryptbox::{
-    Error, FromIndexValues, KeyScope, PartKind, PartSpec, PartType, PartValue, PartValues, Scope,
-    Tenant, TenantId, part_id,
+    Error, FromParts, KeyScope, PartKind, PartSpec, PartType, PartValue, PartValues, Scope, Tenant,
+    TenantId, part_id,
 };
 
-/// An org scopes keys, a project scopes blind indexes, and a workspace is only bound.
+/// An org scopes keys, and a project and a workspace are only bound.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct OrgProject {
     org: Vec<u8>,
@@ -13,6 +13,7 @@ struct OrgProject {
     workspace: [u8; 16],
 }
 
+/// A view of `OrgProject`: the org and the project.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct OrgProjectSearch {
     org: Vec<u8>,
@@ -25,7 +26,7 @@ impl Scope for OrgProject {
             part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
             PartKind::Bytes,
         ),
-        PartSpec::index(
+        PartSpec::bound(
             part_id!("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61"),
             PartKind::I64,
         ),
@@ -34,8 +35,6 @@ impl Scope for OrgProject {
             PartKind::Uuid,
         ),
     ];
-    type IndexArgs = OrgProjectSearch;
-
     fn values(&self) -> PartValues<'_> {
         PartValues::from([
             PartValue::Bytes(&self.org),
@@ -43,9 +42,21 @@ impl Scope for OrgProject {
             PartValue::Uuid(self.workspace),
         ])
     }
+}
 
-    fn index_values(args: &OrgProjectSearch) -> PartValues<'_> {
-        PartValues::from([PartValue::Bytes(&args.org), PartValue::I64(args.project)])
+impl Scope for OrgProjectSearch {
+    const PARTS: &'static [PartSpec] = &[
+        PartSpec::keys(
+            part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
+            PartKind::Bytes,
+        ),
+        PartSpec::bound(
+            part_id!("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61"),
+            PartKind::I64,
+        ),
+    ];
+    fn values(&self) -> PartValues<'_> {
+        PartValues::from([PartValue::Bytes(&self.org), PartValue::I64(self.project)])
     }
 }
 
@@ -66,21 +77,18 @@ fn key_scope_is_the_keys_parts_only() {
     let scope = key_scope(b"acme", 1, 1);
 
     assert_eq!(key_scope(b"acme", 1, 2), scope, "bound-only workspace");
-    assert_eq!(key_scope(b"acme", 2, 1), scope, "index-only project");
+    assert_eq!(key_scope(b"acme", 2, 1), scope, "bound-only project");
     assert_ne!(key_scope(b"globex", 1, 1), scope, "keys org");
 }
 
 #[test]
-fn key_scope_of_index_args_matches_the_binding() {
+fn key_scope_of_a_view_matches_the_scope() {
     let search = OrgProjectSearch {
         org: b"acme".to_vec(),
         project: 9,
     };
 
-    assert_eq!(
-        KeyScope::of_index::<OrgProject>(&search).unwrap(),
-        key_scope(b"acme", 1, 1)
-    );
+    assert_eq!(KeyScope::of(&search).unwrap(), key_scope(b"acme", 1, 1));
 }
 
 #[test]
@@ -97,10 +105,6 @@ fn key_scope_hashes_like_it_compares() {
 
 #[test]
 fn unscoped_bindings_share_one_key_scope() {
-    assert_eq!(
-        KeyScope::of(&()).unwrap(),
-        KeyScope::of_index::<()>(&()).unwrap()
-    );
     assert_ne!(
         KeyScope::of(&()).unwrap(),
         KeyScope::of(&Tenant(TenantId::from_uuid([1; 16]))).unwrap()
@@ -113,7 +117,7 @@ fn tenants_have_their_own_key_scopes() {
 
     assert_eq!(
         KeyScope::of(&acme).unwrap(),
-        KeyScope::of_index::<Tenant>(&acme).unwrap()
+        KeyScope::of_keys::<Tenant>(&[PartValue::Bytes(b"acme")]).unwrap()
     );
     assert_ne!(
         KeyScope::of(&acme).unwrap(),
@@ -144,14 +148,8 @@ impl SuppliedValue {
 
 impl Scope for Supplied {
     const PARTS: &'static [PartSpec] = OrgProject::PARTS;
-    type IndexArgs = Self;
-
     fn values(&self) -> PartValues<'_> {
         self.0.iter().map(SuppliedValue::part).collect()
-    }
-
-    fn index_values(args: &Self) -> PartValues<'_> {
-        args.values()
     }
 }
 
@@ -197,45 +195,6 @@ fn key_scope_rejects_invalid_values() {
 }
 
 #[test]
-fn key_scope_of_index_rejects_invalid_values() {
-    let valid = Supplied(vec![
-        SuppliedValue::Bytes(b"acme".to_vec()),
-        SuppliedValue::I64(1),
-    ]);
-    assert!(KeyScope::of_index::<Supplied>(&valid).is_ok(), "control");
-
-    let cases = [
-        (
-            "missing part",
-            Supplied(vec![SuppliedValue::Bytes(b"acme".to_vec())]),
-        ),
-        (
-            "bound-only part supplied",
-            Supplied(vec![
-                SuppliedValue::Bytes(b"acme".to_vec()),
-                SuppliedValue::I64(1),
-                SuppliedValue::Uuid([1; 16]),
-            ]),
-        ),
-        (
-            "empty keys value",
-            Supplied(vec![
-                SuppliedValue::Bytes(Vec::new()),
-                SuppliedValue::I64(1),
-            ]),
-        ),
-    ];
-
-    for (case, values) in cases {
-        assert_eq!(
-            KeyScope::of_index::<Supplied>(&values),
-            Err(Error::InvalidBinding),
-            "{case}"
-        );
-    }
-}
-
-#[test]
 fn part_types_read_back_the_values_they_bind() {
     let uuid = [7; 16];
     let tenant = TenantId::new("acme").unwrap();
@@ -275,29 +234,26 @@ fn part_types_reject_values_of_another_kind() {
 }
 
 #[test]
-fn presets_build_their_index_args_from_part_values() {
+fn presets_build_back_from_their_part_values() {
     let acme = Tenant(TenantId::new("acme").unwrap());
 
-    assert_eq!(<()>::from_index_values(&[]), Ok(()));
-    assert_eq!(
-        Tenant::from_index_values(Tenant::index_values(&acme).as_slice()),
-        Ok(acme)
-    );
+    assert_eq!(<()>::from_parts(&[]), Ok(()));
+    assert_eq!(Tenant::from_parts(acme.values().as_slice()), Ok(acme));
 }
 
 #[test]
-fn presets_reject_index_values_that_do_not_fit() {
+fn presets_reject_part_values_that_do_not_fit() {
     assert_eq!(
-        <()>::from_index_values(&[PartValue::I64(1)]),
+        <()>::from_parts(&[PartValue::I64(1)]),
         Err(Error::InvalidBinding)
     );
-    assert_eq!(Tenant::from_index_values(&[]), Err(Error::InvalidBinding));
+    assert_eq!(Tenant::from_parts(&[]), Err(Error::InvalidBinding));
     assert_eq!(
-        Tenant::from_index_values(&[PartValue::Bytes(b"acme"), PartValue::Bytes(b"globex")]),
+        Tenant::from_parts(&[PartValue::Bytes(b"acme"), PartValue::Bytes(b"globex")]),
         Err(Error::InvalidBinding)
     );
     assert_eq!(
-        Tenant::from_index_values(&[PartValue::Uuid([1; 16])]),
+        Tenant::from_parts(&[PartValue::Uuid([1; 16])]),
         Err(Error::InvalidBinding)
     );
 }

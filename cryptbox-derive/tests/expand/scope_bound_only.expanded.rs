@@ -11,25 +11,10 @@ const _: () = {
                 <i64 as ::cryptbox::PartType>::KIND,
             ),
         ];
-        type IndexArgs = ();
         fn values(&self) -> ::cryptbox::PartValues<'_> {
             ::cryptbox::PartValues::from([
                 <i64 as ::cryptbox::PartType>::part_value(&self.number),
             ])
-        }
-        fn index_values((): &()) -> ::cryptbox::PartValues<'_> {
-            ::cryptbox::PartValues::new()
-        }
-    }
-    #[automatically_derived]
-    impl ::cryptbox::FromIndexValues for Revision {
-        fn from_index_values(
-            values: &[::cryptbox::PartValue<'_>],
-        ) -> ::core::result::Result<(), ::cryptbox::Error> {
-            match values {
-                [] => ::core::result::Result::Ok(()),
-                _ => ::core::result::Result::Err(::cryptbox::Error::InvalidBinding),
-            }
         }
     }
     #[automatically_derived]

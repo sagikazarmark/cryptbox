@@ -31,6 +31,7 @@ const _: () = {
     #[automatically_derived]
     impl ::cryptbox::BlindIndexSpec for EmailLookup {
         type Seal = UserEmail;
+        type Scope = <<UserEmail as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts;
         const ID: ::cryptbox::IndexId = ::cryptbox::IndexId::from_u128(
             0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53,
         );

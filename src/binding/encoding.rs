@@ -90,7 +90,7 @@ const fn kind_code(kind: PartKind) -> u8 {
 const fn role_code(role: PartRole) -> u8 {
     match role {
         PartRole::Keys => 1,
-        PartRole::Index => 2,
+        // 2 was the `index` role; ADR-0009 moved index scopes to blind indexes.
         PartRole::Bound => 3,
     }
 }

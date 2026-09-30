@@ -146,7 +146,7 @@ fn a_custody_label_stays_on_one_line() {
     );
 }
 
-/// Two `keys` parts, an `index` part, and a bound-only part, declared by hand.
+/// Two `keys` parts and two bound-only parts, declared by hand.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct ProjectScope {
     region: i64,
@@ -165,7 +165,7 @@ impl Scope for ProjectScope {
             part_id!("2b3c4d5e-0000-4000-8000-000000000002"),
             PartKind::Uuid,
         ),
-        PartSpec::index(
+        PartSpec::bound(
             part_id!("3c4d5e6f-0000-4000-8000-000000000003"),
             PartKind::Bytes,
         ),
@@ -174,8 +174,6 @@ impl Scope for ProjectScope {
             PartKind::Uuid,
         ),
     ];
-    type IndexArgs = ();
-
     fn values(&self) -> PartValues<'_> {
         PartValues::from([
             PartValue::I64(self.region),
@@ -183,10 +181,6 @@ impl Scope for ProjectScope {
             PartValue::Bytes(&self.project),
             PartValue::Uuid(self.workspace),
         ])
-    }
-
-    fn index_values((): &()) -> PartValues<'_> {
-        PartValues::new()
     }
 }
 
@@ -212,10 +206,10 @@ seal 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
   codec: utf8
   padding: block(16)
   record: i64
-  binding: d93193108267f1ef
+  binding: 3c900b26f1b5d5c4
     part 1a2b3c4d-0000-4000-8000-000000000001 i64 keys
     part 2b3c4d5e-0000-4000-8000-000000000002 uuid keys
-    part 3c4d5e6f-0000-4000-8000-000000000003 bytes index
+    part 3c4d5e6f-0000-4000-8000-000000000003 bytes bound
     part 4d5e6f70-0000-4000-8000-000000000004 uuid bound
   shred unit: 1a2b3c4d-0000-4000-8000-000000000001 + 2b3c4d5e-0000-4000-8000-000000000002
 "
@@ -242,6 +236,7 @@ struct NicknameLookup;
 
 impl BlindIndexSpec for NicknameLookup {
     type Seal = Nickname;
+    type Scope = ();
     const ID: IndexId = index_id!("3d8b1f4e-6a2c-4e71-9f05-8c7d6b5a4e3f");
     const BITS: u16 = 24;
     const NORMALIZER: &'static str = "trim-lowercase/1";
@@ -314,6 +309,7 @@ struct DisplayNameLookup;
 
 impl BlindIndexSpec for DisplayNameLookup {
     type Seal = Nickname;
+    type Scope = ();
     const ID: IndexId = index_id!("3d8b1f4e-6a2c-4e71-9f05-8c7d6b5a4e3f");
     const BITS: u16 = 16;
     const NORMALIZER: &'static str = "exact/1";

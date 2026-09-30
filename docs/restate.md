@@ -103,18 +103,18 @@ message, with code 400 for an invalid object key and 500 otherwise.
 
 ## Object keys
 
-A Virtual Object keyed by a binding's index arguments, such as one object per
-org, reads them back from its object key with `ObjectKey`:
+A Virtual Object keyed by a scope, such as one object per org or a blind
+index's index scope, reads it back from its object key with `ObjectKey`:
 
 ```rust
-let search: OrgSearch = ObjectKey::<OrgWorkspace>::parse(ctx.key())
+let search: OrgSearch = ObjectKey::<OrgSearch>::parse(ctx.key())
     .map_err(restate::handler_error)?;
-let key = ObjectKey::<OrgWorkspace>::encode(&search)?;
+let key = ObjectKey::<OrgSearch>::encode(&search)?;
 ```
 
-An object key encodes the binding's index arguments: one part per `keys` and `index`
-part, separated by `:`. The `keys` parts come first, and then the `index`
-parts, each in `PARTS` order. Bound-only parts are never in an object key.
+An object key encodes every part of its scope, separated by `:`. The `keys`
+parts come first, and then the other parts, each in `PARTS` order. Key an object
+by a view that holds only the parts the object is for.
 
 | Kind | Encoding | Example |
 | --- | --- | --- |
@@ -124,14 +124,12 @@ parts, each in `PARTS` order. Bound-only parts are never in an object key.
 
 Parsing accepts exactly one spelling of each value. A missing or extra part,
 parts out of order, uppercase hex, a missing sign, or any other spelling fails
-with `Error::InvalidObjectKey`, which is terminal. A binding that parses its
-scope from an object key needs `FromIndexValues`; `#[derive(Scope)]`
-implements it.
+with `Error::InvalidObjectKey`, which is terminal. A scope parsed from an object
+key needs `FromParts`; `#[derive(Scope)]` implements it.
 
 An object key is plaintext wherever Restate shows it: in the journal, the admin
 API, and logs. And a caller chooses the object key it calls. Authorize the caller
-for the index arguments that the object key names before you bind values to
-them.
+for the scope that the object key names before you bind values to it.
 
 ## What the journal exposes
 

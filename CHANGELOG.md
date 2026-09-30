@@ -222,6 +222,23 @@
   on two fields fails the build. The struct's `record = field` key is renamed
   `record_id = field`.
 
+- **Breaking:** a blind index names its own index scope (ADR-0009).
+  `BlindIndexSpec::Scope` is a view of the seal's scope: a scope whose parts are
+  parts of the seal's, matched by part ID and kind, and which holds every `keys`
+  part, checked when the index is first used. It replaces `Scope::IndexArgs`,
+  `Scope::index_values`, `FromIndexValues`, the `index` part role
+  (`PartSpec::index`), and the `index_args` key of `#[derive(Scope)]`:
+  `derive_with`, `probes_with`, and `is_consistent_with` take `&Self::Scope`, a
+  prepared value projects it from the scope it was sealed under, and
+  `#[derive(BlindIndexSpec)]` takes `scope = …`, defaulting to the seal's whole
+  scope. Two indexes over one seal may partition differently. `FromParts`
+  builds a scope back from its part values, and `#[derive(Scope)]` implements
+  it. `migrate::probes_across::<Old, S>` names the old index scope,
+  `restate::ObjectKey<B>` encodes every part of `B`, and the schema manifest
+  lists each index's scope. `KeyScope::of_index` is removed. Index bytes do not
+  change; a seal whose scope had `index` parts gets a new binding fingerprint,
+  since those parts are now bound only.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

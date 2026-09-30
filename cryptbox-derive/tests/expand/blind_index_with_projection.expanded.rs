@@ -43,6 +43,7 @@ const _: () = {
     #[automatically_derived]
     impl ::cryptbox::BlindIndexSpec for StreetLookup {
         type Seal = HomeAddress;
+        type Scope = <<HomeAddress as ::cryptbox::Seal>::Scope as ::cryptbox::SealScope>::Parts;
         const ID: ::cryptbox::IndexId = ::cryptbox::IndexId::from_u128(
             0x3f5d8c2b_6e40_4b97_8c31_8a2f7d9e5b64,
         );

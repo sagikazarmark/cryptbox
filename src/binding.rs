@@ -21,24 +21,28 @@ identifier!(
 /// The declared scope a seal's values are bound to, such as a tenant, or an
 /// org plus a workspace.
 ///
-/// A binding is data only. [`PARTS`](Self::PARTS) is its declaration: each
+/// A scope is data only. [`PARTS`](Self::PARTS) is its declaration: each
 /// part's ID, value kind, and [role](PartRole). [`values`](Self::values)
 /// supplies the runtime values in the same order. `CryptBox` frames and
 /// validates them; implementations never write bytes. The declaration is persistent
-/// schema: changing a part ID, kind, or role is a migration. See [ADR-0005] and
-/// the [wire format].
+/// schema: changing a part ID, kind, or role is a migration. See [ADR-0005],
+/// [ADR-0009], and the [wire format].
 ///
-/// A record ID is not a part. Whether a seal binds a record is declared on the
-/// seal, and the record is always bound only: it never scopes keys or blind
-/// indexes, since a record-scoped index could not be searched.
+/// A scope can be a **view** of another: a scope whose parts are a subset of the
+/// other's, matched by part ID and kind, and built from its values with
+/// [`FromParts`]. A blind index names its own index scope, a view of its seal's
+/// scope, which is all a query needs to supply.
+///
+/// A record ID is not a part. A seal binds one with the seal scope
+/// [`Recorded`], and the record is always bound only: it never scopes keys or
+/// blind indexes, since a record-scoped index could not be searched.
 ///
 /// # Checks
 ///
 /// `PARTS` must be sorted by part ID in ascending byte order, without
-/// duplicates or nil IDs. A violation fails the build when the binding is first
+/// duplicates or nil IDs. A violation fails the build when the scope is first
 /// used. The check runs after monomorphization, so `cargo check` does not
-/// report it; `cargo build` and `cargo test` do. A record can never be
-/// declared as a `keys` or `index` part, because it is not a part at all.
+/// report it; `cargo build` and `cargo test` do.
 ///
 /// Supplied values are checked at each call: [`Error::InvalidBinding`] reports
 /// a missing or extra value, a value of the wrong kind, or an empty `keys`
@@ -54,19 +58,13 @@ identifier!(
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Scope, KeyScope, PartKind, PartSpec, PartValue, PartValues};
+/// use cryptbox::{FromParts, KeyScope, PartKind, PartSpec, PartValue, PartValues, Scope};
 ///
-/// /// An org scopes keys and blind indexes; a workspace is only bound.
+/// /// An org scopes keys; a workspace is only bound.
 /// #[derive(Clone, Hash, PartialEq, Eq)]
 /// struct OrgWorkspace {
 ///     org: [u8; 16],
 ///     workspace: [u8; 16],
-/// }
-///
-/// /// The parts a blind-index query knows: the org.
-/// #[derive(Clone, Hash, PartialEq, Eq)]
-/// struct OrgSearch {
-///     org: [u8; 16],
 /// }
 ///
 /// impl Scope for OrgWorkspace {
@@ -75,35 +73,42 @@ identifier!(
 ///         PartSpec::keys(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::Uuid),
 ///         PartSpec::bound(cryptbox::part_id!("c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48"), PartKind::Uuid),
 ///     ];
-///     type IndexArgs = OrgSearch;
 ///
 ///     fn values(&self) -> PartValues<'_> {
 ///         PartValues::from([PartValue::Uuid(self.org), PartValue::Uuid(self.workspace)])
 ///     }
+/// }
 ///
-///     fn index_values(args: &OrgSearch) -> PartValues<'_> {
-///         PartValues::from([PartValue::Uuid(args.org)])
+/// impl FromParts for OrgWorkspace {
+///     fn from_parts(values: &[PartValue<'_>]) -> Result<Self, cryptbox::Error> {
+///         match values {
+///             [PartValue::Uuid(org), PartValue::Uuid(workspace)] => Ok(Self {
+///                 org: *org,
+///                 workspace: *workspace,
+///             }),
+///             _ => Err(cryptbox::Error::InvalidBinding),
+///         }
 ///     }
 /// }
 ///
 /// let scope = OrgWorkspace { org: [1; 16], workspace: [2; 16] };
-/// let search = OrgSearch { org: [1; 16] };
+/// let other_workspace = OrgWorkspace { org: [1; 16], workspace: [3; 16] };
 ///
-/// assert_eq!(KeyScope::of(&scope)?, KeyScope::of_index::<OrgWorkspace>(&search)?);
+/// // Both share the org's key scope.
+/// assert_eq!(KeyScope::of(&scope)?, KeyScope::of(&other_workspace)?);
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
 ///
-/// With the `derive` feature, `#[derive(Scope)]` writes exactly this impl, and
-/// generates `OrgSearch`, from `#[cryptbox(index_args = OrgSearch)]` on the
-/// struct, `#[cryptbox(part = "3a1f0c6e-…", keys)]` on `org`, and
+/// With the `derive` feature, `#[derive(Scope)]` writes exactly these impls from
+/// `#[cryptbox(part = "3a1f0c6e-…", keys)]` on `org` and
 /// `#[cryptbox(part = "c7d24e19-…")]` on `workspace`. It sorts the parts and
-/// checks their IDs when it expands; [`PartType`] maps each field's type to
-/// its kind.
+/// checks their IDs when it expands; [`PartType`] maps each field's type to its
+/// kind.
 ///
 /// Unsorted parts fail the build:
 ///
 /// ```compile_fail,E0080
-/// use cryptbox::{Scope, KeyScope, PartKind, PartSpec, PartValue, PartValues};
+/// use cryptbox::{KeyScope, PartKind, PartSpec, PartValue, PartValues, Scope};
 ///
 /// #[derive(Clone, Hash, PartialEq, Eq)]
 /// struct Unsorted;
@@ -113,14 +118,9 @@ identifier!(
 ///         PartSpec::keys(cryptbox::part_id!("c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48"), PartKind::I64),
 ///         PartSpec::bound(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
 ///     ];
-///     type IndexArgs = ();
 ///
 ///     fn values(&self) -> PartValues<'_> {
 ///         PartValues::from([PartValue::I64(1), PartValue::I64(2)])
-///     }
-///
-///     fn index_values((): &()) -> PartValues<'_> {
-///         PartValues::from([PartValue::I64(1)])
 ///     }
 /// }
 ///
@@ -130,7 +130,7 @@ identifier!(
 /// So do duplicate part IDs:
 ///
 /// ```compile_fail,E0080
-/// use cryptbox::{Scope, KeyScope, PartKind, PartSpec, PartValue, PartValues};
+/// use cryptbox::{KeyScope, PartKind, PartSpec, PartValue, PartValues, Scope};
 ///
 /// #[derive(Clone, Hash, PartialEq, Eq)]
 /// struct Duplicate;
@@ -140,14 +140,9 @@ identifier!(
 ///         PartSpec::keys(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
 ///         PartSpec::bound(cryptbox::part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"), PartKind::I64),
 ///     ];
-///     type IndexArgs = ();
 ///
 ///     fn values(&self) -> PartValues<'_> {
 ///         PartValues::from([PartValue::I64(1), PartValue::I64(2)])
-///     }
-///
-///     fn index_values((): &()) -> PartValues<'_> {
-///         PartValues::from([PartValue::I64(1)])
 ///     }
 /// }
 ///
@@ -156,29 +151,15 @@ identifier!(
 ///
 #[doc = concat!(
     "[ADR-0005]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0005-runtime-binding-is-the-core.md\n",
+    "[ADR-0009]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0009-scopes-have-views.md\n",
     "[wire format]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#binding",
 )]
 pub trait Scope: Clone + Hash + Eq + Send + Sync + 'static {
     /// The declared parts, sorted by part ID.
     const PARTS: &'static [PartSpec];
 
-    /// The query-time arguments of a blind index: the values of the
-    /// [`keys`](PartRole::Keys) and [`index`](PartRole::Index) parts.
-    ///
-    /// A query knows its scope but has no record, so it cannot supply a whole
-    /// binding.
-    type IndexArgs: Clone + Hash + Eq + Send + Sync + 'static;
-
     /// Returns one value for each of [`PARTS`](Self::PARTS), in the same order.
     fn values(&self) -> PartValues<'_>;
-
-    /// Returns one value for each `keys` and `index` part, in
-    /// [`PARTS`](Self::PARTS) order.
-    ///
-    /// These must equal the values [`values`](Self::values) returns for the same
-    /// parts: a sealed value's prepared indexes take their scope from its
-    /// binding, and probes take theirs from these arguments.
-    fn index_values(args: &Self::IndexArgs) -> PartValues<'_>;
 }
 
 /// A [`Scope`] that can be built back from its part values.
@@ -243,18 +224,31 @@ pub(crate) const fn check_view(view: &[PartSpec], scope: &[PartSpec]) {
     );
 }
 
+// Panics become build errors in `const` context. A query selects index keys
+// from its index scope, so the scope must hold every `keys` part.
+pub(crate) const fn check_index_scope(index: &[PartSpec], scope: &[PartSpec]) {
+    assert!(
+        is_view(index, scope),
+        "a blind index's scope must be a view of its seal's scope: its parts must be parts \
+         of the seal's scope, with the same part IDs and kinds"
+    );
+    let mut position = 0;
+    while position < scope.len() {
+        if matches!(scope[position].role, PartRole::Keys) {
+            assert!(
+                is_view(std::slice::from_ref(&scope[position]), index),
+                "a blind index's scope must include every `keys` part of its seal's scope"
+            );
+        }
+        position += 1;
+    }
+}
+
 /// Builds the view `V` of `scope`, taking each of its parts' values from
 /// `scope`'s by part ID.
 ///
 /// A `V` that is not a view of `S` fails the build when the projection is first
 /// used; like the [`Scope`] checks, it runs after monomorphization.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "blind-index scopes and keys views project with it next"
-    )
-)]
 pub(crate) fn project_view<V: FromParts, S: Scope>(scope: &S) -> Result<V, Error> {
     const {
         check_parts(V::PARTS);
@@ -267,40 +261,6 @@ pub(crate) fn project_view<V: FromParts, S: Scope>(scope: &S) -> Result<V, Error
     let projected = project(V::PARTS, &S::PARTS.iter().zip(&values.0))?;
 
     V::from_parts(&projected)
-}
-
-/// A [`Scope`] whose index arguments can be built back from their part values.
-///
-/// This is the inverse of [`Scope::index_values`]: given one value for each
-/// [`keys`](PartRole::Keys) and [`index`](PartRole::Index) part, in
-/// [`PARTS`](Scope::PARTS) order, it returns the
-/// [`IndexArgs`](Scope::IndexArgs) that supply them. An adapter that carries
-/// index arguments as text, such as a Restate object key, parses the values
-/// and builds the arguments through it. `#[derive(Scope)]` implements it; a
-/// hand-written binding can read each value with
-/// [`PartType::from_part_value`].
-///
-/// ```
-/// use cryptbox::{Error, FromIndexValues, PartType, PartValue, Tenant, TenantId};
-///
-/// let acme = Tenant(TenantId::new("acme")?);
-///
-/// assert_eq!(Tenant::from_index_values(&[PartValue::Bytes(b"acme")])?, acme);
-/// assert_eq!(Tenant::from_index_values(&[]), Err(Error::InvalidBinding));
-/// # Ok::<(), cryptbox::Error>(())
-/// ```
-pub trait FromIndexValues: Scope {
-    /// Builds the index arguments from one value per `keys` and `index` part,
-    /// in `PARTS` order.
-    ///
-    /// Building then reading back with [`Scope::index_values`] must return
-    /// the same values.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::InvalidBinding`] for a missing or extra value, or a value
-    /// its part's type cannot hold, such as one of another kind.
-    fn from_index_values(values: &[PartValue<'_>]) -> Result<Self::IndexArgs, Error>;
 }
 
 /// What a seal's values are bound to beyond its seal ID: a [`Scope`], or a scope
@@ -445,23 +405,17 @@ pub enum PartKind {
 /// What a part scopes beyond the ciphertext itself.
 ///
 /// Every part is bound into the ciphertext. The role is persistent schema:
-/// changing it changes index derivation and key custody.
+/// changing it changes key custody. Which parts partition a blind index is up
+/// to the index's own scope, which must include every `keys` part.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PartRole {
-    /// Scopes key custody and blind indexes, and is the unit you shred.
+    /// Scopes key custody, and is the unit you shred.
     ///
     /// A `keys` value can't be empty, and must be known before rows are read.
     Keys,
-    /// Scopes blind indexes only.
-    Index,
-    /// Bound into the ciphertext only.
+    /// Bound into the ciphertext, and into the blind indexes whose scope
+    /// includes it.
     Bound,
-}
-
-impl PartRole {
-    const fn scopes_index(self) -> bool {
-        matches!(self, Self::Keys | Self::Index)
-    }
 }
 
 /// One declared part of a binding declaration: its ID, value kind, and role.
@@ -477,16 +431,10 @@ impl PartSpec {
         Self { id, kind, role }
     }
 
-    /// Declares a part that scopes key custody and blind indexes.
+    /// Declares a part that scopes key custody.
     #[must_use]
     pub const fn keys(id: PartId, kind: PartKind) -> Self {
         Self::new(*id.as_bytes(), kind, PartRole::Keys)
-    }
-
-    /// Declares a part that scopes blind indexes only.
-    #[must_use]
-    pub const fn index(id: PartId, kind: PartKind) -> Self {
-        Self::new(*id.as_bytes(), kind, PartRole::Index)
     }
 
     /// Declares a part that is only bound into the ciphertext.
@@ -746,39 +694,14 @@ impl BindingDomain {
         Self::scoped(id, BindingDeclaration::of::<S>(), &values.0, record)
     }
 
-    /// Encodes the blind-index domain of seal `id` under a query's arguments.
-    ///
-    /// The domain is the binding restricted to its `keys` and `index` parts,
-    /// without a record: the empty binding when it has no such parts.
+    /// Encodes the blind-index domain of seal `id` under an index scope: every
+    /// part of `scope`, without a record, or the empty binding without parts.
     // See ../docs/wire-format.md#index-binding.
-    pub(crate) fn index<B: Scope>(id: &[u8; 16], args: &B::IndexArgs) -> Result<Self, Error> {
-        const { check_parts(B::PARTS) };
-
-        let specs: Vec<_> = B::PARTS
-            .iter()
-            .copied()
-            .filter(|spec| spec.role.scopes_index())
-            .collect();
-
-        Self::index_parts(id, &specs, &B::index_values(args).0)
-    }
-
-    /// Encodes the blind-index domain of seal `id` under a whole scope: the
-    /// same domain as [`Self::index`] under the scope's `keys` and `index`
-    /// values.
-    pub(crate) fn index_of<B: Scope>(id: &[u8; 16], scope: &B) -> Result<Self, Error> {
-        const { check_parts(B::PARTS) };
+    pub(crate) fn index<I: Scope>(id: &[u8; 16], scope: &I) -> Result<Self, Error> {
+        const { check_parts(I::PARTS) };
 
         let values = scope.values();
-        check_values(B::PARTS, &values.0)?;
-        let (specs, values): (Vec<_>, Vec<_>) = B::PARTS
-            .iter()
-            .copied()
-            .zip(values.0)
-            .filter(|(spec, _)| spec.role.scopes_index())
-            .unzip();
-
-        Self::index_parts(id, &specs, &values)
+        Self::index_parts(id, I::PARTS, &values.0)
     }
 
     /// Encodes the binding of seal `id` under the older declaration `Old`,
@@ -805,30 +728,6 @@ impl BindingDomain {
         let record = if Old::RECORD.is_some() { record } else { None };
 
         Self::scoped(id, BindingDeclaration::of::<Old>(), &values, record)
-    }
-
-    /// Encodes the blind-index domain of seal `id` under the older declaration
-    /// `Old`, taking each of its `keys` and `index` parts from a query's
-    /// arguments for scope `B`, by part ID.
-    #[cfg(feature = "migrate")]
-    pub(crate) fn index_projected<Old: SealScope, B: Scope>(
-        id: &[u8; 16],
-        args: &B::IndexArgs,
-    ) -> Result<Self, Error> {
-        const { check_parts(<Old::Parts as Scope>::PARTS) };
-        const { check_parts(B::PARTS) };
-
-        let values = B::index_values(args);
-        let specs = B::PARTS.iter().filter(|spec| spec.role.scopes_index());
-        check_values(specs.clone(), &values.0)?;
-        let old: Vec<_> = <Old::Parts as Scope>::PARTS
-            .iter()
-            .copied()
-            .filter(|spec| spec.role.scopes_index())
-            .collect();
-        let values = project(&old, &specs.zip(&values.0))?;
-
-        Self::index_parts(id, &old, &values)
     }
 
     // Encodes `specs` with `values`, without a record.
@@ -1079,14 +978,14 @@ mod tests {
     #[test]
     fn declaration_fingerprint_ignores_part_order_but_not_roles() {
         let fingerprint = BindingDeclaration::new(&[SEQUENCE, TENANT], None).fingerprint();
-        let index_tenant = PartSpec::new([0x11; 16], PartKind::Uuid, PartRole::Index);
+        let bound_tenant = PartSpec::new([0x11; 16], PartKind::Uuid, PartRole::Bound);
 
         assert_eq!(
             BindingDeclaration::new(&[TENANT, SEQUENCE], None).fingerprint(),
             fingerprint
         );
         assert_ne!(
-            BindingDeclaration::new(&[SEQUENCE, index_tenant], None).fingerprint(),
+            BindingDeclaration::new(&[SEQUENCE, bound_tenant], None).fingerprint(),
             fingerprint
         );
         assert_ne!(
@@ -1143,11 +1042,6 @@ mod tests {
         workspace: Vec<u8>,
     }
 
-    #[derive(Clone, Hash, PartialEq, Eq)]
-    struct OrgSearch {
-        org: [u8; 16],
-    }
-
     impl Scope for OrgWorkspace {
         const PARTS: &'static [PartSpec] = &[
             PartSpec::keys(
@@ -1159,14 +1053,8 @@ mod tests {
                 PartKind::Bytes,
             ),
         ];
-        type IndexArgs = OrgSearch;
-
         fn values(&self) -> PartValues<'_> {
             PartValues::from([PartValue::Uuid(self.org), PartValue::Bytes(&self.workspace)])
-        }
-
-        fn index_values(args: &OrgSearch) -> PartValues<'_> {
-            PartValues::from([PartValue::Uuid(args.org)])
         }
     }
 
@@ -1227,7 +1115,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "sorted by part ID without duplicates")]
     fn duplicate_parts_fail() {
-        check_parts(&[part(LOW, PartRole::Keys), part(LOW, PartRole::Index)]);
+        check_parts(&[part(LOW, PartRole::Keys), part(LOW, PartRole::Bound)]);
     }
 
     #[test]
@@ -1247,14 +1135,8 @@ mod tests {
             part_id!("11111111-1111-1111-1111-111111111111"),
             PartKind::Uuid,
         )];
-        type IndexArgs = Self;
-
         fn values(&self) -> PartValues<'_> {
             PartValues::from([PartValue::Uuid(self.org)])
-        }
-
-        fn index_values(args: &Self) -> PartValues<'_> {
-            args.values()
         }
     }
 

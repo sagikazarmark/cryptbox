@@ -7,7 +7,7 @@ use crate::{
     Error, IndexKeyId, KeyScope, PartValue, RecordId, Scope, Seal, SealScope,
     args::{PartsOf, Target},
     binding::declaration_fingerprint,
-    blind::{current_key_id, derive_value},
+    blind::{current_key_id, derive_value, projected_target},
     bound, inspect_blind_index, inspect_ciphertext,
 };
 
@@ -163,6 +163,8 @@ struct IndexColumn<'a, F>
 where
     F: Seal,
 {
+    /// Projects the column's index scope from a row's scope and encodes it.
+    target: fn(&PartsOf<F>) -> Result<Target, Error>,
     deriver: IndexDeriver<F>,
     current_key: CurrentIndexKey,
     keys: &'a dyn BlindIndexKeySource,
@@ -184,7 +186,8 @@ where
 /// The binding of one row under the planner's seal.
 struct RowBinding {
     target: Target,
-    index_target: Target,
+    /// One index target per registered index column, in order.
+    index_targets: Vec<Target>,
 }
 
 /// Plans the rewrite of one encrypted column and its blind-index columns.
@@ -353,6 +356,7 @@ where
     ///
     /// impl BlindIndexSpec for InviteEmailLookup {
     ///     type Seal = InviteEmail;
+    ///     type Scope = ();
     ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
     ///     const BITS: u16 = 32;
     ///     const NORMALIZER: &'static str = "exact/1";
@@ -380,6 +384,7 @@ where
         Spec: BlindIndexSpec<Seal = F>,
     {
         self.indexes.push(IndexColumn {
+            target: projected_target::<Spec>,
             deriver: derive_index_bytes::<Spec>,
             current_key: current_key_id::<Spec>,
             keys,
@@ -435,8 +440,10 @@ where
             return Ok(RowState::Stale);
         }
 
-        for (column, bytes) in self.indexes.iter().zip(indexes) {
-            if column.is_stale(bytes, &binding.index_target)? {
+        for ((column, bytes), target) in
+            self.indexes.iter().zip(indexes).zip(&binding.index_targets)
+        {
+            if column.is_stale(bytes, target)? {
                 return Ok(RowState::Stale);
             }
         }
@@ -486,8 +493,10 @@ where
                 binding.target.keyring(F::ID, self.keys)
             })?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
-        for (column, bytes) in self.indexes.iter().zip(indexes) {
-            stale_columns.push(column.is_stale(bytes, &binding.index_target)?);
+        for ((column, bytes), target) in
+            self.indexes.iter().zip(indexes).zip(&binding.index_targets)
+        {
+            stale_columns.push(column.is_stale(bytes, target)?);
         }
         let indexes_are_stale = stale_columns.contains(&true);
 
@@ -511,9 +520,10 @@ where
             // from decrypted plaintext, never trusted index metadata.
             let value = F::Codec::decode(&plaintext)?;
             let mut replacements = Vec::with_capacity(self.indexes.len());
-            for ((column, bytes), stale) in self.indexes.iter().zip(indexes).zip(&stale_columns) {
+            let columns = self.indexes.iter().zip(&binding.index_targets);
+            for (((column, target), bytes), stale) in columns.zip(indexes).zip(&stale_columns) {
                 replacements.push(if *stale {
-                    column.derive(&value, &binding.index_target)?
+                    column.derive(&value, target)?
                 } else {
                     bytes.to_vec()
                 });
@@ -556,10 +566,11 @@ where
         }
 
         Ok(Some(RowBinding {
-            index_target: Target {
-                domain: BindingDomain::index_of(F::ID.as_bytes(), &args.binding)?,
-                key_scope: key_scope.clone(),
-            },
+            index_targets: self
+                .indexes
+                .iter()
+                .map(|column| (column.target)(&args.binding))
+                .collect::<Result<_, _>>()?,
             target: Target { domain, key_scope },
         }))
     }
@@ -637,7 +648,8 @@ where
     ) -> Result<Vec<Vec<u8>>, Error> {
         self.indexes
             .iter()
-            .map(|column| column.derive(value, &binding.index_target))
+            .zip(&binding.index_targets)
+            .map(|(column, target)| column.derive(value, target))
             .collect()
     }
 

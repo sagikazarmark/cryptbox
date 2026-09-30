@@ -223,12 +223,14 @@ sealing of one column would not maintain another column, so `Plain<F>` rejects a
 seal that declares blind indexes.
 
 A blind index is domain-separated by its seal ID and by the
-[index binding](wire-format.md#index-binding): the values of the binding's `keys`
-and `index` parts. Equal values in different key scopes therefore have different
-index bytes, and a query supplies those values as its index arguments. Bound-only
-parts and the record do not participate, because a query cannot know them, so
-equal values in two workspaces of one org do share index bytes. Choose part roles
-with that in mind; see [bindings](bindings.md#choose-a-role-for-each-part).
+[index binding](wire-format.md#index-binding): the values of its index scope,
+which holds every `keys` part of the seal's scope. Equal values in different key
+scopes therefore have different index bytes, and a query supplies the index
+scope. The seal's other parts and the record do not participate unless the index
+scope names them, and the record never does, because a query cannot know it, so
+by default equal values in two workspaces of one org share index bytes. Choose
+index scopes with that in mind; see
+[bindings](bindings.md#choose-each-blind-indexs-scope).
 
 Search availability also depends on retaining all readable index-key generations.
 An application can decrypt a row successfully yet omit it from lookup if the

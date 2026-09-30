@@ -36,6 +36,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = UserEmail;
+    type Scope = ();
     const ID: cryptbox::IndexId = cryptbox::index_id!("ea0ffec1-651a-4d6b-bb01-d53a58006dfd");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";

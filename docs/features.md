@@ -8,9 +8,8 @@ No features are enabled by default, and all features are additive:
 - `derive` adds `#[derive(Seal)]`, `#[derive(Scope)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Record)]`
   from the `cryptbox-derive` proc-macro crate. Each expands to exactly the trait
-  impls you would write by hand, plus the index-arguments struct a scope names
-  with `index_args`, and a record's sealed struct, the seals its fields
-  declare, and per-field sealers, so a manual impl remains a first-class
+  impls you would write by hand, plus a record's sealed struct, the seals its
+  fields declare, and per-field sealers, so a manual impl remains a first-class
   alternative.
   IDs are UUID string literals checked at compile time; a codec is never
   inferred from a type's shape.
@@ -25,7 +24,7 @@ No features are enabled by default, and all features are additive:
 - `restate` adds the `restate` module for [Restate](https://restate.dev) handlers:
   journal codecs for `Sealed` and `BlindIndex`, sealing inside `ctx.run` so replay
   finds the same bytes, error classification, and `ObjectKey`, a strict Virtual
-  Object key for a binding's index arguments. It uses `restate-sdk` 0.12 and
+  Object key for a scope, such as a blind index's scope. It uses `restate-sdk` 0.12 and
   implies `serde`. See the [Restate guide].
 - `serde` adds explicit serialization of `Sealed` and `BlindIndex` stored
   bytes. It never adds serialization for plaintext `Plain` values.

@@ -1,5 +1,5 @@
-error: a record is never a declared part, so it can't scope keys or blind indexes: bind it with a seal scope of `cryptbox::Recorded<Scope, Id>`
- --> tests/ui/scope_keys_on_record.rs:6:16
+error: a record is never a declared part, so it can't scope keys: bind it with a seal scope of `cryptbox::Recorded<Scope, Id>`
+ --> tests/ui/scope_keys_on_record.rs:5:16
   |
-6 |     #[cryptbox(record, keys)]
+5 |     #[cryptbox(record, keys)]
   |                ^^^^^^

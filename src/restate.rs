@@ -24,8 +24,8 @@
 //!
 //! [`handler_error`] maps an [`Error`] to a Restate error: faults of the data
 //! or the request are terminal, and faults of the environment are retried.
-//! [`ObjectKey`] encodes a binding's index arguments as a Virtual Object key
-//! and parses them back strictly.
+//! [`ObjectKey`] encodes a scope, such as a blind index's index scope, as a
+//! Virtual Object key and parses it back strictly.
 //!
 //! Journal entries are plaintext to Restate unless the handler sealed them.
 //! Ingress input in particular arrives as the caller sent it. See the

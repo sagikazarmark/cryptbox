@@ -12,11 +12,6 @@ struct OrgWorkspace {
     workspace: Vec<u8>,
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct OrgSearch {
-    org: [u8; 16],
-}
-
 impl Scope for OrgWorkspace {
     const PARTS: &'static [PartSpec] = &[
         PartSpec::keys(
@@ -28,14 +23,8 @@ impl Scope for OrgWorkspace {
             PartKind::Bytes,
         ),
     ];
-    type IndexArgs = OrgSearch;
-
     fn values(&self) -> PartValues<'_> {
         PartValues::from([PartValue::Uuid(self.org), PartValue::Bytes(&self.workspace)])
-    }
-
-    fn index_values(args: &OrgSearch) -> PartValues<'_> {
-        PartValues::from([PartValue::Uuid(args.org)])
     }
 }
 
@@ -183,14 +172,8 @@ fn invalid_binding_values_are_rejected() {
             part_id!("1d6f0a3c-7e25-4b98-a4c1-5f8e2b0d3a76"),
             PartKind::Bytes,
         )];
-        type IndexArgs = Self;
-
         fn values(&self) -> PartValues<'_> {
             PartValues::from([PartValue::Bytes(&self.0)])
-        }
-
-        fn index_values(args: &Self) -> PartValues<'_> {
-            args.values()
         }
     }
 

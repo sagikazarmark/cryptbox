@@ -247,21 +247,18 @@ pub(crate) fn with_domain<F: Seal, A: Args<F>, T>(
     })
 }
 
-/// Encodes the binding of seal `F` under `args`, as [`domain`] does, together
-/// with the blind-index domain of its `keys` and `index` parts, which shares its
-/// key scope.
-pub(crate) fn domains<F: Seal, A: Args<F>>(args: A) -> Result<(Target, Target), Error> {
+/// Encodes the binding of seal `F` under `args`, as [`domain`] does, and returns
+/// the scope too, from which each blind index projects its index scope.
+pub(crate) fn domain_and_scope<F: Seal, A: Args<F>>(
+    args: A,
+) -> Result<(Target, PartsOf<F>), Error> {
     args.with_parts(|scope, record| {
-        let key_scope = KeyScope::of(scope)?;
         Ok((
             Target {
                 domain: BindingDomain::of::<F::Scope>(F::ID.as_bytes(), scope, record)?,
-                key_scope: key_scope.clone(),
+                key_scope: KeyScope::of(scope)?,
             },
-            Target {
-                domain: BindingDomain::index_of(F::ID.as_bytes(), scope)?,
-                key_scope,
-            },
+            scope.clone(),
         ))
     })
 }

@@ -2,9 +2,9 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, PartKind, PartSpec, PartValue,
-    PartValues, Recorded, Scope, Seal, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
-    key_id, part_id, seal_id,
+    EncryptionKeyring, Error, FromParts, IndexId, IndexKeyId, KeyId, Padding, PartKind, PartSpec,
+    PartValue, PartValues, Recorded, Scope, Seal, Sealed, Utf8, index_id, index_key_id,
+    inspect_blind_index, key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -42,6 +42,7 @@ struct EmailExact;
 
 impl BlindIndexSpec for EmailExact {
     type Seal = EmailSeal;
+    type Scope = ();
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 13;
     const NORMALIZER: &'static str = "email/1";
@@ -61,6 +62,7 @@ struct PhoneExact;
 
 impl BlindIndexSpec for PhoneExact {
     type Seal = PhoneSeal;
+    type Scope = ();
     const ID: IndexId = EmailExact::ID;
     const BITS: u16 = EmailExact::BITS;
     const NORMALIZER: &'static str = "email/1";
@@ -182,6 +184,7 @@ struct EmailDomain;
 
 impl BlindIndexSpec for EmailDomain {
     type Seal = EmailSeal;
+    type Scope = ();
     const ID: IndexId = index_id!("c0000000-0000-4000-8000-00000000000c");
     const BITS: u16 = 16;
     const NORMALIZER: &'static str = "email-domain/1";
@@ -248,6 +251,7 @@ struct NameAndPostalCode;
 
 impl BlindIndexSpec for NameAndPostalCode {
     type Seal = PersonSeal;
+    type Scope = ();
     const ID: IndexId = index_id!("b0000000-0000-4000-8000-00000000000b");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "name-postal-code/1";
@@ -313,6 +317,7 @@ macro_rules! truncation_spec {
 
         impl BlindIndexSpec for $name {
             type Seal = EmailSeal;
+            type Scope = ();
             const ID: IndexId = IndexId::from_bytes([$id_byte; 16]);
             const BITS: u16 = $bits;
             const NORMALIZER: &'static str = "exact/1";
@@ -337,7 +342,7 @@ truncation_spec!(TwoHundredFiftySixBits, 256, 5);
 
 fn assert_canonical_truncation<Spec>(expected_bytes: usize)
 where
-    Spec: BlindIndexSpec<Seal = EmailSeal>,
+    Spec: BlindIndexSpec<Seal = EmailSeal, Scope = ()>,
 {
     let index = Spec::derive_with(&email("truncation vector"), &(), &index_keys()).unwrap();
 
@@ -448,8 +453,7 @@ fn a_composite_index_is_consistent_only_when_every_part_matches() {
     );
 }
 
-/// An org scopes keys and indexes, a region scopes indexes only, and a
-/// workspace is only bound.
+/// An org scopes keys, and a region and a workspace are only bound.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct OrgWorkspace {
     org: [u8; 16],
@@ -457,7 +461,7 @@ struct OrgWorkspace {
     workspace: Vec<u8>,
 }
 
-/// The parts a ticket search knows: the org and the region.
+/// The index scope of a ticket search: the org and the region.
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct OrgRegion {
     org: [u8; 16],
@@ -470,7 +474,7 @@ impl Scope for OrgWorkspace {
             part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
             PartKind::Uuid,
         ),
-        PartSpec::index(
+        PartSpec::bound(
             part_id!("8b0e5d27-4f1a-4c39-a6d2-0e7f9c3b5a18"),
             PartKind::I64,
         ),
@@ -479,8 +483,6 @@ impl Scope for OrgWorkspace {
             PartKind::Bytes,
         ),
     ];
-    type IndexArgs = OrgRegion;
-
     fn values(&self) -> PartValues<'_> {
         PartValues::from([
             PartValue::Uuid(self.org),
@@ -488,9 +490,31 @@ impl Scope for OrgWorkspace {
             PartValue::Bytes(&self.workspace),
         ])
     }
+}
 
-    fn index_values(args: &OrgRegion) -> PartValues<'_> {
-        PartValues::from([PartValue::Uuid(args.org), PartValue::I64(args.region)])
+impl Scope for OrgRegion {
+    const PARTS: &'static [PartSpec] = &[
+        PartSpec::keys(
+            part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
+            PartKind::Uuid,
+        ),
+        PartSpec::bound(
+            part_id!("8b0e5d27-4f1a-4c39-a6d2-0e7f9c3b5a18"),
+            PartKind::I64,
+        ),
+    ];
+
+    fn values(&self) -> PartValues<'_> {
+        PartValues::from([PartValue::Uuid(self.org), PartValue::I64(self.region)])
+    }
+}
+
+impl FromParts for OrgRegion {
+    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
+        match *values {
+            [PartValue::Uuid(org), PartValue::I64(region)] => Ok(Self { org, region }),
+            _ => Err(Error::InvalidBinding),
+        }
     }
 }
 
@@ -509,6 +533,7 @@ struct TicketEmailExact;
 
 impl BlindIndexSpec for TicketEmailExact {
     type Seal = TicketEmail;
+    type Scope = OrgRegion;
     const ID: IndexId = index_id!("d0000000-0000-4000-8000-00000000000d");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "email/1";
@@ -645,14 +670,17 @@ impl Scope for Team {
         part_id!("5d9a2c41-7e3b-4f80-9b16-c2a4e8d07f53"),
         PartKind::Bytes,
     )];
-    type IndexArgs = Self;
-
     fn values(&self) -> PartValues<'_> {
-        Self::index_values(self)
+        PartValues::from([PartValue::Bytes(&self.0)])
     }
+}
 
-    fn index_values(args: &Self) -> PartValues<'_> {
-        PartValues::from([PartValue::Bytes(&args.0)])
+impl FromParts for Team {
+    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
+        match *values {
+            [PartValue::Bytes(team)] => Ok(Self(team.to_vec())),
+            _ => Err(Error::InvalidBinding),
+        }
     }
 }
 
@@ -671,6 +699,7 @@ struct TeamEmailExact;
 
 impl BlindIndexSpec for TeamEmailExact {
     type Seal = TeamEmail;
+    type Scope = Team;
     const ID: IndexId = index_id!("f0000000-0000-4000-8000-00000000000f");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "email/1";

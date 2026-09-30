@@ -34,6 +34,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = Email;
+    type Scope = ();
     const ID: IndexId = index_id!("50000000-0000-4000-8000-000000000005");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";

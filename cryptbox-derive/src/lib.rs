@@ -5,9 +5,8 @@
 //! exactly the trait impls you would write by hand, inside `const _: () = { … };`
 //! with absolute `::cryptbox::` paths. It adds no `Debug`, `Deref`, `From`, or
 //! hidden items, so the manual impl stays a first-class alternative. The
-//! generated items are the struct you name with `Scope`'s `index_args`, and
-//! `Record`'s sealed struct, the seals its fields declare, per-field sealers,
-//! and compile-time index checks.
+//! generated items are `Record`'s sealed struct, the seals its fields declare,
+//! per-field sealers, and compile-time index checks.
 //!
 //! All derives share one `#[cryptbox(...)]` attribute namespace. Every derive
 //! accepts `crate = "path"` for code that reaches `cryptbox` under another path.
@@ -118,6 +117,7 @@ use syn::{DeriveInput, parse_macro_input};
 /// # pub struct EmailLookup;
 /// # impl cryptbox::BlindIndexSpec for EmailLookup {
 /// #     type Seal = CustomerEmail;
+/// #     type Scope = cryptbox::Tenant;
 /// #     const ID: cryptbox::IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
 /// #     const BITS: u16 = 32;
 /// #     const NORMALIZER: &'static str = "email/1";
@@ -216,6 +216,7 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 /// | --- | --- | --- |
 /// | `id = "…"` | yes | The index ID, a hyphenated UUID string literal. |
 /// | `seal = Type` | yes | The seal whose values the index projects. |
+/// | `scope = Type` | no | The index scope, a view of the seal's scope that a query supplies. Defaults to the seal's whole scope, without a record. |
 /// | `bits = N` | yes | The retained index bits, from 1 to 256. |
 /// | `query = Type` | yes | The lookup input, such as `str`. |
 /// | `normalize = path` | yes | A `fn(&Query) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>`. |
@@ -257,7 +258,9 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 /// ```
 ///
 /// expands to exactly the manual impl. The real expansion spells `Result`, `Vec`,
-/// and `zeroize::Zeroizing` as absolute paths, the last through `cryptbox`:
+/// and `zeroize::Zeroizing` as absolute paths, the last through `cryptbox`, and
+/// without `scope` names the seal's scope as `<<UserEmail as Seal>::Scope as
+/// SealScope>::Parts`, here `()`:
 ///
 /// ```
 /// # use cryptbox::BlindIndexError;
@@ -273,6 +276,7 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 ///     #[automatically_derived]
 ///     impl ::cryptbox::BlindIndexSpec for EmailLookup {
 ///         type Seal = UserEmail;
+///         type Scope = ();
 ///         const ID: ::cryptbox::IndexId =
 ///             ::cryptbox::IndexId::from_u128(0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53);
 ///         const BITS: u16 = 32;
@@ -308,23 +312,13 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// | Field key | Required | Meaning |
 /// | --- | --- | --- |
 /// | `part = "…"` | yes | The part ID, a hyphenated UUID string literal. |
-/// | `keys` | no | The part scopes key custody and blind indexes. |
-/// | `index` | no | The part scopes blind indexes only. |
+/// | `keys` | no | The part scopes key custody. |
 ///
-/// A part without `keys` or `index` is bound only. A part holds a `[u8; 16]`
+/// A part without `keys` is bound only. A part holds a `[u8; 16]`
 /// UUID, a `uuid::Uuid` with `cryptbox`'s `uuid` feature, an `i64`, or bytes
 /// (`Vec<u8>`, `Box<[u8]>`, or `TenantId`), or any other type that implements
 /// `PartType`, such as an application's own ID newtype. A record is never a
 /// declared part: bind it with a seal scope of `Recorded<Scope, Id>`.
-///
-/// | Struct key | Required | Meaning |
-/// | --- | --- | --- |
-/// | `index_args = Name` | with bound-only and blind-index parts together | Generates `Name`, the index-arguments struct of the `keys` and `index` parts. |
-///
-/// Without `index_args`, the index arguments are the binding itself when every
-/// part scopes blind indexes, and `()` when none does. The generated struct keeps
-/// each field's name, type, visibility, and docs, and derives `Clone`, `Debug`,
-/// `Hash`, `PartialEq`, and `Eq`.
 ///
 /// Part IDs are validated when the macro expands: none is nil, and none repeats.
 /// Declare the fields in any order; the derive sorts the parts by part ID. Every
@@ -332,7 +326,6 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///
 /// ```
 /// #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-/// #[cryptbox(index_args = OrgSearch)]
 /// pub struct OrgWorkspace {
 ///     /// Bound only.
 ///     #[cryptbox(part = "c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48")]
@@ -343,11 +336,9 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// expands to exactly the manual impls and the named struct. The real expansion
-/// spells the derived traits as absolute paths. `FromIndexValues` builds the
-/// index arguments back from their part values, for adapters that carry
-/// index arguments as text, and `FromParts` builds the scope itself, as a view
-/// of another scope does:
+/// expands to exactly the manual impls. `FromParts` builds the scope back from
+/// its part values, as a view of another scope, such as a blind index's scope,
+/// is built, and as adapters that carry a scope as text do:
 ///
 /// ```
 /// # #[derive(Clone, Hash, PartialEq, Eq)]
@@ -355,13 +346,6 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// #     pub workspace: Vec<u8>,
 /// #     pub org: [u8; 16],
 /// # }
-/// /// The index arguments of [`OrgWorkspace`]: its `keys` and `index` parts.
-/// #[derive(Clone, Debug, Hash, PartialEq, Eq)]
-/// pub struct OrgSearch {
-///     /// The key scope and shred unit.
-///     pub org: [u8; 16],
-/// }
-///
 /// const _: () = {
 ///     #[automatically_derived]
 ///     impl ::cryptbox::Scope for OrgWorkspace {
@@ -376,33 +360,11 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///                 <Vec<u8> as ::cryptbox::PartType>::KIND,
 ///             ),
 ///         ];
-///         type IndexArgs = OrgSearch;
-///
 ///         fn values(&self) -> ::cryptbox::PartValues<'_> {
 ///             ::cryptbox::PartValues::from([
 ///                 <[u8; 16] as ::cryptbox::PartType>::part_value(&self.org),
 ///                 <Vec<u8> as ::cryptbox::PartType>::part_value(&self.workspace),
 ///             ])
-///         }
-///
-///         fn index_values(args: &OrgSearch) -> ::cryptbox::PartValues<'_> {
-///             ::cryptbox::PartValues::from([
-///                 <[u8; 16] as ::cryptbox::PartType>::part_value(&args.org),
-///             ])
-///         }
-///     }
-///
-///     #[automatically_derived]
-///     impl ::cryptbox::FromIndexValues for OrgWorkspace {
-///         fn from_index_values(
-///             values: &[::cryptbox::PartValue<'_>],
-///         ) -> Result<OrgSearch, ::cryptbox::Error> {
-///             match values {
-///                 [value0] => Ok(OrgSearch {
-///                     org: <[u8; 16] as ::cryptbox::PartType>::from_part_value(*value0)?,
-///                 }),
-///                 _ => Err(::cryptbox::Error::InvalidBinding),
-///             }
 ///         }
 ///     }
 ///
@@ -421,7 +383,8 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// };
 /// ```
 ///
-/// A seal names the binding with `#[cryptbox(scope = OrgWorkspace)]`.
+/// A seal names the scope with `#[cryptbox(scope = OrgWorkspace)]`, and a blind
+/// index names a view of it the same way.
 #[proc_macro_derive(Scope, attributes(cryptbox))]
 pub fn derive_scope(input: TokenStream) -> TokenStream {
     derive(input, scope::expand)

@@ -56,6 +56,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = Email;
+    type Scope = ();
     const ID: IndexId = index_id!("90000000-0000-4000-8000-000000000009");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "exact/1";
@@ -74,6 +75,7 @@ struct IbanLookup;
 
 impl BlindIndexSpec for IbanLookup {
     type Seal = Iban;
+    type Scope = ();
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "exact/1";
@@ -470,6 +472,7 @@ struct TenantNoteLookup;
 
 impl BlindIndexSpec for TenantNoteLookup {
     type Seal = TenantNote;
+    type Scope = Tenant;
     const ID: IndexId = index_id!("b0000000-0000-4000-8000-00000000000b");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "exact/1";

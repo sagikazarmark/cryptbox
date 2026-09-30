@@ -46,6 +46,7 @@ struct IndexSpec;
 
 impl BlindIndexSpec for IndexSpec {
     type Seal = TestSeal;
+    type Scope = ();
     const ID: IndexId = index_id!("e0000000-0000-4000-8000-00000000000e");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";

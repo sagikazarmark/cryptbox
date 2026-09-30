@@ -105,7 +105,7 @@ mod tests {
 
         assert_eq!(
             KeyScope::of(&acme)?,
-            KeyScope::of_index::<Tenant>(&Tenant(TenantId::new("acme")?))?
+            KeyScope::of_keys::<Tenant>(&[cryptbox::PartValue::Bytes(b"acme")])?
         );
         Ok(())
     }

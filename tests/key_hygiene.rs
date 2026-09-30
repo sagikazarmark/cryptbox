@@ -22,6 +22,7 @@ struct ExactValue;
 
 impl BlindIndexSpec for ExactValue {
     type Seal = TestSeal;
+    type Scope = ();
     const ID: IndexId = index_id!("abcdefab-cdef-4abc-8def-abcdefabcdef");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";

@@ -29,16 +29,15 @@ and security never depends on the fingerprint.
 
 **Binding part**:
 One declared value of a binding scope, with a part ID, a value kind (uuid, i64,
-or bytes), and a role. A `keys` part scopes key custody and blind indexes, an
-`index` part scopes blind indexes only, and any other part is bound only. A
-record ID is never a part: it is always bound only.
+or bytes), and a role. A `keys` part scopes key custody, and any other part is
+bound only. A record ID is never a part: it is always bound only.
 
 **Blind index**:
 A separately keyed, truncated searchable projection of a normalized sealed value.
-Each blind index is declared over exactly one seal. Its seal ID and its
-index arguments (`IndexArgs`, the values of the binding's `keys` and `index`
-parts) domain-separate it; bound-only parts and the record do not, since a
-query cannot know them. It deliberately reveals equality and frequency information.
+Each blind index is declared over exactly one seal. Its seal ID and the values
+of its index scope domain-separate it; the seal's other parts and the record do
+not, since a query cannot know them. It deliberately reveals equality and
+frequency information.
 
 **Candidate**:
 A row selected by a probe that still requires authenticated decryption and
@@ -84,12 +83,18 @@ codec.
 <!-- Agent guidance: “plaintext type” and the `Plaintext` trait are retired (ADR-0007); no application or dependency can declare or change a default codec. -->
 
 **Index binding**:
-The binding a blind index is derived under: the seal ID and the values of the
-binding's `keys` and `index` parts, without bound-only parts or a record. A
-query supplies it as the index arguments (`IndexArgs`); a prepared value takes
-it from the binding it was sealed with. A seal without `keys` or `index`
-parts has an unscoped index binding.
-<!-- Agent guidance: code calls the encoded form the index domain (`BindingDomain::index`), as it calls a binding's encoding `BindingDomain`; say “index binding” in prose. Avoid “index scope”, which blurs it with the key scope. -->
+The binding a blind index is derived under: the seal ID and the values of its
+index scope, without a record. A query supplies the index scope; a prepared
+value projects it from the scope it was sealed under. An index scope without
+parts gives an unscoped index binding.
+<!-- Agent guidance: code calls the encoded form the index domain (`BindingDomain::index`), as it calls a binding's encoding `BindingDomain`; say “index binding” for the encoded domain and “index scope” for the scope that supplies its values. -->
+
+**Index scope**:
+The parts that partition a blind index (`BlindIndexSpec::Scope`): a view of its
+seal's scope that holds every `keys` part. A query supplies its values, and the
+index binding is derived from them. Two indexes over one seal may have
+different index scopes.
+<!-- Agent guidance: the `index` part role and `IndexArgs` are retired (ADR-0009); do not reintroduce them. -->
 
 **Index precision**:
 The number of retained blind-index bits. Fewer bits increase false candidates
@@ -144,9 +149,9 @@ for blind-index derivation and candidate comparison. It is persistent schema;
 the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 
 **Object key**:
-The canonical text form of a binding's index arguments that keys a Restate
-Virtual Object (`restate::ObjectKey`): the `keys` parts, then the `index`
-parts, each spelled exactly one way. Every object key of a key scope starts
+The canonical text form of a scope, usually a blind index's index scope, that
+keys a Restate Virtual Object (`restate::ObjectKey`): the `keys` parts, then the
+other parts, each spelled exactly one way. Every object key of a key scope starts
 with that scope's prefix. It is plaintext to Restate, and it names a scope
 only as far as its caller was authorized for it.
 <!-- Agent guidance: “object key” is Restate's term for the key of a Virtual Object; do not call it a “key” alone, which reads as key material. -->
@@ -186,8 +191,8 @@ rejects a record that omits one.
 **Schema manifest**:
 A reviewable listing of registered seals and blind indexes with their
 persistent schema: seal ID, codec ID, padding, record kind, binding declaration
-(fingerprint, parts, kinds, and roles), shred unit, index ID, precision, and
-normalizer name. It names IDs, never Rust types, so its output is the same on
+(fingerprint, parts, kinds, and roles), shred unit, index ID, precision,
+normalizer name, and index scope. It names IDs, never Rust types, so its output is the same on
 every toolchain. A seal may carry a custody label, a declarative note of which
 keys the application passes for it.
 Applications compare it with a committed snapshot in CI.
@@ -195,8 +200,8 @@ Applications compare it with a committed snapshot in CI.
 
 **Scope**:
 The declared parts of a binding, such as a tenant, or an org plus a workspace
-(`Scope`). Parts have roles: `keys` parts form the key scope, `index` parts
-also scope blind indexes, and other parts are bound only. A scope struct owns
+(`Scope`). Parts have roles: `keys` parts form the key scope, and other parts
+are bound only. A scope struct owns
 its values; a record is never part of it. `()` is the empty scope, with no
 parts: a seal with it is *unscoped*, and binds its values to its seal ID alone.
 <!-- Agent guidance: `FieldOnly` is the retired name of the empty scope `()`, and “field-only” of “unscoped”; do not reintroduce them. The `Scope` trait was `Binding`: “binding” still names the whole domain. -->
@@ -226,8 +231,8 @@ only.
 
 **Shred unit**:
 The finest `keys` part whose root keys are stored independently. Destroying
-those root keys makes every value sealed under them unreadable; bound-only and
-`index` parts are never shredded on their own. The schema manifest reports the
+those root keys makes every value sealed under them unreadable; bound-only
+parts are never shredded on their own. The schema manifest reports the
 finest possible unit, the key scope (all `keys` parts, or the whole keyring
 when there are none), since only the application knows how its root keys are
 stored.
@@ -242,3 +247,8 @@ The application's own type whose values a seal seals. It says how it encodes,
 never where it is stored: identity belongs to the seal. A self-valued seal is
 both at once, so it is never shared by another seal.
 <!-- Agent guidance: avoid giving a shared value type a seal ID; the same value type routinely backs several seals. -->
+
+**View**:
+A scope whose parts are a subset of another scope's, matched by part ID and
+kind, and whose values are projected from that scope's by part ID
+(`FromParts`). A blind index's index scope is a view of its seal's scope.

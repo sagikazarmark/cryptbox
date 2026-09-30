@@ -63,6 +63,7 @@ struct HandleEquality;
 
 impl BlindIndexSpec for HandleEquality {
     type Seal = Handle;
+    type Scope = ();
     const ID: cryptbox::IndexId = cryptbox::index_id!("6c0e20d5-cb30-4b84-8dd1-995f872b417c");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "handle-lowercase/1";

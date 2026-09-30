@@ -5,7 +5,7 @@ use crate::{Error, PartId};
 /// follows.
 ///
 /// Two bindings of the same type share a key scope when their `keys` values
-/// are equal, whatever their `index` and bound-only values. A binding without
+/// are equal, whatever their bound-only values. A binding without
 /// `keys` parts, such as the empty scope `()`, has the empty key scope,
 /// which every such binding shares. A record never contributes to it.
 ///
@@ -37,24 +37,6 @@ impl KeyScope {
         check_values(B::PARTS, &values.0)?;
 
         Ok(Self::keys_of(B::PARTS.iter().zip(&values.0)))
-    }
-
-    /// Returns the key scope of a blind-index query's arguments.
-    ///
-    /// It equals the key scope of every binding with the same `keys` values.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::InvalidBinding`] when the arguments' values do not match
-    /// the binding's `keys` and `index` parts; see [`Scope::index_values`].
-    pub fn of_index<B: Scope>(args: &B::IndexArgs) -> Result<Self, Error> {
-        const { check_parts(B::PARTS) };
-
-        let values = B::index_values(args);
-        let specs = B::PARTS.iter().filter(|spec| spec.role.scopes_index());
-        check_values(specs.clone(), &values.0)?;
-
-        Ok(Self::keys_of(specs.zip(&values.0)))
     }
 
     /// Returns the key scope of the given `keys` part values of binding `B`, one
@@ -100,29 +82,13 @@ impl KeyScope {
         })
     }
 
-    /// The key scope of the older scope `Old`, taking each of its `keys` parts
-    /// from `scope` by part ID.
-    #[cfg(feature = "migrate")]
+    /// The key scope of scope `Old`, taking each of its `keys` parts from
+    /// `scope` by part ID.
     pub(crate) fn projected<Old: Scope, B: Scope>(scope: &B) -> Result<Self, Error> {
         let values = scope.values();
         check_values(B::PARTS, &values.0)?;
         let keys = keys_parts(Old::PARTS);
         let values = super::project(&keys, &B::PARTS.iter().zip(&values.0))?;
-
-        Ok(Self::keys_of(keys.iter().zip(&values)))
-    }
-
-    /// The key scope of the older scope `Old`, taking each of its `keys` parts
-    /// from a query's arguments for scope `B`, by part ID.
-    #[cfg(feature = "migrate")]
-    pub(crate) fn index_projected<Old: Scope, B: Scope>(
-        args: &B::IndexArgs,
-    ) -> Result<Self, Error> {
-        let values = B::index_values(args);
-        let specs = B::PARTS.iter().filter(|spec| spec.role.scopes_index());
-        check_values(specs.clone(), &values.0)?;
-        let keys = keys_parts(Old::PARTS);
-        let values = super::project(&keys, &specs.zip(&values.0))?;
 
         Ok(Self::keys_of(keys.iter().zip(&values)))
     }
@@ -153,7 +119,6 @@ impl KeyScope {
     }
 }
 
-#[cfg(feature = "migrate")]
 fn keys_parts(parts: &[PartSpec]) -> Vec<PartSpec> {
     parts
         .iter()

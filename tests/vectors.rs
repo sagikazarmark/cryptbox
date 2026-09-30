@@ -83,6 +83,7 @@ struct VectorIndex;
 
 impl BlindIndexSpec for VectorIndex {
     type Seal = VectorSeal;
+    type Scope = ();
     const ID: IndexId = index_id!("abcdefab-cdef-4def-8def-abcdefabcdef");
     const BITS: u16 = 13;
     const NORMALIZER: &'static str = "exact/1";
@@ -138,6 +139,7 @@ struct TenantVectorIndex;
 
 impl BlindIndexSpec for TenantVectorIndex {
     type Seal = TenantVectorSeal;
+    type Scope = Tenant;
     const ID: IndexId = VectorIndex::ID;
     const BITS: u16 = VectorIndex::BITS;
     const NORMALIZER: &'static str = "exact/1";

@@ -4,7 +4,7 @@ use crate::Error;
 /// A type a binding part can hold, with its fixed [`PartKind`].
 ///
 /// `#[derive(Scope)]` reads each part's kind and value through this trait,
-/// and builds index arguments back from part values with
+/// and builds a scope back from its part values with
 /// [`from_part_value`](Self::from_part_value). A hand-written
 /// [`Scope`](super::Scope) can use it too, or name the kinds and values
 /// directly.

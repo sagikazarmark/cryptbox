@@ -53,6 +53,7 @@ struct EmailDomain;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = UserEmail;
+    type Scope = ();
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -71,6 +72,7 @@ impl BlindIndexSpec for EmailLookup {
 
 impl BlindIndexSpec for EmailDomain {
     type Seal = UserEmail;
+    type Scope = ();
     const ID: IndexId = index_id!("70000000-0000-4000-8000-000000000007");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email-domain/1";

@@ -145,15 +145,15 @@ the fingerprint, and a record's part comes first with the nil part ID and role
 
 | Role | Code | Scopes |
 | --- | --- | --- |
-| `keys` | `01` | key custody and blind indexes; the unit you shred |
-| `index` | `02` | blind indexes only |
+| `keys` | `01` | key custody; the unit you shred |
 | bound only | `03` | the ciphertext only |
 
-Roles are included because a role change alters index derivation and custody,
-so it is a migration even though the binding bytes don't change. The empty
-declaration's fingerprint is `65640fc8333534b9`. A record's kind is part of the
-declaration, so a value read with a record ID of another kind reports
-`BindingMismatch`.
+Code `02` was the retired `index` role and is no longer written: a blind index
+names its own [index scope](#index-binding). Roles are included because a role
+change alters custody, so it is a migration even though the binding bytes don't
+change. The empty declaration's fingerprint is `65640fc8333534b9`. A record's
+kind is part of the declaration, so a value read with a record ID of another kind
+reports `BindingMismatch`.
 
 #### Presets
 
@@ -492,16 +492,17 @@ mac_input = MAC_label || context || normalized_length_be_u64 || normalized_bytes
 ### Index binding
 
 A blind index is derived under its **index binding**: the seal's binding
-restricted to its `keys` and `index` parts. Bound-only parts and the record are
-left out, because a query knows its scope but not the row. The index binding
-uses the [binding](#binding) encoding:
+restricted to the parts of the index's **index scope**, which holds every `keys`
+part of the seal's scope. The seal's other parts and the record are left out,
+because a query knows its index scope but not the row. The index binding uses
+the [binding](#binding) encoding:
 
-- It is the seal ID, then those parts sorted by part ID.
-- With no `keys` or `index` parts, it is the empty binding, as for the empty scope.
+- It is the seal ID, then the index scope's parts sorted by part ID.
+- With no parts, it is the empty binding, as for the empty scope.
 
-Two bindings that agree on their `keys` and `index` values share the index
-binding, so their indexes of the same value are equal. The key source receives
-the key scope of the `keys` parts.
+Two bindings that agree on the index scope's values share the index binding, so
+their indexes of the same value are equal. The key source receives the key scope
+of the `keys` parts.
 
 ### Blind-index recipe
 

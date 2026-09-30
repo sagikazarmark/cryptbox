@@ -170,8 +170,9 @@ opened under it with `old_keys`, resealed under the current binding, and every
 index derived again, since the index binding may have changed. Rows of any
 other declaration still fail with `Error::BindingMismatch`.
 
-While the window is open, readers use `migrate::probes_across::<Old, S>` for
-probes over both [index bindings](wire-format.md#index-binding) and
+While the window is open, readers use `migrate::probes_across::<Old, S>`, where
+`Old` is the [index scope](bindings.md#choose-each-blind-indexs-scope) `S` had
+before, for probes over both [index bindings](wire-format.md#index-binding) and
 `migrate::open_across::<Old, _>` to open a candidate of either declaration. Close the
 window, and drop the old keys from the readers,
 only after a complete verification pass counts zero `legacy_binding` rows.

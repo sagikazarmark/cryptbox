@@ -3,7 +3,8 @@
 A binding is the cryptographic domain of a value: the seal it is sealed with, the
 values of the seal's declared scope, such as a tenant, and its record when the
 seal binds one. This page explains how to declare a scope, which role each part
-should have, and where each bound value must come from.
+should have, how a blind index chooses its own scope, and where each bound value
+must come from.
 [Documentation](README.md) · [Choosing keyrings](choosing-keyrings.md).
 
 Start from [seal your first value](first-field.md), whose seal binds values
@@ -33,12 +34,11 @@ bytes. With the `derive` feature, each field of the struct is one part:
 
 ```rust
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-#[cryptbox(index_args = OrgSearch)]
 pub struct OrgWorkspace {
     /// The key scope and shred unit.
     #[cryptbox(part = "59881c28-3003-4047-847f-d7cc73b140e5", keys)]
     pub org: [u8; 16],
-    /// Bound only: it separates ciphertext without scoping keys or indexes.
+    /// Bound only: it separates ciphertext without scoping keys.
     #[cryptbox(part = "78f0169a-f024-402b-9cdf-f436864fa17f")]
     pub workspace: [u8; 16],
 }
@@ -54,10 +54,11 @@ pub struct CustomerEmail;
 ```
 
 `EmailLookup` is a blind index over the seal, declared as in the
-[blind-index example](../examples/blind_indexes.rs).
-The derive generates `OrgSearch`, the index arguments of the `keys` and `index`
-parts, and implements `FromIndexValues` so an adapter such as a
-[Restate object key](restate.md#object-keys) can parse them back. A part holds a
+[blind-index example](../examples/blind_indexes.rs) with its own
+[index scope](#choose-each-blind-indexs-scope). The derive also implements
+`FromParts`, which builds a scope back from its part values, so a blind index's
+scope can be projected from the seal's and an adapter such as a
+[Restate object key](restate.md#object-keys) can parse one. A part holds a
 UUID, an `i64`, or bytes; an application's own ID type can hold one by
 implementing `PartType`. Every part ID is a generated UUID: see
 [ID hygiene](#id-hygiene).
@@ -70,32 +71,71 @@ scope.
 
 ## Choose a role for each part
 
-Every part is bound into the ciphertext. The role says what else it scopes, and
-it is the decision with the most consequences:
+Every part is bound into the ciphertext. The role says whether it also scopes
+key custody, and it is the decision with the most consequences:
 
-| Role | Keys | Blind indexes | Shredding | Use it for |
-| --- | --- | --- | --- | --- |
-| `keys` | Scopes key custody | Scopes indexes | The [shred unit](shredding.md) | The value whose data must be destroyable and separately keyed, such as an org |
-| `index` | Shared | Scopes indexes | Never alone | A value a query always knows, when equal values in different ones must not share index bytes |
-| bound only | Shared | Shared | Never alone | A value a query need not know, such as a workspace within an org |
+| Role | Keys | Shredding | Use it for |
+| --- | --- | --- | --- |
+| `keys` | Scopes key custody | The [shred unit](shredding.md) | The value whose data must be destroyable and separately keyed, such as an org |
+| bound only | Shared | Never alone | A value that separates ciphertext only, such as a workspace within an org |
 
-Three consequences follow from the table:
+Two consequences follow from the table:
 
 - **A `keys` part must be known before rows are read.** Keys are resolved from
   the key scope, and the key scope comes from the `keys` values, so a read that
   cannot name them has no keyring to open anything with. Every query, job, and sweep is
   partitioned by key scope; a cross-scope report has to be assembled per scope.
-- **A query must supply every `keys` and `index` value.** Blind-index probes are
-  derived from the index arguments, which have no record and no bound-only
-  parts, because a query knows neither. A value that a lookup cannot know must
-  not scope indexes.
 - **A role change is a migration** even though the binding bytes do not change,
-  because it changes index derivation and custody. The binding fingerprint covers
-  roles for exactly that reason.
+  because it changes custody. The binding fingerprint covers roles for exactly
+  that reason.
 
 A record ID is never a declared part: a seal binds one with the seal scope
 `Recorded<S, Id>`, which adds it as one more part under the nil part ID. It is
-always bound only, since a record-scoped index could not be searched.
+always bound only, and never in an index scope, since a record-scoped index
+could not be searched.
+
+## Choose each blind index's scope
+
+A blind index names its own **index scope**, the parts that partition it: a
+view of its seal's scope, which is a scope whose parts are parts of the seal's
+scope, matched by part ID and kind. A query supplies its values, and a stored
+index is derived under the same values, projected from the scope its value was
+sealed under:
+
+```rust
+/// What a customer search knows: the org.
+#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
+pub struct Org {
+    #[cryptbox(part = "59881c28-3003-4047-847f-d7cc73b140e5", keys)]
+    pub org: [u8; 16],
+}
+
+#[derive(cryptbox::BlindIndexSpec)]
+#[cryptbox(
+    id = "5b0e3c9a-7d21-4f86-a4b3-0c8e2f6d9a15",
+    seal = CustomerEmail,
+    scope = Org,
+    bits = 32,
+    query = str,
+    normalize = normalize_email,
+    normalizer = "email/1",
+)]
+pub struct EmailLookup;
+```
+
+- **An index scope holds every `keys` part** of the seal's scope, because a
+  query selects index keys from them. A scope that leaves one out, or has a part
+  the seal's scope lacks, fails the build when the index is first used.
+- **Add a part a query always knows** when equal values in different ones must
+  not share index bytes, such as a region. A value that a lookup cannot know,
+  such as a workspace the query spans or the record, must stay out.
+- **Two indexes over one seal may partition differently.** Without `scope`, a
+  derived index is scoped by the seal's whole scope; an unscoped seal's index
+  uses `()`.
+- **Changing an index scope**, such as adding a part to it, changes that
+  index's bytes, as changing its normalizer does: look up with
+  `migrate::probes_across` over both scopes while a
+  [sweep](reencryption-sweep.md#blind-indexes) derives every stored index again.
 
 ## Bound values come from an authorized source
 
@@ -178,8 +218,8 @@ the old values. `Sealed::reseal_across` opens under the old binding and keys and
 reseals under the new ones, without decoding the value through the seal's
 codec:
 
-- **Every blind index of the moved value must be derived again**, because the
-  index binding includes the `keys` and `index` parts. A stale index column is
+- **Every blind index of the moved value must be derived again**, because
+  each index binding includes the parts of its index scope. A stale index column is
   not wrong bytes the library can detect; it silently answers queries in the old
   scope. Derive the new indexes from the authenticated plaintext with
   `BlindIndexSpec::derive_with`, and write ciphertext and indexes in one atomic

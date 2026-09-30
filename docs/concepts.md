@@ -53,10 +53,10 @@ declares:
   whether it is also bound to its record. The empty scope, `()`, binds a value
   to its seal ID alone.
 
-A binding's parts have roles: a `keys` part scopes key custody and blind
-indexes and is the unit you can shred, an `index` part scopes blind indexes only,
-and any other part is bound only. [Bind values to a scope](bindings.md) covers
-choosing them.
+A binding's parts have roles: a `keys` part scopes key custody and is the unit
+you can shred, and any other part is bound only. A blind index names its own
+index scope, some of the seal's parts that partition it.
+[Bind values to a scope](bindings.md) covers choosing them.
 
 The value type is your application's own type: it says how it encodes, never
 where it is stored. Only `String`, `Vec<u8>`, and their `Secret` wrappers have a

@@ -47,7 +47,7 @@ Secure OS randomness and a compatible target are required; see [platform constra
 | Copy ciphertext between rows of the same seal | Authentication rejects another record of a seal that binds one. For a seal without a record, substitution within the same scope can succeed. |
 | Return a whole row in place of another | Every value in it opens, because each is bound to that row's own record ID. A `Record` opens as the record it is: when you asked for one record by ID, compare the opened ID with it. |
 | Restore an older authentic value | No replay, rollback, or freshness protection. |
-| Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency within the scope of their `keys` and `index` parts, and across bound-only parts and records; an unscoped seal's indexes leak across the whole seal. Access patterns remain visible. |
+| Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency within their index scope, and across the seal's other parts and records; an unscoped seal's indexes leak across the whole seal. Access patterns remain visible. |
 | Alter indexes or omit query results | Candidate comparison rejects false matches, but cannot detect omitted matches. Search completeness is not guaranteed. |
 | Compromise the live application | Plaintext and keys can be exposed. CryptBox supplies no process-isolation boundary. |
 

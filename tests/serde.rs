@@ -25,6 +25,7 @@ struct EmailExact;
 
 impl BlindIndexSpec for EmailExact {
     type Seal = EmailSeal;
+    type Scope = ();
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";

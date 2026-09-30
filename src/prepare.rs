@@ -1,8 +1,10 @@
 use std::fmt;
 
 use crate::{
-    BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed, args::Target,
-    blind::derive_value, keys,
+    BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed,
+    args::PartsOf,
+    blind::{derive_value, projected_target},
+    keys,
 };
 
 struct PreparedIndex {
@@ -27,7 +29,8 @@ where
 {
     source: &'a F::Value,
     sealed: Sealed<F>,
-    index_target: Target,
+    // The scope the value is sealed under, from which each index projects its own.
+    scope: PartsOf<F>,
     indexes: Vec<PreparedIndex>,
 }
 
@@ -49,11 +52,11 @@ impl<'a, F> Prepared<'a, F>
 where
     F: Seal,
 {
-    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F>, index_target: Target) -> Self {
+    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F>, scope: PartsOf<F>) -> Self {
         Self {
             source,
             sealed,
-            index_target,
+            scope,
             indexes: Vec::new(),
         }
     }
@@ -74,10 +77,10 @@ where
 
     /// Adds an index derived from the same source value as the sealed value.
     ///
-    /// The index is scoped by the `keys` and `index` parts of the binding the
-    /// value was sealed with, so probes with the same
-    /// [`IndexArgs`](crate::Scope::IndexArgs) find it. The key source
-    /// receives that scope's [`KeyScope`](crate::KeyScope).
+    /// The index is scoped by its [index scope](BlindIndexSpec::Scope),
+    /// projected from the scope the value was sealed under, so probes with the
+    /// same index scope find it. The key source receives the seal's
+    /// [`KeyScope`](crate::KeyScope).
     ///
     /// The index must be declared over this seal. Attaching another seal's
     /// index is a type error:
@@ -115,6 +118,7 @@ where
     ///
     /// impl BlindIndexSpec for InviteEmailLookup {
     ///     type Seal = InviteEmail;
+    ///     type Scope = ();
     ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
     ///     const BITS: u16 = 32;
     ///     const NORMALIZER: &'static str = "exact/1";
@@ -155,7 +159,8 @@ where
             return Err(Error::DuplicatePreparedIndex(Spec::ID));
         }
 
-        let index = derive_value::<Spec>(self.source, &self.index_target, keys)?;
+        let index =
+            derive_value::<Spec>(self.source, &projected_target::<Spec>(&self.scope)?, keys)?;
         self.indexes.push(PreparedIndex {
             id: Spec::ID,
             bytes: index.into_bytes(),

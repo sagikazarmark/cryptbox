@@ -84,6 +84,7 @@ struct IndexEntry {
     seal: SealId,
     bits: u16,
     normalizer: &'static str,
+    parts: &'static [PartSpec],
 }
 
 #[derive(Debug)]
@@ -169,6 +170,7 @@ impl Manifest {
                 seal: <I::Seal as Seal>::ID,
                 bits: I::BITS,
                 normalizer: I::NORMALIZER,
+                parts: <I::Scope as Scope>::PARTS,
             });
         }
         self
@@ -296,6 +298,19 @@ impl fmt::Display for Manifest {
             writeln!(formatter, "  seal: {}", index.seal)?;
             writeln!(formatter, "  bits: {}", index.bits)?;
             writeln!(formatter, "  normalizer: {}", index.normalizer)?;
+            // An index scope without parts leaves the index unpartitioned.
+            if !index.parts.is_empty() {
+                writeln!(formatter, "  scope:")?;
+            }
+            for part in index.parts {
+                writeln!(
+                    formatter,
+                    "    part {} {} {}",
+                    part.id(),
+                    kind_name(part.kind()),
+                    role_name(part.role()),
+                )?;
+            }
         }
 
         // Type names are not stable across compilers, so the snapshot names IDs only.
@@ -322,7 +337,6 @@ const fn kind_name(kind: PartKind) -> &'static str {
 const fn role_name(role: PartRole) -> &'static str {
     match role {
         PartRole::Keys => "keys",
-        PartRole::Index => "index",
         PartRole::Bound => "bound",
     }
 }
@@ -408,6 +422,7 @@ const fn role_name(role: PartRole) -> &'static str {
 ///
 /// impl BlindIndexSpec for Exact {
 ///     type Seal = Bytes;
+///     type Scope = ();
 ///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -420,6 +435,7 @@ const fn role_name(role: PartRole) -> &'static str {
 ///
 /// impl BlindIndexSpec for Prefix {
 ///     type Seal = Bytes;
+///     type Scope = ();
 ///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 16;
 ///     const NORMALIZER: &'static str = "prefix/1";

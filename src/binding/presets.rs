@@ -1,27 +1,20 @@
 use std::fmt;
 
-use super::{
-    FromIndexValues, FromParts, PartKind, PartSpec, PartType, PartValue, PartValues, Scope,
-};
+use super::{FromParts, PartKind, PartSpec, PartType, PartValue, PartValues, Scope};
 use crate::Error;
 
 // The empty scope: values are bound to their seal ID only. Blind indexes take
 // no arguments, and every value shares one `KeyScope`.
 impl Scope for () {
     const PARTS: &'static [PartSpec] = &[];
-    type IndexArgs = ();
 
     fn values(&self) -> PartValues<'_> {
         PartValues::new()
     }
-
-    fn index_values((): &()) -> PartValues<'_> {
-        PartValues::new()
-    }
 }
 
-impl FromIndexValues for () {
-    fn from_index_values(values: &[PartValue<'_>]) -> Result<(), Error> {
+impl FromParts for () {
+    fn from_parts(values: &[PartValue<'_>]) -> Result<(), Error> {
         match values {
             [] => Ok(()),
             _ => Err(Error::InvalidBinding),
@@ -29,17 +22,11 @@ impl FromIndexValues for () {
     }
 }
 
-impl FromParts for () {
-    fn from_parts(values: &[PartValue<'_>]) -> Result<(), Error> {
-        Self::from_index_values(values)
-    }
-}
-
-/// A binding with a single tenant part, which scopes keys and blind indexes.
+/// A scope with a single tenant part, which scopes keys.
 ///
 /// The tenant is the [shred unit](Scope#shredding) when each tenant's root
-/// keys are stored independently. Blind-index queries take the tenant itself as
-/// their arguments. Its one part is persistent schema: part ID
+/// keys are stored independently. A blind index over a tenant-scoped seal takes
+/// `Tenant` as its index scope, so its queries pass the tenant. Its one part is persistent schema: part ID
 /// `1e8306bf-3135-4570-831c-6732f92550e9`, kind bytes, role `keys`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Tenant(pub TenantId);
@@ -52,29 +39,18 @@ const TENANT_PART: PartSpec = PartSpec::keys(
 
 impl Scope for Tenant {
     const PARTS: &'static [PartSpec] = &[TENANT_PART];
-    type IndexArgs = Self;
 
     fn values(&self) -> PartValues<'_> {
-        Self::index_values(self)
-    }
-
-    fn index_values(args: &Self) -> PartValues<'_> {
-        PartValues::from([PartValue::Bytes(args.0.as_bytes())])
-    }
-}
-
-impl FromIndexValues for Tenant {
-    fn from_index_values(values: &[PartValue<'_>]) -> Result<Self, Error> {
-        match values {
-            [tenant] => TenantId::from_part_value(*tenant).map(Self),
-            _ => Err(Error::InvalidBinding),
-        }
+        PartValues::from([PartValue::Bytes(self.0.as_bytes())])
     }
 }
 
 impl FromParts for Tenant {
     fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
-        Self::from_index_values(values)
+        match values {
+            [tenant] => TenantId::from_part_value(*tenant).map(Self),
+            _ => Err(Error::InvalidBinding),
+        }
     }
 }
 

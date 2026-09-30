@@ -11,19 +11,16 @@ use cryptbox::{
 use restate_sdk::serde::{Deserialize, PayloadMetadata, Serialize};
 use zeroize::Zeroizing;
 
-/// An org scopes keys; a region and a shard scope blind indexes; a workspace
-/// is only bound. The org's part ID sorts last, so an object key moves it first.
+/// An org scopes keys, and a region and a shard are only bound. The org's part
+/// ID sorts last, so an object key moves it first.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
-#[cryptbox(index_args = OrgSearch)]
-struct OrgWorkspace {
+struct OrgSearch {
     #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92", keys)]
     org: [u8; 16],
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", index)]
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     region: i64,
-    #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61", index)]
+    #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
     shard: Vec<u8>,
-    #[cryptbox(part = "c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48")]
-    workspace: [u8; 16],
 }
 
 #[derive(cryptbox::Seal)]
@@ -145,17 +142,17 @@ fn sealed_payloads_are_octet_streams_without_a_schema() {
 #[test]
 fn an_object_key_leads_with_the_keys_parts() {
     assert_eq!(
-        ObjectKey::<OrgWorkspace>::encode(&search()).unwrap(),
+        ObjectKey::<OrgSearch>::encode(&search()).unwrap(),
         format!("{ORG_KEY}:-0000000000000000042:01ab")
     );
     assert_eq!(ObjectKey::<Tenant>::encode(&tenant()).unwrap(), "61636d65");
 }
 
 #[test]
-fn an_object_key_parses_back_into_its_index_args() {
-    let key = ObjectKey::<OrgWorkspace>::encode(&search()).unwrap();
+fn an_object_key_parses_back_into_its_scope() {
+    let key = ObjectKey::<OrgSearch>::encode(&search()).unwrap();
 
-    assert_eq!(ObjectKey::<OrgWorkspace>::parse(&key), Ok(search()));
+    assert_eq!(ObjectKey::<OrgSearch>::parse(&key), Ok(search()));
     assert_eq!(ObjectKey::<Tenant>::parse("61636d65"), Ok(tenant()));
 }
 
@@ -171,15 +168,15 @@ fn object_key_integers_are_fixed_width() {
         let args = OrgSearch { region, ..search() };
         let key = format!("{ORG_KEY}:{encoded}:01ab");
 
-        assert_eq!(ObjectKey::<OrgWorkspace>::encode(&args).unwrap(), key);
-        assert_eq!(ObjectKey::<OrgWorkspace>::parse(&key), Ok(args));
+        assert_eq!(ObjectKey::<OrgSearch>::encode(&args).unwrap(), key);
+        assert_eq!(ObjectKey::<OrgSearch>::parse(&key), Ok(args));
     }
 }
 
 #[test]
 fn tampered_or_non_canonical_object_keys_are_rejected() {
     let valid = format!("{ORG_KEY}:-0000000000000000042:01ab");
-    assert!(ObjectKey::<OrgWorkspace>::parse(&valid).is_ok(), "control");
+    assert!(ObjectKey::<OrgSearch>::parse(&valid).is_ok(), "control");
 
     let cases = [
         ("empty", String::new()),
@@ -222,7 +219,7 @@ fn tampered_or_non_canonical_object_keys_are_rejected() {
     ];
 
     for (case, key) in cases {
-        let error = ObjectKey::<OrgWorkspace>::parse(&key).unwrap_err();
+        let error = ObjectKey::<OrgSearch>::parse(&key).unwrap_err();
 
         assert_eq!(error, Error::InvalidObjectKey, "{case}");
         assert!(!restate::is_retryable(&error), "{case} is terminal");
@@ -235,7 +232,7 @@ fn tampered_or_non_canonical_object_keys_are_rejected() {
 }
 
 #[test]
-fn an_object_key_encodes_only_valid_index_args() {
+fn an_object_key_encodes_only_valid_scopes() {
     assert_eq!(
         ObjectKey::<Tenant>::encode(&Tenant(TenantId::new("acme").unwrap())).map(|_| ()),
         Ok(())
@@ -243,17 +240,17 @@ fn an_object_key_encodes_only_valid_index_args() {
     assert_eq!(
         ObjectKey::<()>::encode(&()).unwrap(),
         "",
-        "no index args, no key"
+        "no parts, no key"
     );
     assert_eq!(ObjectKey::<()>::parse(""), Ok(()));
 }
 
 #[test]
 fn a_key_scope_prefix_selects_every_object_key_of_the_scope() {
-    let scope = KeyScope::of_keys::<OrgWorkspace>(&[PartValue::Uuid(ORG)]).unwrap();
-    let key = ObjectKey::<OrgWorkspace>::encode(&search()).unwrap();
+    let scope = KeyScope::of_keys::<OrgSearch>(&[PartValue::Uuid(ORG)]).unwrap();
+    let key = ObjectKey::<OrgSearch>::encode(&search()).unwrap();
 
-    let prefix = ObjectKey::<OrgWorkspace>::prefix(&scope).unwrap();
+    let prefix = ObjectKey::<OrgSearch>::prefix(&scope).unwrap();
 
     assert_eq!(prefix, ORG_KEY);
     assert!(key.starts_with(&format!("{prefix}:")));
@@ -266,7 +263,7 @@ fn a_key_scope_prefix_selects_every_object_key_of_the_scope() {
 #[test]
 fn a_prefix_rejects_the_key_scope_of_another_binding() {
     assert_eq!(
-        ObjectKey::<OrgWorkspace>::prefix(&KeyScope::of(&tenant()).unwrap()),
+        ObjectKey::<OrgSearch>::prefix(&KeyScope::of(&tenant()).unwrap()),
         Err(Error::InvalidBinding)
     );
 }

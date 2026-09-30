@@ -49,6 +49,7 @@ impl LegacyFormat for ToyLegacy {
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = UserEmail;
+    type Scope = ();
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";

@@ -2,7 +2,7 @@ use std::{fmt, marker::PhantomData};
 
 use crate::{
     Args, Codec, EncryptionKeySource, Error, GlobalKeys, KeyId, Prepared, Seal,
-    args::{Target, domain, domains},
+    args::{Target, domain, domain_and_scope},
     bound,
     envelope::validated_key_id,
     keys,
@@ -161,12 +161,12 @@ impl<F: Seal> Sealed<F> {
         args: impl Args<F>,
         keys: &(impl EncryptionKeySource + ?Sized),
     ) -> Result<Prepared<'a, F>, Error> {
-        let (target, index_target) = domains(args)?;
+        let (target, scope) = domain_and_scope(args)?;
 
         Ok(Prepared::new(
             value,
             Self::seal_in(value, &target, keys)?,
-            index_target,
+            scope,
         ))
     }
 
@@ -397,6 +397,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///
 /// impl BlindIndexSpec for EmailLookup {
 ///     type Seal = UserEmail;
+///     type Scope = ();
 ///     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";

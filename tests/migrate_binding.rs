@@ -54,6 +54,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = CustomerEmail;
+    type Scope = Tenant;
     const ID: IndexId = LOOKUP_ID;
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -73,6 +74,7 @@ struct UnscopedEmailLookup;
 
 impl BlindIndexSpec for UnscopedEmailLookup {
     type Seal = UnscopedEmail;
+    type Scope = ();
     const ID: IndexId = LOOKUP_ID;
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -412,13 +414,7 @@ impl cryptbox::Scope for Region {
         cryptbox::part_id!("8c000000-0000-4000-8000-00000000000c"),
         cryptbox::PartKind::Bytes,
     )];
-    type IndexArgs = ();
-
     fn values(&self) -> cryptbox::PartValues<'_> {
-        cryptbox::PartValues::from([cryptbox::PartValue::Bytes(b"eu")])
-    }
-
-    fn index_values((): &()) -> cryptbox::PartValues<'_> {
         cryptbox::PartValues::from([cryptbox::PartValue::Bytes(b"eu")])
     }
 }
@@ -731,17 +727,11 @@ impl cryptbox::Scope for TenantWorkspace {
             cryptbox::PartKind::I64,
         ),
     ];
-    type IndexArgs = Tenant;
-
     fn values(&self) -> cryptbox::PartValues<'_> {
         cryptbox::PartValues::from([
             cryptbox::PartValue::Bytes(&self.tenant),
             cryptbox::PartValue::I64(self.workspace),
         ])
-    }
-
-    fn index_values(args: &Tenant) -> cryptbox::PartValues<'_> {
-        cryptbox::PartValues::from([cryptbox::PartValue::Bytes(args.0.as_bytes())])
     }
 }
 

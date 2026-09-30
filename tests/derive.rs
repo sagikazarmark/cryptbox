@@ -3,9 +3,9 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeyring, FromIndexValues, IndexId, IndexKeyId,
-    IndexList, KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues, Scope, Seal,
-    SealId, Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
+    CodecErrorKind, EncryptionKey, EncryptionKeyring, FromParts, IndexId, IndexKeyId, IndexList,
+    KeyScope, Padding, PartKind, PartSpec, PartType, PartValue, PartValues, Scope, Seal, SealId,
+    Sealed, Utf8, index_id, index_key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -241,6 +241,7 @@ struct ManualEmailLookup;
 
 impl BlindIndexSpec for ManualEmailLookup {
     type Seal = ManualUserEmail;
+    type Scope = ();
     const ID: IndexId = index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "text/1";
@@ -298,6 +299,7 @@ struct ManualStreetLookup;
 
 impl BlindIndexSpec for ManualStreetLookup {
     type Seal = BillingAddress;
+    type Scope = ();
     const ID: IndexId = index_id!("3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64");
     const BITS: u16 = 64;
     const NORMALIZER: &'static str = "street/1";
@@ -383,17 +385,26 @@ fn a_derived_blind_index_names_its_normalizer() {
     assert_eq!(StreetLookup::NORMALIZER, ManualStreetLookup::NORMALIZER);
 }
 
-/// An org scopes keys, a project scopes blind indexes, and a workspace is only
-/// bound. Declared out of part-ID order.
+/// An org scopes keys, and a project and a workspace are only bound. Declared
+/// out of part-ID order.
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-#[cryptbox(index_args = OrgProjectSearch)]
 struct OrgProject {
     #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
     workspace: [u8; 16],
     #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
     org: Vec<u8>,
-    #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61", index)]
+    #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
     project: i64,
+}
+
+/// A view of [`OrgProject`]: the org and the project, which a project search
+/// knows.
+#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
+struct OrgProjectSearch {
+    #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
+    project: i64,
+    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
+    org: Vec<u8>,
 }
 
 /// The manual equivalent of [`OrgProject`].
@@ -404,19 +415,13 @@ struct ManualOrgProject {
     workspace: [u8; 16],
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct ManualOrgProjectSearch {
-    org: Vec<u8>,
-    project: i64,
-}
-
 impl Scope for ManualOrgProject {
     const PARTS: &'static [PartSpec] = &[
         PartSpec::keys(
             part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
             PartKind::Bytes,
         ),
-        PartSpec::index(
+        PartSpec::bound(
             part_id!("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61"),
             PartKind::I64,
         ),
@@ -425,18 +430,12 @@ impl Scope for ManualOrgProject {
             PartKind::Uuid,
         ),
     ];
-    type IndexArgs = ManualOrgProjectSearch;
-
     fn values(&self) -> PartValues<'_> {
         PartValues::from([
             PartValue::Bytes(&self.org),
             PartValue::I64(self.project),
             PartValue::Uuid(self.workspace),
         ])
-    }
-
-    fn index_values(args: &ManualOrgProjectSearch) -> PartValues<'_> {
-        PartValues::from([PartValue::Bytes(&args.org), PartValue::I64(args.project)])
     }
 }
 
@@ -447,8 +446,6 @@ fn a_derived_binding_declares_its_parts_sorted_by_part_id() {
 
 #[test]
 fn a_derived_scope_is_built_back_from_its_part_values() {
-    use cryptbox::FromParts;
-
     let scope = OrgProject {
         workspace: [0x42; 16],
         org: b"acme".to_vec(),
@@ -506,7 +503,7 @@ fn a_derived_bound_seal_opens_values_of_its_manual_equivalent() {
 }
 
 #[test]
-fn derived_index_args_share_the_bindings_key_scope() {
+fn a_derived_view_shares_its_scopes_key_scope() {
     let scope = OrgProject {
         workspace: [0x42; 16],
         org: b"acme".to_vec(),
@@ -518,7 +515,7 @@ fn derived_index_args_share_the_bindings_key_scope() {
     };
 
     assert_eq!(
-        KeyScope::of_index::<OrgProject>(&search).unwrap(),
+        KeyScope::of(&search).unwrap(),
         KeyScope::of(&scope).unwrap()
     );
 }
@@ -536,6 +533,7 @@ struct ProjectEmail;
 #[cryptbox(
     id = "9c1e5a3d-7f2b-4d48-a6e0-3b5d9f1c7e24",
     seal = ProjectEmail,
+    scope = OrgProjectSearch,
     bits = 32,
     query = str,
     normalize = normalize_text,
@@ -552,7 +550,7 @@ fn a_derived_seal_declares_its_blind_indexes() {
 }
 
 #[test]
-fn a_derived_blind_index_is_scoped_by_the_generated_index_args() {
+fn a_derived_blind_index_is_scoped_by_its_index_scope() {
     let keys = index_keys();
     let email = "Mark@Example.com".to_owned();
     let scope = |org: &[u8], workspace| OrgProject {
@@ -585,36 +583,42 @@ fn a_derived_blind_index_is_scoped_by_the_generated_index_args() {
     );
 }
 
-/// Every part scopes blind indexes, so a query passes the binding itself.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct Org {
     #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37", keys)]
     id: [u8; 16],
 }
 
-/// No part scopes blind indexes, so a query passes `()`.
-#[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
-struct Sequence {
-    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
-    number: i64,
+#[derive(Seal)]
+#[cryptbox(
+    id = "3e7a9c1f-5b2d-4f60-8e14-a2c6d0b8f375",
+    value = String,
+    scope = OrgProject,
+    indexes(ProjectEmailByOrg),
+)]
+struct OrgProjectEmail;
+
+/// Without `scope`, a derived blind index is scoped by its seal's whole scope.
+#[derive(BlindIndexSpec)]
+#[cryptbox(
+    id = "6d2f8b4a-0c7e-4a95-b1d3-9e5f7a2c4b86",
+    seal = OrgProjectEmail,
+    bits = 32,
+    query = str,
+    normalize = normalize_text,
+    normalizer = "text/1",
+)]
+struct ProjectEmailByOrg;
+
+#[test]
+fn a_derived_blind_index_defaults_to_its_seals_scope() {
+    fn index_scope<Spec: BlindIndexSpec<Scope = OrgProject>>() {}
+
+    index_scope::<ProjectEmailByOrg>();
 }
 
 #[test]
-fn derived_index_args_default_to_the_binding_or_unit() {
-    let org = Org { id: [0x42; 16] };
-
-    assert_eq!(
-        KeyScope::of_index::<Org>(&org).unwrap(),
-        KeyScope::of(&org).unwrap()
-    );
-    assert_eq!(
-        KeyScope::of_index::<Sequence>(&()).unwrap(),
-        KeyScope::of(&Sequence { number: 1 }).unwrap()
-    );
-}
-
-#[test]
-fn derived_bindings_build_their_index_args_from_part_values() {
+fn a_derived_view_is_built_back_from_its_part_values() {
     let search = OrgProjectSearch {
         org: b"acme".to_vec(),
         project: 7,
@@ -622,20 +626,14 @@ fn derived_bindings_build_their_index_args_from_part_values() {
     let org = Org { id: [0x42; 16] };
 
     assert_eq!(
-        OrgProject::from_index_values(OrgProject::index_values(&search).as_slice()),
-        Ok(search),
-        "generated index args"
+        OrgProjectSearch::from_parts(search.values().as_slice()),
+        Ok(search)
     );
-    assert_eq!(
-        Org::from_index_values(Org::index_values(&org).as_slice()),
-        Ok(org),
-        "the binding itself"
-    );
-    assert_eq!(Sequence::from_index_values(&[]), Ok(()), "unit");
+    assert_eq!(Org::from_parts(org.values().as_slice()), Ok(org));
 }
 
 #[test]
-fn derived_bindings_reject_index_values_that_do_not_fit() {
+fn derived_views_reject_part_values_that_do_not_fit() {
     let cases: [(&str, &[PartValue<'_>]); 3] = [
         ("missing part", &[PartValue::Bytes(b"acme")]),
         (
@@ -654,15 +652,11 @@ fn derived_bindings_reject_index_values_that_do_not_fit() {
 
     for (case, values) in cases {
         assert_eq!(
-            OrgProject::from_index_values(values),
+            OrgProjectSearch::from_parts(values),
             Err(cryptbox::Error::InvalidBinding),
             "{case}"
         );
     }
-    assert_eq!(
-        Sequence::from_index_values(&[PartValue::I64(1)]),
-        Err(cryptbox::Error::InvalidBinding)
-    );
 }
 
 #[cfg(feature = "uuid")]

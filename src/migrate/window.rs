@@ -1,8 +1,9 @@
 use crate::{
     Args, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, KeyScope, Seal, SealScope, Sealed,
+    EncryptionKeySource, Error, FromParts, KeyScope, Seal, SealScope, Sealed,
     args::{PartsOf, Target, with_domain},
-    blind::{IndexArgs, probes_in},
+    binding::project_view,
+    blind::probes_in,
     bound, inspect_ciphertext,
 };
 
@@ -55,46 +56,44 @@ where
     Ok(F::Codec::decode(&plaintext)?)
 }
 
-/// Derives the probes of a lookup during a legacy-binding window: those of
-/// the seal's current index binding under `args` with `keys`, followed by
-/// those of the older declaration `Old` with `old_keys`.
+/// Derives the probes of a lookup during a legacy-binding window: those of the
+/// index's current scope under `scope` with `keys`, followed by those of the
+/// older index scope `Old` with `old_keys`.
 ///
 /// A row keeps the index it was written with until a sweep reseals it, so a
-/// lookup must match both declarations until the window closes. `Old`'s `keys` and
-/// `index` parts take their values from `args` by part ID. A declaration change that
-/// keeps the [index binding] keeps the index bytes, and a probe both declarations
-/// share is returned once.
+/// lookup must match both until the window closes. `Old` is the index scope the
+/// index had before, such as `()`, and a view of its current scope: its parts
+/// take their values from `scope` by part ID. A change that keeps the
+/// [index binding] keeps the index bytes, and a probe both share is returned
+/// once.
 ///
 /// Probes are candidates only: open each candidate row with [`open_across`] and
 /// check it with [`BlindIndexSpec::verify_candidate`].
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidBinding`] when `args` does not match the binding's
-/// `keys` and `index` parts, or when `Old` has such a part that `args` lacks or
-/// holds with another kind. Also returns an error for normalization failure or
-/// unavailable keys.
+/// Returns [`Error::InvalidBinding`] for an invalid index-scope value, or an
+/// error for normalization failure or unavailable keys. An `Old` that is not a
+/// view of the current index scope fails the build.
 ///
 #[doc = concat!(
     "[index binding]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#index-binding",
 )]
 pub fn probes_across<Old, S>(
     query: &S::Query,
-    args: &IndexArgs<S>,
+    scope: &S::Scope,
     keys: &(impl BlindIndexKeySource + ?Sized),
     old_keys: &(impl BlindIndexKeySource + ?Sized),
 ) -> Result<Vec<BlindIndex<S>>, Error>
 where
     S: BlindIndexSpec,
-    Old: SealScope,
+    Old: FromParts,
 {
-    let mut probes = S::probes_with(query, args, keys)?;
+    let mut probes = S::probes_with(query, scope, keys)?;
+    let old: Old = project_view(scope)?;
     let old = Target {
-        domain: BindingDomain::index_projected::<Old, PartsOf<S::Seal>>(
-            <S::Seal as Seal>::ID.as_bytes(),
-            args,
-        )?,
-        key_scope: KeyScope::index_projected::<Old::Parts, PartsOf<S::Seal>>(args)?,
+        domain: BindingDomain::index(<S::Seal as Seal>::ID.as_bytes(), &old)?,
+        key_scope: KeyScope::of(&old)?,
     };
     for probe in probes_in::<S>(query, &old, old_keys)? {
         if !probes.contains(&probe) {

@@ -1,7 +1,7 @@
 use std::{fmt::Write as _, marker::PhantomData};
 
 use crate::{
-    Error, FromIndexValues, KeyScope, PartKind, PartRole, PartSpec, PartValue, Scope,
+    Error, FromParts, KeyScope, PartKind, PartRole, PartSpec, PartValue, Scope,
     binding::check_values,
 };
 
@@ -12,16 +12,16 @@ const UUID_HYPHENS: [usize; 4] = [8, 13, 18, 23];
 // A sign and the 19 digits of `i64::MIN`'s magnitude.
 const I64_LEN: usize = 20;
 
-/// The Restate object key of binding `B`: a strict, canonical text encoding of
-/// its [index arguments](Scope::IndexArgs).
+/// The Restate object key of scope `B`: a strict, canonical text encoding of
+/// its values, usually those of a blind index's
+/// [index scope](crate::BlindIndexSpec::Scope).
 ///
-/// A Virtual Object keyed by a binding's index arguments, such as one object per
-/// org and workspace, reads them back from its object key with [`Self::parse`].
-/// An object key holds one part per [`keys`](PartRole::Keys) and
-/// [`index`](PartRole::Index) part, separated by `:`. The `keys` parts come
-/// first, then the `index` parts, each in [`PARTS`](Scope::PARTS) order, so
+/// A Virtual Object keyed by a scope, such as one object per org and workspace,
+/// reads it back from its object key with [`Self::parse`]. An object key holds
+/// one segment per part, separated by `:`. The [`keys`](PartRole::Keys) parts
+/// come first, then the other parts, each in [`PARTS`](Scope::PARTS) order, so
 /// every object key of a key scope starts with that key scope's
-/// [`Self::prefix`]. Bound-only parts are never part of an object key.
+/// [`Self::prefix`].
 ///
 /// | Kind | Encoding | Example |
 /// | --- | --- | --- |
@@ -35,7 +35,7 @@ const I64_LEN: usize = 20;
 /// admin API, and logs. Never key an object by a value that must stay secret.
 ///
 /// An object key is only as trustworthy as the caller that chose it. Authorize
-/// the caller for the index arguments it names before binding values to them.
+/// the caller for the scope it names before binding values to it.
 ///
 /// ```
 /// use cryptbox::{Error, KeyScope, Tenant, TenantId, restate::ObjectKey};
@@ -54,17 +54,16 @@ const I64_LEN: usize = 20;
 pub struct ObjectKey<B>(PhantomData<fn() -> B>);
 
 impl<B: Scope> ObjectKey<B> {
-    /// Encodes index arguments as an object key.
+    /// Encodes a scope as an object key.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidBinding`] when the arguments' values do not
-    /// match the binding's `keys` and `index` parts; see
-    /// [`Scope::index_values`].
-    pub fn encode(args: &B::IndexArgs) -> Result<String, Error> {
-        let values = B::index_values(args);
+    /// Returns [`Error::InvalidBinding`] when the scope's values do not match
+    /// its parts; see [`Scope`].
+    pub fn encode(scope: &B) -> Result<String, Error> {
+        let values = scope.values();
         let values = values.as_slice();
-        check_values(index_specs::<B>(), values)?;
+        check_values(B::PARTS, values)?;
 
         Ok(join(
             key_order::<B>()
@@ -73,19 +72,19 @@ impl<B: Scope> ObjectKey<B> {
         ))
     }
 
-    /// Parses an object key back into the index arguments it encodes.
+    /// Parses an object key back into the scope it encodes.
     ///
     /// # Errors
     ///
     /// Returns [`Error::InvalidObjectKey`] for an object key that is not
-    /// exactly the [encoding](Self) of index arguments of `B`: a missing or
+    /// exactly the [encoding](Self) of a scope `B`: a missing or
     /// extra part, parts out of order, another spelling of a value, or a value
-    /// the binding cannot hold, such as an empty `keys` value.
-    pub fn parse(key: &str) -> Result<B::IndexArgs, Error>
+    /// the scope cannot hold, such as an empty `keys` value.
+    pub fn parse(key: &str) -> Result<B, Error>
     where
-        B: FromIndexValues,
+        B: FromParts,
     {
-        let specs: Vec<_> = index_specs::<B>().collect();
+        let specs = B::PARTS;
         let segments: Vec<_> = if specs.is_empty() && key.is_empty() {
             Vec::new()
         } else {
@@ -102,7 +101,7 @@ impl<B: Scope> ObjectKey<B> {
         let values: Vec<_> = decoded.iter().map(Decoded::part_value).collect();
 
         let args = check_values(specs, &values)
-            .and_then(|()| B::from_index_values(&values))
+            .and_then(|()| B::from_parts(&values))
             .map_err(|_| Error::InvalidObjectKey)?;
         // A part type that does not read back exactly what it binds could
         // otherwise accept a second spelling.
@@ -114,8 +113,8 @@ impl<B: Scope> ObjectKey<B> {
 
     /// Returns the object-key prefix of a key scope: its `keys` parts.
     ///
-    /// Every object key of the key scope equals the prefix when `B` has no
-    /// `index` parts, and otherwise starts with the prefix and a `:`. Select a
+    /// Every object key of the key scope equals the prefix when `B` has only
+    /// `keys` parts, and otherwise starts with the prefix and a `:`. Select a
     /// key scope's objects in Restate's SQL introspection with
     /// `target_service_key = '<prefix>' OR target_service_key LIKE '<prefix>:%'`;
     /// the encoding never contains a quote or a SQL wildcard.
@@ -142,16 +141,10 @@ impl<B: Scope> ObjectKey<B> {
     }
 }
 
-/// The `keys` and `index` parts of `B`, in `PARTS` order.
-fn index_specs<B: Scope>() -> impl Iterator<Item = &'static PartSpec> + Clone {
-    B::PARTS
-        .iter()
-        .filter(|spec| matches!(spec.role(), PartRole::Keys | PartRole::Index))
-}
-
-/// The positions among [`index_specs`] in object-key order: `keys` parts first.
+/// The positions of `B`'s parts in object-key order: `keys` parts first, then
+/// the others, each in `PARTS` order.
 fn key_order<B: Scope>() -> Vec<usize> {
-    let roles: Vec<_> = index_specs::<B>().map(PartSpec::role).collect();
+    let roles: Vec<_> = B::PARTS.iter().map(PartSpec::role).collect();
     let positions_of = |role| {
         roles
             .iter()
@@ -161,7 +154,7 @@ fn key_order<B: Scope>() -> Vec<usize> {
     };
 
     positions_of(PartRole::Keys)
-        .chain(positions_of(PartRole::Index))
+        .chain(positions_of(PartRole::Bound))
         .collect()
 }
 
