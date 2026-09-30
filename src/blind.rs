@@ -5,7 +5,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, Error,
-    IndexId, IndexKeyId, Scope, Seal, binding::PartsOf, keys,
+    IndexKeyId, Scope, Seal, binding::PartsOf, id::identifier, keys,
 };
 
 mod format;
@@ -14,6 +14,8 @@ mod recipe;
 pub use format::{BlindIndexInfo, inspect_blind_index};
 use format::{stored_key_id, valid_bits};
 use recipe::derive_index;
+
+identifier!(IndexId, "A stable logical blind-index identifier.");
 
 /// The query-time arguments of `Spec`: its seal binding's `keys` and `index` part values.
 pub(crate) type IndexArgs<Spec> = <PartsOf<<Spec as BlindIndexSpec>::Seal> as Scope>::IndexArgs;
@@ -659,4 +661,14 @@ fn derive_normalized<Spec: BlindIndexSpec>(
     let stored = derive_index(normalized, domain.as_bytes(), Spec::ID, Spec::BITS, key)?;
 
     Ok(BlindIndex::from_validated_bytes(stored))
+}
+
+/// Creates an [`IndexId`](crate::IndexId) from a UUID literal.
+#[macro_export]
+macro_rules! index_id {
+    ($value:literal) => {{
+        const ID: $crate::IndexId =
+            $crate::IndexId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
+        ID
+    }};
 }

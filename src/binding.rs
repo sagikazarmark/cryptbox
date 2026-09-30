@@ -1,7 +1,8 @@
 use std::hash::Hash;
 use std::marker::PhantomData;
 
-use crate::{Error, PartId, SealId};
+use crate::id::identifier;
+use crate::{Error, SealId};
 
 mod args;
 mod encoding;
@@ -17,6 +18,11 @@ pub(crate) use args::{domain, domains};
 pub use part::PartType;
 pub use presets::{Tenant, TenantId};
 pub use scope::KeyScope;
+
+identifier!(
+    PartId,
+    "A stable binding-part identifier, independent of Rust names."
+);
 
 /// The declared scope a seal's values are bound to, such as a tenant, or an
 /// org plus a workspace.
@@ -779,10 +785,20 @@ impl BindingDomain {
     }
 }
 
+/// Creates a [`PartId`](crate::PartId) from a UUID literal.
+#[macro_export]
+macro_rules! part_id {
+    ($value:literal) => {{
+        const ID: $crate::PartId =
+            $crate::PartId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
+        ID
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{part_id, seal_id};
+    use crate::seal_id;
 
     const SEAL: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
 

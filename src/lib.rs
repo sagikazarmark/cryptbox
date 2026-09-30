@@ -203,11 +203,12 @@ mod value;
 
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    Args, FromIndexValues, KeyScope, PartKind, PartRole, PartSpec, PartType, PartValue, PartValues,
-    RecordId, Recorded, Scope, SealScope, Tenant, TenantId,
+    Args, FromIndexValues, KeyScope, PartId, PartKind, PartRole, PartSpec, PartType, PartValue,
+    PartValues, RecordId, Recorded, Scope, SealScope, Tenant, TenantId,
 };
 pub use blind::{
-    BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexList, inspect_blind_index,
+    BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexId, IndexList,
+    inspect_blind_index,
 };
 #[cfg(feature = "json")]
 pub use codec::Json;
@@ -220,7 +221,7 @@ pub use envelope::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, SuiteId, inspect_ciphertext, is_ciphertext,
 };
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
-pub use id::{IndexId, InvalidIdentifier, PartId, SealId};
+pub use id::InvalidIdentifier;
 pub use key::{
     BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyError,
     KeyId, Keys,
@@ -229,7 +230,7 @@ pub use key_source::{BlindIndexKeySource, ColumnKeys, EncryptionKeySource, Globa
 pub use padding::Padding;
 pub use prepare::Prepared;
 pub use record::{IndexedBy, Record, open_matching};
-pub use seal::Seal;
+pub use seal::{Seal, SealId};
 pub use value::{Plain, Sealed, Secret};
 
 // Paths that derive-generated code names; not public API.

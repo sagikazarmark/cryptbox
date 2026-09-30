@@ -1,4 +1,7 @@
-use crate::{Codec, IndexList, Padding, SealId, SealScope};
+use crate::id::identifier;
+use crate::{Codec, IndexList, Padding, SealScope};
+
+identifier!(SealId, "A stable seal identifier.");
 
 /// Declares how values are sealed: their identity, value type, codec,
 /// padding, binding, and blind indexes.
@@ -116,4 +119,14 @@ pub trait Seal: 'static {
     /// they would not write, such as the automatic column
     /// [`Plain`](crate::Plain). See [`IndexList`].
     type Indexes: IndexList<Self>;
+}
+
+/// Creates a [`SealId`](crate::SealId) from a UUID literal.
+#[macro_export]
+macro_rules! seal_id {
+    ($value:literal) => {{
+        const ID: $crate::SealId =
+            $crate::SealId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
+        ID
+    }};
 }

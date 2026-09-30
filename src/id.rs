@@ -54,15 +54,8 @@ macro_rules! identifier {
     };
 }
 
-// Shared with `key`, which declares its key-generation IDs next to the keys.
+// Each module declares its identifiers next to what they identify.
 pub(crate) use identifier;
-
-identifier!(SealId, "A stable seal identifier.");
-identifier!(IndexId, "A stable logical blind-index identifier.");
-identifier!(
-    PartId,
-    "A stable binding-part identifier, independent of Rust names."
-);
 
 /// The supplied text is not a canonical hyphenated UUID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -89,39 +82,10 @@ pub(crate) fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
         .map_err(|_| InvalidIdentifier)
 }
 
-/// Creates a [`SealId`](crate::SealId) from a UUID literal.
-#[macro_export]
-macro_rules! seal_id {
-    ($value:literal) => {{
-        const ID: $crate::SealId =
-            $crate::SealId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
-        ID
-    }};
-}
-
-/// Creates an [`IndexId`](crate::IndexId) from a UUID literal.
-#[macro_export]
-macro_rules! index_id {
-    ($value:literal) => {{
-        const ID: $crate::IndexId =
-            $crate::IndexId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
-        ID
-    }};
-}
-
-/// Creates a [`PartId`](crate::PartId) from a UUID literal.
-#[macro_export]
-macro_rules! part_id {
-    ($value:literal) => {{
-        const ID: $crate::PartId =
-            $crate::PartId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
-        ID
-    }};
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{InvalidIdentifier, SealId};
+    use super::InvalidIdentifier;
+    use crate::SealId;
 
     const HYPHENATED: &str = "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64";
 
