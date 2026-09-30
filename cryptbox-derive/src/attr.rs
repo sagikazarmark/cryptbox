@@ -1,5 +1,5 @@
 //! Parses the derives' helper attributes: `#[seal(…)]`, `#[blind_index(…)]`,
-//! `#[scope(…)]`, `#[record(…)]`, and the keys each accepts.
+//! `#[scope(…)]`, `#[record(…)]`, `#[cryptbox(…)]`, and the keys each accepts.
 
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote_spanned};
@@ -28,10 +28,11 @@ pub(crate) enum Key {
     Attr,
     Transparent,
     Name,
+    Kind,
 }
 
 impl Key {
-    const ALL: [Self; 17] = [
+    const ALL: [Self; 18] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -49,6 +50,7 @@ impl Key {
         Self::Attr,
         Self::Transparent,
         Self::Name,
+        Self::Kind,
     ];
 
     pub(crate) fn name(self) -> &'static str {
@@ -70,6 +72,7 @@ impl Key {
             Self::Attr => "attr",
             Self::Transparent => "transparent",
             Self::Name => "name",
+            Self::Kind => "kind",
         }
     }
 }
@@ -146,6 +149,7 @@ pub(crate) struct Attrs {
     pub(crate) indexes: Option<Vec<Type>>,
     pub(crate) sealed: Option<Ident>,
     pub(crate) name: Option<Ident>,
+    pub(crate) kind: Option<UuidLiteral>,
     pub(crate) attr: Option<Vec<Meta>>,
     pub(crate) transparent: Option<Span>,
     seen: Vec<Key>,
@@ -178,6 +182,7 @@ impl Attrs {
             indexes: None,
             sealed: None,
             name: None,
+            kind: None,
             attr: None,
             transparent: None,
             seen: Vec::new(),
@@ -266,6 +271,7 @@ impl Attrs {
             Key::Scope => self.scope = Some(input.parse()?),
             Key::Sealed => self.sealed = Some(input.parse()?),
             Key::Name => self.name = Some(input.parse()?),
+            Key::Kind => self.kind = Some(parse_uuid(key.name(), input)?),
             Key::Transparent | Key::Indexes | Key::Attr => {
                 unreachable!("flags and lists have no `= value`")
             }

@@ -205,8 +205,8 @@ mod value;
 pub use args::Args;
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    FromParts, PartId, PartKind, PartSpec, PartType, PartValue, PartValues, RecordId, Recorded,
-    Scope, SealScope, Tenant, TenantId,
+    BoundId, BoundList, FromParts, PartId, PartKind, PartSpec, PartType, PartValue, PartValues,
+    RecordId, Recorded, Scope, SealScope, Tenant, TenantId,
 };
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexId, IndexList,
@@ -218,7 +218,7 @@ pub use codec::Json;
 pub use codec::Postcard;
 pub use codec::{Codec, Raw, Utf8};
 #[cfg(feature = "derive")]
-pub use cryptbox_derive::{BlindIndexSpec, Record, Scope, Seal};
+pub use cryptbox_derive::{BlindIndexSpec, BoundId, Record, Scope, Seal};
 pub use envelope::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, SuiteId, inspect_ciphertext, is_ciphertext,
 };

@@ -13,10 +13,11 @@
 //! with `#[record_id]`, `#[seal…]`, and `#[blind_index(…)]` on a record's
 //! fields. Every derive accepts `crate = "path"` in its struct-level attribute,
 //! `#[scope(crate = "path")]` for `Scope`, for code that reaches `cryptbox`
-//! under another path.
+//! under another path. `BoundId` takes `#[cryptbox(…)]`.
 
 mod attr;
 mod blind_index;
+mod bound_id;
 mod record;
 mod scope;
 mod seal;
@@ -387,6 +388,49 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(Scope, attributes(scope, part))]
 pub fn derive_scope(input: TokenStream) -> TokenStream {
     derive(input, scope::expand)
+}
+
+/// Derives `cryptbox::BoundId` and `cryptbox::PartType` for a newtype over one
+/// ID, such as an org ID, which seals bind their values to.
+///
+/// | `#[cryptbox(…)]` key | Required | Meaning |
+/// | --- | --- | --- |
+/// | `kind = "<uuid>"` | yes | The kind of value, `BoundId::KIND_ID`: a fresh UUID, persistent schema. |
+/// | `crate = "path"` | no | The path to `cryptbox`. |
+///
+/// The field's type is any `PartType`, such as `[u8; 16]`, `uuid::Uuid` with
+/// `cryptbox`'s `uuid` feature, `i64`, or `Vec<u8>`; the newtype binds as it.
+///
+/// ```
+/// #[derive(cryptbox::BoundId)]
+/// #[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
+/// struct OrgId([u8; 16]);
+/// ```
+///
+/// expands to:
+///
+/// ```
+/// # struct OrgId([u8; 16]);
+/// impl cryptbox::PartType for OrgId {
+///     const KIND: cryptbox::PartKind = <[u8; 16] as cryptbox::PartType>::KIND;
+///
+///     fn part_value(&self) -> cryptbox::PartValue<'_> {
+///         <[u8; 16] as cryptbox::PartType>::part_value(&self.0)
+///     }
+///
+///     fn from_part_value(value: cryptbox::PartValue<'_>) -> Result<Self, cryptbox::Error> {
+///         <[u8; 16] as cryptbox::PartType>::from_part_value(value).map(Self)
+///     }
+/// }
+///
+/// impl cryptbox::BoundId for OrgId {
+///     const KIND_ID: cryptbox::PartId =
+///         cryptbox::PartId::from_u128(0x59881c28_3003_4047_847f_d7cc73b140e5);
+/// }
+/// ```
+#[proc_macro_derive(BoundId, attributes(cryptbox))]
+pub fn derive_bound_id(input: TokenStream) -> TokenStream {
+    derive(input, bound_id::expand)
 }
 
 /// Derives `cryptbox::Record` for a row struct, and generates its sealed struct

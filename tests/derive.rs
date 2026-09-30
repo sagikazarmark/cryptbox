@@ -737,3 +737,30 @@ fn a_part_value_of_another_kind_is_rejected() {
         Err(cryptbox::Error::InvalidBinding)
     );
 }
+
+/// A customer ID, bound as a UUID.
+#[derive(cryptbox::BoundId, Clone, Copy, Debug, PartialEq)]
+#[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
+struct CustomerId([u8; 16]);
+
+#[test]
+fn a_derived_bound_id_binds_as_its_field_under_its_kind() {
+    use cryptbox::{BoundId, BoundList};
+
+    let customer = CustomerId([0x42; 16]);
+
+    assert_eq!(
+        CustomerId::KIND_ID,
+        part_id!("59881c28-3003-4047-847f-d7cc73b140e5")
+    );
+    assert_eq!(CustomerId::KIND, PartKind::Uuid);
+    assert!(matches!(customer.part_value(), PartValue::Uuid([0x42, ..])));
+    assert_eq!(
+        CustomerId::from_part_value(customer.part_value()),
+        Ok(customer)
+    );
+    assert_eq!(
+        <(CustomerId,)>::PARTS,
+        [PartSpec::new(CustomerId::KIND_ID, PartKind::Uuid)]
+    );
+}

@@ -32,7 +32,7 @@ impl FromParts for () {
 pub struct Tenant(pub TenantId);
 
 // Persistent schema: never change it. See ../../docs/wire-format.md#presets.
-const TENANT_PART: PartSpec = PartSpec::new(
+pub(super) const TENANT_PART: PartSpec = PartSpec::new(
     crate::part_id!("1e8306bf-3135-4570-831c-6732f92550e9"),
     PartKind::Bytes,
 );

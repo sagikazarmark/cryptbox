@@ -4,10 +4,12 @@ use std::marker::PhantomData;
 use crate::Error;
 use crate::id::identifier;
 
+mod bound_id;
 mod encoding;
 mod part;
 mod presets;
 
+pub use bound_id::{BoundId, BoundList};
 pub use part::PartType;
 pub use presets::{Tenant, TenantId};
 
