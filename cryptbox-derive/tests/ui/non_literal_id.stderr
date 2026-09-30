@@ -1,5 +1,5 @@
 error: `id` must be a UUID string literal, such as "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64"
- --> tests/ui/non_literal_id.rs:4:17
+ --> tests/ui/non_literal_id.rs:4:13
   |
-4 | #[cryptbox(id = ID, value = String)]
-  |                 ^^
+4 | #[seal(id = ID, value = String)]
+  |             ^^

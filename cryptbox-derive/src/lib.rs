@@ -8,8 +8,12 @@
 //! generated items are `Record`'s sealed struct, the seals its fields declare,
 //! per-field sealers, and compile-time index checks.
 //!
-//! All derives share one `#[cryptbox(...)]` attribute namespace. Every derive
-//! accepts `crate = "path"` for code that reaches `cryptbox` under another path.
+//! Each derive's helper attributes are named after it: `#[seal(…)]`,
+//! `#[blind_index(…)]`, `#[part("…")]` on a scope's fields, and `#[record(…)]`
+//! with `#[record_id]`, `#[seal…]`, and `#[blind_index(…)]` on a record's
+//! fields. Every derive accepts `crate = "path"` in its struct-level attribute,
+//! `#[scope(crate = "path")]` for `Scope`, for code that reaches `cryptbox`
+//! under another path.
 
 mod attr;
 mod blind_index;
@@ -22,7 +26,7 @@ use syn::{DeriveInput, parse_macro_input};
 
 /// Derives `cryptbox::Seal`, for a marker or for a type that is its own value.
 ///
-/// | Key | Required | Meaning |
+/// | `#[seal(…)]` key | Required | Meaning |
 /// | --- | --- | --- |
 /// | `id = "…"` | yes | The seal ID, a hyphenated UUID string literal. |
 /// | `value = Type` | on a unit struct | The value type a marker seals. A type with fields is its own value and rejects it. |
@@ -57,7 +61,7 @@ use syn::{DeriveInput, parse_macro_input};
 ///
 /// ```
 /// #[derive(cryptbox::Seal)]
-/// #[cryptbox(
+/// #[seal(
 ///     id = "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64",
 ///     value = String,
 ///     padding = block(16),
@@ -93,7 +97,7 @@ use syn::{DeriveInput, parse_macro_input};
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
 /// #[derive(cryptbox::Seal)]
-/// #[cryptbox(
+/// #[seal(
 ///     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
 ///     value = String,
 ///     scope = cryptbox::Recorded<cryptbox::Tenant, i64>,
@@ -102,7 +106,7 @@ use syn::{DeriveInput, parse_macro_input};
 /// pub struct CustomerEmail;
 ///
 /// #[derive(cryptbox::BlindIndexSpec)]
-/// #[cryptbox(
+/// #[blind_index(
 ///     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
 ///     seal = CustomerEmail,
 ///     bits = 32,
@@ -151,7 +155,7 @@ use syn::{DeriveInput, parse_macro_input};
 ///
 /// ```
 /// #[derive(serde::Serialize, serde::Deserialize, cryptbox::Seal)]
-/// #[cryptbox(id = "5d2f8a61-3c4e-4b7a-9e10-6f8b2c4d1a93", codec = cryptbox::Json)]
+/// #[seal(id = "5d2f8a61-3c4e-4b7a-9e10-6f8b2c4d1a93", codec = cryptbox::Json)]
 /// pub struct ProfileResponse {
 ///     pub name: String,
 ///     pub email: String,
@@ -165,7 +169,7 @@ use syn::{DeriveInput, parse_macro_input};
 ///
 /// ```
 /// #[derive(cryptbox::Seal)]
-/// #[cryptbox(id = "7a1c3e5f-9b2d-4f60-8a4c-1e3b5d7f9a2c", transparent)]
+/// #[seal(id = "7a1c3e5f-9b2d-4f60-8a4c-1e3b5d7f9a2c", transparent)]
 /// pub struct UserEmail(String);
 /// ```
 ///
@@ -210,14 +214,14 @@ use syn::{DeriveInput, parse_macro_input};
 ///     }
 /// };
 /// ```
-#[proc_macro_derive(Seal, attributes(cryptbox))]
+#[proc_macro_derive(Seal, attributes(seal))]
 pub fn derive_seal(input: TokenStream) -> TokenStream {
     derive(input, seal::expand)
 }
 
 /// Derives `cryptbox::BlindIndexSpec` for a blind-index marker type.
 ///
-/// | Key | Required | Meaning |
+/// | `#[blind_index(…)]` key | Required | Meaning |
 /// | --- | --- | --- |
 /// | `id = "…"` | yes | The index ID, a hyphenated UUID string literal. |
 /// | `seal = Type` | yes | The seal whose values the index projects. |
@@ -243,7 +247,7 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 /// use zeroize::Zeroizing;
 ///
 /// #[derive(cryptbox::Seal)]
-/// #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
+/// #[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 /// struct UserEmail;
 ///
 /// fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -251,7 +255,7 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 /// }
 ///
 /// #[derive(cryptbox::BlindIndexSpec)]
-/// #[cryptbox(
+/// #[blind_index(
 ///     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
 ///     seal = UserEmail,
 ///     bits = 32,
@@ -271,7 +275,7 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 /// # use cryptbox::BlindIndexError;
 /// # use zeroize::Zeroizing;
 /// # #[derive(cryptbox::Seal)]
-/// # #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
+/// # #[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 /// # struct UserEmail;
 /// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 /// #     Ok(Zeroizing::new(email.trim().to_ascii_lowercase().into_bytes()))
@@ -305,18 +309,15 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 ///
 /// With `project = street`, where `fn street(address: &Address) -> &str`,
 /// `normalize_value` calls `normalize_email(&street(value))` instead.
-#[proc_macro_derive(BlindIndexSpec, attributes(cryptbox))]
+#[proc_macro_derive(BlindIndexSpec, attributes(blind_index))]
 pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
     derive(input, blind_index::expand)
 }
 
 /// Derives `cryptbox::Scope` for an owned scope struct.
 ///
-/// Each named field is one part, declared on the field:
-///
-/// | Field key | Required | Meaning |
-/// | --- | --- | --- |
-/// | `part = "…"` | yes | The part ID, a hyphenated UUID string literal. |
+/// Each named field is one part, declared on the field with `#[part("…")]`,
+/// its part ID, a hyphenated UUID string literal.
 ///
 /// Parts have no roles: a seal names the parts key custody follows with
 /// `keys = View`, and a blind index the parts it is partitioned by with
@@ -333,9 +334,9 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// ```
 /// #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 /// pub struct OrgWorkspace {
-///     #[cryptbox(part = "c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48")]
+///     #[part("c7d24e19-0b8a-4f63-a1d5-6e9f3b720c48")]
 ///     pub workspace: Vec<u8>,
-///     #[cryptbox(part = "3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90")]
+///     #[part("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90")]
 ///     pub org: [u8; 16],
 /// }
 /// ```
@@ -387,9 +388,9 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// };
 /// ```
 ///
-/// A seal names the scope with `#[cryptbox(scope = OrgWorkspace)]`, and a blind
-/// index names a view of it the same way.
-#[proc_macro_derive(Scope, attributes(cryptbox))]
+/// A seal names the scope with `#[seal(scope = OrgWorkspace)]`, and a blind
+/// index names a view of it with `#[blind_index(scope = …)]`.
+#[proc_macro_derive(Scope, attributes(scope, part))]
 pub fn derive_scope(input: TokenStream) -> TokenStream {
     derive(input, scope::expand)
 }
@@ -397,26 +398,30 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 /// Derives `cryptbox::Record` for a row struct, and generates its sealed struct
 /// and the seals its fields declare.
 ///
-/// | Struct key | Required | Meaning |
+/// | `#[record(…)]` key | Required | Meaning |
 /// | --- | --- | --- |
-/// | `record_id = field` | yes | The field that holds the record ID. It is never encrypted. |
 /// | `sealed = Name` | yes | The name of the generated sealed struct. |
 /// | `attr(…)` | no | Attributes for the sealed struct, such as `attr(derive(sqlx::FromRow))`. |
 ///
-/// Every field says how it is stored. A sealed field usually declares its own
-/// seal:
+/// On the fields:
 ///
-/// | Field key | Meaning |
+/// | Field attribute | Meaning |
 /// | --- | --- |
-/// | `id = "…"` | Declares the field's own seal, with this seal ID. |
-/// | `scope = Type` | The own seal's scope. Defaults to `()`, the empty scope. |
-/// | `keys = Type` | The own seal's keys view, as for `#[derive(Seal)]`. Defaults to the scope. |
-/// | `codec = Type`, `padding = …` | The own seal's codec and padding, as for `#[derive(Seal)]`. |
-/// | `name = Name` | Names the own seal `Name` instead of the record's name and the field's, such as `CustomerEmail`. |
-/// | `seal = F` | Sealed with the existing seal `F` instead. |
-/// | `seal` | Sealed as its own type, which must be a seal, such as a transparent one. |
-/// | `index(S as column, …)` | With a seal: the blind indexes it writes, each in a `BlindIndex<S>` field named `column`. |
-/// | `plaintext` | Stored as it is. The record ID must be `plaintext`. |
+/// | `#[record_id]` | The field that holds the record ID, exactly one. It is never encrypted. |
+/// | `#[seal(id = "…", …)]` | Declares the field's own seal, with this seal ID. |
+/// | `#[seal(F)]` | Sealed with the existing seal `F` instead. |
+/// | `#[seal]` | Sealed as its own type, which must be a seal, such as a transparent one. |
+/// | `#[blind_index(S as column, …)]` | With a seal: the blind indexes it writes, each in a `BlindIndex<S>` field named `column`. |
+///
+/// A field without `#[seal…]` is stored as it is. A field's own seal takes:
+///
+/// | `#[seal(…)]` key | Meaning |
+/// | --- | --- |
+/// | `id = "…"` | The seal ID. Required. |
+/// | `scope = Type` | The scope. Defaults to `()`, the empty scope. |
+/// | `keys = Type` | The keys view, as for `#[derive(Seal)]`. Defaults to the scope. |
+/// | `codec = Type`, `padding = …` | The codec and padding, as for `#[derive(Seal)]`. |
+/// | `name = Name` | Names the seal `Name` instead of the record's name and the field's, such as `CustomerEmail`. |
 ///
 /// A field's own seal is a generated unit struct with the field's visibility,
 /// the least at which the sealed struct can name it. Its value type is the
@@ -424,11 +429,11 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 /// `Recorded<Scope, Id>`, where `Id` is the record ID's type: every value is
 /// bound to its field, its scope, and its row, so a value moved to another
 /// field, table, or row fails to open. Blind indexes over it name it with
-/// `seal = CustomerEmail`.
+/// `#[blind_index(seal = CustomerEmail, …)]`.
 ///
 /// An existing seal binds the record only if its scope is `Recorded`, with a
 /// record ID of the record's kind. One seal on two fields fails the build, since
-/// their values could be swapped within a row. So does an unannotated field. The
+/// their values could be swapped within a row. The
 /// seals of all sealed fields must share one scope and one keys view, the
 /// record's `Scope` and `Keys`, so one key source serves the record, and a field must write
 /// exactly the blind indexes its seal declares in `indexes(…)`: a missing,
@@ -454,22 +459,22 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
 /// #[derive(Clone, cryptbox::Record)]
-/// #[cryptbox(record_id = id, sealed = SealedCustomer)]
+/// #[record(sealed = SealedCustomer)]
 /// pub struct Customer {
-///     #[cryptbox(plaintext)]
+///     #[record_id]
 ///     pub id: i64,
-///     #[cryptbox(
+///     #[seal(
 ///         id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
 ///         scope = cryptbox::Tenant,
-///         index(EmailLookup as email_lookup),
 ///     )]
+///     #[blind_index(EmailLookup as email_lookup)]
 ///     pub email: String,
-///     #[cryptbox(id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38", scope = cryptbox::Tenant)]
+///     #[seal(id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38", scope = cryptbox::Tenant)]
 ///     pub note: String,
 /// }
 ///
 /// #[derive(cryptbox::BlindIndexSpec)]
-/// #[cryptbox(
+/// #[blind_index(
 ///     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
 ///     seal = CustomerEmail,
 ///     bits = 32,
@@ -495,7 +500,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
 /// # #[derive(cryptbox::BlindIndexSpec)]
-/// # #[cryptbox(
+/// # #[blind_index(
 /// #     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
 /// #     seal = CustomerEmail,
 /// #     bits = 32,
@@ -634,7 +639,7 @@ pub fn derive_scope(input: TokenStream) -> TokenStream {
 /// The index check is `const _: () = assert!(writes_declared_indexes(<F::Indexes
 /// as IndexList<F>>::IDS, &[S::ID, …]))` for each sealed field; a hand-written
 /// impl upholds it by writing every declared index.
-#[proc_macro_derive(Record, attributes(cryptbox, sqlx))]
+#[proc_macro_derive(Record, attributes(record, record_id, seal, blind_index, sqlx))]
 pub fn derive_record(input: TokenStream) -> TokenStream {
     derive(input, record::expand)
 }

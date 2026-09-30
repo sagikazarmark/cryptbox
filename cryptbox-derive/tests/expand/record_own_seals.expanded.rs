@@ -1,11 +1,11 @@
-#[cryptbox(record_id = id, sealed = SealedCustomer)]
+#[record(sealed = SealedCustomer)]
 pub struct Customer {
-    #[cryptbox(plaintext)]
+    #[record_id]
     pub id: i64,
     /// The primary contact address.
-    #[cryptbox(id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", scope = cryptbox::Tenant)]
+    #[seal(id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", scope = cryptbox::Tenant)]
     pub email: String,
-    #[cryptbox(
+    #[seal(
         id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
         scope = cryptbox::Tenant,
         padding = block(16),
@@ -62,7 +62,7 @@ const _: () = {
         {
             ::core::panicking::panic_fmt(
                 format_args!(
-                    "`email` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `index(Spec as column, …)`",
+                    "`email` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `#[blind_index(Spec as column, …)]`",
                 ),
             );
         }
@@ -76,7 +76,7 @@ const _: () = {
         {
             ::core::panicking::panic_fmt(
                 format_args!(
-                    "`note` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `index(Spec as column, …)`",
+                    "`note` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `#[blind_index(Spec as column, …)]`",
                 ),
             );
         }

@@ -264,13 +264,14 @@ mod derived {
 
     /// The derived equivalent of [`Customer`].
     #[derive(Clone, Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record_id = id, sealed = SealedDerivedCustomer)]
+    #[record(sealed = SealedDerivedCustomer)]
     struct DerivedCustomer {
-        #[cryptbox(plaintext)]
+        #[record_id]
         id: i64,
-        #[cryptbox(seal = CustomerEmail, index(EmailLookup as email_lookup))]
+        #[seal(CustomerEmail)]
+        #[blind_index(EmailLookup as email_lookup)]
         email: String,
-        #[cryptbox(seal = CustomerNote)]
+        #[seal(CustomerNote)]
         note: String,
     }
 
@@ -392,17 +393,17 @@ mod own_seals {
     /// [`Customer`] with its email's seal declared on the field: the same ID,
     /// scope, and record binding as [`CustomerEmail`], so the same bytes.
     #[derive(Clone, Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record_id = id, sealed = SealedInlineCustomer)]
+    #[record(sealed = SealedInlineCustomer)]
     pub struct InlineCustomer {
-        #[cryptbox(plaintext)]
+        #[record_id]
         id: i64,
-        #[cryptbox(
+        #[seal(
             id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
             scope = Tenant,
-            index(InlineEmailLookup as email_lookup),
         )]
+        #[blind_index(InlineEmailLookup as email_lookup)]
         email: String,
-        #[cryptbox(seal = CustomerNote)]
+        #[seal(CustomerNote)]
         note: String,
     }
 
@@ -412,7 +413,7 @@ mod own_seals {
 
     /// [`EmailLookup`] over the field's own seal.
     #[derive(cryptbox::BlindIndexSpec)]
-    #[cryptbox(
+    #[blind_index(
         id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
         seal = InlineCustomerEmail,
         bits = 1,
@@ -424,11 +425,11 @@ mod own_seals {
 
     /// A field seal under another name.
     #[derive(Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record_id = id, sealed = SealedRenamed)]
+    #[record(sealed = SealedRenamed)]
     struct Renamed {
-        #[cryptbox(plaintext)]
+        #[record_id]
         id: i64,
-        #[cryptbox(id = "5b7d9f13-2c4e-4a68-8b0d-1f3e5a7c9b24", name = RenamedNickname)]
+        #[seal(id = "5b7d9f13-2c4e-4a68-8b0d-1f3e5a7c9b24", name = RenamedNickname)]
         nickname: String,
     }
 
@@ -497,7 +498,7 @@ mod self_valued {
 
     /// [`super::CustomerEmail`] as its own value: the same ID, bytes, and index.
     #[derive(Clone, Debug, PartialEq, cryptbox::Seal)]
-    #[cryptbox(
+    #[seal(
         id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
         transparent,
         scope = cryptbox::Recorded<Tenant, i64>,
@@ -517,7 +518,7 @@ mod self_valued {
 
     /// [`EmailLookup`] over [`OwnEmail`].
     #[derive(cryptbox::BlindIndexSpec)]
-    #[cryptbox(
+    #[blind_index(
         id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
         seal = OwnEmail,
         bits = 1,
@@ -530,13 +531,14 @@ mod self_valued {
 
     /// [`Customer`] with a field whose type is its own seal.
     #[derive(Clone, Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record_id = id, sealed = SealedOwnCustomer)]
+    #[record(sealed = SealedOwnCustomer)]
     struct OwnCustomer {
-        #[cryptbox(plaintext)]
+        #[record_id]
         id: i64,
-        #[cryptbox(seal, index(OwnEmailLookup as email_lookup))]
+        #[seal]
+        #[blind_index(OwnEmailLookup as email_lookup)]
         email: OwnEmail,
-        #[cryptbox(seal = CustomerNote)]
+        #[seal(CustomerNote)]
         note: String,
     }
 
@@ -576,15 +578,16 @@ mod sqlite {
 
     /// A record whose sealed struct is read with `sqlx::FromRow`.
     #[derive(Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record_id = id, sealed = SealedStoredCustomer, attr(derive(sqlx::FromRow)))]
+    #[record(sealed = SealedStoredCustomer, attr(derive(sqlx::FromRow)))]
     #[sqlx(rename_all = "UPPERCASE")]
     struct StoredCustomer {
-        #[cryptbox(plaintext)]
+        #[record_id]
         id: i64,
-        #[cryptbox(seal = CustomerEmail, index(EmailLookup as email_lookup))]
         #[sqlx(rename = "EMAIL_CIPHERTEXT")]
+        #[seal(CustomerEmail)]
+        #[blind_index(EmailLookup as email_lookup)]
         email: String,
-        #[cryptbox(seal = CustomerNote)]
+        #[seal(CustomerNote)]
         note: String,
     }
 

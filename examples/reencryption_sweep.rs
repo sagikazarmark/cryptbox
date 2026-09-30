@@ -18,7 +18,7 @@ const BATCH_SIZE: i64 = 2;
 const MIGRATION_NAME: &str = "users-email-e2-i2-attempt-1";
 
 #[derive(Seal)]
-#[cryptbox(id = "14b44964-cb41-4716-ab47-af19c86929a0", value = String)]
+#[seal(id = "14b44964-cb41-4716-ab47-af19c86929a0", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -29,7 +29,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "0892ee51-dc3e-4863-9668-55cbf96f735c",
     seal = UserEmail,
     bits = 128,

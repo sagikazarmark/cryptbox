@@ -15,18 +15,18 @@ use zeroize::Zeroizing;
 /// ID sorts last, so an object key led by [`Org`] moves it first.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct OrgSearch {
-    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
+    #[part("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
     org: [u8; 16],
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     region: i64,
-    #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
+    #[part("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
     shard: Vec<u8>,
 }
 
 /// The keys view of [`OrgSearch`].
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct Org {
-    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
+    #[part("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
     org: [u8; 16],
 }
 
@@ -34,11 +34,11 @@ struct Org {
 type SearchKey = ObjectKey<OrgSearch, Org>;
 
 #[derive(cryptbox::Seal)]
-#[cryptbox(
+#[seal(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
     scope = Tenant,
-    indexes(EmailLookup)
+    indexes(EmailLookup),
 )]
 struct CustomerEmail;
 
@@ -48,13 +48,13 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(cryptbox::BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
     seal = CustomerEmail,
     bits = 32,
     query = str,
     normalize = normalize_email,
-    normalizer = "email/1"
+    normalizer = "email/1",
 )]
 struct EmailLookup;
 

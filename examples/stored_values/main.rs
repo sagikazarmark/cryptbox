@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 #[derive(Seal)]
-#[cryptbox(id = "181642fe-59de-4fe3-9576-cb1cb66116ef", value = String)]
+#[seal(id = "181642fe-59de-4fe3-9576-cb1cb66116ef", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -22,11 +22,11 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "2ce82e31-6001-4b05-b4e2-8fc262997209",
     seal = UserEmail,
     // Demonstration precision; choose precision and normalization for your domain.
-    bits = 128,
+bits = 128,
     query = str,
     normalize = normalize_email,
     normalizer = "email/1",

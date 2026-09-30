@@ -1,5 +1,5 @@
 error: `id` must be a hyphenated UUID, such as "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64"
- --> tests/ui/invalid_uuid.rs:2:17
+ --> tests/ui/invalid_uuid.rs:2:13
   |
-2 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e2z", value = String)]
-  |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2 | #[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e2z", value = String)]
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

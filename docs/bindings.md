@@ -36,15 +36,15 @@ bytes. With the `derive` feature, each field of the struct is one part:
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 pub struct OrgWorkspace {
     /// Scopes keys; the shred unit.
-    #[cryptbox(part = "59881c28-3003-4047-847f-d7cc73b140e5")]
+    #[part("59881c28-3003-4047-847f-d7cc73b140e5")]
     pub org: [u8; 16],
     /// Bound only: it separates ciphertext without scoping keys.
-    #[cryptbox(part = "78f0169a-f024-402b-9cdf-f436864fa17f")]
+    #[part("78f0169a-f024-402b-9cdf-f436864fa17f")]
     pub workspace: [u8; 16],
 }
 
 #[derive(cryptbox::Seal)]
-#[cryptbox(
+#[seal(
     id = "2cef6a47-3e20-42dc-a319-56022cb4cf30",
     value = String,
     scope = cryptbox::Recorded<OrgWorkspace, [u8; 16]>,
@@ -112,12 +112,12 @@ sealed under:
 /// What a customer search knows: the org.
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 pub struct Org {
-    #[cryptbox(part = "59881c28-3003-4047-847f-d7cc73b140e5")]
+    #[part("59881c28-3003-4047-847f-d7cc73b140e5")]
     pub org: [u8; 16],
 }
 
 #[derive(cryptbox::BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "5b0e3c9a-7d21-4f86-a4b3-0c8e2f6d9a15",
     seal = CustomerEmail,
     scope = Org,

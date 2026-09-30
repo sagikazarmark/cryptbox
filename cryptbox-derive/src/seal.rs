@@ -18,12 +18,6 @@ const KEYS: &[Key] = &[
     Key::Crate,
 ];
 
-const REJECTED: &[(Key, &str)] = &[(
-    Key::Record,
-    "a seal binds a record through its scope: use `scope = cryptbox::Recorded<Scope, Id>`, \
-     or declare the seal on its field in a `#[derive(Record)]`",
-)];
-
 /// What the seal's values are, and how they are encoded.
 enum Form<'a> {
     /// A unit struct over a separate value type.
@@ -40,7 +34,7 @@ enum Form<'a> {
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    let mut attrs = Attrs::parse_rejecting(&input.attrs, KEYS, REJECTED, &mut errors);
+    let mut attrs = Attrs::parse(&input.attrs, "seal", KEYS, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
 
@@ -53,7 +47,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         &mut errors,
     );
     let form = form(input, &mut attrs, &mut errors);
-    attrs.reject_keys_flag(&mut errors);
     errors.finish()?;
     let (Some(id), Some(form)) = (id, form) else {
         unreachable!("missing keys are reported above");
@@ -64,7 +57,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         |padding| padding.to_tokens(&krate),
     );
     // Without `keys`, custody follows the whole scope.
-    let keys = match (&attrs.keys_view, &attrs.scope) {
+    let keys = match (&attrs.keys, &attrs.scope) {
         (Some(keys), _) => quote!(#keys),
         (None, Some(scope)) => quote!(<#scope as #krate::SealScope>::Parts),
         (None, None) => quote!(()),
@@ -213,8 +206,8 @@ fn form<'a>(input: &'a DeriveInput, attrs: &mut Attrs, errors: &mut Errors) -> O
             errors.push(syn::Error::new(
                 name.span(),
                 "missing `codec`: a type with fields is its own value, so name how it is \
-                 encoded with `#[cryptbox(codec = Codec)]`, or store its single field with \
-                 `#[cryptbox(transparent)]`",
+                 encoded with `#[seal(codec = Codec)]`, or store its single field with \
+                 `#[seal(transparent)]`",
             ));
         }
         return None;

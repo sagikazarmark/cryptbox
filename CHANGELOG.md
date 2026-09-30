@@ -266,6 +266,16 @@
   each index scope part's from its seal's. Every seal keeps its fingerprint,
   since its keys view held exactly its `keys` parts.
 
+- **Breaking:** derive attributes are named after their derive, and
+  `#[cryptbox(…)]` is retired (ADR-0009): `#[seal(…)]` for `#[derive(Seal)]`,
+  `#[blind_index(…)]` for `#[derive(BlindIndexSpec)]`, `#[part("…")]` on a
+  scope's fields with `#[scope(crate = "…")]`, and for `#[derive(Record)]`
+  `#[record(sealed = …, attr(…))]` with, on fields, `#[record_id]`,
+  `#[seal(id = "…", …)]` for a field's own seal, `#[seal(F)]` for an existing
+  one, a bare `#[seal]` for a field whose type is a seal, and
+  `#[blind_index(Spec as column, …)]`. A record field without `#[seal…]` is
+  stored as it is, so `plaintext` and `record_id = field` are gone.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

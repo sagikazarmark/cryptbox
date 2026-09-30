@@ -19,7 +19,7 @@ fn assert_value<F: Seal<Value = V>, V>() {}
 
 /// Primary contact address.
 #[derive(Seal)]
-#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
+#[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 struct UserEmail;
 
 /// The manual equivalent of [`UserEmail`].
@@ -58,7 +58,7 @@ fn a_derived_seal_opens_values_of_its_manual_equivalent() {
 
 /// [`UserEmail`] as its own value: the same ID, stored as its inner `String`.
 #[derive(Debug, PartialEq, Seal)]
-#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent)]
+#[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent)]
 struct SelfValuedEmail(String);
 
 #[test]
@@ -87,7 +87,7 @@ fn a_transparent_seal_and_a_marker_read_each_other_s_values() {
 
 /// A transparent seal over a named field, with an explicit codec.
 #[derive(Debug, PartialEq, Seal)]
-#[cryptbox(id = "3f5b7d91-2a4c-4e6f-8b1d-5c7e9f1a3b5d", transparent, codec = Utf8)]
+#[seal(id = "3f5b7d91-2a4c-4e6f-8b1d-5c7e9f1a3b5d", transparent, codec = Utf8)]
 struct Nickname {
     nickname: String,
 }
@@ -117,7 +117,7 @@ mod self_valued_json {
 
     /// A whole response sealed as one JSON document.
     #[derive(Debug, PartialEq, Serialize, Deserialize, Seal)]
-    #[cryptbox(id = "8c0e2a46-5b7d-4f91-a3c5-7e9b1d3f5a70", codec = Json)]
+    #[seal(id = "8c0e2a46-5b7d-4f91-a3c5-7e9b1d3f5a70", codec = Json)]
     struct Profile {
         name: String,
         email: String,
@@ -179,7 +179,7 @@ fn address() -> Address {
 }
 
 #[derive(Seal)]
-#[cryptbox(
+#[seal(
     id = "5D2E8A17-4C6B-4F93-8E0A-7B1C9D3F6A25",
     value = Address,
     codec = AddressCodec,
@@ -188,8 +188,8 @@ fn address() -> Address {
 struct BillingAddress;
 
 #[derive(Seal)]
-#[cryptbox(id = "5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25")]
-#[cryptbox(value = Address, codec = AddressCodec, padding = length(64usize))]
+#[seal(id = "5d2e8a17-4c6b-4f93-8e0a-7b1c9d3f6a25")]
+#[seal(value = Address, codec = AddressCodec, padding = length(64usize))]
 struct FixedBillingAddress;
 
 #[test]
@@ -227,7 +227,7 @@ fn normalize_text(text: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
     seal = UserEmail,
     bits = 32,
@@ -284,7 +284,7 @@ fn street(address: &Address) -> &str {
 }
 
 #[derive(BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64",
     seal = BillingAddress,
     bits = 64,
@@ -366,7 +366,7 @@ mod renamed {
 }
 
 #[derive(Seal)]
-#[cryptbox(
+#[seal(
     crate = "renamed::encryption",
     id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
     value = Postcode,
@@ -390,18 +390,18 @@ fn a_derived_blind_index_names_its_normalizer() {
 /// out of part-ID order.
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct OrgProject {
-    #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
+    #[part("8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
     workspace: [u8; 16],
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     org: Vec<u8>,
-    #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
+    #[part("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
     project: i64,
 }
 
 /// The keys view of [`OrgProject`]: its org.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct ProjectOrg {
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     org: Vec<u8>,
 }
 
@@ -409,9 +409,9 @@ struct ProjectOrg {
 /// knows.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct OrgProjectSearch {
-    #[cryptbox(part = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
+    #[part("5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
     project: i64,
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     org: Vec<u8>,
 }
 
@@ -468,7 +468,7 @@ fn a_derived_scope_is_built_back_from_its_part_values() {
 }
 
 #[derive(Seal)]
-#[cryptbox(
+#[seal(
     id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",
     value = String,
     scope = cryptbox::Recorded<OrgProject, i64>,
@@ -545,7 +545,7 @@ fn a_derived_seal_asks_its_key_source_by_its_keys_view() {
 }
 
 #[derive(Seal)]
-#[cryptbox(
+#[seal(
     id = "4b8e2d6f-1a3c-4e57-b9d0-6f2a4c8e1b35",
     value = String,
     scope = OrgProject,
@@ -555,7 +555,7 @@ fn a_derived_seal_asks_its_key_source_by_its_keys_view() {
 struct ProjectEmail;
 
 #[derive(BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "9c1e5a3d-7f2b-4d48-a6e0-3b5d9f1c7e24",
     seal = ProjectEmail,
     scope = OrgProjectSearch,
@@ -610,12 +610,12 @@ fn a_derived_blind_index_is_scoped_by_its_index_scope() {
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct Org {
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     id: [u8; 16],
 }
 
 #[derive(Seal)]
-#[cryptbox(
+#[seal(
     id = "3e7a9c1f-5b2d-4f60-8e14-a2c6d0b8f375",
     value = String,
     scope = OrgProject,
@@ -626,7 +626,7 @@ struct OrgProjectEmail;
 
 /// Without `scope`, a derived blind index is scoped by its seal's whole scope.
 #[derive(BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "6d2f8b4a-0c7e-4a95-b1d3-9e5f7a2c4b86",
     seal = OrgProjectEmail,
     bits = 32,
@@ -692,7 +692,7 @@ mod uuid_parts {
 
     #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
     struct Org {
-        #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+        #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
         id: Uuid,
     }
 
@@ -726,7 +726,7 @@ impl PartType for OrgId {
 
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct TypedOrg {
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     id: OrgId,
 }
 
@@ -760,12 +760,12 @@ impl PartType for Mislabeled {
 
 #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 struct MislabeledScope {
-    #[cryptbox(part = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
+    #[part("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
     id: Mislabeled,
 }
 
 #[derive(Seal)]
-#[cryptbox(
+#[seal(
     id = "83824c94-7154-4594-97b2-eb04999e948b",
     value = String,
     scope = MislabeledScope,

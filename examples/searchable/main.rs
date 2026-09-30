@@ -27,7 +27,7 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type SealedEmail = Sealed<UserEmail>;
 
 #[derive(Seal)]
-#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
+#[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 struct UserEmail;
 
 fn normalize_email(input: &str) -> std::result::Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -38,7 +38,7 @@ fn normalize_email(input: &str) -> std::result::Result<Zeroizing<Vec<u8>>, Blind
 }
 
 #[derive(BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "a80824bc-f281-49ee-a2ed-0b6d213d44ce",
     seal = UserEmail,
     bits = 128,

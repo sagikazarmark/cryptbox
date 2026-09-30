@@ -1,5 +1,0 @@
-error: a record is never a declared part: bind it with a seal scope of `cryptbox::Recorded<Scope, Id>`
- --> tests/ui/scope_record_part.rs:5:16
-  |
-5 |     #[cryptbox(record)]
-  |                ^^^^^^

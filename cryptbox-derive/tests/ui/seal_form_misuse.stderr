@@ -1,29 +1,29 @@
 error: a type with fields is its own value: remove `value`, or declare the seal as a unit struct to seal a separate value type
- --> tests/ui/seal_form_misuse.rs:3:65
+ --> tests/ui/seal_form_misuse.rs:3:61
   |
-3 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, codec = cryptbox::Utf8)]
-  |                                                                 ^^^^^^
+3 | #[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, codec = cryptbox::Utf8)]
+  |                                                             ^^^^^^
 
-error: missing `codec`: a type with fields is its own value, so name how it is encoded with `#[cryptbox(codec = Codec)]`, or store its single field with `#[cryptbox(transparent)]`
+error: missing `codec`: a type with fields is its own value, so name how it is encoded with `#[seal(codec = Codec)]`, or store its single field with `#[seal(transparent)]`
  --> tests/ui/seal_form_misuse.rs:9:8
   |
 9 | struct WithoutCodec {
   |        ^^^^^^^^^^^^
 
 error: `transparent` needs a struct with exactly one field; a unit struct is a marker over its `value` type
-  --> tests/ui/seal_form_misuse.rs:15:73
+  --> tests/ui/seal_form_misuse.rs:15:69
    |
-15 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, transparent)]
-   |                                                                         ^^^^^^^^^^^
+15 | #[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, transparent)]
+   |                                                                     ^^^^^^^^^^^
 
 error: `transparent` needs a struct with exactly one field
-  --> tests/ui/seal_form_misuse.rs:20:57
+  --> tests/ui/seal_form_misuse.rs:20:53
    |
-20 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent)]
-   |                                                         ^^^^^^^^^^^
+20 | #[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent)]
+   |                                                     ^^^^^^^^^^^
 
 error: `transparent` takes no value
-  --> tests/ui/seal_form_misuse.rs:25:57
+  --> tests/ui/seal_form_misuse.rs:25:53
    |
-25 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent = true)]
-   |                                                         ^^^^^^^^^^^
+25 | #[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent = true)]
+   |                                                     ^^^^^^^^^^^

@@ -99,8 +99,8 @@ identifier!(
 /// ```
 ///
 /// With the `derive` feature, `#[derive(Scope)]` writes exactly these impls from
-/// `#[cryptbox(part = "3a1f0c6e-…")]` on `org` and
-/// `#[cryptbox(part = "c7d24e19-…")]` on `workspace`. It sorts the parts and
+/// `#[part("3a1f0c6e-…")]` on `org` and
+/// `#[part("c7d24e19-…")]` on `workspace`. It sorts the parts and
 /// checks their IDs when it expands; [`PartType`] maps each field's type to its
 /// kind.
 ///

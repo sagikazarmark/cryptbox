@@ -23,7 +23,7 @@ use crate::{
 ///
 /// With the `derive` feature, `#[derive(Record)]` generates the sealed struct,
 /// this impl, per-field sealers for partial updates, and the seals its fields
-/// declare with `#[cryptbox(id = "…")]`, each bound to its field, scope, and row;
+/// declare with `#[seal(id = "…")]`, each bound to its field, scope, and row;
 /// and it checks that each field writes exactly the blind indexes its seal
 /// declares. See its documentation for the expansion, which a hand-written impl
 /// can follow.

@@ -1,4 +1,4 @@
-error: missing `id`: add `#[cryptbox(id = "<uuid>")]`
+error: missing `id`: add `#[seal(id = "<uuid>")]`
  --> tests/ui/missing_id.rs:3:8
   |
 3 | struct UserEmail;

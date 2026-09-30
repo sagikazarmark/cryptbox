@@ -1,4 +1,4 @@
-error: a seal binds a record through its scope: use `scope = cryptbox::Recorded<Scope, Id>`, or declare the seal on its field in a `#[derive(Record)]`
+error: unknown `seal` key `record`; expected one of `id`, `value`, `codec`, `transparent`, `padding`, `scope`, `keys`, `indexes`, `crate`
  --> tests/ui/seal_record_and_indexes_misuse.rs:5:5
   |
 5 |     record = true,

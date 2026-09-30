@@ -2,37 +2,34 @@
 
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
-use syn::{Attribute, Data, DeriveInput, Fields, Ident, LitStr, Path, Type, spanned::Spanned};
+use syn::{
+    Attribute, Data, DeriveInput, Fields, Ident, LitStr, Meta, Path, Type, spanned::Spanned,
+};
 
-use crate::attr::{Attrs, Errors, IndexColumn, Key, Padding, UuidLiteral, required};
+use crate::attr::{
+    Attrs, Errors, IndexColumn, Key, Padding, UuidLiteral, parse_index_columns, required,
+};
 use crate::seal::seal_items;
 
-const KEYS: &[Key] = &[Key::RecordId, Key::Sealed, Key::Attr, Key::Crate];
+/// The keys of the struct's `#[record(…)]`.
+const KEYS: &[Key] = &[Key::Sealed, Key::Attr, Key::Crate];
 
-const REJECTED: &[(Key, &str)] = &[(
-    Key::Record,
-    "`record` is renamed `record_id`: `#[cryptbox(record_id = field)]`",
-)];
-
-const MEMBER_KEYS: &[Key] = &[
+/// The keys of a field's own `#[seal(…)]`.
+const OWN_SEAL_KEYS: &[Key] = &[
     Key::Id,
     Key::Scope,
     Key::Keys,
     Key::Codec,
     Key::Padding,
     Key::Name,
-    Key::Seal,
-    Key::IndexColumns,
-    Key::Plaintext,
 ];
-
-/// The keys that declare a field's own seal, besides its `id`.
-const OWN_SEAL_KEYS: [Key; 5] = [Key::Scope, Key::Keys, Key::Codec, Key::Padding, Key::Name];
 
 /// One struct field of the record, and how it is stored.
 struct Member<'a> {
     decl: &'a syn::Field,
     ident: &'a Ident,
+    /// Whether it holds the record ID, `#[record_id]`.
+    record_id: bool,
     /// How it is sealed, or `None` when it is stored as it is.
     sealing: Option<Sealing>,
 }
@@ -90,23 +87,10 @@ impl Member<'_> {
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    let mut attrs = Attrs::parse_rejecting(&input.attrs, KEYS, REJECTED, &mut errors);
+    let mut attrs = Attrs::parse(&input.attrs, "record", KEYS, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
 
-    // A rejected `record` key already says to use `record_id`.
-    let record = if attrs.seen(Key::Record) {
-        attrs.record_id.take()
-    } else {
-        required(
-            attrs.record_id.take(),
-            &attrs,
-            Key::RecordId,
-            name,
-            "id",
-            &mut errors,
-        )
-    };
     let sealed_name = required(
         attrs.sealed.take(),
         &attrs,
@@ -118,11 +102,16 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let fields = struct_fields(input, &mut errors);
     let members = parse_members(name, &fields, &mut errors);
     errors = errors.check()?;
-    let (Some(record), Some(sealed_name)) = (record, sealed_name) else {
+    let Some(sealed_name) = sealed_name else {
         unreachable!("missing keys are reported above");
     };
-    check_members(name, &record, &members, &mut errors);
+    check_members(name, &members, &mut errors);
     errors.finish()?;
+    let record = members
+        .iter()
+        .find(|member| member.record_id)
+        .expect("the record ID field is checked above");
+    let (record, record_ty) = (record.ident, &record.decl.ty);
 
     let Some(first) = members.iter().find_map(|member| member.sealing.as_ref()) else {
         unreachable!("a record without sealed fields is reported above");
@@ -138,13 +127,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             quote!(<#seal as #krate::Seal>::Keys),
         )
     };
-    let record_ty = &members
-        .iter()
-        .find(|member| *member.ident == record)
-        .expect("the record field is checked above")
-        .decl
-        .ty;
-
     let own_seals = members
         .iter()
         .filter_map(|member| own_seal(&krate, name, record_ty, member));
@@ -158,8 +140,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let indexed_by = members
         .iter()
         .flat_map(|member| indexed_by(&krate, name, member));
-    let seal = seal_fn(&krate, &sealed_name, &record, &members);
-    let open = open_fn(&krate, &sealed_name, &record, &members);
+    let seal = seal_fn(&krate, &sealed_name, record, &members);
+    let open = open_fn(&krate, &sealed_name, record, &members);
 
     Ok(quote! {
         #(#own_seals)*
@@ -220,7 +202,7 @@ fn struct_fields<'a>(input: &'a DeriveInput, errors: &mut Errors) -> Vec<&'a syn
     }
 }
 
-/// Parses how each struct field is stored; every one must say.
+/// Parses how each struct field is stored: sealed with `#[seal…]`, or as it is.
 fn parse_members<'a>(
     name: &Ident,
     fields: &[&'a syn::Field],
@@ -230,107 +212,159 @@ fn parse_members<'a>(
 
     for decl in fields {
         let Some(ident) = &decl.ident else { continue };
-        let mut attrs = Attrs::parse(&decl.attrs, MEMBER_KEYS, errors);
-        let declares_own = attrs.seen(Key::Id) || OWN_SEAL_KEYS.iter().any(|key| attrs.seen(*key));
-        let uses_existing = attrs.seen(Key::Seal);
-        attrs.reject_keys_flag(errors);
-
-        if let Some(span) = attrs.plaintext
-            && (declares_own || uses_existing)
+        let record_id = parse_record_id(decl, errors);
+        let mut indexes = Vec::new();
+        for attr in decl
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("blind_index"))
         {
-            errors.push(syn::Error::new(
-                span,
-                "a field is either sealed or `plaintext`, not both",
-            ));
-            continue;
-        }
-        if declares_own && uses_existing {
-            errors.push(syn::Error::new(
-                ident.span(),
-                format!(
-                    "`{ident}` declares its own seal with `id` or uses an existing one with `seal`, \
-                     not both"
-                ),
-            ));
-            continue;
+            match parse_index_columns(attr) {
+                Ok(columns) => indexes.extend(columns),
+                Err(error) => errors.push(error),
+            }
         }
 
-        let sealing = if declares_own {
-            let Some(id) = attrs.id.take() else {
-                // An invalid `id` is already reported.
-                if !attrs.seen(Key::Id) {
+        let mut seals = decl
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("seal"));
+        let sealing = match (seals.next(), seals.next()) {
+            (None, _) => {
+                if !indexes.is_empty() {
                     errors.push(syn::Error::new(
                         ident.span(),
-                        format!(
-                            "`{ident}` declares its own seal: add its ID with \
-                             `#[cryptbox(id = \"<uuid>\")]`"
-                        ),
+                        format!("`{ident}` is stored as it is, so it has no blind indexes: seal it to index it"),
                     ));
                 }
-                continue;
-            };
-            let seal_name = attrs
-                .name
-                .take()
-                .unwrap_or_else(|| own_seal_name(name, ident));
-            Some(Sealing {
-                seal: syn::parse_quote!(#seal_name),
-                own: Some(OwnSeal {
-                    name: seal_name,
-                    id,
-                    scope: attrs.scope.take(),
-                    keys: attrs.keys_view.take(),
-                    codec: attrs.codec.take(),
-                    padding: attrs.padding.take(),
-                }),
-                indexes: attrs.index_columns.take().unwrap_or_default(),
-            })
-        } else if uses_existing {
-            // A bare `seal` seals the field as its own type. Nothing is inferred
-            // from names: a type that is not a seal fails to compile where it is
-            // named.
-            let Some(seal) = attrs
-                .seal
-                .take()
-                .or_else(|| attrs.seal_own.map(|_| decl.ty.clone()))
-            else {
-                // A `seal` key whose value was invalid is already reported.
-                continue;
-            };
-            Some(Sealing {
-                seal,
-                own: None,
-                indexes: attrs.index_columns.take().unwrap_or_default(),
-            })
-        } else if let Some(span) = attrs.plaintext {
-            if attrs.seen(Key::IndexColumns) {
-                errors.push(syn::Error::new(
-                    span,
-                    "a `plaintext` field has no blind indexes: seal it to index it",
-                ));
+                None
             }
-            None
-        } else {
-            errors.push(syn::Error::new(
-                ident.span(),
-                format!(
-                    "`{ident}` must say how it is stored: declare its own seal with \
-                     `#[cryptbox(id = \"<uuid>\")]`, use an existing one with \
-                     `#[cryptbox(seal = F)]` or, if its type is a seal, `#[cryptbox(seal)]`, \
-                     or store it as it is with `#[cryptbox(plaintext)]`"
-                ),
-            ));
-            continue;
+            (Some(_), Some(extra)) => {
+                errors.push(syn::Error::new_spanned(
+                    extra,
+                    "duplicate `seal`: a field has one seal",
+                ));
+                continue;
+            }
+            (Some(attr), None) => {
+                let Some(seal) = parse_seal(name, ident, decl, attr, errors) else {
+                    continue;
+                };
+                Some(Sealing { indexes, ..seal })
+            }
         };
 
         members.push(Member {
             decl,
             ident,
+            record_id,
             sealing,
         });
     }
 
     members
+}
+
+/// Whether the field is marked `#[record_id]`.
+fn parse_record_id(decl: &syn::Field, errors: &mut Errors) -> bool {
+    let mut marked = false;
+    for attr in decl
+        .attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("record_id"))
+    {
+        if !matches!(attr.meta, Meta::Path(_)) {
+            errors.push(syn::Error::new_spanned(
+                attr,
+                "`#[record_id]` takes no arguments",
+            ));
+        } else if marked {
+            errors.push(syn::Error::new_spanned(attr, "duplicate `record_id`"));
+        }
+        marked = true;
+    }
+
+    marked
+}
+
+/// Parses a field's `#[seal…]`: bare, the field's type as its seal; `#[seal(F)]`,
+/// an existing seal; or `#[seal(id = "…", …)]`, the field's own seal.
+fn parse_seal(
+    record: &Ident,
+    ident: &Ident,
+    decl: &syn::Field,
+    attr: &Attribute,
+    errors: &mut Errors,
+) -> Option<Sealing> {
+    let existing = |seal| {
+        Some(Sealing {
+            seal,
+            own: None,
+            indexes: Vec::new(),
+        })
+    };
+    // Nothing is inferred from names: a type that is not a seal fails to compile
+    // where it is named.
+    match &attr.meta {
+        Meta::Path(_) => return existing(decl.ty.clone()),
+        Meta::NameValue(meta) => {
+            errors.push(syn::Error::new_spanned(
+                meta,
+                "write `#[seal(F)]` to use an existing seal, or `#[seal(id = \"<uuid>\")]` to \
+                 declare the field's own",
+            ));
+            return None;
+        }
+        Meta::List(_) => {}
+    }
+    if let Ok(seal) = attr.parse_args::<Type>()
+        && !is_key(&seal)
+    {
+        return existing(seal);
+    }
+
+    let mut attrs = Attrs::parse(std::slice::from_ref(attr), "seal", OWN_SEAL_KEYS, errors);
+    let Some(id) = attrs.id.take() else {
+        // An invalid `id` is already reported.
+        if !attrs.seen(Key::Id) {
+            errors.push(syn::Error::new_spanned(
+                attr,
+                format!(
+                    "`{ident}` declares its own seal: add its ID with \
+                     `#[seal(id = \"<uuid>\", …)]`, or use an existing seal with `#[seal(F)]`"
+                ),
+            ));
+        }
+        return None;
+    };
+    let seal_name = attrs
+        .name
+        .take()
+        .unwrap_or_else(|| own_seal_name(record, ident));
+
+    Some(Sealing {
+        seal: syn::parse_quote!(#seal_name),
+        own: Some(OwnSeal {
+            name: seal_name,
+            id,
+            scope: attrs.scope.take(),
+            keys: attrs.keys.take(),
+            codec: attrs.codec.take(),
+            padding: attrs.padding.take(),
+        }),
+        indexes: Vec::new(),
+    })
+}
+
+/// Whether `ty` is a lone key of the field's own `#[seal(…)]`, such as `id`
+/// without its value, rather than an existing seal.
+fn is_key(ty: &Type) -> bool {
+    let Type::Path(path) = ty else { return false };
+    path.qself.is_none()
+        && path
+            .path
+            .get_ident()
+            .is_some_and(|ident| OWN_SEAL_KEYS.iter().any(|key| ident == key.name()))
 }
 
 /// The default name of a field's own seal: the record's name and the field's,
@@ -352,23 +386,29 @@ fn own_seal_name(record: &Ident, field: &Ident) -> Ident {
     Ident::new(&format!("{record}{pascal}"), record.span())
 }
 /// Checks the record ID field and the names the sealed struct adds.
-fn check_members(name: &Ident, record: &Ident, members: &[Member<'_>], errors: &mut Errors) {
-    match members.iter().find(|member| member.ident == record) {
-        None => errors.push(syn::Error::new(
-            record.span(),
-            format!("`{name}` has no field `{record}` to hold the record ID"),
+fn check_members(name: &Ident, members: &[Member<'_>], errors: &mut Errors) {
+    let mut records = members.iter().filter(|member| member.record_id);
+    match (records.next(), records.next()) {
+        (None, _) => errors.push(syn::Error::new(
+            name.span(),
+            format!("`{name}` needs a record ID: mark the field that holds it `#[record_id]`"),
         )),
-        Some(member) if member.sealing.is_some() => {
+        (Some(_), Some(other)) => errors.push(syn::Error::new(
+            other.ident.span(),
+            "a record has one record ID: mark only one field `#[record_id]`",
+        )),
+        (Some(member), None) if member.sealing.is_some() => {
             errors.push(syn::Error::new(
                 member.ident.span(),
                 format!(
-                    "the record ID `{record}` is never encrypted: the seals bound to the record \
+                    "the record ID `{}` is never encrypted: the seals bound to the record \
                      bind it, so it must be readable before the row is opened; \
-                     mark it `#[cryptbox(plaintext)]`"
+                     remove its `#[seal]`",
+                    member.ident
                 ),
             ));
         }
-        Some(_) => {}
+        (Some(_), None) => {}
     }
 
     // Two fields of one seal could have their values swapped within a row.
@@ -394,7 +434,7 @@ fn check_members(name: &Ident, record: &Ident, members: &[Member<'_>], errors: &
     if members.iter().all(|member| member.sealing.is_none()) {
         errors.push(syn::Error::new(
             name.span(),
-            "a record needs at least one sealed field: declare a seal on one with `#[cryptbox(id = \"<uuid>\")]`",
+            "a record needs at least one sealed field: declare a seal on one with `#[seal(id = \"<uuid>\")]`",
         ));
     }
 
@@ -481,7 +521,7 @@ fn index_check(krate: &Path, member: &Member<'_>) -> Option<TokenStream> {
     let message = LitStr::new(
         &format!(
             "`{ident}` must write every blind index its seal declares in `indexes(…)`, \
-             each once, and no other: list them as `index(Spec as column, …)`"
+             each once, and no other: list them as `#[blind_index(Spec as column, …)]`"
         ),
         ident.span(),
     );

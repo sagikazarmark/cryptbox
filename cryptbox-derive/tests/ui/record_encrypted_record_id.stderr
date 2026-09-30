@@ -1,5 +1,5 @@
-error: the record ID `handle` is never encrypted: the seals bound to the record bind it, so it must be readable before the row is opened; mark it `#[cryptbox(plaintext)]`
-  --> tests/ui/record_encrypted_record_id.rs:13:5
+error: the record ID `handle` is never encrypted: the seals bound to the record bind it, so it must be readable before the row is opened; remove its `#[seal]`
+  --> tests/ui/record_encrypted_record_id.rs:14:5
    |
-13 |     handle: String,
+14 |     handle: String,
    |     ^^^^^^

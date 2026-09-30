@@ -4,38 +4,9 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{Data, DeriveInput, Fields, Ident, spanned::Spanned};
 
-use crate::attr::{Attrs, Errors, Key, UuidLiteral, required};
+use crate::attr::{Attrs, Errors, Key, UuidLiteral, parse_part};
 
 const KEYS: &[Key] = &[Key::Crate];
-
-// A blind index names its own scope now (ADR-0009).
-const REJECTED: &[(Key, &str)] = &[(
-    Key::IndexArgs,
-    "`index_args` is gone: a blind index names its own scope, a view of this one, \
-     with `scope = …`",
-)];
-
-const PART_KEYS: &[Key] = &[Key::Part];
-
-// A record is bound through the seal scope, never as a declared part; and parts
-// have no roles: views of the scope say what else a part scopes (ADR-0009).
-const PART_REJECTED: &[(Key, &str)] = &[
-    (
-        Key::Record,
-        "a record is never a declared part: bind it with a seal scope of \
-         `cryptbox::Recorded<Scope, Id>`",
-    ),
-    (
-        Key::Keys,
-        "parts have no roles: name the parts that key custody follows on the seal, \
-         with `keys = View`, a view of this scope",
-    ),
-    (
-        Key::Index,
-        "parts have no roles: a blind index names the parts it is partitioned by \
-         with its own scope, `scope = …`, a view of this one",
-    ),
-];
 
 /// One validated part: a struct field with its part ID.
 struct Part<'a> {
@@ -46,7 +17,7 @@ struct Part<'a> {
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    let attrs = Attrs::parse_rejecting(&input.attrs, KEYS, REJECTED, &mut errors);
+    let attrs = Attrs::parse(&input.attrs, "scope", KEYS, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
 
@@ -130,20 +101,30 @@ fn parse_parts<'a>(fields: &[&'a syn::Field], errors: &mut Errors) -> Vec<Part<'
 
     for field in fields {
         let Some(ident) = &field.ident else { continue };
-        let mut attrs = Attrs::parse_rejecting(&field.attrs, PART_KEYS, PART_REJECTED, errors);
-        // A rejected record or role is already reported; don't also ask for more.
-        if attrs.seen(Key::Record) || attrs.seen(Key::Keys) || attrs.seen(Key::Index) {
+        let mut declared = field
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("part"));
+        let Some(attr) = declared.next() else {
+            errors.push(syn::Error::new(
+                ident.span(),
+                "missing `part`: add `#[part(\"<uuid>\")]`",
+            ));
+            continue;
+        };
+        if let Some(extra) = declared.next() {
+            errors.push(syn::Error::new_spanned(
+                extra,
+                "duplicate `part`: a field is one part",
+            ));
             continue;
         }
-        let Some(id) = required(
-            attrs.part.take(),
-            &attrs,
-            Key::Part,
-            ident,
-            "\"<uuid>\"",
-            errors,
-        ) else {
-            continue;
+        let id = match parse_part(attr) {
+            Ok(id) => id,
+            Err(error) => {
+                errors.push(error);
+                continue;
+            }
         };
 
         if id.value() == 0 {

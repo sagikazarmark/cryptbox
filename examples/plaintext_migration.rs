@@ -16,7 +16,7 @@ const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("0e53698f-f685-44a7-8a2a-9255
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("d36ea642-619a-4d37-b3d2-1b54298c31b8");
 
 #[derive(Seal)]
-#[cryptbox(id = "fb3669ca-fb43-4111-b8c1-306459fe4222", value = String)]
+#[seal(id = "fb3669ca-fb43-4111-b8c1-306459fe4222", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -27,7 +27,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "3b209afe-0a9e-4da7-8f23-13ebd5831149",
     seal = UserEmail,
     bits = 128,

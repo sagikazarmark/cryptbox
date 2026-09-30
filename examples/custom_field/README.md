@@ -58,7 +58,7 @@ Protect failure paths too. See the [ownership contracts](../../docs/ownership.md
 [`Seal`](https://docs.rs/cryptbox/latest/cryptbox/trait.Seal.html) ties these
 together: `Handle` names its ID, value type (itself), codec and padding. With
 the `derive` feature, `#[derive(Seal)]` on `Handle` with
-`#[cryptbox(id = …, codec = HandleCodec)]` writes the same impl, since a type
+`#[seal(id = …, codec = HandleCodec)]` writes the same impl, since a type
 with fields is its own value; `transparent` would instead take a codec for the
 inner `Secret<String>`. This example writes its impls by hand.
 **`Padding` is a closed set**: choose `Padding::NONE`, `Padding::block(n)` or

@@ -1,8 +1,8 @@
 error[E0277]: `Address` has no default codec
- --> tests/ui/missing_codec.rs:6:65
+ --> tests/ui/missing_codec.rs:6:61
   |
-6 | #[cryptbox(id = "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64", value = Address)]
-  |                                                                 ^^^^^^^ `Address` has no built-in codec
+6 | #[seal(id = "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64", value = Address)]
+  |                                                             ^^^^^^^ `Address` has no built-in codec
   |
 help: the trait `cryptbox::__private::DefaultCodec` is not implemented for `Address`
  --> tests/ui/missing_codec.rs:1:1

@@ -1,5 +1,5 @@
 #[derive(cryptbox::Seal)]
-#[cryptbox(value = String)]
+#[seal(value = String)]
 struct UserEmail;
 
 fn main() {}

@@ -1,6 +1,6 @@
 use cryptbox::BlindIndexError;
 use zeroize::Zeroizing;
-#[cryptbox(
+#[seal(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
     scope = cryptbox::Recorded<cryptbox::Tenant,
@@ -25,7 +25,7 @@ const _: () = {
         type Indexes = (EmailLookup,);
     }
 };
-#[cryptbox(
+#[seal(
     id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     value = String,
     scope = cryptbox::Tenant,
@@ -48,7 +48,7 @@ const _: () = {
 fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 }
-#[cryptbox(
+#[blind_index(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
     seal = CustomerEmail,
     bits = 32,
@@ -87,17 +87,18 @@ const _: () = {
     }
 };
 /// A customer.
-#[cryptbox(record_id = id, sealed = SealedCustomer, attr(derive(Debug)))]
+#[record(sealed = SealedCustomer, attr(derive(Debug)))]
 #[sqlx(rename_all = "snake_case")]
 pub struct Customer {
     /// The client-generated record ID.
-    #[cryptbox(plaintext)]
+    #[record_id]
     pub id: i64,
     /// The primary contact address.
-    #[cryptbox(seal = CustomerEmail, index(EmailLookup as email_lookup))]
     #[sqlx(rename = "email_ciphertext")]
+    #[seal(CustomerEmail)]
+    #[blind_index(EmailLookup as email_lookup)]
     pub email: String,
-    #[cryptbox(seal = CustomerNote)]
+    #[seal(CustomerNote)]
     note: String,
 }
 ///The sealed form of [`Customer`], as it is stored.
@@ -140,7 +141,7 @@ const _: () = {
         {
             ::core::panicking::panic_fmt(
                 format_args!(
-                    "`email` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `index(Spec as column, …)`",
+                    "`email` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `#[blind_index(Spec as column, …)]`",
                 ),
             );
         }
@@ -154,7 +155,7 @@ const _: () = {
         {
             ::core::panicking::panic_fmt(
                 format_args!(
-                    "`note` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `index(Spec as column, …)`",
+                    "`note` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `#[blind_index(Spec as column, …)]`",
                 ),
             );
         }

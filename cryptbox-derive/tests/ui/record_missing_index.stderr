@@ -1,5 +1,5 @@
-error[E0080]: evaluation panicked: `email` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `index(Spec as column, …)`
-  --> tests/ui/record_missing_index.rs:33:23
+error[E0080]: evaluation panicked: `email` must write every blind index its seal declares in `indexes(…)`, each once, and no other: list them as `#[blind_index(Spec as column, …)]`
+  --> tests/ui/record_missing_index.rs:33:12
    |
-33 |     #[cryptbox(seal = UserEmail)]
-   |                       ^^^^^^^^^ evaluation of `_::_` failed here
+33 |     #[seal(UserEmail)]
+   |            ^^^^^^^^^ evaluation of `_::_` failed here

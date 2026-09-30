@@ -84,7 +84,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// ```
 ///
 /// With the `derive` feature, `#[derive(BlindIndexSpec)]` writes exactly this
-/// impl from `#[cryptbox(id = "…", seal = UserEmail, bits = 32, query = str,
+/// impl from `#[blind_index(id = "…", seal = UserEmail, bits = 32, query = str,
 /// normalize = normalize_email, normalizer = "email/1")]`, given a free
 /// `normalize_email` function with `normalize_query`'s body.
 ///

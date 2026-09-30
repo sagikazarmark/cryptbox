@@ -1,4 +1,4 @@
-error: `keys` needs a value: `keys = View`, the view of the scope that key custody follows
+error: `keys` needs a value: `keys = …`
  --> tests/ui/seal_bare_keys.rs:6:5
   |
 6 |     keys,

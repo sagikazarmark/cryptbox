@@ -38,31 +38,30 @@ const EMAIL: &str = "ada@example.com";
 const JOURNAL_MISMATCH: &str = "[570 Journal mismatch]";
 
 #[derive(cryptbox::Seal)]
-#[cryptbox(
+#[seal(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    scope = Tenant
+    scope = Tenant,
 )]
 struct CustomerEmail;
 
 #[derive(cryptbox::Seal)]
-#[cryptbox(
+#[seal(
     id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     value = String,
-    scope = cryptbox::Recorded<Tenant, i64>
+    scope = cryptbox::Recorded<Tenant, i64>,
 )]
 struct CustomerNote;
 
 #[derive(Debug, PartialEq, cryptbox::Record)]
-#[cryptbox(
-    record_id = id,
+#[record(
     sealed = SealedCustomer,
-    attr(derive(serde::Serialize, serde::Deserialize))
+    attr(derive(serde::Serialize, serde::Deserialize)),
 )]
 struct Customer {
-    #[cryptbox(plaintext)]
+    #[record_id]
     id: i64,
-    #[cryptbox(seal = CustomerNote)]
+    #[seal(CustomerNote)]
     note: String,
 }
 

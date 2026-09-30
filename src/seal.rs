@@ -59,7 +59,7 @@ identifier!(SealId, "A stable seal identifier.");
 /// ```
 ///
 /// With the `derive` feature, `#[derive(Seal)]` writes this impl from
-/// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
+/// `#[seal(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
 /// taking `String`'s built-in default codec, `Utf8`.
 /// Add `scope = Tenant`, `keys = Org`, or `indexes(EmailLookup)` to set
 /// [`Self::Scope`], [`Self::Keys`], or [`Self::Indexes`]. On a type with
@@ -80,7 +80,7 @@ identifier!(SealId, "A stable seal identifier.");
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a seal",
     label = "not a seal",
-    note = "declare one with `#[derive(cryptbox::Seal)]`; in a `#[derive(Record)]`, declare a field's own seal with `#[cryptbox(id = \"…\")]`, or mark it `#[cryptbox(plaintext)]`"
+    note = "declare one with `#[derive(cryptbox::Seal)]`; in a `#[derive(Record)]`, declare a field's own seal with `#[seal(id = \"…\")]`, or store it as it is without `#[seal]`"
 )]
 pub trait Seal: 'static {
     /// The stable identifier, independent of Rust and database names.

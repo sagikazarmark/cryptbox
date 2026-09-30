@@ -1,4 +1,4 @@
-error: missing `part`: add `#[cryptbox(part = "<uuid>")]`
+error: missing `part`: add `#[part("<uuid>")]`
  --> tests/ui/scope_missing_part.rs:5:5
   |
 5 |     workspace: [u8; 16],

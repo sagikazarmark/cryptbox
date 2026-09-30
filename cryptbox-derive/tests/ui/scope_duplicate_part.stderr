@@ -1,5 +1,5 @@
 error: duplicate part ID: `org` already declares it
- --> tests/ui/scope_duplicate_part.rs:5:23
+ --> tests/ui/scope_duplicate_part.rs:5:12
   |
-5 |     #[cryptbox(part = "3A1F0C6E-58B2-4D0A-9E57-1C4B8F2D6A90")]
-  |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+5 |     #[part("3A1F0C6E-58B2-4D0A-9E57-1C4B8F2D6A90")]
+  |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -21,7 +21,7 @@ use cryptbox::{Keys, Sealed, Tenant, restate::{self, ObjectKey}};
 use restate_sdk::prelude::*;
 
 #[derive(cryptbox::Seal)]
-#[cryptbox(id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", value = String, scope = Tenant)]
+#[seal(id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", value = String, scope = Tenant)]
 struct CustomerEmail;
 
 struct Customer {
@@ -64,7 +64,7 @@ impl Customer {
   for a value loaded from a database or another service.
 - `restate::seal_record` and `restate::seal_record_with` do the same for a
   whole `Record`. Restate journals the sealed record as JSON, so derive Serde's
-  traits on it: `#[cryptbox(attr(derive(serde::Serialize, serde::Deserialize)))]`.
+  traits on it: `#[record(attr(derive(serde::Serialize, serde::Deserialize)))]`.
   Its plaintext fields, such as the record ID, are journaled as they are.
 
 Each returns Restate's own `run` future, so it can be named and given a retry
@@ -75,7 +75,7 @@ lifetime, and move into the `run` closure. A `seal_with` fetch closure must own
 what it uses: move a clone or an `Arc` of your database handle into it. Borrows
 held by it would stop the handler's future from being `Send`, which Restate
 requires. For the same reason, `seal` and `seal_with` take the key source
-as `&dyn EncryptionKeySource`; a keyring or `Keys` converts on its own. The
+as `&dyn EncryptionKeySource<F::Keys>`; a keyring or `Keys` converts on its own. The
 record forms need both key roles, so they take any source of both.
 
 Opening is deterministic, so it needs no `run`. Open where the plaintext is

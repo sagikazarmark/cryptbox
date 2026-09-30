@@ -20,7 +20,7 @@ const KEYS: &[Key] = &[
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    let mut attrs = Attrs::parse(&input.attrs, KEYS, &mut errors);
+    let mut attrs = Attrs::parse(&input.attrs, "blind_index", KEYS, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
 
@@ -40,9 +40,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         "Seal",
         &mut errors,
     );
-    if let Some(span) = attrs.seal_own {
-        errors.push(syn::Error::new(span, "`seal` needs a value: `seal = Seal`"));
-    }
     let bits = required(
         attrs.bits.take(),
         &attrs,

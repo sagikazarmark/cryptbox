@@ -25,7 +25,7 @@ const LEGACY_HEADER: &[u8] = b"legacy-xchacha-v1\0";
 const LEGACY_NONCE_LEN: usize = 24;
 
 #[derive(Seal)]
-#[cryptbox(id = "d743409b-f5db-4e3f-a3a2-7f897845f00c", value = String)]
+#[seal(id = "d743409b-f5db-4e3f-a3a2-7f897845f00c", value = String)]
 struct UserEmail;
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -36,7 +36,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 #[derive(BlindIndexSpec)]
-#[cryptbox(
+#[blind_index(
     id = "5524ca6c-ec5d-4027-8e8f-b9c73911b304",
     seal = UserEmail,
     bits = 128,
