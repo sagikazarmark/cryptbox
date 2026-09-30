@@ -6,8 +6,8 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, FieldOnly, IndexId, IndexKeyId, KeyId, Keys, Padding, Seal, SealId,
-    Sealed, Utf8, index_id, index_key_id, key_id,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Keys, Padding, Seal, SealId, Sealed,
+    Utf8, index_id, index_key_id, key_id,
     keys::{self, AlreadyInstalled},
     seal_id,
 };
@@ -24,10 +24,9 @@ struct Email;
 impl Seal for Email {
     const ID: SealId = seal_id!("40000000-0000-4000-8000-000000000004");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

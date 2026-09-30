@@ -189,7 +189,7 @@ mod tests {
             concat!(
                 "4342580002010011111111222243338444555555555555",
                 // Context fingerprint, then the nonce.
-                "81f8614d4eacb5fb",
+                "3c607e5f83c2ec23",
                 "000102030405060708090a0b0c0d0e0f1011121314151617",
             )
         );
@@ -213,15 +213,15 @@ mod tests {
     }
 
     // docs/wire-format.md#provisional-scoped-vectors
-    const FIELD_CONTEXT: &str = "123456781234423482341234567890ab000000";
-    // The empty declaration's fingerprint, which a field-only binding carries.
-    const FIELD_FINGERPRINT: &str = "5d86321261d64380";
-    const SCOPED_CONTEXT: &str = "123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
-    const SCOPED_RECORD_CONTEXT: &str = "123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
-    const SCOPED_FINGERPRINT: &str = "81f8614d4eacb5fb";
-    const SCOPED_RECORD_FINGERPRINT: &str = "58bfd20ea23bac14";
-    const SCOPED_VECTOR: &str = "434258000201001111111122224333844455555555555581f8614d4eacb5fb000102030405060708090a0b0c0d0e0f1011121314151617b887bad9f184f35041b40c3cce0d45ba321676cb9f5d3c39db8f90751b842f";
-    const SCOPED_RECORD_VECTOR: &str = "434258000201001111111122224333844455555555555558bfd20ea23bac14000102030405060708090a0b0c0d0e0f1011121314151617663bba5e4bb37a3df899258809ff56a6b4a7041d51f117d26698875eb9f262";
+    const UNSCOPED_CONTEXT: &str = "123456781234423482341234567890ab0000";
+    // The empty declaration's fingerprint, which an unscoped binding carries.
+    const UNSCOPED_FINGERPRINT: &str = "65640fc8333534b9";
+    const SCOPED_CONTEXT: &str = "123456781234423482341234567890ab00021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
+    const SCOPED_RECORD_CONTEXT: &str = "123456781234423482341234567890ab000300000000000000000000000000000000020000000800000000000000071111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
+    const SCOPED_FINGERPRINT: &str = "3c607e5f83c2ec23";
+    const SCOPED_RECORD_FINGERPRINT: &str = "5d608899e74caec9";
+    const SCOPED_VECTOR: &str = "43425800020100111111112222433384445555555555553c607e5f83c2ec23000102030405060708090a0b0c0d0e0f101112131415161760a4cae4f6c4caea7d60b573050315f837bb12b7e3f475cf7c866e358f4a14";
+    const SCOPED_RECORD_VECTOR: &str = "43425800020100111111112222433384445555555555555d608899e74caec9000102030405060708090a0b0c0d0e0f10111213141516174f25a5c9a5434209ef7a02cea389bf869eddf936d6b19486820d8406e8db7b";
 
     #[test]
     fn scoped_vectors_open_under_their_context() {
@@ -267,8 +267,8 @@ mod tests {
 
     #[test]
     fn every_header_carries_the_fingerprint() {
-        let bytes = hex::decode(FIELD_CONTEXT).unwrap();
-        let expected = fingerprint(FIELD_FINGERPRINT);
+        let bytes = hex::decode(UNSCOPED_CONTEXT).unwrap();
+        let expected = fingerprint(UNSCOPED_FINGERPRINT);
         let envelope = seal(
             context(&bytes, expected),
             Padding::NONE,
@@ -312,18 +312,18 @@ mod tests {
 
     #[test]
     fn a_different_fingerprint_reports_binding_mismatch_before_any_key() {
-        let field_bytes = hex::decode(FIELD_CONTEXT).unwrap();
+        let unscoped_bytes = hex::decode(UNSCOPED_CONTEXT).unwrap();
         let scoped_bytes = hex::decode(SCOPED_CONTEXT).unwrap();
-        let field_only = context(&field_bytes, fingerprint(FIELD_FINGERPRINT));
+        let unscoped = context(&unscoped_bytes, fingerprint(UNSCOPED_FINGERPRINT));
         let scoped = context(&scoped_bytes, fingerprint(SCOPED_FINGERPRINT));
         let with_record = context(&scoped_bytes, fingerprint(SCOPED_RECORD_FINGERPRINT));
-        let field_only_envelope = seal(field_only, Padding::NONE, b"secret", &keyring()).unwrap();
+        let unscoped_envelope = seal(unscoped, Padding::NONE, b"secret", &keyring()).unwrap();
         let scoped_envelope = seal(scoped, Padding::NONE, b"secret", &keyring()).unwrap();
 
         // `check` takes no keyring: the mismatch is reported before any key is chosen.
         for (case, reader, envelope) in [
-            ("field-only reads scoped", field_only, &scoped_envelope),
-            ("scoped reads field-only", scoped, &field_only_envelope),
+            ("unscoped reads scoped", unscoped, &scoped_envelope),
+            ("scoped reads unscoped", scoped, &unscoped_envelope),
             ("other fingerprint", with_record, &scoped_envelope),
         ] {
             assert_eq!(
@@ -356,9 +356,9 @@ mod tests {
 
     #[test]
     fn an_unknown_key_is_reported_after_the_check() {
-        let bytes = hex::decode(FIELD_CONTEXT).unwrap();
+        let bytes = hex::decode(UNSCOPED_CONTEXT).unwrap();
         let envelope = seal(
-            context(&bytes, fingerprint(FIELD_FINGERPRINT)),
+            context(&bytes, fingerprint(UNSCOPED_FINGERPRINT)),
             Padding::NONE,
             b"secret",
             &keyring(),
@@ -375,7 +375,7 @@ mod tests {
 
         assert_eq!(
             open(
-                context(&bytes, fingerprint(FIELD_FINGERPRINT)),
+                context(&bytes, fingerprint(UNSCOPED_FINGERPRINT)),
                 &envelope,
                 &other
             )
@@ -386,9 +386,9 @@ mod tests {
 
     #[test]
     fn experimental_padded_format_2_vector_is_stable() {
-        let bytes = hex::decode(FIELD_CONTEXT).unwrap();
+        let bytes = hex::decode(UNSCOPED_CONTEXT).unwrap();
         let envelope = seal_with_nonce(
-            context(&bytes, fingerprint(FIELD_FINGERPRINT)),
+            context(&bytes, fingerprint(UNSCOPED_FINGERPRINT)),
             Padding::block(16),
             b"cryptbox vector",
             &vector_key(),
@@ -398,15 +398,15 @@ mod tests {
 
         assert_eq!(
             hex::encode(envelope),
-            "43425800020101111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1419a17b89c9d88cb6cca540c1c17f5917f44"
+            "434258000201011111111122224333844455555555555565640fc8333534b9000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e3c5e74a10b924aec9355f18b42c5b131fa0"
         );
     }
 
     #[test]
     fn experimental_format_2_vector_is_stable() {
-        let bytes = hex::decode(FIELD_CONTEXT).unwrap();
+        let bytes = hex::decode(UNSCOPED_CONTEXT).unwrap();
         let envelope = seal_with_nonce(
-            context(&bytes, fingerprint(FIELD_FINGERPRINT)),
+            context(&bytes, fingerprint(UNSCOPED_FINGERPRINT)),
             Padding::NONE,
             b"cryptbox vector",
             &vector_key(),
@@ -416,7 +416,7 @@ mod tests {
 
         assert_eq!(
             hex::encode(envelope),
-            "43425800020100111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1415b33cbc7bfb19bc11afc1b31e3f3075b"
+            "434258000201001111111122224333844455555555555565640fc8333534b9000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e330da90830136eec9273c8315c1f22b7b"
         );
     }
 }

@@ -4,7 +4,7 @@ pub struct Revision {
 }
 const _: () = {
     #[automatically_derived]
-    impl ::cryptbox::Binding for Revision {
+    impl ::cryptbox::Scope for Revision {
         const PARTS: &'static [::cryptbox::PartSpec] = &[
             ::cryptbox::PartSpec::bound(
                 ::cryptbox::PartId::from_u128(0x8f4a6c13_9d2e_4b57_a0c8_6e1f3a5d7b92),

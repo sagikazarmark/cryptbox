@@ -5,16 +5,17 @@
 //! exactly the trait impls you would write by hand, inside `const _: () = { … };`
 //! with absolute `::cryptbox::` paths. It adds no `Debug`, `Deref`, `From`, or
 //! hidden items, so the manual impl stays a first-class alternative. The
-//! generated items are the struct you name with `Binding`'s `index_args`, and
-//! `Record`'s sealed struct, per-field sealers, and compile-time index checks.
+//! generated items are the struct you name with `Scope`'s `index_args`, and
+//! `Record`'s sealed struct, the seals its fields declare, per-field sealers,
+//! and compile-time index checks.
 //!
 //! All derives share one `#[cryptbox(...)]` attribute namespace. Every derive
 //! accepts `crate = "path"` for code that reaches `cryptbox` under another path.
 
 mod attr;
-mod binding;
 mod blind_index;
 mod record;
+mod scope;
 mod seal;
 
 use proc_macro::TokenStream;
@@ -29,8 +30,7 @@ use syn::{DeriveInput, parse_macro_input};
 /// | `codec = Type` | on a type with fields, unless `transparent` | The codec. See below for its defaults. |
 /// | `transparent` | no | Stores a type's single field alone. |
 /// | `padding = …` | no | `none` (the default), `block(size)`, or `length(len)`. |
-/// | `binding = Type` | no | The binding scope. Defaults to `FieldOnly`. |
-/// | `record` | no | Also binds every value to a record ID (`RECORD = true`). |
+/// | `scope = Type` | no | The scope. Defaults to `()`, the empty scope; `cryptbox::Recorded<Scope, Id>` also binds a record. |
 /// | `indexes(Type, …)` | no | The seal's blind indexes (`Indexes`). Defaults to none. |
 ///
 /// The ID is validated when the macro expands and is never derived from the
@@ -51,8 +51,8 @@ use syn::{DeriveInput, parse_macro_input};
 ///   stores exactly the bytes of a marker over the field's type with the same
 ///   ID and codec, so the two read each other's values.
 ///
-/// Without `binding`, `record`, and `indexes`, values are bound to their seal
-/// ID alone: `Binding = FieldOnly`, no record, and no declared blind indexes.
+/// Without `scope` and `indexes`, values are bound to their seal ID alone:
+/// `Scope = ()`, and no declared blind indexes.
 ///
 /// ```
 /// #[derive(cryptbox::Seal)]
@@ -74,10 +74,9 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const ID: ::cryptbox::SealId =
 ///             ::cryptbox::SealId::from_u128(0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64);
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
-///         const RECORD: bool = false;
 ///         type Value = String;
 ///         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-///         type Binding = ::cryptbox::FieldOnly;
+///         type Scope = ();
 ///         type Indexes = ();
 ///     }
 /// };
@@ -95,8 +94,7 @@ use syn::{DeriveInput, parse_macro_input};
 /// #[cryptbox(
 ///     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
 ///     value = String,
-///     binding = cryptbox::Tenant,
-///     record,
+///     scope = cryptbox::Recorded<cryptbox::Tenant, i64>,
 ///     indexes(EmailLookup),
 /// )]
 /// pub struct CustomerEmail;
@@ -137,10 +135,9 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const ID: ::cryptbox::SealId =
 ///             ::cryptbox::SealId::from_u128(0x6c3b1f0e_8a24_4d5b_9e71_2f4a6c8d0b13);
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
-///         const RECORD: bool = true;
 ///         type Value = String;
 ///         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-///         type Binding = cryptbox::Tenant;
+///         type Scope = cryptbox::Recorded<cryptbox::Tenant, i64>;
 ///         type Indexes = (EmailLookup,);
 ///     }
 /// };
@@ -182,10 +179,9 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const ID: ::cryptbox::SealId =
 ///             ::cryptbox::SealId::from_u128(0x7a1c3e5f_9b2d_4f60_8a4c_1e3b5d7f9a2c);
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
-///         const RECORD: bool = false;
 ///         type Value = Self;
 ///         type Codec = Self;
-///         type Binding = ::cryptbox::FieldOnly;
+///         type Scope = ();
 ///         type Indexes = ();
 ///     }
 ///
@@ -305,7 +301,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
     derive(input, blind_index::expand)
 }
 
-/// Derives `cryptbox::Binding` for an owned scope struct.
+/// Derives `cryptbox::Scope` for an owned scope struct.
 ///
 /// Each named field is one part, declared on the field:
 ///
@@ -319,7 +315,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// UUID, a `uuid::Uuid` with `cryptbox`'s `uuid` feature, an `i64`, or bytes
 /// (`Vec<u8>`, `Box<[u8]>`, or `TenantId`), or any other type that implements
 /// `PartType`, such as an application's own ID newtype. A record is never a
-/// part: declare `record` on the seal.
+/// declared part: bind it with a seal scope of `Recorded<Scope, Id>`.
 ///
 /// | Struct key | Required | Meaning |
 /// | --- | --- | --- |
@@ -335,7 +331,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// part ID, kind, and role is persistent schema.
 ///
 /// ```
-/// #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Binding)]
+/// #[derive(Clone, Hash, PartialEq, Eq, cryptbox::Scope)]
 /// #[cryptbox(index_args = OrgSearch)]
 /// pub struct OrgWorkspace {
 ///     /// Bound only.
@@ -367,7 +363,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///
 /// const _: () = {
 ///     #[automatically_derived]
-///     impl ::cryptbox::Binding for OrgWorkspace {
+///     impl ::cryptbox::Scope for OrgWorkspace {
 ///         // Sorted by part ID.
 ///         const PARTS: &'static [::cryptbox::PartSpec] = &[
 ///             ::cryptbox::PartSpec::keys(
@@ -411,32 +407,47 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// };
 /// ```
 ///
-/// A seal names the binding with `#[cryptbox(binding = OrgWorkspace)]`.
-#[proc_macro_derive(Binding, attributes(cryptbox))]
-pub fn derive_binding(input: TokenStream) -> TokenStream {
-    derive(input, binding::expand)
+/// A seal names the binding with `#[cryptbox(scope = OrgWorkspace)]`.
+#[proc_macro_derive(Scope, attributes(cryptbox))]
+pub fn derive_scope(input: TokenStream) -> TokenStream {
+    derive(input, scope::expand)
 }
 
-/// Derives `cryptbox::Record` for a row struct, and generates its sealed struct.
+/// Derives `cryptbox::Record` for a row struct, and generates its sealed struct
+/// and the seals its fields declare.
 ///
 /// | Struct key | Required | Meaning |
 /// | --- | --- | --- |
-/// | `record = field` | yes | The field that holds the record ID. It is never encrypted. |
+/// | `record_id = field` | yes | The field that holds the record ID. It is never encrypted. |
 /// | `sealed = Name` | yes | The name of the generated sealed struct. |
 /// | `attr(…)` | no | Attributes for the sealed struct, such as `attr(derive(sqlx::FromRow))`. |
 ///
-/// Every field says how it is stored:
+/// Every field says how it is stored. A sealed field usually declares its own
+/// seal:
 ///
 /// | Field key | Meaning |
 /// | --- | --- |
-/// | `seal = F` | Sealed with seal `F`: the sealed struct holds a `Sealed<F>`. |
-/// | `seal` | Sealed as its own type, which must be a seal, such as a transparent one: the sealed struct holds a `Sealed<Type>`. |
-/// | `index(S as column, …)` | With `seal`: the blind indexes it writes, each in a `BlindIndex<S>` field named `column`. |
+/// | `id = "…"` | Declares the field's own seal, with this seal ID. |
+/// | `scope = Type` | The own seal's scope. Defaults to `()`, the empty scope. |
+/// | `codec = Type`, `padding = …` | The own seal's codec and padding, as for `#[derive(Seal)]`. |
+/// | `name = Name` | Names the own seal `Name` instead of the record's name and the field's, such as `CustomerEmail`. |
+/// | `seal = F` | Sealed with the existing seal `F` instead. |
+/// | `seal` | Sealed as its own type, which must be a seal, such as a transparent one. |
+/// | `index(S as column, …)` | With a seal: the blind indexes it writes, each in a `BlindIndex<S>` field named `column`. |
 /// | `plaintext` | Stored as it is. The record ID must be `plaintext`. |
 ///
-/// An unannotated field fails the build. The seals of all sealed fields must
-/// share one `Binding`, and each field whose seal declares `record` is also
-/// bound to the record ID, which any `PartType` can hold. A field must write
+/// A field's own seal is a generated unit struct with the field's visibility,
+/// the least at which the sealed struct can name it. Its value type is the
+/// field's type, its blind indexes those the field writes, and its scope is
+/// `Recorded<Scope, Id>`, where `Id` is the record ID's type: every value is
+/// bound to its field, its scope, and its row, so a value moved to another
+/// field, table, or row fails to open. Blind indexes over it name it with
+/// `seal = CustomerEmail`.
+///
+/// An existing seal binds the record only if its scope is `Recorded`, with a
+/// record ID of the record's kind. One seal on two fields fails the build, since
+/// their values could be swapped within a row. So does an unannotated field. The
+/// seals of all sealed fields must share one scope, and a field must write
 /// exactly the blind indexes its seal declares in `indexes(…)`: a missing,
 /// extra, or repeated one fails the build, so no field can be sealed without
 /// writing its indexes.
@@ -459,66 +470,47 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 /// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
-/// # #[derive(cryptbox::Seal)]
-/// # #[cryptbox(
-/// #     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-/// #     value = String,
-/// #     binding = cryptbox::Tenant,
-/// #     record,
-/// #     indexes(EmailLookup),
-/// # )]
-/// # pub struct CustomerEmail;
-/// # #[derive(cryptbox::Seal)]
-/// # #[cryptbox(id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38", value = String, binding = cryptbox::Tenant)]
-/// # pub struct CustomerNote;
-/// # #[derive(cryptbox::BlindIndexSpec)]
-/// # #[cryptbox(
-/// #     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-/// #     seal = CustomerEmail,
-/// #     bits = 32,
-/// #     query = str,
-/// #     normalize = normalize_email,
-/// #     normalizer = "email/1",
-/// # )]
-/// # pub struct EmailLookup;
 /// #[derive(Clone, cryptbox::Record)]
-/// #[cryptbox(record = id, sealed = SealedCustomer)]
+/// #[cryptbox(record_id = id, sealed = SealedCustomer)]
 /// pub struct Customer {
 ///     #[cryptbox(plaintext)]
 ///     pub id: i64,
-///     #[cryptbox(seal = CustomerEmail, index(EmailLookup as email_lookup))]
+///     #[cryptbox(
+///         id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
+///         scope = cryptbox::Tenant,
+///         index(EmailLookup as email_lookup),
+///     )]
 ///     pub email: String,
-///     #[cryptbox(seal = CustomerNote)]
+///     #[cryptbox(id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38", scope = cryptbox::Tenant)]
 ///     pub note: String,
 /// }
+///
+/// #[derive(cryptbox::BlindIndexSpec)]
+/// #[cryptbox(
+///     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
+///     seal = CustomerEmail,
+///     bits = 32,
+///     query = str,
+///     normalize = normalize_email,
+///     normalizer = "email/1",
+/// )]
+/// pub struct EmailLookup;
 /// ```
 ///
-/// expands to exactly this hand-written struct and impls. The real expansion
-/// spells `Result`, `Clone`, and `Sized` as absolute paths, forwards docs, and
-/// also asserts, at compile time, that each field writes the blind indexes its
-/// seal declares:
+/// expands to exactly this hand-written code. The real expansion spells
+/// `Result`, `Clone`, `Sized`, and the codec as absolute paths, wraps each seal
+/// impl in `const _: () = { … };`, forwards docs, and also asserts, at compile
+/// time, that each field writes the blind indexes its seal declares:
 ///
 /// ```
 /// # use cryptbox::{
-/// #     BlindIndex, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Seal,
-/// #     InRecord, RecordId, Sealed,
+/// #     BlindIndex, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Padding,
+/// #     Recorded, Seal, SealId, SealScope, Sealed, Tenant, Utf8, __private::InRecord,
 /// # };
 /// # use zeroize::Zeroizing;
 /// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, cryptbox::BlindIndexError> {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
-/// # #[derive(cryptbox::Seal)]
-/// # #[cryptbox(
-/// #     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-/// #     value = String,
-/// #     binding = cryptbox::Tenant,
-/// #     record,
-/// #     indexes(EmailLookup),
-/// # )]
-/// # pub struct CustomerEmail;
-/// # #[derive(cryptbox::Seal)]
-/// # #[cryptbox(id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38", value = String, binding = cryptbox::Tenant)]
-/// # pub struct CustomerNote;
 /// # #[derive(cryptbox::BlindIndexSpec)]
 /// # #[cryptbox(
 /// #     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
@@ -535,6 +527,30 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 /// #     pub email: String,
 /// #     pub note: String,
 /// # }
+/// /// The seal of `Customer::email`, which `#[derive(Record)]` declares.
+/// pub struct CustomerEmail;
+///
+/// impl Seal for CustomerEmail {
+///     const ID: SealId = SealId::from_u128(0x6c3b1f0e_8a24_4d5b_9e71_2f4a6c8d0b13);
+///     const PADDING: Padding = Padding::NONE;
+///     type Value = String;
+///     type Codec = Utf8;
+///     type Scope = Recorded<Tenant, i64>;
+///     type Indexes = (EmailLookup,);
+/// }
+///
+/// /// The seal of `Customer::note`, which `#[derive(Record)]` declares.
+/// pub struct CustomerNote;
+///
+/// impl Seal for CustomerNote {
+///     const ID: SealId = SealId::from_u128(0x0d7e3a95_4b1c_4e62_8f0a_9c5b2d7e1f38);
+///     const PADDING: Padding = Padding::NONE;
+///     type Value = String;
+///     type Codec = Utf8;
+///     type Scope = Recorded<Tenant, i64>;
+///     type Indexes = ();
+/// }
+///
 /// /// The sealed form of [`Customer`], as it is stored.
 /// pub struct SealedCustomer {
 ///     pub id: i64,
@@ -551,19 +567,15 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///         /// blind indexes it stores, for a partial update.
 ///         pub fn seal_email<K>(
 ///             value: &<CustomerEmail as Seal>::Value,
-///             binding: &<CustomerEmail as Seal>::Binding,
+///             binding: &<<CustomerEmail as Seal>::Scope as SealScope>::Parts,
 ///             record: &i64,
 ///             keys: &K,
 ///         ) -> Result<(Sealed<CustomerEmail>, BlindIndex<EmailLookup>), Error>
 ///         where
 ///             K: EncryptionKeySource + BlindIndexKeySource + ?Sized,
 ///         {
-///             let prepared = Sealed::<CustomerEmail>::prepare(
-///                 value,
-///                 InRecord(binding, RecordId::of(record)),
-///                 keys,
-///             )?
-///             .with_index_with::<EmailLookup>(keys)?;
+///             let prepared = Sealed::<CustomerEmail>::prepare(value, InRecord(binding, record), keys)?
+///                 .with_index_with::<EmailLookup>(keys)?;
 ///             let email_lookup = prepared.index::<EmailLookup>()?.to_blind_index();
 ///
 ///             Ok((prepared.into_sealed(), email_lookup))
@@ -573,23 +585,23 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///         /// partial update.
 ///         pub fn seal_note<K>(
 ///             value: &<CustomerNote as Seal>::Value,
-///             binding: &<CustomerNote as Seal>::Binding,
+///             binding: &<<CustomerNote as Seal>::Scope as SealScope>::Parts,
 ///             record: &i64,
 ///             keys: &K,
 ///         ) -> Result<Sealed<CustomerNote>, Error>
 ///         where
 ///             K: EncryptionKeySource + ?Sized,
 ///         {
-///             Sealed::<CustomerNote>::seal(value, InRecord(binding, RecordId::of(record)), keys)
+///             Sealed::<CustomerNote>::seal(value, InRecord(binding, record), keys)
 ///         }
 ///     }
 ///
 ///     #[automatically_derived]
 ///     impl cryptbox::Record for Customer {
 ///         type Sealed = SealedCustomer;
-///         type Binding = <CustomerEmail as Seal>::Binding;
+///         type Scope = Tenant;
 ///
-///         fn seal<K>(&self, binding: &Self::Binding, keys: &K) -> Result<SealedCustomer, Error>
+///         fn seal<K>(&self, binding: &Self::Scope, keys: &K) -> Result<SealedCustomer, Error>
 ///         where
 ///             K: EncryptionKeySource + BlindIndexKeySource + ?Sized,
 ///         {
@@ -604,17 +616,17 @@ pub fn derive_binding(input: TokenStream) -> TokenStream {
 ///             })
 ///         }
 ///
-///         fn open<K>(sealed: SealedCustomer, binding: &Self::Binding, keys: &K) -> Result<Self, Error>
+///         fn open<K>(sealed: SealedCustomer, binding: &Self::Scope, keys: &K) -> Result<Self, Error>
 ///         where
 ///             K: EncryptionKeySource + ?Sized,
 ///         {
-///             let record_id = RecordId::of(&sealed.id);
+///             let record_id = &sealed.id;
 ///             let email = sealed.email.open(
-///                 InRecord::<<CustomerEmail as Seal>::Binding>(binding, record_id),
+///                 InRecord::<<<CustomerEmail as Seal>::Scope as SealScope>::Parts, _>(binding, record_id),
 ///                 keys,
 ///             )?;
 ///             let note = sealed.note.open(
-///                 InRecord::<<CustomerNote as Seal>::Binding>(binding, record_id),
+///                 InRecord::<<<CustomerNote as Seal>::Scope as SealScope>::Parts, _>(binding, record_id),
 ///                 keys,
 ///             )?;
 ///

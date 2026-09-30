@@ -1,7 +1,7 @@
 //! Strongly typed application-layer encryption for Rust values.
 //!
 //! [`Sealed<F>`] is a value sealed with seal `F`: encrypted and bound
-//! to the seal, the values of its declared [`Binding`] (such as a tenant), and
+//! to the seal, the values of its declared [`Scope`] (such as a tenant), and
 //! optionally a record. [`Sealed::open`] authenticates it under the same
 //! binding and returns the plaintext value. Use `CryptBox` when an application
 //! owns encryption policy and key management but wants storage adapters to
@@ -15,14 +15,14 @@
 //! - [`Sealed<F>`] contains stored encrypted bytes. Parsing checks structure;
 //!   opening authenticates. Sealing borrows the source value.
 //! - [`Seal`] declares how values are sealed: its seal ID, value type, codec,
-//!   [`Padding`], [`Binding`], whether values bind a record, and its blind
+//!   [`Padding`], [`Scope`], whether values bind a record, and its blind
 //!   indexes. A seal is a marker over a value type that several seals can share,
 //!   or its own value, such as a whole response.
 //! - [`Args<F>`](Args) are the binding values of one call: `()` for a
-//!   [`FieldOnly`] seal, or the seal's binding, with a [`RecordId`] when the
+//!   unscoped seal, or the seal's binding, with a [`RecordId`] when the
 //!   seal binds a record.
 //! - [`Plain<F>`] and [`Secret<T>`] contain plaintext. `Plain` is the automatic
-//!   `SQLx` column, for [`FieldOnly`] seals without a record or blind indexes.
+//!   `SQLx` column, for unscoped seals without a record or blind indexes.
 //! - A [`Codec`] encodes a seal's values. Only `String` and `Vec<u8>` and their
 //!   [`Secret`] wrappers have a default ([`Utf8`] and [`Raw`]); every other value
 //!   type names its codec.
@@ -53,7 +53,7 @@
 )]
 //!
 //! Every operation takes its binding arguments and keys explicitly, and never
-//! reads the global. For [`FieldOnly`] seals without a record,
+//! reads the global. For unscoped seals without a record,
 //! [`Sealed::seal_global`] and [`Sealed::open_global`] read the keys installed
 //! with [`keys::install`] and fail with [`Error::KeysNotInstalled`] before
 //! installation. The automatic `SQLx` column `Plain<F, K>` reads its keys from
@@ -72,14 +72,14 @@
 #![doc = include_str!("../docs/snippets/first-field.md")]
 //!
 //! The seal names UTF-8 encoding and no padding, and binds values to its seal
-//! ID alone ([`FieldOnly`]), so its binding arguments are `()`. `Sealed` contains
+//! ID alone (the empty scope, `()`), so its binding arguments are `()`. `Sealed` contains
 //! the encrypted envelope; `open` returns the plaintext value. `&keys` supplies
 //! the keyring explicitly: no global installation is needed. Before durable
 //! storage, settle the persistent schema below and load
 //! stable key material and generation IDs across restarts; see the
 //! [first-field tutorial]'s durable-key next step.
 //!
-//! For a `FieldOnly` seal without a record or blind indexes, [`Plain<F, K>`](Plain)
+//! For an unscoped seal without a record or blind indexes, [`Plain<F, K>`](Plain)
 //! is the automatic `SQLx` column: it seals on encode and opens on decode with the
 //! keys of `K`, the keys [`keys::install`] made available by default, so ordinary
 //! database conversion needs no explicit call. Everything bound is sealed
@@ -88,14 +88,14 @@
 //! ## Then bind values to a scope
 //!
 //! When values of different tenants must not be interchangeable, or their keys
-//! must differ, the seal declares a [`Binding`] and every call passes its
+//! must differ, the seal declares a [`Scope`] and every call passes its
 //! values. Here one keyring serves each tenant, so one tenant's data can be
 //! shredded on its own:
 //!
 #![doc = include_str!("../docs/snippets/tenant-field.md")]
 //!
-//! The seal declares `Binding = Tenant` and `RECORD = true`, so each call
-//! passes `(&tenant, record)`; a missing or extra record fails the build. Bound
+//! The seal declares `Scope = Recorded<Tenant, [u8; 16]>`, so each call passes
+//! `(&tenant, &record)`; a missing or extra record is a type error. Bound
 //! values come from an authorized source, such as the request's verified claims,
 //! never from the stored row. The library passes the key source the seal and the
 //! binding's [`KeyScope`], and choosing which keyring protects which scope is
@@ -203,8 +203,8 @@ mod value;
 
 pub(crate) use binding::BindingDomain;
 pub use binding::{
-    Args, Binding, FieldOnly, FromIndexValues, InRecord, KeyScope, PartKind, PartRole, PartSpec,
-    PartType, PartValue, PartValues, RecordId, Tenant, TenantId,
+    Args, FromIndexValues, KeyScope, PartKind, PartRole, PartSpec, PartType, PartValue, PartValues,
+    RecordId, Recorded, Scope, SealScope, Tenant, TenantId,
 };
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexList, inspect_blind_index,
@@ -215,7 +215,7 @@ pub use codec::Json;
 pub use codec::Postcard;
 pub use codec::{Codec, Raw, Utf8};
 #[cfg(feature = "derive")]
-pub use cryptbox_derive::{Binding, BlindIndexSpec, Record, Seal};
+pub use cryptbox_derive::{BlindIndexSpec, Record, Scope, Seal};
 pub use envelope::{
     CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, SuiteId, inspect_ciphertext, is_ciphertext,
 };
@@ -238,6 +238,7 @@ pub mod __private {
     pub use uuid;
     pub use zeroize::Zeroizing;
 
+    pub use crate::binding::InRecord;
     pub use crate::codec::DefaultCodec;
     pub use crate::schema::{has_duplicate, writes_declared_indexes};
 }

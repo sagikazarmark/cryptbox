@@ -2,9 +2,9 @@
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{Data, DeriveInput, Fields, Member, Type, spanned::Spanned};
+use syn::{Data, DeriveInput, Fields, Member, Path, Type, spanned::Spanned};
 
-use crate::attr::{Attrs, Errors, Key, required};
+use crate::attr::{Attrs, Errors, Key, UuidLiteral, required};
 
 const KEYS: &[Key] = &[
     Key::Id,
@@ -12,11 +12,16 @@ const KEYS: &[Key] = &[
     Key::Codec,
     Key::Transparent,
     Key::Padding,
-    Key::Binding,
-    Key::Record,
+    Key::Scope,
     Key::Indexes,
     Key::Crate,
 ];
+
+const REJECTED: &[(Key, &str)] = &[(
+    Key::Record,
+    "a seal binds a record through its scope: use `scope = cryptbox::Recorded<Scope, Id>`, \
+     or declare the seal on its field in a `#[derive(Record)]`",
+)];
 
 /// What the seal's values are, and how they are encoded.
 enum Form<'a> {
@@ -34,7 +39,7 @@ enum Form<'a> {
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    let mut attrs = Attrs::parse(&input.attrs, KEYS, &mut errors);
+    let mut attrs = Attrs::parse_rejecting(&input.attrs, KEYS, REJECTED, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
 
@@ -56,10 +61,9 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         || quote!(#krate::Padding::NONE),
         |padding| padding.to_tokens(&krate),
     );
-    let record = attrs.record.is_some();
-    let binding = attrs
-        .binding
-        .map_or_else(|| quote!(#krate::FieldOnly), |binding| quote!(#binding));
+    let scope = attrs
+        .scope
+        .map_or_else(|| quote!(()), |scope| quote!(#scope));
     let indexes = attrs.indexes.unwrap_or_default();
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
@@ -101,22 +105,38 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
+    let items = seal_items(&krate, &id, &padding, &value, &codec, &scope, &indexes);
+
     Ok(quote! {
         const _: () = {
             #[automatically_derived]
             impl #impl_generics #krate::Seal for #name #type_generics #where_clause {
-                const ID: #krate::SealId = #krate::SealId::from_u128(#id);
-                const PADDING: #krate::Padding = #padding;
-                const RECORD: bool = #record;
-                type Value = #value;
-                type Codec = #codec;
-                type Binding = #binding;
-                type Indexes = (#(#indexes,)*);
+                #items
             }
 
             #adapter
         };
     })
+}
+
+/// The items of a `Seal` impl, as every derive that declares a seal writes them.
+pub(crate) fn seal_items(
+    krate: &Path,
+    id: &UuidLiteral,
+    padding: &TokenStream,
+    value: &TokenStream,
+    codec: &TokenStream,
+    scope: &TokenStream,
+    indexes: &[Type],
+) -> TokenStream {
+    quote! {
+        const ID: #krate::SealId = #krate::SealId::from_u128(#id);
+        const PADDING: #krate::Padding = #padding;
+        type Value = #value;
+        type Codec = #codec;
+        type Scope = #scope;
+        type Indexes = (#(#indexes,)*);
+    }
 }
 
 /// Reads the seal's form from the type's shape and its `value`, `codec`, and

@@ -3,10 +3,10 @@ use crate::Error;
 
 /// A type a binding part can hold, with its fixed [`PartKind`].
 ///
-/// `#[derive(Binding)]` reads each part's kind and value through this trait,
+/// `#[derive(Scope)]` reads each part's kind and value through this trait,
 /// and builds index arguments back from part values with
 /// [`from_part_value`](Self::from_part_value). A hand-written
-/// [`Binding`](super::Binding) can use it too, or name the kinds and values
+/// [`Scope`](super::Scope) can use it too, or name the kinds and values
 /// directly.
 ///
 /// | Type | Kind |

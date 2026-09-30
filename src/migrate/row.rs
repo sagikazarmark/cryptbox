@@ -3,9 +3,9 @@ use std::fmt;
 use zeroize::Zeroizing;
 
 use crate::{
-    Binding, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, FieldOnly, IndexKeyId, KeyScope, RecordId, Seal,
-    binding::declaration_fingerprint,
+    BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec, EncryptionKeySource,
+    Error, IndexKeyId, KeyScope, PartValue, RecordId, Scope, Seal, SealScope,
+    binding::{PartsOf, declaration_fingerprint},
     blind::{current_key_id, derive_value},
     bound, inspect_blind_index, inspect_ciphertext,
 };
@@ -107,10 +107,11 @@ impl RowOutcome {
 /// The binding arguments of one stored row, which a [`RowPlanner`]'s row
 /// closure builds from the row's columns.
 ///
-/// It holds the row's binding and, for a seal that declares
-/// [`Seal::RECORD`], its record ID. A record passed to a seal that binds
-/// none, or omitted for a seal that binds one, fails planning with
-/// [`Error::InvalidBinding`].
+/// It holds the row's scope and, for a seal whose scope is
+/// [`Recorded`](crate::Recorded), its record ID. A record omitted for a seal
+/// that binds one, or passed to a seal that binds none while no
+/// [legacy-binding window](RowPlanner::legacy_binding) binds one either, fails
+/// planning with [`Error::InvalidBinding`].
 ///
 /// The `keys` parts come from the job's configuration, never from the row: a
 /// closure may read them from the row's columns only for the planner to compare
@@ -122,7 +123,7 @@ pub struct RowArgs<'r, B> {
     record: Option<RecordId<'r>>,
 }
 
-impl<'r, B: Binding> RowArgs<'r, B> {
+impl<'r, B: Scope> RowArgs<'r, B> {
     /// Creates the arguments of a row bound to `binding` without a record.
     pub const fn new(binding: B) -> Self {
         Self {
@@ -142,7 +143,7 @@ impl<'r, B: Binding> RowArgs<'r, B> {
 }
 
 type RowArgsFn<'a, F, R> =
-    Box<dyn for<'r> Fn(&'r R) -> Result<RowArgs<'r, <F as Seal>::Binding>, Error> + 'a>;
+    Box<dyn for<'r> Fn(&'r R) -> Result<RowArgs<'r, PartsOf<F>>, Error> + 'a>;
 
 type IndexDeriver<F> =
     fn(&<F as Seal>::Value, &BindingDomain, &dyn BlindIndexKeySource) -> Result<Vec<u8>, Error>;
@@ -171,11 +172,11 @@ struct LegacyDeclaration<'a, F>
 where
     F: Seal,
 {
-    /// The declaration's fingerprint without a record.
-    unrecorded: [u8; 8],
-    /// The declaration's fingerprint with a record, for a seal that binds one.
-    recorded: Option<[u8; 8]>,
-    domain: fn(&F::Binding, Option<RecordId<'_>>) -> Result<BindingDomain, Error>,
+    /// The declaration's binding fingerprint.
+    fingerprint: [u8; 8],
+    /// Whether the declaration binds a record.
+    recorded: bool,
+    domain: fn(&PartsOf<F>, Option<PartValue<'_>>) -> Result<BindingDomain, Error>,
     keys: &'a dyn EncryptionKeySource,
 }
 
@@ -183,14 +184,6 @@ where
 struct RowBinding {
     domain: BindingDomain,
     index_domain: BindingDomain,
-}
-
-// Panics become build errors in `const` context.
-const fn check_no_record(record: bool) {
-    assert!(
-        !record,
-        "this seal binds a record: build each row's record with `RowPlanner::for_key_scope`"
-    );
 }
 
 /// Plans the rewrite of one encrypted column and its blind-index columns.
@@ -213,7 +206,7 @@ const fn check_no_record(record: bool) {
 /// one key scope, taken from the job's configuration: a sweep is partitioned
 /// by key scope, because its keys are. A row whose arguments name another key
 /// scope is reported as [`RowState::OutOfScope`] and left alone. [`Self::new`]
-/// serves a [`FieldOnly`] seal without a record, whose rows need no columns.
+/// serves an unscoped seal without a record, whose rows need no columns.
 ///
 /// To change a seal's binding declaration, register the declaration it had before with
 /// [`Self::legacy_binding`]: rows whose header still names that declaration are
@@ -232,16 +225,14 @@ where
 
 impl<'a, F, R> RowPlanner<'a, F, R>
 where
-    F: Seal<Binding = FieldOnly>,
+    F: Seal<Scope = ()>,
 {
-    /// Creates a planner for a [`FieldOnly`] seal `F` without a record and an
+    /// Creates a planner for an unscoped seal `F` without a record and an
     /// encryption key source.
     ///
-    /// A seal that binds a record fails the build; use [`Self::for_key_scope`].
+    /// A seal with another scope is a type error; use [`Self::for_key_scope`].
     pub fn new(keys: &'a dyn EncryptionKeySource) -> Self {
-        const { check_no_record(F::RECORD) };
-
-        Self::for_key_scope(KeyScope::empty(), keys, |_| Ok(RowArgs::new(FieldOnly)))
+        Self::for_key_scope(KeyScope::empty(), keys, |_| Ok(RowArgs::new(())))
     }
 }
 
@@ -259,7 +250,7 @@ where
     pub fn for_key_scope(
         key_scope: KeyScope,
         keys: &'a dyn EncryptionKeySource,
-        row_args: impl for<'r> Fn(&'r R) -> Result<RowArgs<'r, F::Binding>, Error> + 'a,
+        row_args: impl for<'r> Fn(&'r R) -> Result<RowArgs<'r, PartsOf<F>>, Error> + 'a,
     ) -> Self {
         Self {
             keys,
@@ -285,24 +276,26 @@ where
     /// `Old` are opened under it with `keys` and resealed under the seal's
     /// current binding.
     ///
-    /// `Old` takes each part's value from the row's current binding, by part ID.
-    /// A row whose header names `Old` with a record is opened with the row's
-    /// record, so a seal that binds one can still add parts. The window covers
-    /// moving from [`FieldOnly`] to any binding, adding parts or a record, and
-    /// changing a part's role, but not removing a part or changing its kind. A part of `Old` that the
-    /// current binding lacks, or holds with another kind, fails planning with
+    /// `Old` is the seal scope the seal had before, such as `()`, `Tenant`, or
+    /// `Recorded<Tenant, i64>`. It takes each part's value from the row's current
+    /// scope, by part ID, and when it binds a record, the row's record ID: rows
+    /// moving out of a record still pass it. The window covers moving from the
+    /// empty scope `()` to any scope, adding parts, moving into or out of a record,
+    /// and changing a part's role, but not removing a part or changing its kind.
+    /// A part of `Old` that the current scope lacks, or holds with another kind,
+    /// and a record `Old` binds that the row lacks, fail planning with
     /// [`Error::InvalidBinding`].
     ///
     /// Such rows are classified as [`RowState::LegacyBinding`] by their header's
     /// binding fingerprint, and every blind index is derived again under the
     /// current binding. Close the window once a verification pass counts none.
     #[must_use]
-    pub fn legacy_binding<Old: Binding>(mut self, keys: &'a dyn EncryptionKeySource) -> Self {
+    pub fn legacy_binding<Old: SealScope>(mut self, keys: &'a dyn EncryptionKeySource) -> Self {
         self.legacy_declarations.push(LegacyDeclaration {
-            unrecorded: declaration_fingerprint::<Old>(false),
-            recorded: F::RECORD.then(|| declaration_fingerprint::<Old>(true)),
-            domain: |binding, record| {
-                BindingDomain::projected::<Old, F::Binding>(F::ID, binding, record)
+            fingerprint: declaration_fingerprint::<Old>(),
+            recorded: Old::RECORD.is_some(),
+            domain: |scope, record| {
+                BindingDomain::projected::<Old, PartsOf<F>>(F::ID, scope, record)
             },
             keys,
         });
@@ -321,7 +314,7 @@ where
     ///
     /// ```compile_fail,E0271
     /// use cryptbox::{
-    ///     BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId,
+    ///     BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId,
     ///     BlindIndexKeyring, EncryptionKeyring, Padding, Utf8, migrate::RowPlanner,
     /// };
     /// use zeroize::Zeroizing;
@@ -331,10 +324,9 @@ where
     /// impl Seal for UserEmail {
     ///     const ID: SealId = SealId::from_bytes([1; 16]);
     ///     const PADDING: Padding = Padding::NONE;
-    ///     const RECORD: bool = false;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Binding = FieldOnly;
+    ///     type Scope = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -343,10 +335,9 @@ where
     /// impl Seal for InviteEmail {
     ///     const ID: SealId = SealId::from_bytes([2; 16]);
     ///     const PADDING: Padding = Padding::NONE;
-    ///     const RECORD: bool = false;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Binding = FieldOnly;
+    ///     type Scope = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -530,12 +521,19 @@ where
     }
 
     /// Encodes the row's binding, or returns `None` for a row of another key scope.
-    fn bind(&self, args: &RowArgs<'_, F::Binding>) -> Result<Option<RowBinding>, Error> {
-        if args.record.is_some() != F::RECORD {
+    fn bind(&self, args: &RowArgs<'_, PartsOf<F>>) -> Result<Option<RowBinding>, Error> {
+        let recorded = <F::Scope as SealScope>::RECORD.is_some();
+        let legacy_recorded = self
+            .legacy_declarations
+            .iter()
+            .any(|legacy| legacy.recorded);
+        if args.record.is_some() && !recorded && !legacy_recorded {
             return Err(Error::InvalidBinding);
         }
 
-        let domain = BindingDomain::of(F::ID, &args.binding, args.record)?;
+        let record = if recorded { args.record } else { None };
+        let domain =
+            BindingDomain::of::<F::Scope>(F::ID, &args.binding, record.map(RecordId::part_value))?;
         if domain.key_scope() != &self.scope {
             return Ok(None);
         }
@@ -546,38 +544,30 @@ where
         }))
     }
 
-    /// Returns the registered legacy declaration an envelope's header names, and
-    /// whether it names that declaration with a record, unless it names the current
-    /// declaration.
+    /// Returns the registered legacy declaration an envelope's header names,
+    /// unless it names the current declaration.
     fn legacy_declaration(
         &self,
         binding: &RowBinding,
         stored: [u8; 8],
-    ) -> Option<(&LegacyDeclaration<'a, F>, bool)> {
+    ) -> Option<&LegacyDeclaration<'a, F>> {
         if stored == binding.domain.fingerprint() {
             return None;
         }
 
-        self.legacy_declarations.iter().find_map(|legacy| {
-            if stored == legacy.unrecorded {
-                Some((legacy, false))
-            } else if legacy.recorded == Some(stored) {
-                Some((legacy, true))
-            } else {
-                None
-            }
-        })
+        self.legacy_declarations
+            .iter()
+            .find(|legacy| legacy.fingerprint == stored)
     }
 
     fn plan_legacy_binding_row(
         &self,
-        (legacy, recorded): (&LegacyDeclaration<'a, F>, bool),
-        args: &RowArgs<'_, F::Binding>,
+        legacy: &LegacyDeclaration<'a, F>,
+        args: &RowArgs<'_, PartsOf<F>>,
         binding: &RowBinding,
         ciphertext: &[u8],
     ) -> Result<RowOutcome, Error> {
-        let record = if recorded { args.record } else { None };
-        let old = (legacy.domain)(&args.binding, record)?;
+        let old = (legacy.domain)(&args.binding, args.record.map(RecordId::part_value))?;
         let (plaintext, ciphertext) = bound::reseal(
             (&old, legacy.keys),
             (&binding.domain, self.keys),

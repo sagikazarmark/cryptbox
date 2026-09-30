@@ -2,7 +2,7 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
-use crate::{Args, Codec, EncryptionKeySource, Error, FieldOnly, Seal, Sealed};
+use crate::{Args, Codec, EncryptionKeySource, Error, Seal, Sealed};
 
 use super::{LegacyFormat, legacy};
 
@@ -55,10 +55,9 @@ use super::{LegacyFormat, legacy};
 /// impl cryptbox::Seal for UserEmail {
 ///     const ID: cryptbox::SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = cryptbox::Utf8;
-///     type Binding = cryptbox::FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -156,10 +155,9 @@ where
     /// impl cryptbox::Seal for LegacyBlob {
     ///     const ID: cryptbox::SealId = cryptbox::seal_id!("3f0e8f5c-2d4b-4e7a-9c1d-6b5a4f3e2d1c");
     ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
-    ///     const RECORD: bool = false;
     ///     type Value = Vec<u8>;
     ///     type Codec = cryptbox::Raw;
-    ///     type Binding = cryptbox::FieldOnly;
+    ///     type Scope = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -225,7 +223,7 @@ where
 
 impl<F> MaybeEncrypted<F>
 where
-    F: Seal<Binding = FieldOnly>,
+    F: Seal<Scope = ()>,
 {
     /// Consumes the read and opens it with the [installed keys](crate::keys::installed).
     ///

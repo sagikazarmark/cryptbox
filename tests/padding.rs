@@ -1,8 +1,8 @@
 //! Public-boundary tests for seal padding policies.
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Error, FieldOnly, KeyId, Padding, Raw, Seal, SealId, Sealed,
-    Utf8, inspect_ciphertext, key_id, seal_id,
+    EncryptionKey, EncryptionKeyring, Error, KeyId, Padding, Raw, Seal, SealId, Sealed, Utf8,
+    inspect_ciphertext, key_id, seal_id,
 };
 
 const KEY_ID: KeyId = key_id!("50000000-0000-4000-8000-000000000005");
@@ -18,10 +18,9 @@ struct Unpadded;
 impl Seal for Unpadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -30,10 +29,9 @@ struct SharedSealPadded;
 impl Seal for SharedSealPadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -42,10 +40,9 @@ struct FixedLength;
 impl Seal for FixedLength {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::length(16);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -54,10 +51,9 @@ struct WiderBlockPadded;
 impl Seal for WiderBlockPadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(32);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -66,10 +62,9 @@ struct BlockPadded;
 impl Seal for BlockPadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -78,16 +73,15 @@ struct PolicyFixedLength;
 impl Seal for PolicyFixedLength {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::length(1_048_576);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
 // Padding/envelope arithmetic from docs/wire-format.md#size-semantics-and-enforcement.
 // The 1 MiB cases test size boundaries, not an enforced operational cap.
-fn assert_stored_sizes<P: Seal<Value = String, Binding = FieldOnly>>(cases: &[(usize, usize)]) {
+fn assert_stored_sizes<P: Seal<Value = String, Scope = ()>>(cases: &[(usize, usize)]) {
     let keys = keyring();
     for &(encoded_bytes, envelope_bytes) in cases {
         let input = "x".repeat(encoded_bytes);
@@ -158,10 +152,9 @@ struct RawUnpadded;
 impl Seal for RawUnpadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -170,10 +163,9 @@ struct RawPadded;
 impl Seal for RawPadded {
     const ID: SealId = SHARED_SEAL;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -216,7 +208,7 @@ fn a_sweep_converges_values_to_the_current_padding_policy() {
     assert_swept(&unpadded, false);
 }
 
-fn sweep<F: Seal<Binding = FieldOnly>>(bytes: Vec<u8>) -> Sealed<F> {
+fn sweep<F: Seal<Scope = ()>>(bytes: Vec<u8>) -> Sealed<F> {
     let keys = keyring();
     let ciphertext = Sealed::<F>::from_bytes(bytes).unwrap();
 
@@ -227,10 +219,7 @@ fn sweep<F: Seal<Binding = FieldOnly>>(bytes: Vec<u8>) -> Sealed<F> {
     }
 }
 
-fn assert_swept<F: Seal<Value = String, Binding = FieldOnly>>(
-    swept: &[Sealed<F>; 2],
-    padded: bool,
-) {
+fn assert_swept<F: Seal<Value = String, Scope = ()>>(swept: &[Sealed<F>; 2], padded: bool) {
     let keys = keyring();
 
     for (ciphertext, value) in swept.iter().zip(["old", "new"]) {

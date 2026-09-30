@@ -2,7 +2,7 @@
 #[cryptbox(
     id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
     value = String,
-    binding = cryptbox::Tenant,
+    scope = cryptbox::Tenant,
 )]
 struct UserEmail;
 
@@ -11,7 +11,7 @@ struct UserEmail;
 struct UserNote;
 
 #[derive(cryptbox::Record)]
-#[cryptbox(record = id, sealed = SealedUser)]
+#[cryptbox(record_id = id, sealed = SealedUser)]
 struct User {
     #[cryptbox(plaintext)]
     id: i64,

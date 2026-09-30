@@ -22,7 +22,7 @@ These choices form persistent schema just as database column types do:
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
 | Seal ID | Every value is bound to its seal ID; a different ID fails authentication. |
-| Binding declaration and record flag | Every value is bound to its binding's part IDs, kinds, and roles, and to its record when the seal binds one; a different declaration reports `BindingMismatch`. |
+| Binding declaration and record kind | Every value is bound to its binding's part IDs, kinds, and roles, and to its record when the seal binds one; a different declaration reports `BindingMismatch`. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
@@ -112,7 +112,7 @@ keys are needed and where plaintext becomes available:
 | Read as `Sealed<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to open it, with the binding values of the row. Useful when only some loaded values need plaintext. |
 | Automatic SQLx `Plain<F>` | The adapter seals on encode and opens on decode. It reads keys from its `ColumnKeys` type `K`: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Plain<F, K>`. |
 
-The automatic `Plain<F>` column serves only `FieldOnly` seals without a record or
+The automatic `Plain<F>` column serves only unscoped seals without a record or
 blind indexes: a column decoder sees neither the row nor its scope, and would not
 write index columns. Seal values of bound and indexed seals explicitly. Explicit operations
 are useful when dependencies and plaintext access should be visible at the call
@@ -160,7 +160,7 @@ rules, and how to record and test custody.
 
 The process-wide forms (`Sealed::seal_global`, `open_global`, `with_index()`,
 `probes()`) are the explicit forms called with `keys::installed()`. Like the
-automatic column, `seal_global` and `open_global` serve only `FieldOnly` seals
+automatic column, `seal_global` and `open_global` serve only unscoped seals
 without a record.
 `keys::install(keys)` sets the installed keys once per process, from the binary
 entry point; a second call returns `AlreadyInstalled` and never replaces them.

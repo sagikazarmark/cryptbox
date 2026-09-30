@@ -192,6 +192,36 @@
   UserEmail`, stored as `Sealed<UserEmail>`. `#[derive(BlindIndexSpec)]` rejects
   a bare `seal`. A type that is not a seal reports that it is not one.
 
+- **Breaking:** the `Binding` trait is renamed `Scope` (ADR-0008), with
+  `#[derive(Scope)]`, `Seal::Scope`, and `Record::Scope`; the derives'
+  `binding = …` key becomes `scope = …`. `FieldOnly` is removed: the empty scope
+  is `()`, which `#[derive(Seal)]` uses when it names no scope, so a seal
+  declares `type Scope = ();` and its values still bind to its seal ID alone.
+  Stored bytes are unchanged.
+
+- **Breaking:** a record is bound through the seal scope (ADR-0008).
+  `Seal::RECORD`, the `record` flag of `#[derive(Seal)]`, and `InRecord` are
+  removed: a record-bound seal declares `type Scope = Recorded<S, Id>`, where
+  `Id` is the record ID's type, and takes `(&scope, &id)`, or `((), &id)` for
+  the empty scope. A missing or extra record is a type error instead of a
+  post-monomorphization assert. The record is bound as a bound-only part under
+  the nil part ID, so the binding loses its record slot and the binding
+  fingerprint its record flag, and the record's kind becomes part of the
+  declaration. `Seal::Scope` is bounded by the new `SealScope`. Legacy-binding
+  windows name the old seal scope, `Recorded` included, and the schema manifest
+  prints the record's kind or `no`. The bytes of every value and blind index
+  change; none were released since 0.5.0.
+
+- **Breaking:** `#[derive(Record)]` declares a seal for each sealed field
+  (ADR-0008). `#[cryptbox(id = "…")]` on a field generates its seal, named after
+  the record and the field, such as `CustomerEmail`, or as `name = …` says, with
+  the field's visibility; `scope`, `codec`, and `padding` configure it as for
+  `#[derive(Seal)]`, and its scope is `Recorded<Scope, Id>` with the record ID's
+  type, so a value moved to another field, table, or row fails to open. A field
+  can still use an existing seal with `seal = F` or a bare `seal`, but one seal
+  on two fields fails the build. The struct's `record = field` key is renamed
+  `record_id = field`.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

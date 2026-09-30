@@ -2,7 +2,7 @@
 
 use cryptbox::EncryptionKey;
 use cryptbox::{
-    EncryptionKeyring, Error, FieldOnly, KeyError, KeyId, Padding, Raw, Seal, Sealed, Utf8,
+    EncryptionKeyring, Error, KeyError, KeyId, Padding, Raw, Seal, Sealed, Utf8,
     inspect_ciphertext, is_ciphertext, key_id, seal_id,
 };
 
@@ -22,10 +22,9 @@ struct EmailSeal;
 impl Seal for EmailSeal {
     const ID: cryptbox::SealId = seal_id!("30000000-0000-4000-8000-000000000003");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -34,15 +33,14 @@ struct PaddedEmailSeal;
 impl Seal for PaddedEmailSeal {
     const ID: cryptbox::SealId = EmailSeal::ID;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
 // Raw seals carry opaque bytes through `Sealed`, as the byte-level API did.
-fn encrypt<F: Seal<Value = Vec<u8>, Binding = FieldOnly>>(
+fn encrypt<F: Seal<Value = Vec<u8>, Scope = ()>>(
     plaintext: &[u8],
     keys: &EncryptionKeyring,
 ) -> Vec<u8> {
@@ -51,7 +49,7 @@ fn encrypt<F: Seal<Value = Vec<u8>, Binding = FieldOnly>>(
         .into_bytes()
 }
 
-fn decrypt<F: Seal<Value = Vec<u8>, Binding = FieldOnly>>(
+fn decrypt<F: Seal<Value = Vec<u8>, Scope = ()>>(
     ciphertext: &[u8],
     keys: &EncryptionKeyring,
 ) -> Result<Vec<u8>, Error> {
@@ -63,10 +61,9 @@ struct PhoneSeal;
 impl Seal for PhoneSeal {
     const ID: cryptbox::SealId = seal_id!("40000000-0000-4000-8000-000000000004");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -151,7 +148,7 @@ fn reserved_flag_bits_are_rejected_before_authentication() {
 }
 
 #[test]
-fn field_only_envelopes_carry_the_empty_declaration_fingerprint() {
+fn unscoped_envelopes_carry_the_empty_declaration_fingerprint() {
     let keys = keyring(CURRENT_KEY_ID, 9);
     let ciphertext = encrypt::<EmailSeal>(b"field only", &keys);
 
@@ -162,7 +159,7 @@ fn field_only_envelopes_carry_the_empty_declaration_fingerprint() {
                 .unwrap()
                 .context_fingerprint()
         ),
-        "5d86321261d64380"
+        "65640fc8333534b9"
     );
 }
 
@@ -254,10 +251,9 @@ struct TypedEmail;
 impl Seal for TypedEmail {
     const ID: cryptbox::SealId = EmailSeal::ID;
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

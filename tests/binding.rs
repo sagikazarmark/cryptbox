@@ -1,8 +1,8 @@
 //! Public-boundary tests for declared binding scopes and their key scopes.
 
 use cryptbox::{
-    Binding, Error, FieldOnly, FromIndexValues, KeyScope, PartKind, PartSpec, PartType, PartValue,
-    PartValues, Tenant, TenantId, part_id,
+    Error, FromIndexValues, KeyScope, PartKind, PartSpec, PartType, PartValue, PartValues, Scope,
+    Tenant, TenantId, part_id,
 };
 
 /// An org scopes keys, a project scopes blind indexes, and a workspace is only bound.
@@ -19,7 +19,7 @@ struct OrgProjectSearch {
     project: i64,
 }
 
-impl Binding for OrgProject {
+impl Scope for OrgProject {
     const PARTS: &'static [PartSpec] = &[
         PartSpec::keys(
             part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37"),
@@ -96,13 +96,13 @@ fn key_scope_hashes_like_it_compares() {
 }
 
 #[test]
-fn field_only_bindings_share_one_key_scope() {
+fn unscoped_bindings_share_one_key_scope() {
     assert_eq!(
-        KeyScope::of(&FieldOnly).unwrap(),
-        KeyScope::of_index::<FieldOnly>(&()).unwrap()
+        KeyScope::of(&()).unwrap(),
+        KeyScope::of_index::<()>(&()).unwrap()
     );
     assert_ne!(
-        KeyScope::of(&FieldOnly).unwrap(),
+        KeyScope::of(&()).unwrap(),
         KeyScope::of(&Tenant(TenantId::from_uuid([1; 16]))).unwrap()
     );
 }
@@ -142,7 +142,7 @@ impl SuppliedValue {
     }
 }
 
-impl Binding for Supplied {
+impl Scope for Supplied {
     const PARTS: &'static [PartSpec] = OrgProject::PARTS;
     type IndexArgs = Self;
 
@@ -278,7 +278,7 @@ fn part_types_reject_values_of_another_kind() {
 fn presets_build_their_index_args_from_part_values() {
     let acme = Tenant(TenantId::new("acme").unwrap());
 
-    assert_eq!(FieldOnly::from_index_values(&[]), Ok(()));
+    assert_eq!(<()>::from_index_values(&[]), Ok(()));
     assert_eq!(
         Tenant::from_index_values(Tenant::index_values(&acme).as_slice()),
         Ok(acme)
@@ -288,7 +288,7 @@ fn presets_build_their_index_args_from_part_values() {
 #[test]
 fn presets_reject_index_values_that_do_not_fit() {
     assert_eq!(
-        FieldOnly::from_index_values(&[PartValue::I64(1)]),
+        <()>::from_index_values(&[PartValue::I64(1)]),
         Err(Error::InvalidBinding)
     );
     assert_eq!(Tenant::from_index_values(&[]), Err(Error::InvalidBinding));
@@ -308,10 +308,7 @@ fn key_scope_of_keys_matches_the_binding() {
         KeyScope::of_keys::<OrgProject>(&[PartValue::Bytes(b"acme")]),
         Ok(key_scope(b"acme", 1, 1))
     );
-    assert_eq!(
-        KeyScope::of_keys::<FieldOnly>(&[]),
-        KeyScope::of(&FieldOnly)
-    );
+    assert_eq!(KeyScope::of_keys::<()>(&[]), KeyScope::of(&()));
 }
 
 #[test]

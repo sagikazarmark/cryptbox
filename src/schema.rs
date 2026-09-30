@@ -6,8 +6,9 @@ use std::{
 };
 
 use crate::{
-    Binding, BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartRole, PartSpec, Seal, SealId,
-    binding::declaration_fingerprint,
+    BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartRole, PartSpec, Scope, Seal, SealId,
+    SealScope,
+    binding::{PartsOf, declaration_fingerprint},
 };
 
 /// Lists seals and blind indexes with their persistent schema.
@@ -20,9 +21,8 @@ use crate::{
 /// Each seal lists:
 ///
 /// - its seal ID, codec ID, and padding;
-/// - `record`: whether it binds a record;
+/// - `record`: the kind of the record ID it is bound to, or `no`;
 /// - `binding`: the [binding fingerprint](crate::CiphertextInfo::context_fingerprint),
-///   in hex, that its headers carry, followed by each part's ID, kind, and role in part-ID
 ///   order;
 /// - `shred unit`: the finest unit that destroying root keys can shred, if the
 ///   application stores root keys per [key scope](crate::KeyScope): the
@@ -42,17 +42,16 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Seal, SealId, Padding, Tenant, Utf8, schema::Manifest};
+/// use cryptbox::{Padding, Recorded, Seal, SealId, Tenant, Utf8, schema::Manifest};
 ///
 /// struct Nickname;
 ///
 /// impl Seal for Nickname {
 ///     const ID: SealId = cryptbox::seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 ///     const PADDING: Padding = Padding::block(16);
-///     const RECORD: bool = true;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = Tenant;
+///     type Scope = Recorded<Tenant, i64>;
 ///     type Indexes = ();
 /// }
 ///
@@ -65,8 +64,8 @@ use crate::{
 /// seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
 ///   codec: utf8
 ///   padding: block(16)
-///   record: yes
-///   binding: a28551bd5fbddbb1
+///   record: i64
+///   binding: 75e187c06144e3b7
 ///     part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
 ///   shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
 ///   custody: general KMS, one key per tenant
@@ -95,7 +94,7 @@ struct SealEntry {
     id: SealId,
     codec: &'static str,
     padding: Padding,
-    record: bool,
+    record: Option<PartKind>,
     parts: &'static [PartSpec],
     fingerprint: [u8; 8],
     custody: Option<String>,
@@ -145,9 +144,9 @@ impl Manifest {
                     id: F::ID,
                     codec: <F::Codec as Codec<F::Value>>::ID,
                     padding: F::PADDING,
-                    record: F::RECORD,
-                    parts: <F::Binding as Binding>::PARTS,
-                    fingerprint: declaration_fingerprint::<F::Binding>(F::RECORD),
+                    record: <F::Scope as SealScope>::RECORD,
+                    parts: <PartsOf<F> as Scope>::PARTS,
+                    fingerprint: declaration_fingerprint::<F::Scope>(),
                     custody: None,
                 });
                 self.seals.len() - 1
@@ -249,7 +248,11 @@ impl fmt::Display for Manifest {
             writeln!(formatter, "seal {}", seal.id)?;
             writeln!(formatter, "  codec: {}", seal.codec)?;
             writeln!(formatter, "  padding: {}", seal.padding)?;
-            writeln!(formatter, "  record: {}", yes_no(seal.record))?;
+            writeln!(
+                formatter,
+                "  record: {}",
+                seal.record.map_or("no", kind_name)
+            )?;
             writeln!(formatter, "  binding: {}", hex::encode(seal.fingerprint))?;
             for part in seal.parts {
                 writeln!(
@@ -309,10 +312,6 @@ impl fmt::Display for Manifest {
 }
 
 // Manifest spellings are snapshot text: keep them stable.
-const fn yes_no(flag: bool) -> &'static str {
-    if flag { "yes" } else { "no" }
-}
-
 const fn kind_name(kind: PartKind) -> &'static str {
     match kind {
         PartKind::Uuid => "uuid",
@@ -338,17 +337,16 @@ const fn role_name(role: PartRole) -> &'static str {
 /// leave one of them out.
 ///
 /// ```
-/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Utf8};
+/// use cryptbox::{Seal, SealId, Padding, Utf8};
 ///
 /// struct HomeAddress;
 ///
 /// impl Seal for HomeAddress {
 ///     const ID: SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -357,10 +355,9 @@ const fn role_name(role: PartRole) -> &'static str {
 /// impl Seal for BillingAddress {
 ///     const ID: SealId = cryptbox::seal_id!("7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -370,15 +367,14 @@ const fn role_name(role: PartRole) -> &'static str {
 /// A copied ID fails to compile:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{Seal, SealId, FieldOnly, Padding, Utf8};
+/// # use cryptbox::{Seal, SealId, Padding, Utf8};
 /// # struct HomeAddress;
 /// # impl Seal for HomeAddress {
 /// #     const ID: SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 /// #     const PADDING: Padding = Padding::NONE;
-/// #     const RECORD: bool = false;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// struct BillingAddress;
@@ -386,10 +382,9 @@ const fn role_name(role: PartRole) -> &'static str {
 /// impl Seal for BillingAddress {
 ///     const ID: SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -399,16 +394,15 @@ const fn role_name(role: PartRole) -> &'static str {
 /// So does a copied index ID:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId, Padding, Raw};
+/// # use cryptbox::{BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Raw};
 /// # use zeroize::Zeroizing;
 /// # struct Bytes;
 /// # impl Seal for Bytes {
 /// #     const ID: SealId = SealId::from_bytes([1; 16]);
 /// #     const PADDING: Padding = Padding::NONE;
-/// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// struct Exact;

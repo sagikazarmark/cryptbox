@@ -10,10 +10,9 @@ const _: () = {
             0x5d2f8a61_3c4e_4b7a_9e10_6f8b2c4d1a93,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
-        const RECORD: bool = false;
         type Value = Self;
         type Codec = cryptbox::Json;
-        type Binding = ::cryptbox::FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
 };

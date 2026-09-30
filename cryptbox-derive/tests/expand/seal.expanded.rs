@@ -7,10 +7,9 @@ const _: () = {
             0xca274e85_63c4_4f7d_a255_2dfecbfe5e25,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
-        const RECORD: bool = false;
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Binding = ::cryptbox::FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
 };

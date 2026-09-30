@@ -1,4 +1,4 @@
-error: `nickname` must say how it is stored: add `#[cryptbox(seal)]` if its type is a seal, `#[cryptbox(seal = F)]` to seal it with `F`, or `#[cryptbox(plaintext)]` to store it as it is
+error: `nickname` must say how it is stored: declare its own seal with `#[cryptbox(id = "<uuid>")]`, use an existing one with `#[cryptbox(seal = F)]` or, if its type is a seal, `#[cryptbox(seal)]`, or store it as it is with `#[cryptbox(plaintext)]`
   --> tests/ui/record_unannotated_field.rs:12:5
    |
 12 |     nickname: String,

@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::{
-    BindingDomain, BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, FieldOnly, Seal,
-    Sealed, blind::derive_value, keys,
+    BindingDomain, BlindIndexKeySource, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed,
+    blind::derive_value, keys,
 };
 
 struct PreparedIndex {
@@ -80,7 +80,7 @@ where
     ///
     /// The index is scoped by the `keys` and `index` parts of the binding the
     /// value was sealed with, so probes with the same
-    /// [`IndexArgs`](crate::Binding::IndexArgs) find it. The key source
+    /// [`IndexArgs`](crate::Scope::IndexArgs) find it. The key source
     /// receives that scope's [`KeyScope`](crate::KeyScope).
     ///
     /// The index must be declared over this seal. Attaching another seal's
@@ -88,7 +88,7 @@ where
     ///
     /// ```compile_fail,E0271
     /// use cryptbox::{
-    ///     BlindIndexError, BlindIndexSpec, Seal, SealId, FieldOnly, IndexId,
+    ///     BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId,
     ///     BlindIndexKeyring, EncryptionKeyring, Padding, Sealed, Utf8,
     /// };
     /// use zeroize::Zeroizing;
@@ -98,10 +98,9 @@ where
     /// impl Seal for UserEmail {
     ///     const ID: SealId = SealId::from_bytes([1; 16]);
     ///     const PADDING: Padding = Padding::NONE;
-    ///     const RECORD: bool = false;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Binding = FieldOnly;
+    ///     type Scope = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -110,10 +109,9 @@ where
     /// impl Seal for InviteEmail {
     ///     const ID: SealId = SealId::from_bytes([2; 16]);
     ///     const PADDING: Padding = Padding::NONE;
-    ///     const RECORD: bool = false;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Binding = FieldOnly;
+    ///     type Scope = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -173,7 +171,7 @@ where
     /// Adds an index with the [installed keys](keys::installed).
     ///
     /// This is exactly `self.with_index_with::<Spec>(keys::installed()?)`. The
-    /// installed keys serve only [`FieldOnly`] seals.
+    /// installed keys serve only unscoped seals.
     ///
     /// # Errors
     ///
@@ -181,7 +179,7 @@ where
     /// duplicate index IDs, unavailable keys, or failed index derivation.
     pub fn with_index<Spec>(self) -> Result<Self, Error>
     where
-        F: Seal<Binding = FieldOnly>,
+        F: Seal<Scope = ()>,
         Spec: BlindIndexSpec<Seal = F>,
     {
         self.with_index_with::<Spec>(keys::installed()?)

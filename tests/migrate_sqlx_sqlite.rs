@@ -4,8 +4,8 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8,
-    index_id, index_key_id, key_id,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
+    index_key_id, key_id,
     migrate::{
         LegacyError, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable,
     },
@@ -27,10 +27,9 @@ struct UserEmail;
 impl Seal for UserEmail {
     const ID: cryptbox::SealId = seal_id!("50000000-0000-4000-8000-000000000005");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

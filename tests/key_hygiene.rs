@@ -2,7 +2,7 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, FieldOnly, IndexId, KeyError, Padding, Raw, Seal, SealId, Sealed, index_id,
+    EncryptionKeyring, IndexId, KeyError, Padding, Raw, Seal, SealId, Sealed, index_id,
     index_key_id, key_id,
 };
 use zeroize::Zeroizing;
@@ -12,10 +12,9 @@ struct TestSeal;
 impl Seal for TestSeal {
     const ID: SealId = cryptbox::seal_id!("5d3a1f7e-2b8c-4e69-a0d4-7f1b3c5e9a82");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 

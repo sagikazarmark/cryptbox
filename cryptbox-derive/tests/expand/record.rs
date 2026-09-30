@@ -5,8 +5,7 @@ use zeroize::Zeroizing;
 #[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    binding = cryptbox::Tenant,
-    record,
+    scope = cryptbox::Recorded<cryptbox::Tenant, i64>,
     indexes(EmailLookup),
 )]
 pub struct CustomerEmail;
@@ -15,7 +14,7 @@ pub struct CustomerEmail;
 #[cryptbox(
     id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     value = String,
-    binding = cryptbox::Tenant,
+    scope = cryptbox::Tenant,
 )]
 pub struct CustomerNote;
 
@@ -36,7 +35,7 @@ pub struct EmailLookup;
 
 /// A customer.
 #[derive(cryptbox::Record)]
-#[cryptbox(record = id, sealed = SealedCustomer, attr(derive(Debug)))]
+#[cryptbox(record_id = id, sealed = SealedCustomer, attr(derive(Debug)))]
 #[sqlx(rename_all = "snake_case")]
 pub struct Customer {
     /// The client-generated record ID.

@@ -11,10 +11,9 @@ const _: () = {
             0x7a1c3e5f_9b2d_4f60_8a4c_1e3b5d7f9a2c,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
-        const RECORD: bool = false;
         type Value = Self;
         type Codec = Self;
-        type Binding = ::cryptbox::FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
     #[automatically_derived]

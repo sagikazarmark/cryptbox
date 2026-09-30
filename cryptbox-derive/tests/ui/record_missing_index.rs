@@ -5,7 +5,7 @@ use zeroize::Zeroizing;
 #[cryptbox(
     id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
     value = String,
-    record,
+    scope = cryptbox::Recorded<(), i64>,
     indexes(EmailLookup),
 )]
 struct UserEmail;
@@ -26,7 +26,7 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 struct EmailLookup;
 
 #[derive(cryptbox::Record)]
-#[cryptbox(record = id, sealed = SealedUser)]
+#[cryptbox(record_id = id, sealed = SealedUser)]
 struct User {
     #[cryptbox(plaintext)]
     id: i64,

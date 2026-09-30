@@ -1,5 +1,0 @@
-error: a binding needs at least one part: use `cryptbox::FieldOnly` for none
- --> tests/ui/binding_without_parts.rs:2:8
-  |
-2 | struct Nothing;
-  |        ^^^^^^^

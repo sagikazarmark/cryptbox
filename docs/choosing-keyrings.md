@@ -115,7 +115,7 @@ Blind-index keyrings follow the same rules through `BlindIndexKeySource`, keyed
 by index instead of seal, with independently generated roots.
 
 For the automatic SQLx column, the key source is a type: `Plain<F, K>` reads its
-keys from `K`, the installed keys by default. It serves only `FieldOnly` seals
+keys from `K`, the installed keys by default. It serves only unscoped seals
 without a record or blind indexes, because a column decoder sees neither the row
 nor its scope. Everything bound is sealed explicitly. See
 [keyrings and key sources](integration.md#keyrings-and-key-sources) for the

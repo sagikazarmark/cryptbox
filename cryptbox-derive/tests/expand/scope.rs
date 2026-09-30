@@ -1,4 +1,4 @@
-#[derive(cryptbox::Binding)]
+#[derive(cryptbox::Scope)]
 #[cryptbox(index_args = OrgSearch)]
 pub struct OrgWorkspace {
     /// Bound only.

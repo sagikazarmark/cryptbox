@@ -21,17 +21,16 @@ use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Seal, SealId, FieldOnly, Padding, Utf8, testing::assert_encoding};
+/// use cryptbox::{Seal, SealId, Padding, Utf8, testing::assert_encoding};
 ///
 /// struct Nickname;
 ///
 /// impl Seal for Nickname {
 ///     const ID: SealId = cryptbox::seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -86,7 +85,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId, FieldOnly,
+///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId,
 ///     KeyScope, Padding, Sealed, Utf8, testing::assert_sealed_under,
 /// };
 ///
@@ -95,10 +94,9 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 /// impl Seal for Iban {
 ///     const ID: SealId = cryptbox::seal_id!("50000000-0000-4000-8000-000000000005");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///

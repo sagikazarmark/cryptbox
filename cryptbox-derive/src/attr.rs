@@ -21,7 +21,7 @@ pub(crate) enum Key {
     Normalize,
     Normalizer,
     Project,
-    Binding,
+    Scope,
     Record,
     Indexes,
     IndexArgs,
@@ -34,10 +34,11 @@ pub(crate) enum Key {
     IndexColumns,
     Plaintext,
     Transparent,
+    Name,
 }
 
 impl Key {
-    const ALL: [Self; 24] = [
+    const ALL: [Self; 25] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -49,7 +50,7 @@ impl Key {
         Self::Normalize,
         Self::Normalizer,
         Self::Project,
-        Self::Binding,
+        Self::Scope,
         Self::Record,
         Self::Indexes,
         Self::IndexArgs,
@@ -62,6 +63,7 @@ impl Key {
         Self::IndexColumns,
         Self::Plaintext,
         Self::Transparent,
+        Self::Name,
     ];
 
     fn name(self) -> &'static str {
@@ -77,9 +79,10 @@ impl Key {
             Self::Normalize => "normalize",
             Self::Normalizer => "normalizer",
             Self::Project => "project",
-            Self::Binding => "binding",
-            // `RecordId` and `IndexColumns` reuse these names in `#[derive(Record)]`.
-            Self::Record | Self::RecordId => "record",
+            Self::Scope => "scope",
+            Self::Record => "record",
+            Self::RecordId => "record_id",
+            // `IndexColumns` reuses this name in `#[derive(Record)]`.
             Self::Indexes => "indexes",
             Self::IndexArgs => "index_args",
             Self::Part => "part",
@@ -89,6 +92,7 @@ impl Key {
             Self::Attr => "attr",
             Self::Plaintext => "plaintext",
             Self::Transparent => "transparent",
+            Self::Name => "name",
         }
     }
 
@@ -170,7 +174,7 @@ pub(crate) struct Attrs {
     pub(crate) normalize: Option<Path>,
     pub(crate) normalizer: Option<LitStr>,
     pub(crate) project: Option<Path>,
-    pub(crate) binding: Option<Type>,
+    pub(crate) scope: Option<Type>,
     pub(crate) record: Option<Span>,
     pub(crate) indexes: Option<Vec<Type>>,
     pub(crate) index_args: Option<Ident>,
@@ -179,6 +183,7 @@ pub(crate) struct Attrs {
     pub(crate) index: Option<Span>,
     pub(crate) record_id: Option<Ident>,
     pub(crate) sealed: Option<Ident>,
+    pub(crate) name: Option<Ident>,
     pub(crate) attr: Option<Vec<Meta>>,
     pub(crate) index_columns: Option<Vec<IndexColumn>>,
     pub(crate) plaintext: Option<Span>,
@@ -291,10 +296,11 @@ impl Attrs {
             Key::Normalize => self.normalize = Some(input.parse()?),
             Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
-            Key::Binding => self.binding = Some(input.parse()?),
+            Key::Scope => self.scope = Some(input.parse()?),
             Key::IndexArgs => self.index_args = Some(input.parse()?),
             Key::RecordId => self.record_id = Some(input.parse()?),
             Key::Sealed => self.sealed = Some(input.parse()?),
+            Key::Name => self.name = Some(input.parse()?),
             Key::Record
             | Key::Keys
             | Key::Index

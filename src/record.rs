@@ -1,4 +1,4 @@
-use crate::{Binding, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Seal};
+use crate::{BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, Error, Scope, Seal};
 
 /// A row of plaintext values sealed and opened together under one binding.
 ///
@@ -7,11 +7,10 @@ use crate::{Binding, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, E
 /// each field's blind indexes; [`Self::open`] authenticates and opens them.
 /// Plaintext fields, such as the record ID, are copied as they are.
 ///
-/// Every sealed field shares the record's [`Binding`], and each field whose seal
-/// declares [`Seal::RECORD`] is also bound to the record's ID, through
-/// [`InRecord`](crate::InRecord). The record ID is never encrypted, so it can
-/// be read before the row is opened. The binding must come from an authorized
-/// source, never from the stored row.
+/// Every sealed field shares the record's [`Scope`], and each field whose seal
+/// scope is [`Recorded`](crate::Recorded) is also bound to the record's ID. The
+/// record ID is never encrypted, so it can be read before the row is opened. The
+/// binding must come from an authorized source, never from the stored row.
 ///
 /// [`Self::open`] takes the record ID from the row itself. A value copied from
 /// another record fails authentication, but a whole row returned in place of
@@ -19,16 +18,18 @@ use crate::{Binding, BlindIndexKeySource, BlindIndexSpec, EncryptionKeySource, E
 /// the opened ID with the one you asked for.
 ///
 /// With the `derive` feature, `#[derive(Record)]` generates the sealed struct,
-/// this impl, and per-field sealers for partial updates, and checks that each
-/// field writes exactly the blind indexes its seal declares. See its documentation
-/// for the expansion, which a hand-written impl can follow.
+/// this impl, per-field sealers for partial updates, and the seals its fields
+/// declare with `#[cryptbox(id = "…")]`, each bound to its field, scope, and row;
+/// and it checks that each field writes exactly the blind indexes its seal
+/// declares. See its documentation for the expansion, which a hand-written impl
+/// can follow.
 pub trait Record: Sized {
     /// The storage form: the plaintext fields, the sealed values, and their
     /// blind indexes.
     type Sealed;
 
     /// The binding every sealed field of the record shares.
-    type Binding: Binding;
+    type Scope: Scope;
 
     /// Encrypts every sealed field under `binding` and the record's ID, and
     /// derives its blind indexes.
@@ -36,7 +37,7 @@ pub trait Record: Sized {
     /// # Errors
     ///
     /// Returns any error of sealing a field or deriving one of its indexes.
-    fn seal<K>(&self, binding: &Self::Binding, keys: &K) -> Result<Self::Sealed, Error>
+    fn seal<K>(&self, binding: &Self::Scope, keys: &K) -> Result<Self::Sealed, Error>
     where
         K: EncryptionKeySource + BlindIndexKeySource + ?Sized;
 
@@ -49,7 +50,7 @@ pub trait Record: Sized {
     ///
     /// Returns any error of opening a field, such as
     /// [`Error::AuthenticationFailed`] for a value of another record or binding.
-    fn open<K>(sealed: Self::Sealed, binding: &Self::Binding, keys: &K) -> Result<Self, Error>
+    fn open<K>(sealed: Self::Sealed, binding: &Self::Scope, keys: &K) -> Result<Self, Error>
     where
         K: EncryptionKeySource + ?Sized;
 }
@@ -80,7 +81,7 @@ pub trait IndexedBy<S: BlindIndexSpec>: Record {
 pub fn open_matching<R, S>(
     rows: impl IntoIterator<Item = R::Sealed>,
     query: &S::Query,
-    binding: &R::Binding,
+    binding: &R::Scope,
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<Vec<R>, Error>
 where

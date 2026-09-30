@@ -1,17 +1,11 @@
 use std::fmt;
 
-use super::{Binding, FromIndexValues, PartKind, PartSpec, PartType, PartValue, PartValues};
+use super::{FromIndexValues, PartKind, PartSpec, PartType, PartValue, PartValues, Scope};
 use crate::Error;
 
-/// A binding with no parts: values are bound to their seal ID only.
-///
-/// It is the empty binding: no parts and, unless the seal also binds a
-/// record, no record. Blind indexes take no arguments, and every value shares
-/// one [`KeyScope`](crate::KeyScope).
-#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
-pub struct FieldOnly;
-
-impl Binding for FieldOnly {
+// The empty scope: values are bound to their seal ID only. Blind indexes take
+// no arguments, and every value shares one `KeyScope`.
+impl Scope for () {
     const PARTS: &'static [PartSpec] = &[];
     type IndexArgs = ();
 
@@ -24,7 +18,7 @@ impl Binding for FieldOnly {
     }
 }
 
-impl FromIndexValues for FieldOnly {
+impl FromIndexValues for () {
     fn from_index_values(values: &[PartValue<'_>]) -> Result<(), Error> {
         match values {
             [] => Ok(()),
@@ -35,7 +29,7 @@ impl FromIndexValues for FieldOnly {
 
 /// A binding with a single tenant part, which scopes keys and blind indexes.
 ///
-/// The tenant is the [shred unit](Binding#shredding) when each tenant's root
+/// The tenant is the [shred unit](Scope#shredding) when each tenant's root
 /// keys are stored independently. Blind-index queries take the tenant itself as
 /// their arguments. Its one part is persistent schema: part ID
 /// `1e8306bf-3135-4570-831c-6732f92550e9`, kind bytes, role `keys`.
@@ -48,7 +42,7 @@ const TENANT_PART: PartSpec = PartSpec::keys(
     PartKind::Bytes,
 );
 
-impl Binding for Tenant {
+impl Scope for Tenant {
     const PARTS: &'static [PartSpec] = &[TENANT_PART];
     type IndexArgs = Self;
 
@@ -118,43 +112,50 @@ impl fmt::Debug for TenantId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{BindingDomain, RecordId, SealId, seal_id};
+    use crate::{BindingDomain, Recorded, SealId, seal_id};
 
     const SEAL: SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
 
     #[test]
-    fn field_only_is_the_empty_binding() {
-        let domain = BindingDomain::of(SEAL, &FieldOnly, None).unwrap();
+    fn unscoped_is_the_empty_binding() {
+        let domain = BindingDomain::of::<()>(SEAL, &(), None).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
-            "123456781234423482341234567890ab000000"
+            "123456781234423482341234567890ab0000"
         );
-        assert_eq!(domain.fingerprint(), hex_array("5d86321261d64380"));
+        assert_eq!(domain.fingerprint(), hex_array("65640fc8333534b9"));
     }
 
     #[test]
-    fn field_only_with_a_record_binds_the_record_alone() {
-        let domain = BindingDomain::of(SEAL, &FieldOnly, Some(RecordId::from(1_i64))).unwrap();
+    fn unscoped_with_a_record_binds_the_record_alone() {
+        let domain =
+            BindingDomain::of::<Recorded<(), i64>>(SEAL, &(), Some(PartValue::I64(1))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
-            "123456781234423482341234567890ab020000000800000000000000010000"
+            concat!(
+                "123456781234423482341234567890ab",
+                "0001",
+                "00000000000000000000000000000000",
+                "02",
+                "00000008",
+                "0000000000000001",
+            )
         );
-        assert_eq!(domain.fingerprint(), hex_array("4e56863e564d3de9"));
+        assert_eq!(domain.fingerprint(), hex_array("76081b730530f822"));
     }
 
     #[test]
     fn tenant_binds_one_bytes_keys_part() {
         let tenant = Tenant(TenantId::new(b"acme".to_vec()).unwrap());
-        let domain = BindingDomain::of(SEAL, &tenant, None).unwrap();
+        let domain = BindingDomain::of::<Tenant>(SEAL, &tenant, None).unwrap();
 
         // docs/wire-format.md#presets
         assert_eq!(
             hex::encode(domain.as_bytes()),
             concat!(
                 "123456781234423482341234567890ab",
-                "00",
                 "0001",
                 "1e8306bf31354570831c6732f92550e9",
                 "03",
@@ -162,7 +163,7 @@ mod tests {
                 "61636d65",
             )
         );
-        assert_eq!(domain.fingerprint(), hex_array("4bca2676fab96fae"));
+        assert_eq!(domain.fingerprint(), hex_array("9b73125a52bc08d1"));
     }
 
     #[test]

@@ -68,7 +68,7 @@ impl ::core::cmp::Eq for OrgSearch {
 }
 const _: () = {
     #[automatically_derived]
-    impl ::cryptbox::Binding for OrgWorkspace {
+    impl ::cryptbox::Scope for OrgWorkspace {
         const PARTS: &'static [::cryptbox::PartSpec] = &[
             ::cryptbox::PartSpec::keys(
                 ::cryptbox::PartId::from_u128(0x3a1f0c6e_58b2_4d0a_9e57_1c4b8f2d6a90),

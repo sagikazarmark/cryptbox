@@ -4,7 +4,7 @@ use std::error::Error;
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, FieldOnly, Keys, Padding, Plain, Seal, SealId, Sealed, Utf8, keys,
+    EncryptionKeyring, Keys, Padding, Plain, Seal, SealId, Sealed, Utf8, keys,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -14,10 +14,9 @@ struct Nickname;
 impl Seal for Nickname {
     const ID: SealId = cryptbox::seal_id!("431cf5b3-5547-4716-a9f8-cfd67749947a");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -27,10 +26,9 @@ struct UserEmail;
 impl Seal for UserEmail {
     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = (EmailLookup,);
 }
 
@@ -88,7 +86,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
         .await?;
     let nickname = Plain::<Nickname>::new(plaintext);
 
-    // Binding Plain exercises automatic sealing with the installed keys.
+    // Scope Plain exercises automatic sealing with the installed keys.
     sqlx::query("INSERT INTO users (nickname) VALUES (?)")
         .bind(&nickname)
         .execute(&mut connection)

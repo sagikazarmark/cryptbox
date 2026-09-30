@@ -7,9 +7,7 @@ use sqlx::{
     sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef},
 };
 
-use crate::{
-    BlindIndex, BlindIndexRef, BlindIndexSpec, ColumnKeys, FieldOnly, Plain, Seal, Sealed,
-};
+use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, ColumnKeys, Plain, Seal, Sealed};
 
 fn blob_type_info() -> SqliteTypeInfo {
     <Vec<u8> as Type<Sqlite>>::type_info()
@@ -21,7 +19,7 @@ fn blob_compatible(ty: &SqliteTypeInfo) -> bool {
 
 impl<F, K> Type<Sqlite> for Plain<F, K>
 where
-    F: Seal<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
     K: ColumnKeys,
 {
     fn type_info() -> SqliteTypeInfo {
@@ -65,7 +63,7 @@ impl<Spec> Type<Sqlite> for BlindIndexRef<'_, Spec> {
 
 impl<'q, F, K> Encode<'q, Sqlite> for Plain<F, K>
 where
-    F: Seal<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
     K: ColumnKeys,
 {
     fn encode_by_ref(
@@ -136,7 +134,7 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
 
 impl<'row, F, K> Decode<'row, Sqlite> for Plain<F, K>
 where
-    F: Seal<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
     K: ColumnKeys,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
