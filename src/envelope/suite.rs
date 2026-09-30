@@ -6,8 +6,7 @@ use zeroize::Zeroizing;
 
 use super::format::{FORMAT_VERSION, ParsedEnvelope, SuiteId, envelope_header};
 use crate::crypto;
-use crate::padding::AeadPlaintext;
-use crate::{EncryptionKey, Error};
+use crate::{EncryptionKey, Error, Padding};
 
 // Labels, including NULs, are persistent domain separators, not display strings.
 // See ../../docs/wire-format.md#encryption-recipe.
@@ -37,6 +36,39 @@ impl<'a> Context<'a> {
     /// The fingerprint a reader compares with the one stored in the header.
     pub(crate) const fn fingerprint(&self) -> [u8; 8] {
         self.fingerprint
+    }
+}
+
+/// Encoded plaintext as the AEAD seals it: the codec's bytes, or those bytes padded.
+///
+/// The envelope's padded flag comes from the variant, so it cannot disagree
+/// with the bytes.
+pub(super) enum AeadPlaintext<'a> {
+    Unpadded(&'a [u8]),
+    Padded(Zeroizing<Vec<u8>>),
+}
+
+impl<'a> AeadPlaintext<'a> {
+    /// Applies `padding` to `plaintext`.
+    ///
+    /// Without padding the result borrows `plaintext`, so it is encrypted
+    /// without a copy.
+    pub(super) fn new(padding: Padding, plaintext: &'a [u8]) -> Result<Self, Error> {
+        Ok(match padding.pad(plaintext)? {
+            Some(padded) => Self::Padded(padded),
+            None => Self::Unpadded(plaintext),
+        })
+    }
+
+    pub(super) fn bytes(&self) -> &[u8] {
+        match self {
+            Self::Unpadded(bytes) => bytes,
+            Self::Padded(bytes) => bytes,
+        }
+    }
+
+    pub(super) const fn is_padded(&self) -> bool {
+        matches!(self, Self::Padded(_))
     }
 }
 

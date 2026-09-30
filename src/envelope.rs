@@ -10,8 +10,8 @@ pub(crate) use format::validated_key_id;
 pub use format::{CiphertextInfo, SuiteId, is_ciphertext};
 use format::{ParsedEnvelope, parse_envelope};
 pub(crate) use suite::Context;
-use suite::SupportedSuite;
 pub use suite::xchacha20_poly1305::EXPERIMENTAL_XCHACHA20_POLY1305;
+use suite::{AeadPlaintext, SupportedSuite};
 
 /// Parses supported envelope metadata without authenticating it.
 ///
@@ -45,7 +45,7 @@ pub(crate) fn seal(
     plaintext: &[u8],
     keyring: &EncryptionKeyring,
 ) -> Result<Vec<u8>, Error> {
-    let plaintext = padding.pad(plaintext)?;
+    let plaintext = AeadPlaintext::new(padding, plaintext)?;
 
     SupportedSuite::ACTIVE.seal(context, &plaintext, keyring.current())
 }
@@ -117,7 +117,7 @@ mod tests {
     use zeroize::Zeroizing;
 
     use super::suite::xchacha20_poly1305::{NONCE_LEN, XChaCha20Poly1305};
-    use super::{Context, check, inspect_ciphertext, seal};
+    use super::{AeadPlaintext, Context, check, inspect_ciphertext, seal};
     use crate::{EncryptionKey, EncryptionKeyring, Error, Padding};
 
     // Seals under suite 1 with a fixed nonce, as the known-answer vectors need.
@@ -128,7 +128,9 @@ mod tests {
         key: &EncryptionKey,
         nonce: [u8; NONCE_LEN],
     ) -> Result<Vec<u8>, Error> {
-        XChaCha20Poly1305::seal_with_nonce(context, &padding.pad(plaintext)?, key, nonce)
+        let plaintext = AeadPlaintext::new(padding, plaintext)?;
+
+        XChaCha20Poly1305::seal_with_nonce(context, &plaintext, key, nonce)
     }
 
     // Fixed inputs make the known-answer vectors in docs/wire-format.md reproducible.

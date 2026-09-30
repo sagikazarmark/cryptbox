@@ -10,11 +10,10 @@ use chacha20poly1305::{KeyInit, XChaCha20Poly1305 as Cipher};
 use zeroize::Zeroizing;
 
 use super::{
-    Context, FORMAT_VERSION, ParsedEnvelope, Suite, SuiteId, derive_encryption_key, envelope_aad,
-    envelope_header,
+    AeadPlaintext, Context, FORMAT_VERSION, ParsedEnvelope, Suite, SuiteId, derive_encryption_key,
+    envelope_aad, envelope_header,
 };
 use crate::crypto;
-use crate::padding::AeadPlaintext;
 use crate::{EncryptionKey, Error};
 
 pub(in crate::envelope) const NONCE_LEN: usize = <Cipher as AeadCore>::NonceSize::USIZE;

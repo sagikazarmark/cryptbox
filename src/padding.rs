@@ -80,11 +80,11 @@ impl Padding {
 
     /// Applies this policy to encoded plaintext.
     ///
-    /// Without padding the result borrows `plaintext`, so it is encrypted
-    /// without a copy.
-    pub(crate) fn pad(self, plaintext: &[u8]) -> Result<AeadPlaintext<'_>, Error> {
+    /// Returns `None` when the policy does not pad, so the caller encrypts
+    /// `plaintext` itself without a copy.
+    pub(crate) fn pad(self, plaintext: &[u8]) -> Result<Option<Zeroizing<Vec<u8>>>, Error> {
         match self.0 {
-            Policy::None => Ok(AeadPlaintext::Unpadded(plaintext)),
+            Policy::None => Ok(None),
             Policy::Block(size) => {
                 let length_with_marker = plaintext
                     .len()
@@ -93,38 +93,16 @@ impl Padding {
                 let blocks = length_with_marker.div_ceil(size);
                 let target = blocks.checked_mul(size).ok_or(Error::MessageTooLong)?;
 
-                Ok(AeadPlaintext::Padded(pad_to_length(plaintext, target)))
+                Ok(Some(pad_to_length(plaintext, target)))
             }
             Policy::Length(length) => {
                 if plaintext.len() >= length {
                     return Err(Error::PaddingOverflow);
                 }
 
-                Ok(AeadPlaintext::Padded(pad_to_length(plaintext, length)))
+                Ok(Some(pad_to_length(plaintext, length)))
             }
         }
-    }
-}
-
-/// Encoded plaintext as the AEAD seals it: the codec's bytes, or those bytes padded.
-///
-/// The envelope's padded flag comes from the variant, so it cannot disagree
-/// with the bytes.
-pub(crate) enum AeadPlaintext<'a> {
-    Unpadded(&'a [u8]),
-    Padded(Zeroizing<Vec<u8>>),
-}
-
-impl AeadPlaintext<'_> {
-    pub(crate) fn bytes(&self) -> &[u8] {
-        match self {
-            Self::Unpadded(bytes) => bytes,
-            Self::Padded(bytes) => bytes,
-        }
-    }
-
-    pub(crate) const fn is_padded(&self) -> bool {
-        matches!(self, Self::Padded(_))
     }
 }
 
@@ -166,21 +144,16 @@ pub(crate) fn unpad(mut plaintext: Zeroizing<Vec<u8>>) -> Result<Zeroizing<Vec<u
 mod tests {
     use zeroize::Zeroizing;
 
-    use super::{AeadPlaintext, Padding, unpad};
+    use super::{Padding, unpad};
     use crate::Error;
 
-    fn padded(plaintext: AeadPlaintext<'_>) -> Zeroizing<Vec<u8>> {
-        match plaintext {
-            AeadPlaintext::Padded(bytes) => bytes,
-            AeadPlaintext::Unpadded(_) => panic!("expected padded plaintext"),
-        }
+    fn padded(plaintext: Option<Zeroizing<Vec<u8>>>) -> Zeroizing<Vec<u8>> {
+        plaintext.expect("expected padded plaintext")
     }
 
     #[test]
-    fn no_padding_preserves_plaintext() {
-        let unpadded = Padding::NONE.pad(b"exact bytes").unwrap();
-        assert!(!unpadded.is_padded());
-        assert_eq!(unpadded.bytes(), b"exact bytes");
+    fn no_padding_leaves_plaintext_alone() {
+        assert!(Padding::NONE.pad(b"exact bytes").unwrap().is_none());
     }
 
     #[test]
