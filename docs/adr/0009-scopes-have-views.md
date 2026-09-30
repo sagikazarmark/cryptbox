@@ -1,8 +1,11 @@
 ---
-status: accepted
+status: superseded by ADR-0010
 ---
 
 # Scopes have views; key sources are typed by the keys view
+
+> Superseded by [ADR-0010](0010-records-carry-their-bound-values.md), except
+> for resolving keyrings in the typed layer, which stays.
 
 > Amended when implemented. A legacy-binding window names the old keys view
 > beside the old seal scope, `RowPlanner::legacy_binding::<Old, OldKeys>`, as

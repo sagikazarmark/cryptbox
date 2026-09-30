@@ -22,6 +22,10 @@ status: accepted
 > seal's keys view, `EncryptionKeySource<K>` and `BlindIndexKeySource<K>`, and
 > receive its values instead of an untyped `KeyScope`, which is removed.
 
+> Amended by [ADR-0010](0010-records-carry-their-bound-values.md). Keys are
+> passed in without a source trait: `seal`, `open`, and `probes` take `Keys` or
+> a keyring, and the application chooses which keys protect which values.
+
 `seal`, `open`, and the index operations take the keys to use directly. The crate
 ships concrete keyrings (`EncryptionKeyring`, `BlindIndexKeyring`, and the `Keys`
 pair). Each holds the current key plus previous keys, looked up by the key ID in

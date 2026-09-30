@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Records carry their bound values; keys are passed in
@@ -124,4 +124,16 @@ authz.require(user, customer.org, customer.workspace)?;
   deferred follow-up.
 - **Open for the implementation:** `Option<T>` fields as `Option<Sealed<F>>`,
   nested records, sealed `Vec`s as one value, and the stored form's field order
-  as schema for binary formats.
+  as schema for binary formats. A throwaway prototype of this design (sqlx,
+  Diesel, and serde) added:
+  - a text form for sealed values and blind indexes in human-readable serde
+    formats, which today write byte arrays;
+  - a named partition type per blind index in place of a positional tuple of
+    bound values, which a type checks only when the values' types differ;
+  - distinct errors for a row outside a query's partition and a row an
+    `open_expecting` check rejects;
+  - whether sealing a record that has blind indexes with an encryption keyring
+    alone fails the build rather than at run time;
+  - `From<Sealed<F>> for Vec<u8>` and the `BlindIndex` equivalent, which an
+    ORM's `serialize_as` needs and the orphan rule keeps applications from
+    writing.

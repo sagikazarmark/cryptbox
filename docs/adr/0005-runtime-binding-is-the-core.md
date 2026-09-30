@@ -56,6 +56,11 @@ status: accepted
 > `IndexArgs` are gone, and the fingerprint gives role code `01` to a part of the
 > keys view and `03` to any other.
 
+> Amended by [ADR-0010](0010-records-carry-their-bound-values.md). A record
+> stores its bound values as its own columns; opening reads them from the row
+> and authenticates them, and the caller authorizes on them. The fingerprint
+> writes role code `03` for every part.
+
 Every seal and open binds the ciphertext to a runtime **binding**: the field ID,
 a declared scope (for example tenant, or org plus workspace), and optionally a
 record ID. The binding bytes go into the AAD and the HKDF info. Tenant and
