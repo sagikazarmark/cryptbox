@@ -1,7 +1,7 @@
 # Wire format
 
 CryptBox stores encrypted values as binary **envelopes**: public metadata followed
-by encrypted bytes and an authentication tag. Searchable fields may also have a
+by encrypted bytes and an authentication tag. Searchable values may also have a
 separate **blind index**, a deterministic lookup value derived from normalized
 plaintext. This document defines both stored representations and the recipes
 needed to reproduce them.
@@ -79,36 +79,37 @@ authentication because the reader has no construction with which to verify it.
 ### Binding
 
 A binding identifies the expected cryptographic domain of a value. Every value is
-bound to a stable `FieldId`, so an email field's ciphertext is not accepted under
-a different field, even when both use the same root key. A field declares its
+bound to a stable `SealId`, so an email seal's ciphertext is not accepted under
+a different seal, even when both use the same root key. A seal declares its
 binding **declaration**: a fixed set of parts, each with a part ID (a UUID), a value
-kind, and a role, plus whether it binds a record. The declaration is persistent
-schema. The **values**, such as a tenant ID and a record ID, are supplied at
-each call. See [ADR-0005](adr/0005-runtime-binding-is-the-core.md).
+kind, and a role, plus, when it binds a record, the record ID's kind. The
+declaration is persistent schema. The **values**, such as a tenant ID and a
+record ID, are supplied at each call. See
+[ADR-0005](adr/0005-runtime-binding-is-the-core.md) and
+[ADR-0008](adr/0008-records-declare-their-fields-seals.md).
 
 Every binding uses one layout:
 
 ```text
-binding = field_id[16] || record || count[2] || part*
+binding = seal_id[16] || count[2] || part*
 
-record  = 00                                (no record)
-        | kind[1] || len[4] || value[len]   (record present)
 part    = part_id[16] || kind[1] || len[4] || value[len]
 ```
 
 - `count` is the number of parts, as an unsigned 16-bit integer.
-- Parts are sorted by part ID in ascending byte order, whatever order the field
-  declares them in. Part IDs are unique and never the nil UUID.
+- Parts are sorted by part ID in ascending byte order, whatever order the seal
+  declares them in. Declared part IDs are unique and never the nil UUID.
+- A record is one more part, bound only, under the nil part ID, so it always
+  sorts first. Its kind is the record ID's kind.
 - `len` is an unsigned 32-bit byte count. Every value is length-prefixed, so
   `"ab", "c"` and `"a", "bc"` encode differently.
-- A record's kind code is never `00`, so an empty record differs from no record.
-- There is no leading tag or type byte: the binding starts with the field ID.
+- There is no leading tag or type byte: the binding starts with the seal ID.
 
-The **empty declaration** has no parts and no record. Its binding is the field ID
-followed by `00 0000`: a field-only binding, which identifies a logical field,
-not a particular row or tenant.
+The **empty declaration** has no parts and no record. Its binding is the seal ID
+followed by `0000`: an unscoped binding, which identifies a seal alone, not a
+particular row or tenant.
 
-The field supplies the expected binding; it is not stored in the envelope.
+The seal supplies the expected binding; it is not stored in the envelope.
 This makes the application decide where a value belongs, rather than allowing
 stored bytes to select their own binding.
 
@@ -127,21 +128,20 @@ A `keys` part value can't be empty.
 #### Binding fingerprint
 
 Every binding has a 64-bit **binding fingerprint**, and every envelope's header
-carries it. It covers the part IDs, kinds, and roles, and the record flag, but
-never values, because the header is stored in plaintext:
+carries it. It covers the part IDs, kinds, and roles, a record's part included,
+but never values, because the header is stored in plaintext:
 
 ```text
 fingerprint label: "cryptbox/binding-fingerprint/v1\0"
 
 fingerprint = SHA-256(fingerprint_label
-                      || record_flag[1]
                       || count[2]
                       || (part_id[16] || kind[1] || role[1])*)[0..8]
 ```
 
-`record_flag` is `01` when the declaration binds a record and `00` otherwise. Parts
-are sorted by part ID as in the binding, so part order does not change
-the fingerprint.
+Parts are sorted by part ID as in the binding, so part order does not change
+the fingerprint, and a record's part comes first with the nil part ID and role
+`03`.
 
 | Role | Code | Scopes |
 | --- | --- | --- |
@@ -151,35 +151,36 @@ the fingerprint.
 
 Roles are included because a role change alters index derivation and custody,
 so it is a migration even though the binding bytes don't change. The empty
-declaration's fingerprint is `5d86321261d64380`. A record's kind is a runtime value, not part of
-the declaration: a record of another kind fails authentication rather than reporting
+declaration's fingerprint is `65640fc8333534b9`. A record's kind is part of the
+declaration, so a value read with a record ID of another kind reports
 `BindingMismatch`.
 
 #### Presets
 
-Two ready-made bindings fix their declarations permanently:
+Two ready-made scopes fix their declarations permanently:
 
-- `FieldOnly` has no parts. Without a record it is the empty declaration, so its
-  binding is `field_id || 00 || 0000`. With a record, it binds the record and
-  no parts; that declaration's fingerprint is `4e56863e564d3de9`.
+- `()`, the empty scope, has no parts. Without a record it is the empty
+  declaration, so its binding is `seal_id || 0000`. With an `i64` record, as
+  `Recorded<(), i64>`, it binds the record alone; that declaration's fingerprint
+  is `76081b730530f822`.
 - `Tenant` has one part: part ID `1e8306bf-3135-4570-831c-6732f92550e9`, kind
   bytes, role `keys`. A tenant ID is non-empty opaque bytes; a UUID tenant is
-  its 16 bytes. Without a record, its binding fingerprint is `4bca2676fab96fae`.
-  For field `12345678-1234-4234-8234-1234567890ab` and tenant `acme`, the
+  its 16 bytes. Without a record, its binding fingerprint is `9b73125a52bc08d1`.
+  For seal `12345678-1234-4234-8234-1234567890ab` and tenant `acme`, the
   binding is:
 
   ```text
-  123456781234423482341234567890ab0000011e8306bf31354570831c6732f92550e9030000000461636d65
+  123456781234423482341234567890ab00011e8306bf31354570831c6732f92550e9030000000461636d65
   ```
 
 #### Reader rules
 
 The fingerprint is diagnostic only. The reader always takes the expected declaration
-from its own field, never from the envelope:
+from its own seal, never from the envelope:
 
 1. After structural parsing, and before any key lookup or AEAD work, compare the
    envelope's fingerprint with the fingerprint of the reader's declaration. A
-   field-only reader expects the empty declaration's fingerprint. Any difference
+   unscoped reader expects the empty declaration's fingerprint. Any difference
    reports `BindingMismatch`.
 2. Otherwise, decrypt with the binding built from the reader's declaration and the
    caller's values. Different part or record values under a matching declaration fail
@@ -301,7 +302,7 @@ establish freshness or row identity.
 
 ### Plaintext padding
 
-Encryption preserves payload length, so padding lets a field hide the exact
+Encryption preserves payload length, so padding lets a seal hide the exact
 encoded length by expanding it to a block boundary or fixed target. Suite 1 does
 not require padding; it can encrypt any byte length within its size limit.
 
@@ -321,9 +322,9 @@ The writer sets the padded flag exactly when it applies padding, and a reader
 removes padding exactly when the authenticated flag is set. The reader's current
 padding policy is not consulted, so padded bytes are never returned with their
 marker, and an unpadded value ending in `80` or `80 00` never loses those bytes.
-A field's padding policy therefore describes only how new values are written: it
+A seal's padding policy therefore describes only how new values are written: it
 can be enabled, disabled, or resized without making stored values unreadable.
-Re-encryption rewrites the payload and flag with the field's current policy.
+Re-encryption rewrites the payload and flag with the seal's current policy.
 
 The block size or fixed length is not recorded. Changing only those parameters
 is not visible in the envelope, so re-encryption applies them only to values it
@@ -357,7 +358,7 @@ maximum `(2^32 - 1) * 64`, which the reference implementation's AEAD rejects. It
 enforces the limit on encryption and rejects parsed/decrypted payloads implying a
 larger `P`, with `MessageTooLong`. Padding/envelope size arithmetic is checked;
 fixed padding rejects `E >= N` with `PaddingOverflow`. This is an algorithmic
-ceiling, not a recommended field size. Applications must choose smaller limits
+ceiling, not a recommended value size. Applications must choose smaller limits
 appropriate to their workloads; see
 [application responsibilities](security.md#application-responsibilities).
 
@@ -379,17 +380,17 @@ obligations.
 
 These fixed inputs and expected outputs help check byte-for-byte compatibility.
 The first vector encrypts unpadded plaintext (flags `00`) bound to
-`FieldId 12345678-1234-4234-8234-1234567890ab` alone, so its header carries the
+`SealId 12345678-1234-4234-8234-1234567890ab` alone, so its header carries the
 empty declaration's fingerprint:
 
 ```text
 root key:    1111111111111111111111111111111111111111111111111111111111111111
 KeyId:       11111111-2222-4333-8444-555555555555
-context:     123456781234423482341234567890ab000000
-fingerprint: 5d86321261d64380
+context:     123456781234423482341234567890ab0000
+fingerprint: 65640fc8333534b9
 plaintext:   6372797074626f7820766563746f72 ("cryptbox vector")
 nonce:       000102030405060708090a0b0c0d0e0f1011121314151617
-envelope:    43425800020100111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1415b33cbc7bfb19bc11afc1b31e3f3075b
+envelope:    434258000201001111111122224333844455555555555565640fc8333534b9000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e330da90830136eec9273c8315c1f22b7b
 ```
 
 The padded vector uses the same root key, `KeyId`, context, and nonce as the
@@ -398,7 +399,7 @@ flags `01`:
 
 ```text
 padded plaintext: 6372797074626f7820766563746f7280
-envelope:         43425800020101111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1419a17b89c9d88cb6cca540c1c17f5917f44
+envelope:         434258000201011111111122224333844455555555555565640fc8333534b9000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e3c5e74a10b924aec9355f18b42c5b131fa0
 ```
 
 Both decrypt to `"cryptbox vector"` whatever the reader's padding policy. The
@@ -407,7 +408,7 @@ independently as described under the scoped vectors below.
 
 ### Provisional scoped vectors
 
-These vectors use the root key, `KeyId`, `FieldId`, plaintext, and nonce above,
+These vectors use the root key, `KeyId`, `SealId`, plaintext, and nonce above,
 unpadded, with a [binding](#binding) of two parts:
 
 ```text
@@ -415,18 +416,19 @@ part 11111111-1111-1111-1111-111111111111  uuid   keys        33333333-3333-3333
 part 22222222-2222-2222-2222-222222222222  bytes  bound only  77732d31 ("ws-1")
 ```
 
-Without a record, the binding fingerprint is `81f8614d4eacb5fb`:
+Without a record, the binding fingerprint is `3c607e5f83c2ec23`:
 
 ```text
-context:  123456781234423482341234567890ab0000021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
-envelope: 434258000201001111111122224333844455555555555581f8614d4eacb5fb000102030405060708090a0b0c0d0e0f1011121314151617b887bad9f184f35041b40c3cce0d45ba321676cb9f5d3c39db8f90751b842f
+context:  123456781234423482341234567890ab00021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
+envelope: 43425800020100111111112222433384445555555555553c607e5f83c2ec23000102030405060708090a0b0c0d0e0f101112131415161760a4cae4f6c4caea7d60b573050315f837bb12b7e3f475cf7c866e358f4a14
 ```
 
-With the `i64` record `7`, the binding fingerprint is `58bfd20ea23bac14`:
+With the `i64` record `7`, bound first as the nil part, the binding fingerprint is
+`5d608899e74caec9`:
 
 ```text
-context:  123456781234423482341234567890ab0200000008000000000000000700021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
-envelope: 434258000201001111111122224333844455555555555558bfd20ea23bac14000102030405060708090a0b0c0d0e0f1011121314151617663bba5e4bb37a3df899258809ff56a6b4a7041d51f117d26698875eb9f262
+context:  123456781234423482341234567890ab000300000000000000000000000000000000020000000800000000000000071111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31
+envelope: 43425800020100111111112222433384445555555555555d608899e74caec9000102030405060708090a0b0c0d0e0f10111213141516174f25a5c9a5434209ef7a02cea389bf869eddf936d6b19486820d8406e8db7b
 ```
 
 The fingerprints, bindings, and all four envelopes above were computed
@@ -467,7 +469,7 @@ bits in the final byte are zero and noncanonical stored values are rejected.
 ### Key derivation and index input
 
 The logical `IndexId` distinguishes indexes, such as two differently normalized
-projections of the same field. It is separate from `IndexKeyId`: one identifies
+projections of the same seal. It is separate from `IndexKeyId`: one identifies
 the index's meaning, the other its key generation. `IndexId` and normalization
 come from the application schema, and the index binding from each call; none
 of them is stored in the index.
@@ -489,13 +491,13 @@ mac_input = MAC_label || context || normalized_length_be_u64 || normalized_bytes
 
 ### Index binding
 
-A blind index is derived under its **index binding**: the field's binding
+A blind index is derived under its **index binding**: the seal's binding
 restricted to its `keys` and `index` parts. Bound-only parts and the record are
 left out, because a query knows its scope but not the row. The index binding
 uses the [binding](#binding) encoding:
 
-- It is the field ID, `00` for no record, then those parts sorted by part ID.
-- With no `keys` or `index` parts, it is the empty binding, as for `FieldOnly`.
+- It is the seal ID, then those parts sorted by part ID.
+- With no `keys` or `index` parts, it is the empty binding, as for the empty scope.
 
 Two bindings that agree on their `keys` and `index` values share the index
 binding, so their indexes of the same value are equal. The key source receives
@@ -506,7 +508,7 @@ the key scope of the `keys` parts.
 Inputs are an independent 32-byte blind-index root (never an encryption root),
 its immutable `IndexKeyId`, the expected [index binding](#index-binding),
 logical `IndexId`, retained bit count, and normalized bytes. `IndexKeyId`,
-`IndexId`, and any `FieldId` are encoded using the UUID convention above, and
+`IndexId`, and any `SealId` are encoded using the UUID convention above, and
 `binding` is the encoded index binding. The version is one byte `02`; `bits_be`
 is a two-byte unsigned big-endian count in `1..=256`.
 
@@ -548,23 +550,23 @@ decryption and normalized plaintext comparison. See the
 root key:     2222222222222222222222222222222222222222222222222222222222222222
 IndexKeyId:   aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
 IndexId:      abcdefab-cdef-4def-8def-abcdefabcdef
-FieldId:      12345678-1234-4234-8234-1234567890ab
-binding:      123456781234423482341234567890ab000000
+SealId:      12345678-1234-4234-8234-1234567890ab
+binding:      123456781234423482341234567890ab0000
 bits:         13
 normalized:   6e6f726d616c697a6564406578616d706c652e636f6d ("normalized@example.com")
-stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000df040
+stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000de800
 ```
 
-The final byte `40` has its three unused low bits cleared.
+The final byte `00` has its three unused low bits cleared.
 
 ### Scoped blind-index vector
 
-The same inputs, for a field bound to the `Tenant` preset with tenant `acme`.
-The index binding is the field's `Tenant` binding without a record:
+The same inputs, for a seal bound to the `Tenant` preset with tenant `acme`.
+The index binding is the seal's `Tenant` binding without a record:
 
 ```text
-binding:      123456781234423482341234567890ab0000011e8306bf31354570831c6732f92550e9030000000461636d65
-stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d28c0
+binding:      123456781234423482341234567890ab00011e8306bf31354570831c6732f92550e9030000000461636d65
+stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d8b88
 ```
 
 Both blind-index vectors were computed from the recipe above independently of

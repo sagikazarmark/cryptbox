@@ -2,7 +2,7 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
-use crate::{Args, Codec, EncryptionKeySource, Error, Field, FieldOnly, Sealed};
+use crate::{Args, Codec, EncryptionKeySource, Error, Seal, Sealed};
 
 use super::{LegacyFormat, legacy};
 
@@ -52,13 +52,12 @@ use super::{LegacyFormat, legacy};
 ///
 /// struct UserEmail;
 ///
-/// impl cryptbox::Field for UserEmail {
-///     const ID: cryptbox::FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// impl cryptbox::Seal for UserEmail {
+///     const ID: cryptbox::SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = cryptbox::Utf8;
-///     type Binding = cryptbox::FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -91,17 +90,17 @@ use super::{LegacyFormat, legacy};
 /// assert!(!read.is_legacy());
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
-pub struct MaybeEncrypted<F: Field> {
+pub struct MaybeEncrypted<F: Seal> {
     state: State<F>,
 }
 
-enum State<F: Field> {
+enum State<F: Seal> {
     Sealed(Sealed<F>),
     Plaintext(F::Value),
     Legacy(Zeroizing<Vec<u8>>),
 }
 
-fn decode_legacy<F: Field>(
+fn decode_legacy<F: Seal>(
     bytes: &[u8],
     legacy: Option<&dyn LegacyFormat>,
 ) -> Result<F::Value, Error> {
@@ -111,7 +110,7 @@ fn decode_legacy<F: Field>(
 
 impl<F> MaybeEncrypted<F>
 where
-    F: Field,
+    F: Seal,
 {
     /// Classifies stored bytes as a `CryptBox` envelope or legacy data.
     ///
@@ -153,13 +152,12 @@ where
     ///
     /// struct LegacyBlob;
     ///
-    /// impl cryptbox::Field for LegacyBlob {
-    ///     const ID: cryptbox::FieldId = cryptbox::field_id!("3f0e8f5c-2d4b-4e7a-9c1d-6b5a4f3e2d1c");
+    /// impl cryptbox::Seal for LegacyBlob {
+    ///     const ID: cryptbox::SealId = cryptbox::seal_id!("3f0e8f5c-2d4b-4e7a-9c1d-6b5a4f3e2d1c");
     ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
-    ///     const RECORD: bool = false;
     ///     type Value = Vec<u8>;
     ///     type Codec = cryptbox::Raw;
-    ///     type Binding = cryptbox::FieldOnly;
+    ///     type Scope = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -180,7 +178,7 @@ where
 
     /// Consumes the read and returns the plaintext value.
     ///
-    /// Legacy bytes use identity recovery and decode through the field's
+    /// Legacy bytes use identity recovery and decode through the seal's
     /// codec; an envelope is opened under `args` with `keys`.
     ///
     /// # Errors
@@ -200,7 +198,7 @@ where
     }
 
     /// Consumes the read, recovering non-envelope bytes with `legacy` before
-    /// decoding them through the field's codec.
+    /// decoding them through the seal's codec.
     ///
     /// Valid `CryptBox` envelopes ignore the legacy handler and are opened
     /// under `args`.
@@ -225,7 +223,7 @@ where
 
 impl<F> MaybeEncrypted<F>
 where
-    F: Field<Binding = FieldOnly>,
+    F: Seal<Scope = ()>,
 {
     /// Consumes the read and opens it with the [installed keys](crate::keys::installed).
     ///
@@ -234,7 +232,7 @@ where
     /// # Errors
     ///
     /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
-    /// opening fails or legacy bytes cannot be decoded by the field's codec.
+    /// opening fails or legacy bytes cannot be decoded by the seal's codec.
     pub fn open_global(self) -> Result<F::Value, Error> {
         match self.state {
             State::Sealed(sealed) => sealed.open_global(),
@@ -259,7 +257,7 @@ where
     }
 }
 
-impl<F: Field> MaybeEncrypted<F> {
+impl<F: Seal> MaybeEncrypted<F> {
     /// Returns whether the value represents legacy, non-envelope storage.
     #[doc(alias = "is_plaintext")]
     #[must_use]
@@ -277,7 +275,7 @@ impl<F: Field> MaybeEncrypted<F> {
     }
 }
 
-impl<F: Field> From<Sealed<F>> for MaybeEncrypted<F> {
+impl<F: Seal> From<Sealed<F>> for MaybeEncrypted<F> {
     fn from(sealed: Sealed<F>) -> Self {
         Self {
             state: State::Sealed(sealed),
@@ -285,7 +283,7 @@ impl<F: Field> From<Sealed<F>> for MaybeEncrypted<F> {
     }
 }
 
-impl<F: Field> fmt::Debug for MaybeEncrypted<F> {
+impl<F: Seal> fmt::Debug for MaybeEncrypted<F> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("MaybeEncrypted([REDACTED])")
     }

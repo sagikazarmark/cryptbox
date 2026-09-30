@@ -6,23 +6,23 @@ use std::{
 };
 
 use crate::{
-    Binding, BlindIndexSpec, Codec, Field, FieldId, IndexId, Padding, PartKind, PartRole, PartSpec,
-    binding::declaration_fingerprint,
+    BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartRole, PartSpec, Scope, Seal, SealId,
+    SealScope,
+    binding::{PartsOf, declaration_fingerprint},
 };
 
-/// Lists fields and blind indexes with their persistent schema.
+/// Lists seals and blind indexes with their persistent schema.
 ///
-/// Register every field and index explicitly, render the manifest with
+/// Register every seal and index explicitly, render the manifest with
 /// [`Display`](fmt::Display), and compare the result with a committed
 /// snapshot in a test. A change to persistent schema then shows up as a
 /// snapshot diff for review. Assert that [`Self::duplicates`] is empty as well.
 ///
-/// Each field lists:
+/// Each seal lists:
 ///
-/// - its field ID, codec ID, and padding;
-/// - `record`: whether it binds a record;
+/// - its seal ID, codec ID, and padding;
+/// - `record`: the kind of the record ID it is bound to, or `no`;
 /// - `binding`: the [binding fingerprint](crate::CiphertextInfo::context_fingerprint),
-///   in hex, that its headers carry, followed by each part's ID, kind, and role in part-ID
 ///   order;
 /// - `shred unit`: the finest unit that destroying root keys can shred, if the
 ///   application stores root keys per [key scope](crate::KeyScope): the
@@ -32,7 +32,7 @@ use crate::{
 ///   tenant, shreds only that coarser unit; say so in the custody label;
 /// - `custody`: the label given with [`Self::custody`], if any.
 ///
-/// Each index lists its index ID, field ID, bits, and normalizer name.
+/// Each index lists its index ID, seal ID, bits, and normalizer name.
 ///
 /// The output names IDs, never Rust types, so it is the same on every
 /// toolchain and survives renaming or moving a marker. The value type is not
@@ -42,31 +42,30 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, Padding, Tenant, Utf8, schema::Manifest};
+/// use cryptbox::{Padding, Recorded, Seal, SealId, Tenant, Utf8, schema::Manifest};
 ///
 /// struct Nickname;
 ///
-/// impl Field for Nickname {
-///     const ID: FieldId = cryptbox::field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
+/// impl Seal for Nickname {
+///     const ID: SealId = cryptbox::seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 ///     const PADDING: Padding = Padding::block(16);
-///     const RECORD: bool = true;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = Tenant;
+///     type Scope = Recorded<Tenant, i64>;
 ///     type Indexes = ();
 /// }
 ///
 /// let manifest = Manifest::new()
-///     .field::<Nickname>()
+///     .seal::<Nickname>()
 ///     .custody::<Nickname>("general KMS, one key per tenant");
 ///
 /// assert!(manifest.duplicates().is_empty());
 /// assert_eq!(manifest.to_string(), "\
-/// field 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
+/// seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
 ///   codec: utf8
 ///   padding: block(16)
-///   record: yes
-///   binding: a28551bd5fbddbb1
+///   record: i64
+///   binding: 75e187c06144e3b7
 ///     part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
 ///   shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
 ///   custody: general KMS, one key per tenant
@@ -74,7 +73,7 @@ use crate::{
 /// ```
 #[derive(Debug, Default)]
 pub struct Manifest {
-    fields: Vec<FieldEntry>,
+    seals: Vec<SealEntry>,
     indexes: Vec<IndexEntry>,
 }
 
@@ -83,19 +82,19 @@ struct IndexEntry {
     marker: TypeId,
     name: &'static str,
     id: IndexId,
-    field: FieldId,
+    seal: SealId,
     bits: u16,
     normalizer: &'static str,
 }
 
 #[derive(Debug)]
-struct FieldEntry {
+struct SealEntry {
     marker: TypeId,
     name: &'static str,
-    id: FieldId,
+    id: SealId,
     codec: &'static str,
     padding: Padding,
-    record: bool,
+    record: Option<PartKind>,
     parts: &'static [PartSpec],
     fingerprint: [u8; 8],
     custody: Option<String>,
@@ -108,18 +107,18 @@ impl Manifest {
         Self::default()
     }
 
-    /// Registers field `F`.
+    /// Registers seal `F`.
     ///
     /// Registering it again changes nothing.
     #[must_use]
-    pub fn field<F: Field>(mut self) -> Self {
-        self.field_entry::<F>();
+    pub fn seal<F: Seal>(mut self) -> Self {
+        self.seal_entry::<F>();
         self
     }
 
-    /// Labels which keys protect field `F`, registering it if needed.
+    /// Labels which keys protect seal `F`, registering it if needed.
     ///
-    /// The library cannot see which keyring an application passes for a field,
+    /// The library cannot see which keyring an application passes for a seal,
     /// so the manifest records custody declaratively: the label appears in the
     /// snapshot for reviewers and auditors, and a later label replaces an
     /// earlier one. Name the key custody, such as `"payments KMS, per org"`,
@@ -127,38 +126,38 @@ impl Manifest {
     /// line. Test that the application passes those keys with
     /// [`assert_sealed_under`](crate::testing::assert_sealed_under).
     #[must_use]
-    pub fn custody<F: Field>(mut self, label: impl Into<String>) -> Self {
-        self.field_entry::<F>().custody = Some(label.into());
+    pub fn custody<F: Seal>(mut self, label: impl Into<String>) -> Self {
+        self.seal_entry::<F>().custody = Some(label.into());
         self
     }
 
-    fn field_entry<F: Field>(&mut self) -> &mut FieldEntry {
+    fn seal_entry<F: Seal>(&mut self) -> &mut SealEntry {
         let marker = TypeId::of::<F>();
         let position = self
-            .fields
+            .seals
             .iter()
-            .position(|field| field.marker == marker)
+            .position(|seal| seal.marker == marker)
             .unwrap_or_else(|| {
-                self.fields.push(FieldEntry {
+                self.seals.push(SealEntry {
                     marker,
                     name: type_name::<F>(),
                     id: F::ID,
                     codec: <F::Codec as Codec<F::Value>>::ID,
                     padding: F::PADDING,
-                    record: F::RECORD,
-                    parts: <F::Binding as Binding>::PARTS,
-                    fingerprint: declaration_fingerprint::<F::Binding>(F::RECORD),
+                    record: <F::Scope as SealScope>::RECORD,
+                    parts: <PartsOf<F> as Scope>::PARTS,
+                    fingerprint: declaration_fingerprint::<F::Scope>(),
                     custody: None,
                 });
-                self.fields.len() - 1
+                self.seals.len() - 1
             });
 
-        &mut self.fields[position]
+        &mut self.seals[position]
     }
 
     /// Registers blind index `I`.
     ///
-    /// Register its field separately with [`Self::field`]. Registering it again
+    /// Register its seal separately with [`Self::seal`]. Registering it again
     /// changes nothing.
     #[must_use]
     pub fn index<I: BlindIndexSpec>(mut self) -> Self {
@@ -168,7 +167,7 @@ impl Manifest {
                 marker,
                 name: type_name::<I>(),
                 id: I::ID,
-                field: <I::Field as Field>::ID,
+                seal: <I::Seal as Seal>::ID,
                 bits: I::BITS,
                 normalizer: I::NORMALIZER,
             });
@@ -176,21 +175,21 @@ impl Manifest {
         self
     }
 
-    /// Returns every field or index ID that more than one registered marker declares.
+    /// Returns every seal or index ID that more than one registered marker declares.
     ///
-    /// Markers that share a field ID are one logical field and can read each
+    /// Markers that share a seal ID are one seal and can read each
     /// other's ciphertext. That is occasionally deliberate, but usually a copied
     /// ID, so assert that this is empty in a test. Each duplicate names the
     /// markers by [`std::any::type_name`] to help find the copy; the manifest's
     /// own output lists only the ID.
     #[must_use]
     pub fn duplicates(&self) -> Vec<Duplicate> {
-        let fields = shared_ids(self.fields.iter().map(|field| (field.id, field.name)))
-            .map(|(id, markers)| Duplicate::Field { id, markers });
+        let seals = shared_ids(self.seals.iter().map(|seal| (seal.id, seal.name)))
+            .map(|(id, markers)| Duplicate::Seal { id, markers });
         let indexes = shared_ids(self.indexes.iter().map(|index| (index.id, index.name)))
             .map(|(id, markers)| Duplicate::Index { id, markers });
 
-        fields.chain(indexes).collect()
+        seals.chain(indexes).collect()
     }
 }
 
@@ -198,10 +197,10 @@ impl Manifest {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Duplicate {
-    /// Several field markers declare one field ID.
-    Field {
+    /// Several seal types declare one seal ID.
+    Seal {
         /// The shared ID.
-        id: FieldId,
+        id: SealId,
         /// The markers' type names, in registration order.
         markers: Vec<&'static str>,
     },
@@ -217,8 +216,8 @@ pub enum Duplicate {
 impl fmt::Display for Duplicate {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Field { id, markers } => {
-                write!(formatter, "duplicate field ID {id}: {}", markers.join(", "))
+            Self::Seal { id, markers } => {
+                write!(formatter, "duplicate seal ID {id}: {}", markers.join(", "))
             }
             Self::Index { id, markers } => {
                 write!(formatter, "duplicate index ID {id}: {}", markers.join(", "))
@@ -245,13 +244,17 @@ fn shared_ids<Id: PartialEq>(
 
 impl fmt::Display for Manifest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for field in &self.fields {
-            writeln!(formatter, "field {}", field.id)?;
-            writeln!(formatter, "  codec: {}", field.codec)?;
-            writeln!(formatter, "  padding: {}", field.padding)?;
-            writeln!(formatter, "  record: {}", yes_no(field.record))?;
-            writeln!(formatter, "  binding: {}", hex::encode(field.fingerprint))?;
-            for part in field.parts {
+        for seal in &self.seals {
+            writeln!(formatter, "seal {}", seal.id)?;
+            writeln!(formatter, "  codec: {}", seal.codec)?;
+            writeln!(formatter, "  padding: {}", seal.padding)?;
+            writeln!(
+                formatter,
+                "  record: {}",
+                seal.record.map_or("no", kind_name)
+            )?;
+            writeln!(formatter, "  binding: {}", hex::encode(seal.fingerprint))?;
+            for part in seal.parts {
                 writeln!(
                     formatter,
                     "    part {} {} {}",
@@ -261,7 +264,7 @@ impl fmt::Display for Manifest {
                 )?;
             }
             write!(formatter, "  shred unit: ")?;
-            let mut keys = field
+            let mut keys = seal
                 .parts
                 .iter()
                 .filter(|part| part.role() == PartRole::Keys);
@@ -276,7 +279,7 @@ impl fmt::Display for Manifest {
                     writeln!(formatter)?;
                 }
             }
-            if let Some(custody) = &field.custody {
+            if let Some(custody) = &seal.custody {
                 write!(formatter, "  custody: ")?;
                 for character in custody.chars() {
                     if character.is_control() || matches!(character, '\u{2028}' | '\u{2029}') {
@@ -291,7 +294,7 @@ impl fmt::Display for Manifest {
 
         for index in &self.indexes {
             writeln!(formatter, "index {}", index.id)?;
-            writeln!(formatter, "  field: {}", index.field)?;
+            writeln!(formatter, "  seal: {}", index.seal)?;
             writeln!(formatter, "  bits: {}", index.bits)?;
             writeln!(formatter, "  normalizer: {}", index.normalizer)?;
         }
@@ -299,7 +302,7 @@ impl fmt::Display for Manifest {
         // Type names are not stable across compilers, so the snapshot names IDs only.
         for duplicate in self.duplicates() {
             match duplicate {
-                Duplicate::Field { id, .. } => writeln!(formatter, "duplicate field ID {id}")?,
+                Duplicate::Seal { id, .. } => writeln!(formatter, "duplicate seal ID {id}")?,
                 Duplicate::Index { id, .. } => writeln!(formatter, "duplicate index ID {id}")?,
             }
         }
@@ -309,10 +312,6 @@ impl fmt::Display for Manifest {
 }
 
 // Manifest spellings are snapshot text: keep them stable.
-const fn yes_no(flag: bool) -> &'static str {
-    if flag { "yes" } else { "no" }
-}
-
 const fn kind_name(kind: PartKind) -> &'static str {
     match kind {
         PartKind::Uuid => "uuid",
@@ -329,38 +328,36 @@ const fn role_name(role: PartRole) -> &'static str {
     }
 }
 
-/// Fails compilation when two of the listed markers declare the same ID.
+/// Fails compilation when two of the listed types declare the same ID.
 ///
-/// List field markers to check their field IDs, or `indexes:` followed by
+/// List seals to check their seal IDs, or `indexes:` followed by
 /// blind-index markers to check their index IDs. The check is a constant
 /// assertion, so it works with manual impls and derives alike and needs no test
-/// to run. Markers that deliberately share a field ID are one logical field;
+/// to run. Markers that deliberately share a seal ID are one seal;
 /// leave one of them out.
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Utf8};
+/// use cryptbox::{Seal, SealId, Padding, Utf8};
 ///
 /// struct HomeAddress;
 ///
-/// impl Field for HomeAddress {
-///     const ID: FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
+/// impl Seal for HomeAddress {
+///     const ID: SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
 /// struct BillingAddress;
 ///
-/// impl Field for BillingAddress {
-///     const ID: FieldId = cryptbox::field_id!("7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13");
+/// impl Seal for BillingAddress {
+///     const ID: SealId = cryptbox::seal_id!("7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -370,26 +367,24 @@ const fn role_name(role: PartRole) -> &'static str {
 /// A copied ID fails to compile:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{Field, FieldId, FieldOnly, Padding, Utf8};
+/// # use cryptbox::{Seal, SealId, Padding, Utf8};
 /// # struct HomeAddress;
-/// # impl Field for HomeAddress {
-/// #     const ID: FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
+/// # impl Seal for HomeAddress {
+/// #     const ID: SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 /// #     const PADDING: Padding = Padding::NONE;
-/// #     const RECORD: bool = false;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// struct BillingAddress;
 ///
-/// impl Field for BillingAddress {
-///     const ID: FieldId = cryptbox::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
+/// impl Seal for BillingAddress {
+///     const ID: SealId = cryptbox::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -399,22 +394,21 @@ const fn role_name(role: PartRole) -> &'static str {
 /// So does a copied index ID:
 ///
 /// ```compile_fail,E0080
-/// # use cryptbox::{BlindIndexError, BlindIndexSpec, Field, FieldId, FieldOnly, IndexId, Padding, Raw};
+/// # use cryptbox::{BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Raw};
 /// # use zeroize::Zeroizing;
 /// # struct Bytes;
-/// # impl Field for Bytes {
-/// #     const ID: FieldId = FieldId::from_bytes([1; 16]);
+/// # impl Seal for Bytes {
+/// #     const ID: SealId = SealId::from_bytes([1; 16]);
 /// #     const PADDING: Padding = Padding::NONE;
-/// #     const RECORD: bool = false;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Binding = FieldOnly;
+/// #     type Scope = ();
 /// #     type Indexes = ();
 /// # }
 /// struct Exact;
 ///
 /// impl BlindIndexSpec for Exact {
-///     type Field = Bytes;
+///     type Seal = Bytes;
 ///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -426,7 +420,7 @@ const fn role_name(role: PartRole) -> &'static str {
 /// struct Prefix;
 ///
 /// impl BlindIndexSpec for Prefix {
-///     type Field = Bytes;
+///     type Seal = Bytes;
 ///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 16;
 ///     const NORMALIZER: &'static str = "prefix/1";
@@ -447,12 +441,12 @@ macro_rules! assert_unique_ids {
             ::core::concat!("duplicate index ID among ", ::core::stringify!($($index),+)),
         );
     };
-    ($($field:ty),+ $(,)?) => {
+    ($($seal:ty),+ $(,)?) => {
         const _: () = ::core::assert!(
             !$crate::__private::has_duplicate(&[
-                $(*<$field as $crate::Field>::ID.as_bytes()),+
+                $(*<$seal as $crate::Seal>::ID.as_bytes()),+
             ]),
-            ::core::concat!("duplicate field ID among ", ::core::stringify!($($field),+)),
+            ::core::concat!("duplicate seal ID among ", ::core::stringify!($($seal),+)),
         );
     };
 }
@@ -479,8 +473,8 @@ pub const fn has_duplicate(ids: &[[u8; 16]]) -> bool {
 /// Reports whether `written` holds exactly the index IDs of `declared`, each
 /// once and in any order, at compile time.
 ///
-/// `#[derive(Record)]` checks each field's written indexes against its
-/// [`Field::Indexes`](crate::Field::Indexes) with it.
+/// `#[derive(Record)]` checks each field's written indexes against its seal's
+/// [`Seal::Indexes`](crate::Seal::Indexes) with it.
 #[doc(hidden)]
 #[must_use]
 pub const fn writes_declared_indexes(

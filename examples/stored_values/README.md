@@ -29,7 +29,7 @@ and write ciphertext and indexes atomically.
   Serde stores their complete bytes (integer arrays in JSON).
 - Deserialization, like `from_bytes`, checks **structure only**: no key lookup,
   authentication, decryption or index recomputation. Typed wrappers express the
-  caller's intended field/index, not proof of origin.
+  caller's intended seal/index, not proof of origin.
 - `open` authenticates, unpads and decodes, returning the bare `String`. Application validation,
   normalized candidate comparison and stored-index consistency are separate checks.
 

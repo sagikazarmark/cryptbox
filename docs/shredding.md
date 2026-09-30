@@ -31,7 +31,7 @@ established afterwards:
 1. **The scope is a shred unit.** The unit you can shred is the finest `keys`
    part whose root keys are stored independently. If every org has its own
    roots, one org can be shredded; its workspaces, bound only, cannot be
-   shredded on their own. A field with no `keys` part is not shreddable at all.
+   shredded on their own. A seal with no `keys` part is not shreddable at all.
    See [choosing a role for each part](bindings.md#choose-a-role-for-each-part).
 2. **Custody is per scope, for both roles.** The scope's encryption and
    blind-index roots exist only in its own keyring, are never shared with

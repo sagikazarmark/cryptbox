@@ -1,17 +1,17 @@
-//! Key selection: which keyring protects a field or blind index in a key scope.
+//! Key selection: which keyring protects a seal or blind index in a key scope.
 //!
 //! Key material and keyrings live in `key`, below the cryptographic cores; this
 //! layer sits above bindings, because a key source is asked by [`KeyScope`].
 
 use std::sync::Arc;
 
-use crate::{BlindIndexKeyring, EncryptionKeyring, Error, FieldId, IndexId, KeyScope, Keys};
+use crate::{BlindIndexKeyring, EncryptionKeyring, Error, IndexId, KeyScope, Keys, SealId};
 
 /// Supplies the encryption keyring for each operation.
 ///
-/// Operations pass the source the field they act on and the [`KeyScope`] of the
+/// Operations pass the source the seal they act on and the [`KeyScope`] of the
 /// binding arguments. [`EncryptionKeyring`] and [`Keys`] ignore both and return
-/// themselves, so which keyring protects which field or scope is application
+/// themselves, so which keyring protects which seal or scope is application
 /// code: pass that keyring to the call, or implement this trait to choose it.
 /// See [choosing keyrings] for the mistakes a source must avoid, since sealing
 /// with the wrong keyring succeeds and is only noticed when reading.
@@ -26,14 +26,14 @@ use crate::{BlindIndexKeyring, EncryptionKeyring, Error, FieldId, IndexId, KeySc
     "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
 )]
 pub trait EncryptionKeySource: Send + Sync {
-    /// Returns the keyring that protects `field` in `scope`.
+    /// Returns the keyring that protects `seal` in `scope`.
     ///
     /// # Errors
     ///
     /// Returns an error when this source cannot supply that keyring.
     fn encryption_keyring(
         &self,
-        field: FieldId,
+        seal: SealId,
         scope: &KeyScope,
     ) -> Result<EncryptionKeyring, Error>;
 }
@@ -63,7 +63,7 @@ pub trait BlindIndexKeySource: Send + Sync {
 }
 
 impl EncryptionKeySource for EncryptionKeyring {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
         Ok(self.clone())
     }
 }
@@ -75,7 +75,7 @@ impl BlindIndexKeySource for BlindIndexKeyring {
 }
 
 impl EncryptionKeySource for Keys {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
         Ok(self.encryption.clone())
     }
 }
@@ -91,10 +91,10 @@ impl BlindIndexKeySource for Keys {
 impl<S: EncryptionKeySource + ?Sized> EncryptionKeySource for &S {
     fn encryption_keyring(
         &self,
-        field: FieldId,
+        seal: SealId,
         scope: &KeyScope,
     ) -> Result<EncryptionKeyring, Error> {
-        (**self).encryption_keyring(field, scope)
+        (**self).encryption_keyring(seal, scope)
     }
 }
 
@@ -111,10 +111,10 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for &S {
 impl<S: EncryptionKeySource + ?Sized> EncryptionKeySource for Arc<S> {
     fn encryption_keyring(
         &self,
-        field: FieldId,
+        seal: SealId,
         scope: &KeyScope,
     ) -> Result<EncryptionKeyring, Error> {
-        (**self).encryption_keyring(field, scope)
+        (**self).encryption_keyring(seal, scope)
     }
 }
 
@@ -135,7 +135,7 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
 /// [`keys::install`](crate::keys::install). Implement this trait over your own
 /// static to use other keys (a second deployment, a test fixture) without
 /// installing the global. Like the column, it serves only
-/// [`FieldOnly`](crate::FieldOnly) fields: a value bound to a tenant is sealed
+/// unscoped seals: a value bound to a tenant is sealed
 /// explicitly with that tenant's keys.
 ///
 /// # Examples
@@ -144,19 +144,18 @@ impl<S: BlindIndexKeySource + ?Sized> BlindIndexKeySource for Arc<S> {
 /// use std::sync::LazyLock;
 ///
 /// use cryptbox::{
-///     EncryptionKey, EncryptionKeyring, Error, Field, FieldId, FieldOnly, ColumnKeys, Keys,
+///     EncryptionKey, EncryptionKeyring, Error, Seal, SealId, ColumnKeys, Keys,
 ///     Padding, Plain, Utf8,
 /// };
 ///
 /// struct UserEmail;
 ///
-/// impl Field for UserEmail {
-///     const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+/// impl Seal for UserEmail {
+///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///

@@ -13,7 +13,7 @@ use zeroize::Zeroizing;
 
 /// An org scopes keys; a region and a shard scope blind indexes; a workspace
 /// is only bound. The org's part ID sorts last, so an object key moves it first.
-#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Binding)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, cryptbox::Scope)]
 #[cryptbox(index_args = OrgSearch)]
 struct OrgWorkspace {
     #[cryptbox(part = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92", keys)]
@@ -26,11 +26,11 @@ struct OrgWorkspace {
     workspace: [u8; 16],
 }
 
-#[derive(cryptbox::Field)]
+#[derive(cryptbox::Seal)]
 #[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    binding = Tenant,
+    scope = Tenant,
     indexes(EmailLookup)
 )]
 struct CustomerEmail;
@@ -43,7 +43,7 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 #[derive(cryptbox::BlindIndexSpec)]
 #[cryptbox(
     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-    field = CustomerEmail,
+    seal = CustomerEmail,
     bits = 32,
     query = str,
     normalize = normalize_email,
@@ -241,11 +241,11 @@ fn an_object_key_encodes_only_valid_index_args() {
         Ok(())
     );
     assert_eq!(
-        ObjectKey::<cryptbox::FieldOnly>::encode(&()).unwrap(),
+        ObjectKey::<()>::encode(&()).unwrap(),
         "",
         "no index args, no key"
     );
-    assert_eq!(ObjectKey::<cryptbox::FieldOnly>::parse(""), Ok(()));
+    assert_eq!(ObjectKey::<()>::parse(""), Ok(()));
 }
 
 #[test]

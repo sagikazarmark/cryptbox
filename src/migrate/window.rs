@@ -1,7 +1,7 @@
 use crate::{
-    Args, Binding, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
-    EncryptionKeySource, Error, Field, Sealed,
-    binding::{declaration_fingerprint, with_domain},
+    Args, BindingDomain, BlindIndex, BlindIndexKeySource, BlindIndexSpec, Codec,
+    EncryptionKeySource, Error, Seal, SealScope, Sealed,
+    binding::{PartsOf, with_domain},
     blind::{IndexArgs, probes_in},
     bound, inspect_ciphertext,
 };
@@ -9,12 +9,14 @@ use crate::{
 /// Opens a value during a legacy-binding window, whichever binding declaration it is
 /// sealed with.
 ///
-/// A value whose header names the field's current declaration is opened under `args`
+/// A value whose header names the seal's current declaration is opened under `args`
 /// with `keys`, as [`Sealed::open`] does. Any other value is opened under the
-/// older declaration `Old` with `old_keys`: each of `Old`'s parts takes its value
-/// from the binding in `args` by part ID, and the record in `args` is bound
-/// when the header names `Old` with a record, as
-/// [`RowPlanner::legacy_binding`](super::RowPlanner::legacy_binding) does.
+/// older seal scope `Old` with `old_keys`: each of `Old`'s parts takes its value
+/// from the scope in `args` by part ID, and the record in `args` is bound when
+/// `Old` binds one, as
+/// [`RowPlanner::legacy_binding`](super::RowPlanner::legacy_binding) does. A
+/// value moving out of a record needs its record ID, which the arguments of a
+/// seal that binds none cannot carry: reseal such values with a sweep.
 ///
 /// The header's binding fingerprint only chooses the declaration to try: either way the
 /// value must authenticate under that declaration's binding.
@@ -22,8 +24,9 @@ use crate::{
 /// # Errors
 ///
 /// Returns [`Error::BindingMismatch`] for a value of neither declaration, and
-/// [`Error::InvalidBinding`] when `Old` has a part that the current binding
-/// lacks or holds with another kind. Also returns any error of
+/// [`Error::InvalidBinding`] when `Old` has a part that the current scope
+/// lacks or holds with another kind, or binds a record `args` lacks. Also
+/// returns any error of
 /// [`Sealed::open`].
 pub fn open_across<Old, F>(
     sealed: &Sealed<F>,
@@ -32,19 +35,17 @@ pub fn open_across<Old, F>(
     old_keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<F::Value, Error>
 where
-    Old: Binding,
-    F: Field,
+    Old: SealScope,
+    F: Seal,
 {
     let bytes = sealed.as_bytes();
     let stored = inspect_ciphertext(bytes)?.context_fingerprint();
-    let plaintext = with_domain::<F, _, _>(args, |domain, binding, record| {
+    let plaintext = with_domain::<F, _, _>(args, |domain, scope, record| {
         if stored == domain.fingerprint() {
             return bound::open(&domain, bytes, keys);
         }
 
-        let recorded = record.is_some() && stored == declaration_fingerprint::<Old>(true);
-        let record = if recorded { record } else { None };
-        let old = BindingDomain::projected::<Old, F::Binding>(F::ID, binding, record)?;
+        let old = BindingDomain::projected::<Old, PartsOf<F>>(F::ID, scope, record)?;
         bound::open(&old, bytes, old_keys)
     })?;
 
@@ -52,7 +53,7 @@ where
 }
 
 /// Derives the probes of a lookup during a legacy-binding window: those of
-/// the field's current index binding under `args` with `keys`, followed by
+/// the seal's current index binding under `args` with `keys`, followed by
 /// those of the older declaration `Old` with `old_keys`.
 ///
 /// A row keeps the index it was written with until a sweep reseals it, so a
@@ -82,13 +83,10 @@ pub fn probes_across<Old, S>(
 ) -> Result<Vec<BlindIndex<S>>, Error>
 where
     S: BlindIndexSpec,
-    Old: Binding,
+    Old: SealScope,
 {
     let mut probes = S::probes_with(query, args, keys)?;
-    let old = BindingDomain::index_projected::<Old, <S::Field as Field>::Binding>(
-        <S::Field as Field>::ID,
-        args,
-    )?;
+    let old = BindingDomain::index_projected::<Old, PartsOf<S::Seal>>(<S::Seal as Seal>::ID, args)?;
     for probe in probes_in::<S>(query, &old, old_keys)? {
         if !probes.contains(&probe) {
             probes.push(probe);

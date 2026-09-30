@@ -4,11 +4,12 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Sealed, Utf8,
-    field_id, index_id, index_key_id, key_id,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
+    index_key_id, key_id,
     migrate::{
         LegacyError, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable,
     },
+    seal_id,
 };
 use sqlx::{
     Connection, Row,
@@ -23,13 +24,12 @@ const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("40000000-0000-4000-8000-
 
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
+impl Seal for UserEmail {
+    const ID: cryptbox::SealId = seal_id!("50000000-0000-4000-8000-000000000005");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -48,7 +48,7 @@ impl LegacyFormat for ToyLegacy {
 }
 
 impl BlindIndexSpec for EmailLookup {
-    type Field = UserEmail;
+    type Seal = UserEmail;
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";

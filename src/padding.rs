@@ -6,13 +6,13 @@ use crate::Error;
 
 /// Expands encoded plaintext before encryption to hide its exact length.
 ///
-/// A field selects its policy with [`Field::PADDING`](crate::Field::PADDING):
+/// A seal selects its policy with [`Seal::PADDING`](crate::Seal::PADDING):
 /// [`Padding::NONE`], [`Padding::block`], or [`Padding::length`]. The
 /// representation is private, so applications cannot define another policy.
 ///
 /// A policy describes how new values are written; it is not persistent schema.
 /// The ciphertext envelope records whether its payload is padded, and readers
-/// remove padding only when that authenticated flag is set. A field can enable or
+/// remove padding only when that authenticated flag is set. A seal can enable or
 /// disable padding, or change its parameters, without making values unreadable;
 /// re-encryption rewrites a value whose flag disagrees with the current policy.
 ///
@@ -49,7 +49,7 @@ impl Padding {
     /// # Panics
     ///
     /// Panics when `size` is less than 2. In a constant such as
-    /// [`Field::PADDING`](crate::Field::PADDING), that is a compile-time error.
+    /// [`Seal::PADDING`](crate::Seal::PADDING), that is a compile-time error.
     #[must_use]
     pub const fn block(size: usize) -> Self {
         assert!(size >= 2, "padding block size must be at least 2");
@@ -65,7 +65,7 @@ impl Padding {
     /// # Panics
     ///
     /// Panics when `len` is 0. In a constant such as
-    /// [`Field::PADDING`](crate::Field::PADDING), that is a compile-time error.
+    /// [`Seal::PADDING`](crate::Seal::PADDING), that is a compile-time error.
     #[must_use]
     pub const fn length(len: usize) -> Self {
         assert!(len >= 1, "fixed padding length must be at least 1");

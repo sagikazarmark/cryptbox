@@ -4,7 +4,7 @@ use std::{env, error::Error, path::Path};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Field, Sealed, index_key_id, inspect_blind_index, key_id,
+    EncryptionKeyring, Seal, Sealed, index_key_id, inspect_blind_index, key_id,
 };
 use sqlx::{Connection, QueryBuilder, Row};
 use zeroize::Zeroizing;
@@ -26,7 +26,7 @@ type DbConnection = <Db as sqlx::Database>::Connection;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 type SealedEmail = Sealed<UserEmail>;
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 struct UserEmail;
 
@@ -40,7 +40,7 @@ fn normalize_email(input: &str) -> std::result::Result<Zeroizing<Vec<u8>>, Blind
 #[derive(BlindIndexSpec)]
 #[cryptbox(
     id = "a80824bc-f281-49ee-a2ed-0b6d213d44ce",
-    field = UserEmail,
+    seal = UserEmail,
     bits = 128,
     query = str,
     normalize = normalize_email,

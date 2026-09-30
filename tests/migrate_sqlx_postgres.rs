@@ -7,32 +7,31 @@ use std::{future::Future, panic::AssertUnwindSafe};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, Field, FieldOnly, IndexId, Padding, Sealed, Utf8, field_id, index_id,
-    index_key_id, key_id,
+    EncryptionKeyring, Error, IndexId, Padding, Seal, Sealed, Utf8, index_id, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyFormat, MaybeEncrypted, PostgresSweepStore, RowPlanner, Sweep,
         SweepReport, SweepStore, SweepTable,
     },
+    seal_id,
 };
 use sqlx::{Connection, PgConnection, Row};
 use zeroize::Zeroizing;
 
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
+impl Seal for UserEmail {
+    const ID: cryptbox::SealId = seal_id!("50000000-0000-4000-8000-000000000005");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
 struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
-    type Field = UserEmail;
+    type Seal = UserEmail;
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";

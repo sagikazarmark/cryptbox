@@ -1,22 +1,20 @@
 use sha2::{Digest, Sha256};
 
 use super::{PartKind, PartRole, PartSpec, PartValue};
-use crate::{Error, FieldId};
+use crate::{Error, SealId};
 
 // A persistent domain separator, not a display string.
 // See ../../docs/wire-format.md#binding-fingerprint.
 const FINGERPRINT_LABEL: &[u8] = b"cryptbox/binding-fingerprint/v1\0";
-// No kind code is 0, so an empty record differs from no record.
-const NO_RECORD: u8 = 0;
 
-/// Encodes a binding as `field_id ‖ record ‖ count ‖ parts`, sorting the parts
-/// by part ID so the bytes do not depend on part order.
+/// Encodes a binding as `seal_id ‖ count ‖ parts`, sorting the parts by part
+/// ID so the bytes do not depend on part order. A record is one of the parts,
+/// under the nil part ID, so it sorts first.
 ///
-/// The field, record, and part bytes are persistent KDF/AAD inputs,
-/// independent of Rust names. See ../../docs/wire-format.md#binding.
+/// The seal ID and part bytes are persistent KDF/AAD inputs, independent of Rust
+/// names. See ../../docs/wire-format.md#binding.
 pub(super) fn encode<'v>(
-    field: FieldId,
-    record: Option<PartValue<'_>>,
+    seal: SealId,
     parts: impl IntoIterator<Item = (&'v PartSpec, &'v PartValue<'v>)>,
 ) -> Result<Vec<u8>, Error> {
     let mut parts: Vec<_> = parts.into_iter().collect();
@@ -24,11 +22,7 @@ pub(super) fn encode<'v>(
     let count = u16::try_from(parts.len()).map_err(|_| Error::InvalidBinding)?;
 
     let mut encoded = Vec::new();
-    encoded.extend_from_slice(field.as_bytes());
-    match record {
-        Some(record) => encode_value(&record, &mut encoded)?,
-        None => encoded.push(NO_RECORD),
-    }
+    encoded.extend_from_slice(seal.as_bytes());
     encoded.extend_from_slice(&count.to_be_bytes());
     for (spec, value) in parts {
         encoded.extend_from_slice(&spec.id);
@@ -38,9 +32,9 @@ pub(super) fn encode<'v>(
     Ok(encoded)
 }
 
-/// Fingerprints a declaration from its part IDs, kinds, and roles and its record
-/// flag, never values; part order does not matter.
-pub(super) fn fingerprint(parts: &[PartSpec], record: bool) -> [u8; 8] {
+/// Fingerprints a declaration from its part IDs, kinds, and roles, a record's
+/// part included, never values; part order does not matter.
+pub(super) fn fingerprint(parts: &[PartSpec]) -> [u8; 8] {
     let mut parts = parts.to_vec();
     parts.sort_by_key(|spec| spec.id);
     // A count that does not fit is rejected when the binding is encoded.
@@ -50,7 +44,6 @@ pub(super) fn fingerprint(parts: &[PartSpec], record: bool) -> [u8; 8] {
     // See ../../docs/wire-format.md#binding-fingerprint.
     let mut hasher = Sha256::new();
     hasher.update(FINGERPRINT_LABEL);
-    hasher.update([u8::from(record)]);
     hasher.update(count.to_be_bytes());
     for spec in parts {
         hasher.update(spec.id);

@@ -97,7 +97,7 @@ fn diagnostics_expose_only_allowlisted_fields() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        "field_id=ca274e85-63c4-4f7d-a255-2dfecbfe5e25 field_name=user-email operation=open error=authentication_failed\n"
+        "seal_id=ca274e85-63c4-4f7d-a255-2dfecbfe5e25 seal_name=user-email operation=open error=authentication_failed\n"
     );
     assert!(output.stderr.is_empty());
 }

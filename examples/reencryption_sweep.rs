@@ -4,7 +4,7 @@ use std::error::Error;
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Field, IndexKeyId, KeyId, Sealed, index_key_id, inspect_blind_index, key_id,
+    EncryptionKeyring, IndexKeyId, KeyId, Seal, Sealed, index_key_id, inspect_blind_index, key_id,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -17,7 +17,7 @@ const BATCH_SIZE: i64 = 2;
 // This name identifies one fixed target pair and attempt, never every rotation.
 const MIGRATION_NAME: &str = "users-email-e2-i2-attempt-1";
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(id = "14b44964-cb41-4716-ab47-af19c86929a0", value = String)]
 struct UserEmail;
 
@@ -31,7 +31,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 #[derive(BlindIndexSpec)]
 #[cryptbox(
     id = "0892ee51-dc3e-4863-9668-55cbf96f735c",
-    field = UserEmail,
+    seal = UserEmail,
     bits = 128,
     query = str,
     normalize = normalize_email,

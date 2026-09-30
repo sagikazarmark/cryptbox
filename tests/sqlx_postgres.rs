@@ -6,8 +6,8 @@ use std::sync::LazyLock;
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, ColumnKeys, EncryptionKey,
-    EncryptionKeyring, Error, Field, FieldOnly, IndexId, KeyId, Keys, Padding, Plain, Sealed, Utf8,
-    index_id, key_id, keys,
+    EncryptionKeyring, Error, IndexId, KeyId, Keys, Padding, Plain, Seal, Sealed, Utf8, index_id,
+    key_id, keys,
 };
 use sqlx::{
     Connection, Decode, Encode, Postgres, Row, Type,
@@ -31,22 +31,21 @@ impl ColumnKeys for TestKeys {
     }
 }
 
-struct TestField;
+struct TestSeal;
 
-impl Field for TestField {
-    const ID: cryptbox::FieldId = cryptbox::field_id!("4e2d8b17-6c3a-4f95-8b0e-1a7c9d3f5e26");
+impl Seal for TestSeal {
+    const ID: cryptbox::SealId = cryptbox::seal_id!("4e2d8b17-6c3a-4f95-8b0e-1a7c9d3f5e26");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
 struct IndexSpec;
 
 impl BlindIndexSpec for IndexSpec {
-    type Field = TestField;
+    type Seal = TestSeal;
     const ID: IndexId = index_id!("d0000000-0000-4000-8000-00000000000d");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -86,22 +85,22 @@ where
 
 #[test]
 fn encrypted_storage_types_map_to_postgres_bytea() {
-    assert_sqlx_traits::<Plain<TestField, TestKeys>>();
-    assert_sqlx_traits::<Sealed<TestField>>();
+    assert_sqlx_traits::<Plain<TestSeal, TestKeys>>();
+    assert_sqlx_traits::<Sealed<TestSeal>>();
     assert_sqlx_traits::<BlindIndex<IndexSpec>>();
     assert_sqlx_encode::<BlindIndexRef<'static, IndexSpec>>();
 
     // The permissive migration read decodes but deliberately has no Encode:
     // writes always encrypt through `Plain`, `Sealed`, or `Prepared`.
     #[cfg(feature = "migrate")]
-    assert_sqlx_decode::<cryptbox::migrate::MaybeEncrypted<TestField>>();
+    assert_sqlx_decode::<cryptbox::migrate::MaybeEncrypted<TestSeal>>();
 
     let bytea: PgTypeInfo = <Vec<u8> as Type<Postgres>>::type_info();
     assert_eq!(
-        <Plain<TestField, TestKeys> as Type<Postgres>>::type_info(),
+        <Plain<TestSeal, TestKeys> as Type<Postgres>>::type_info(),
         bytea
     );
-    assert_eq!(<Sealed<TestField> as Type<Postgres>>::type_info(), bytea);
+    assert_eq!(<Sealed<TestSeal> as Type<Postgres>>::type_info(), bytea);
     assert_eq!(
         <BlindIndex<IndexSpec> as Type<Postgres>>::type_info(),
         bytea
@@ -110,11 +109,11 @@ fn encrypted_storage_types_map_to_postgres_bytea() {
 
 #[test]
 fn sqlx_encode_encrypts_plaintext_into_an_owned_argument_buffer() {
-    let value = Plain::<TestField, TestKeys>::new("mark@example.com".to_owned());
+    let value = Plain::<TestSeal, TestKeys>::new("mark@example.com".to_owned());
     let mut buffer = PgArgumentBuffer::default();
 
     let result =
-        <Plain<TestField, TestKeys> as Encode<'_, Postgres>>::encode_by_ref(&value, &mut buffer)
+        <Plain<TestSeal, TestKeys> as Encode<'_, Postgres>>::encode_by_ref(&value, &mut buffer)
             .unwrap();
 
     assert!(!result.is_null());
@@ -124,14 +123,14 @@ fn sqlx_encode_encrypts_plaintext_into_an_owned_argument_buffer() {
 #[test]
 fn sealed_encoding_preserves_the_binary_envelope() {
     let keys = TestKeys::keys().unwrap();
-    let bytes = Sealed::<TestField>::seal(&"value".to_owned(), (), keys)
+    let bytes = Sealed::<TestSeal>::seal(&"value".to_owned(), (), keys)
         .unwrap()
         .into_bytes();
-    let ciphertext = Sealed::<TestField>::from_bytes(bytes.clone()).unwrap();
+    let ciphertext = Sealed::<TestSeal>::from_bytes(bytes.clone()).unwrap();
     let mut buffer = PgArgumentBuffer::default();
 
     let result =
-        <Sealed<TestField> as Encode<'_, Postgres>>::encode_by_ref(&ciphertext, &mut buffer)
+        <Sealed<TestSeal> as Encode<'_, Postgres>>::encode_by_ref(&ciphertext, &mut buffer)
             .unwrap();
 
     assert!(!result.is_null());
@@ -160,7 +159,7 @@ fn postgres_round_trips_sealed_values_and_opens_plain_columns() {
             .await
             .unwrap();
 
-        let value = Plain::<TestField, TestKeys>::new("mark@example.com".to_owned());
+        let value = Plain::<TestSeal, TestKeys>::new("mark@example.com".to_owned());
         sqlx::query("INSERT INTO secrets (value) VALUES ($1)")
             .bind(&value)
             .execute(&mut connection)
@@ -171,8 +170,8 @@ fn postgres_round_trips_sealed_values_and_opens_plain_columns() {
             .fetch_one(&mut connection)
             .await
             .unwrap();
-        let sealed: Sealed<TestField> = row.try_get("value").unwrap();
-        let opened: Plain<TestField, TestKeys> = row.try_get("value").unwrap();
+        let sealed: Sealed<TestSeal> = row.try_get("value").unwrap();
+        let opened: Plain<TestSeal, TestKeys> = row.try_get("value").unwrap();
 
         assert!(sealed.as_bytes().starts_with(b"CBX\0"));
         assert_eq!(opened.expose_secret(), "mark@example.com");
@@ -187,10 +186,10 @@ fn postgres_round_trips_sealed_values_and_opens_plain_columns() {
 
 #[test]
 fn postgres_default_column_fails_closed_without_installed_keys() {
-    let value = Plain::<TestField>::new("mark@example.com");
+    let value = Plain::<TestSeal>::new("mark@example.com");
     let mut buffer = PgArgumentBuffer::default();
 
-    let Err(error) = <Plain<TestField> as Encode<'_, Postgres>>::encode_by_ref(&value, &mut buffer)
+    let Err(error) = <Plain<TestSeal> as Encode<'_, Postgres>>::encode_by_ref(&value, &mut buffer)
     else {
         panic!("encoding without installed keys must fail");
     };

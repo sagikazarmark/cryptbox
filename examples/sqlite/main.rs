@@ -1,9 +1,9 @@
-//! Writes and reads a persistent `SQLite` field in separate processes through `SQLx`.
+//! Writes and reads a persistent sealed `SQLite` column in separate processes through `SQLx`.
 //! See README.md beside this source for provisioning and restart instructions.
 
 use std::{error::Error, fs::File, io::Read, path::Path};
 
-use cryptbox::{EncryptionKey, EncryptionKeyring, Field, KeyId, Sealed, key_id};
+use cryptbox::{EncryptionKey, EncryptionKeyring, KeyId, Seal, Sealed, key_id};
 use sqlx::{Connection, Row, sqlite::SqliteConnectOptions, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
@@ -16,7 +16,7 @@ enum Command {
     Read,
 }
 
-#[derive(Field)]
+#[derive(Seal)]
 #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]
 struct UserEmail;
 

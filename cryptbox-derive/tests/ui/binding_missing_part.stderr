@@ -1,5 +1,0 @@
-error: missing `part`: add `#[cryptbox(part = "<uuid>")]`
- --> tests/ui/binding_missing_part.rs:6:5
-  |
-6 |     workspace: [u8; 16],
-  |     ^^^^^^^^^

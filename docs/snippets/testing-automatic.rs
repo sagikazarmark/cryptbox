@@ -4,40 +4,38 @@ use std::error::Error;
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Field, FieldId, FieldOnly, Keys, Padding, Plain, Sealed, Utf8, keys,
+    EncryptionKeyring, Keys, Padding, Plain, Seal, SealId, Sealed, Utf8, keys,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
 
 struct Nickname;
 
-impl Field for Nickname {
-    const ID: FieldId = cryptbox::field_id!("431cf5b3-5547-4716-a9f8-cfd67749947a");
+impl Seal for Nickname {
+    const ID: SealId = cryptbox::seal_id!("431cf5b3-5547-4716-a9f8-cfd67749947a");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
-// A field with a blind index is never a `Plain` column: the column would not write the index.
+// A seal with a blind index is never a `Plain` column: the column would not write the index.
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+impl Seal for UserEmail {
+    const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = (EmailLookup,);
 }
 
 struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
-    type Field = UserEmail;
+    type Seal = UserEmail;
     const ID: cryptbox::IndexId = cryptbox::index_id!("ea0ffec1-651a-4d6b-bb01-d53a58006dfd");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -88,7 +86,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
         .await?;
     let nickname = Plain::<Nickname>::new(plaintext);
 
-    // Binding Plain exercises automatic sealing with the installed keys.
+    // Scope Plain exercises automatic sealing with the installed keys.
     sqlx::query("INSERT INTO users (nickname) VALUES (?)")
         .bind(&nickname)
         .execute(&mut connection)
@@ -99,7 +97,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     let read: Plain<Nickname> = row.try_get("nickname")?;
     assert_eq!(read.expose_secret(), plaintext); // Automatic authenticated opening.
 
-    // An indexed field is sealed explicitly. Preparation seals with the installed
+    // A value of an indexed seal is sealed explicitly. Preparation seals with the installed
     // keys, and the implicit `with_index` resolves the installed blind-index keys
     // too. One statement maintains the sealed value and index pair atomically.
     let email = plaintext.to_owned();

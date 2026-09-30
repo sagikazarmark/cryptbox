@@ -10,12 +10,12 @@ use zeroize::Zeroizing;
 use crate::envelope::{self, Context};
 use crate::{BindingDomain, EncryptionKeySource, EncryptionKeyring, Error, Padding};
 
-/// Asks `keys` for the keyring of `domain`'s field and key scope.
+/// Asks `keys` for the keyring of `domain`'s seal and key scope.
 pub(crate) fn keyring(
     domain: &BindingDomain,
     keys: &(impl EncryptionKeySource + ?Sized),
 ) -> Result<EncryptionKeyring, Error> {
-    keys.encryption_keyring(domain.field_id(), domain.key_scope())
+    keys.encryption_keyring(domain.seal_id(), domain.key_scope())
 }
 
 fn envelope_context(domain: &BindingDomain) -> Context<'_> {

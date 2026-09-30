@@ -2,27 +2,26 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Field, FieldId, FieldOnly, IndexId, KeyError, Padding, Raw, Sealed,
-    index_id, index_key_id, key_id,
+    EncryptionKeyring, IndexId, KeyError, Padding, Raw, Seal, SealId, Sealed, index_id,
+    index_key_id, key_id,
 };
 use zeroize::Zeroizing;
 
-struct TestField;
+struct TestSeal;
 
-impl Field for TestField {
-    const ID: FieldId = cryptbox::field_id!("5d3a1f7e-2b8c-4e69-a0d4-7f1b3c5e9a82");
+impl Seal for TestSeal {
+    const ID: SealId = cryptbox::seal_id!("5d3a1f7e-2b8c-4e69-a0d4-7f1b3c5e9a82");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
 struct ExactValue;
 
 impl BlindIndexSpec for ExactValue {
-    type Field = TestField;
+    type Seal = TestSeal;
     const ID: IndexId = index_id!("abcdefab-cdef-4abc-8def-abcdefabcdef");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -44,7 +43,7 @@ fn encryption_keys_can_be_generated_for_immediate_use() {
     assert_ne!(first.id(), second.id());
 
     let keys = EncryptionKeyring::new(first, []).unwrap();
-    let sealed = Sealed::<TestField>::seal(&b"generated key".to_vec(), (), &keys).unwrap();
+    let sealed = Sealed::<TestSeal>::seal(&b"generated key".to_vec(), (), &keys).unwrap();
 
     assert_eq!(sealed.open((), &keys).unwrap(), b"generated key");
 }
@@ -74,7 +73,7 @@ fn encryption_keys_load_from_hex_and_base64() {
 
     let writing_keys = EncryptionKeyring::new(hex_key, []).unwrap();
     let reading_keys = EncryptionKeyring::new(base64_key, []).unwrap();
-    let sealed = Sealed::<TestField>::seal(&b"loaded key".to_vec(), (), &writing_keys).unwrap();
+    let sealed = Sealed::<TestSeal>::seal(&b"loaded key".to_vec(), (), &writing_keys).unwrap();
 
     assert_eq!(sealed.open((), &reading_keys).unwrap(), b"loaded key");
 }

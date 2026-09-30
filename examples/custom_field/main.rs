@@ -1,14 +1,20 @@
-//! Custom field for an application-defined ASCII handle, with explicit ownership.
+//! Custom seal for an application-defined ASCII handle, with explicit ownership.
 
 // ANCHOR: custom-field
 use std::sync::{PoisonError, RwLock};
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId,
-    FieldOnly, KeyScope, Padding, Sealed, Secret,
+    CodecErrorKind, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, KeyScope,
+    Padding, Seal, SealId, Sealed, Secret,
 };
 use zeroize::Zeroizing;
+
+/// A user's handle. It is its own value: a handle is stored nowhere else, so it
+/// needs no separate value type. Its `Secret` zeroizes it on drop and redacts it
+/// from `Debug`, so deriving `Debug` here cannot print the handle.
+#[derive(Debug)]
+struct Handle(Secret<String>);
 
 struct HandleCodec;
 
@@ -20,11 +26,11 @@ fn valid_handle(bytes: &[u8]) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || *byte == b'-')
 }
 
-impl Codec<Secret<String>> for HandleCodec {
+impl Codec<Handle> for HandleCodec {
     const ID: &'static str = "handle/1";
 
-    fn encode(value: &Secret<String>) -> Result<Zeroizing<Vec<u8>>, CodecError> {
-        let bytes = value.expose_secret().as_bytes();
+    fn encode(value: &Handle) -> Result<Zeroizing<Vec<u8>>, CodecError> {
+        let bytes = value.0.expose_secret().as_bytes();
         if !valid_handle(bytes) {
             return Err(CodecError::new(CodecErrorKind::Encoding));
         }
@@ -32,34 +38,31 @@ impl Codec<Secret<String>> for HandleCodec {
         Ok(Zeroizing::new(bytes.to_vec()))
     }
 
-    fn decode(bytes: &[u8]) -> Result<Secret<String>, CodecError> {
+    fn decode(bytes: &[u8]) -> Result<Handle, CodecError> {
         if !valid_handle(bytes) {
             return Err(CodecError::new(CodecErrorKind::Decoding));
         }
         let text =
             std::str::from_utf8(bytes).map_err(|_| CodecError::new(CodecErrorKind::InvalidUtf8))?;
-        Ok(Secret::new(text.to_owned()))
+        Ok(Handle(Secret::new(text.to_owned())))
     }
 }
 
-// The field names the validating codec explicitly. `<Secret<String> as Plaintext>::Codec`
-// (plain UTF-8) would store the same bytes but skip the handle policy.
-struct Handle;
-
-impl Field for Handle {
-    const ID: FieldId = cryptbox::field_id!("dcaa3c69-1767-49a1-8476-36555eaf54bf");
+// `HandleCodec` stores exactly the bytes `Utf8` would store for the inner
+// `Secret<String>`, but enforces the handle policy.
+impl Seal for Handle {
+    const ID: SealId = cryptbox::seal_id!("dcaa3c69-1767-49a1-8476-36555eaf54bf");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
-    type Value = Secret<String>;
+    type Value = Self;
     type Codec = HandleCodec;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = (HandleEquality,);
 }
 
 struct HandleEquality;
 
 impl BlindIndexSpec for HandleEquality {
-    type Field = Handle;
+    type Seal = Handle;
     const ID: cryptbox::IndexId = cryptbox::index_id!("6c0e20d5-cb30-4b84-8dd1-995f872b417c");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "handle-lowercase/1";
@@ -75,8 +78,9 @@ impl BlindIndexSpec for HandleEquality {
         Ok(normalized)
     }
 
-    fn normalize_value(value: &Secret<String>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Self::normalize_query(value)
+    // Queries arrive as bare strings; stored values are handles.
+    fn normalize_value(value: &Handle) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+        Self::normalize_query(&value.0)
     }
 }
 
@@ -103,7 +107,7 @@ impl CachedEncryptionKeys {
 }
 
 impl EncryptionKeySource for CachedEncryptionKeys {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
         // Cloning shares the keys; it does not copy key material.
         self.snapshot
             .read()
@@ -119,7 +123,7 @@ fn main() -> Result<(), cryptbox::Error> {
     let keys = CachedEncryptionKeys::new(Some(EncryptionKeyring::new(old_key.clone(), [])?));
     let old_index_key = BlindIndexKey::generate()?; // Independent of encryption keys.
     let index_writer = BlindIndexKeyring::new(old_index_key.clone(), [])?;
-    let value = Secret::new("Alice-7".to_owned());
+    let value = Handle(Secret::new("Alice-7".to_owned()));
     let prepared = Sealed::<Handle>::prepare(&value, (), &keys)?
         .with_index_with::<HandleEquality>(&index_writer)?;
     let sealed = prepared.sealed().clone();
@@ -142,8 +146,8 @@ fn main() -> Result<(), cryptbox::Error> {
     // An index hit is only a candidate: authenticate and compare normalized plaintext.
     let opened = sealed.open((), &keys)?;
     assert!(HandleEquality::verify_candidate(&query, &opened)?);
-    assert_eq!(opened.expose_secret(), "Alice-7");
-    assert_eq!(value.expose_secret(), "Alice-7");
+    assert_eq!(opened.0.expose_secret(), "Alice-7");
+    assert_eq!(value.0.expose_secret(), "Alice-7");
     println!("Custom field round trip and normalized lookup succeeded.");
     Ok(())
 }
@@ -162,12 +166,12 @@ mod tests {
     #[test]
     fn lookup_uses_case_insensitive_equality_and_rejects_other_handles()
     -> Result<(), cryptbox::Error> {
-        let alice = Secret::new("Alice-7".to_owned());
+        let alice = Handle(Secret::new("Alice-7".to_owned()));
         let query = Secret::new("ALICE-7".to_owned());
-        let bob = Secret::new("Bob-7".to_owned());
+        let bob = Handle(Secret::new("Bob-7".to_owned()));
         assert_eq!(&*HandleEquality::normalize_value(&alice)?, b"alice-7");
-        assert!(HandleEquality::verify_candidate(&alice, &query)?);
-        assert!(!HandleEquality::verify_candidate(&bob, &query)?);
+        assert!(HandleEquality::verify_candidate(&query, &alice)?);
+        assert!(!HandleEquality::verify_candidate(&query, &bob)?);
         Ok(())
     }
 
@@ -178,18 +182,18 @@ mod tests {
         let current = EncryptionKey::generate()?;
         let unknown = EncryptionKey::generate()?.id();
         let writer = EncryptionKeyring::new(old.clone(), [])?;
-        let value = Secret::new("Alice-7".to_owned());
+        let value = Handle(Secret::new("Alice-7".to_owned()));
         let sealed = Sealed::<Handle>::seal(&value, (), &writer)?;
         let reader = CachedEncryptionKeys::new(Some(EncryptionKeyring::new(
             current.clone(),
             [old.clone()],
         )?));
-        let snapshot = reader.encryption_keyring(Handle::ID, &KeyScope::of(&FieldOnly)?)?;
+        let snapshot = reader.encryption_keyring(Handle::ID, &KeyScope::of(&())?)?;
         assert_eq!(snapshot.current().id(), current.id());
         assert_eq!(snapshot.get(old.id()).unwrap().id(), old.id());
         assert_eq!(snapshot.get(current.id()).unwrap().id(), current.id());
         assert!(snapshot.get(unknown).is_none());
-        assert_eq!(sealed.open((), &reader)?.expose_secret(), "Alice-7");
+        assert_eq!(sealed.open((), &reader)?.0.expose_secret(), "Alice-7");
         let retired = CachedEncryptionKeys::new(Some(EncryptionKeyring::new(current, [])?));
         assert_eq!(
             sealed.open((), &retired).unwrap_err(),
@@ -206,13 +210,13 @@ mod tests {
         );
         // A later refresh recovers without restarting.
         unavailable.refresh(EncryptionKeyring::new(old, [])?);
-        assert_eq!(sealed.open((), &unavailable)?.expose_secret(), "Alice-7");
+        assert_eq!(sealed.open((), &unavailable)?.0.expose_secret(), "Alice-7");
         Ok(())
     }
 
     #[test]
     fn invalid_sensitive_inputs_return_only_sanitized_categories() -> Result<(), cryptbox::Error> {
-        let invalid = Secret::new("private handle!".to_owned());
+        let invalid = Handle(Secret::new("private handle!".to_owned()));
         let encode = HandleCodec::encode(&invalid).unwrap_err();
         assert_eq!(encode.kind(), CodecErrorKind::Encoding);
         assert_eq!(encode.to_string(), "codec encoding failed");
@@ -221,7 +225,7 @@ mod tests {
         assert_eq!(decode.kind(), CodecErrorKind::Decoding);
         assert_eq!(decode.to_string(), "codec decoding failed");
         assert_eq!(format!("{decode:?}"), "CodecError { kind: Decoding }");
-        let normalize = HandleEquality::normalize_query(&invalid).unwrap_err();
+        let normalize = HandleEquality::normalize_value(&invalid).unwrap_err();
         assert_eq!(normalize.to_string(), "blind-index normalization failed");
         assert_eq!(format!("{normalize:?}"), "BlindIndexError");
 
@@ -238,21 +242,21 @@ mod tests {
     fn stored_bytes_and_schema_match_their_committed_fixtures() {
         use cryptbox::{schema::Manifest, testing::assert_encoding};
 
-        assert_encoding::<Handle>(&Secret::new("Alice-7".to_owned()), "416c6963652d37");
+        assert_encoding::<Handle>(&Handle(Secret::new("Alice-7".to_owned())), "416c6963652d37");
 
-        let manifest = Manifest::new().field::<Handle>().index::<HandleEquality>();
+        let manifest = Manifest::new().seal::<Handle>().index::<HandleEquality>();
         assert!(manifest.duplicates().is_empty());
         assert_eq!(
             manifest.to_string(),
             "\
-field dcaa3c69-1767-49a1-8476-36555eaf54bf
+seal dcaa3c69-1767-49a1-8476-36555eaf54bf
   codec: handle/1
   padding: none
   record: no
-  binding: 5d86321261d64380
+  binding: 65640fc8333534b9
   shred unit: keyring
 index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
-  field: dcaa3c69-1767-49a1-8476-36555eaf54bf
+  seal: dcaa3c69-1767-49a1-8476-36555eaf54bf
   bits: 128
   normalizer: handle-lowercase/1
 "
@@ -263,13 +267,12 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
     fn an_opened_string_can_be_moved_into_secret() -> Result<(), cryptbox::Error> {
         struct PlainHandle;
 
-        impl Field for PlainHandle {
-            const ID: FieldId = Handle::ID;
+        impl Seal for PlainHandle {
+            const ID: SealId = Handle::ID;
             const PADDING: Padding = Padding::NONE;
-            const RECORD: bool = false;
             type Value = String;
             type Codec = cryptbox::Utf8;
-            type Binding = FieldOnly;
+            type Scope = ();
             type Indexes = ();
         }
 

@@ -3,26 +3,25 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Field, FieldId, FieldOnly, Padding, Sealed, Utf8,
+    EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8,
 };
 use zeroize::Zeroizing;
 
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+impl Seal for UserEmail {
+    const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = (EmailLookup,);
 }
 
 struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
-    type Field = UserEmail;
+    type Seal = UserEmail;
     const ID: cryptbox::IndexId = cryptbox::index_id!("558e7d43-9926-498c-962a-19959dddbfc8");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -40,7 +39,7 @@ impl BlindIndexSpec for EmailLookup {
 
 #[test]
 fn independent_cases_run_concurrently() {
-    // Both cases deliberately reuse the same field and generation IDs with
+    // Both cases deliberately reuse the same seal and generation IDs with
     // different fixture roots. Neither case can use the other's keyring.
     std::thread::scope(|scope| {
         let first = scope.spawn(|| round_trip("first@example.test", 0x11, 0x21));

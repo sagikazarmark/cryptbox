@@ -1,0 +1,26 @@
+error[E0277]: `Address` has no default codec
+ --> tests/ui/seal_transparent_without_default_codec.rs:8:20
+  |
+8 | struct HomeAddress(Address);
+  |                    ^^^^^^^ `Address` has no built-in codec
+  |
+help: the trait `cryptbox::__private::DefaultCodec` is not implemented for `Address`
+ --> tests/ui/seal_transparent_without_default_codec.rs:2:1
+  |
+2 | struct Address {
+  | ^^^^^^^^^^^^^^
+  = note: only `String`, `Vec<u8>`, `Secret<String>`, and `Secret<Vec<u8>>` have one: name the codec with `#[cryptbox(codec = …)]`, such as `cryptbox::Json`; the codec is persistent schema
+help: the following other types implement trait `cryptbox::__private::DefaultCodec`
+ --> $WORKSPACE/src/codec.rs
+  |
+  | impl DefaultCodec for String {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `String`
+...
+  | impl DefaultCodec for Vec<u8> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
+...
+  | impl DefaultCodec for Secret<String> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Secret<String>`
+...
+  | impl DefaultCodec for Secret<Vec<u8>> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Secret<Vec<u8>>`

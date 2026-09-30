@@ -2,15 +2,15 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding, Raw, Sealed,
-    Tenant, TenantId, Utf8, field_id, index_id, index_key_id, inspect_blind_index,
-    inspect_ciphertext, key_id,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Raw, Seal, Sealed, Tenant,
+    TenantId, Utf8, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    seal_id,
 };
 use zeroize::Zeroizing;
 
 // docs/wire-format.md#provisional-envelope-vectors
-const UNPADDED: &str = "43425800020100111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1415b33cbc7bfb19bc11afc1b31e3f3075b";
-const PADDED: &str = "43425800020101111111112222433384445555555555555d86321261d64380000102030405060708090a0b0c0d0e0f1011121314151617ef0521ab2e6f330235d572ee4da1419a17b89c9d88cb6cca540c1c17f5917f44";
+const UNPADDED: &str = "434258000201001111111122224333844455555555555565640fc8333534b9000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e330da90830136eec9273c8315c1f22b7b";
+const PADDED: &str = "434258000201011111111122224333844455555555555565640fc8333534b9000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e3c5e74a10b924aec9355f18b42c5b131fa0";
 
 fn keys() -> EncryptionKeyring {
     let key_id: KeyId = key_id!("11111111-2222-4333-8444-555555555555");
@@ -18,33 +18,31 @@ fn keys() -> EncryptionKeyring {
     EncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap()
 }
 
-fn read<F: Field<Binding = FieldOnly>>(vector: &str) -> Result<F::Value, Error> {
+fn read<F: Seal<Scope = ()>>(vector: &str) -> Result<F::Value, Error> {
     Sealed::<F>::from_bytes(hex::decode(vector).unwrap())
         .unwrap()
         .open((), &keys())
 }
 
-struct VectorField;
+struct VectorSeal;
 
-impl Field for VectorField {
-    const ID: cryptbox::FieldId = field_id!("12345678-1234-4234-8234-1234567890ab");
+impl Seal for VectorSeal {
+    const ID: cryptbox::SealId = seal_id!("12345678-1234-4234-8234-1234567890ab");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
-struct PaddedVectorField;
+struct PaddedVectorSeal;
 
-impl Field for PaddedVectorField {
-    const ID: cryptbox::FieldId = VectorField::ID;
+impl Seal for PaddedVectorSeal {
+    const ID: cryptbox::SealId = VectorSeal::ID;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -57,19 +55,16 @@ fn experimental_envelope_vectors_record_their_padding() {
         assert_eq!(info.format_version(), 2);
         assert_eq!(info.padded(), padded);
         // The empty declaration's fingerprint: docs/wire-format.md#binding-fingerprint
-        assert_eq!(hex::encode(info.context_fingerprint()), "5d86321261d64380");
-        assert_eq!(read::<VectorField>(vector).unwrap(), b"cryptbox vector");
+        assert_eq!(hex::encode(info.context_fingerprint()), "65640fc8333534b9");
+        assert_eq!(read::<VectorSeal>(vector).unwrap(), b"cryptbox vector");
     }
 }
 
 #[test]
 fn experimental_envelope_vectors_decrypt_under_either_padding_policy() {
     for vector in [UNPADDED, PADDED] {
-        assert_eq!(read::<VectorField>(vector).unwrap(), b"cryptbox vector");
-        assert_eq!(
-            read::<PaddedVectorField>(vector).unwrap(),
-            "cryptbox vector"
-        );
+        assert_eq!(read::<VectorSeal>(vector).unwrap(), b"cryptbox vector");
+        assert_eq!(read::<PaddedVectorSeal>(vector).unwrap(), "cryptbox vector");
     }
 }
 
@@ -87,7 +82,7 @@ fn format_1_envelopes_are_not_read() {
 struct VectorIndex;
 
 impl BlindIndexSpec for VectorIndex {
-    type Field = VectorField;
+    type Seal = VectorSeal;
     const ID: IndexId = index_id!("abcdefab-cdef-4def-8def-abcdefabcdef");
     const BITS: u16 = 13;
     const NORMALIZER: &'static str = "exact/1";
@@ -104,7 +99,7 @@ impl BlindIndexSpec for VectorIndex {
 
 #[test]
 fn experimental_blind_index_vector_is_stable() {
-    const VECTOR: &str = "02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000df040";
+    const VECTOR: &str = "02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000de800";
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
 
@@ -128,22 +123,21 @@ fn format_1_blind_indexes_are_rejected() {
     );
 }
 
-struct TenantVectorField;
+struct TenantVectorSeal;
 
-impl Field for TenantVectorField {
-    const ID: cryptbox::FieldId = VectorField::ID;
+impl Seal for TenantVectorSeal {
+    const ID: cryptbox::SealId = VectorSeal::ID;
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Binding = Tenant;
+    type Scope = Tenant;
     type Indexes = ();
 }
 
 struct TenantVectorIndex;
 
 impl BlindIndexSpec for TenantVectorIndex {
-    type Field = TenantVectorField;
+    type Seal = TenantVectorSeal;
     const ID: IndexId = VectorIndex::ID;
     const BITS: u16 = VectorIndex::BITS;
     const NORMALIZER: &'static str = "exact/1";
@@ -161,7 +155,7 @@ impl BlindIndexSpec for TenantVectorIndex {
 #[test]
 fn experimental_scoped_blind_index_vector_is_stable() {
     // docs/wire-format.md#scoped-blind-index-vector
-    const VECTOR: &str = "02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d28c0";
+    const VECTOR: &str = "02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d8b88";
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
     let acme = Tenant(TenantId::new(b"acme".to_vec()).unwrap());

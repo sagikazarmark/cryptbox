@@ -1,0 +1,5 @@
+error: missing `index_args`: a query can't know the bound-only parts; add `#[cryptbox(index_args = Name)]` to generate the `keys` and `index` parts' struct
+ --> tests/ui/scope_missing_index_args.rs:2:8
+  |
+2 | struct OrgWorkspace {
+  |        ^^^^^^^^^^^^

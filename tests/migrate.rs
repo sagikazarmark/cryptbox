@@ -9,13 +9,14 @@ use std::{
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId, FieldOnly,
-    IndexId, IndexKeyId, KeyId, KeyScope, Padding, Sealed, Utf8, field_id, index_id, index_key_id,
-    inspect_blind_index, inspect_ciphertext, key_id,
+    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId,
+    KeyScope, Padding, Seal, SealId, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
+    inspect_ciphertext, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
     },
+    seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -26,25 +27,23 @@ const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("40000000-0000-4000-8000-
 
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: cryptbox::FieldId = field_id!("50000000-0000-4000-8000-000000000005");
+impl Seal for UserEmail {
+    const ID: cryptbox::SealId = seal_id!("50000000-0000-4000-8000-000000000005");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
 struct PaddedUserEmail;
 
-impl Field for PaddedUserEmail {
-    const ID: cryptbox::FieldId = UserEmail::ID;
+impl Seal for PaddedUserEmail {
+    const ID: cryptbox::SealId = UserEmail::ID;
     const PADDING: Padding = Padding::block(16);
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -53,7 +52,7 @@ struct EmailLookup;
 struct EmailDomain;
 
 impl BlindIndexSpec for EmailLookup {
-    type Field = UserEmail;
+    type Seal = UserEmail;
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -71,7 +70,7 @@ impl BlindIndexSpec for EmailLookup {
 }
 
 impl BlindIndexSpec for EmailDomain {
-    type Field = UserEmail;
+    type Seal = UserEmail;
     const ID: IndexId = index_id!("70000000-0000-4000-8000-000000000007");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email-domain/1";
@@ -437,7 +436,7 @@ fn planner_encrypts_legacy_plaintext_and_derives_every_index() {
 }
 
 #[test]
-fn planner_encrypts_legacy_plaintext_with_the_field_padding_policy() {
+fn planner_encrypts_legacy_plaintext_with_the_seal_padding_policy() {
     let keys = rotated_keys();
     let planner = RowPlanner::<PaddedUserEmail>::new(&keys);
 
@@ -1026,7 +1025,7 @@ fn assert_verification_aborts_without_keys(sweep: &Sweep<'_, UserEmail>) {
 struct UnloadedKeys;
 
 impl EncryptionKeySource for UnloadedKeys {
-    fn encryption_keyring(&self, _: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
         Err(Error::KeysUnavailable)
     }
 }

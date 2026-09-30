@@ -34,20 +34,19 @@
 //!
 //! ```no_run
 //! use cryptbox::{
-//!     EncryptionKeyring, Field, FieldId, Padding, Tenant, Utf8,
+//!     EncryptionKeyring, Seal, SealId, Padding, Tenant, Utf8,
 //!     restate::{self, ObjectKey},
 //! };
 //! use restate_sdk::prelude::*;
 //!
 //! struct CustomerEmail;
 //!
-//! impl Field for CustomerEmail {
-//!     const ID: FieldId = cryptbox::field_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
+//! impl Seal for CustomerEmail {
+//!     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
 //!     const PADDING: Padding = Padding::NONE;
-//!     const RECORD: bool = false;
 //!     type Value = String;
 //!     type Codec = Utf8;
-//!     type Binding = Tenant;
+//!     type Scope = Tenant;
 //!     type Indexes = ();
 //! }
 //!
@@ -90,7 +89,7 @@ use restate_sdk::{
 };
 
 use crate::{
-    Args, BlindIndexKeySource, EncryptionKeySource, Error, Field, Record, Sealed, binding::domain,
+    Args, BlindIndexKeySource, EncryptionKeySource, Error, Record, Seal, Sealed, binding::domain,
 };
 
 mod codec;
@@ -182,7 +181,7 @@ pub fn seal<'a, F>(
     keys: &'a dyn EncryptionKeySource,
 ) -> impl RunFuture<Result<Sealed<F>, TerminalError>> + 'a
 where
-    F: Field,
+    F: Seal,
     F::Value: Sync,
 {
     // Resolved before the `run`, so the future holds no borrow of `args`.
@@ -212,7 +211,7 @@ pub fn seal_with<'a, F, Fut>(
     keys: &'a dyn EncryptionKeySource,
 ) -> impl RunFuture<Result<Sealed<F>, TerminalError>> + 'a
 where
-    F: Field,
+    F: Seal,
     Fut: Future<Output = HandlerResult<F::Value>> + Send + 'static,
 {
     let domain = domain(args);
@@ -236,7 +235,7 @@ where
 pub fn seal_record<'a, R>(
     ctx: &'a impl RunContext,
     record: &'a R,
-    binding: &'a R::Binding,
+    binding: &'a R::Scope,
     keys: &'a (impl EncryptionKeySource + BlindIndexKeySource + ?Sized),
 ) -> impl RunFuture<Result<Json<R::Sealed>, TerminalError>> + 'a
 where
@@ -255,7 +254,7 @@ where
 pub fn seal_record_with<'a, R, Fut>(
     ctx: &'a impl RunContext,
     fetch: impl FnOnce() -> Fut + Send + 'static,
-    binding: &'a R::Binding,
+    binding: &'a R::Scope,
     keys: &'a (impl EncryptionKeySource + BlindIndexKeySource + ?Sized),
 ) -> impl RunFuture<Result<Json<R::Sealed>, TerminalError>> + 'a
 where

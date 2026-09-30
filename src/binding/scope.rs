@@ -1,4 +1,4 @@
-use super::{Binding, PartRole, PartSpec, PartValue, check_parts, check_values};
+use super::{PartRole, PartSpec, PartValue, Scope, check_parts, check_values};
 use crate::{Error, PartId};
 
 /// The [`keys`](PartRole::Keys) parts of a binding: the scope that key custody
@@ -6,12 +6,12 @@ use crate::{Error, PartId};
 ///
 /// Two bindings of the same type share a key scope when their `keys` values
 /// are equal, whatever their `index` and bound-only values. A binding without
-/// `keys` parts, such as [`FieldOnly`](crate::FieldOnly), has the empty key scope,
+/// `keys` parts, such as the empty scope `()`, has the empty key scope,
 /// which every such binding shares. A record never contributes to it.
 ///
 /// A key scope is owned and implements `Hash + Eq`, so an application can use it
 /// to cache or look up the keys of each scope. It is the
-/// [shred unit](Binding#shredding) when each scope's root keys are stored
+/// [shred unit](Scope#shredding) when each scope's root keys are stored
 /// independently.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct KeyScope(Box<[(PartId, ScopeValue)]>);
@@ -29,8 +29,8 @@ impl KeyScope {
     /// # Errors
     ///
     /// Returns [`Error::InvalidBinding`] when the binding's values do not match
-    /// its parts; see [`Binding`].
-    pub fn of<B: Binding>(binding: &B) -> Result<Self, Error> {
+    /// its parts; see [`Scope`].
+    pub fn of<B: Scope>(binding: &B) -> Result<Self, Error> {
         const { check_parts(B::PARTS) };
 
         let values = binding.values();
@@ -46,8 +46,8 @@ impl KeyScope {
     /// # Errors
     ///
     /// Returns [`Error::InvalidBinding`] when the arguments' values do not match
-    /// the binding's `keys` and `index` parts; see [`Binding::index_values`].
-    pub fn of_index<B: Binding>(args: &B::IndexArgs) -> Result<Self, Error> {
+    /// the binding's `keys` and `index` parts; see [`Scope::index_values`].
+    pub fn of_index<B: Scope>(args: &B::IndexArgs) -> Result<Self, Error> {
         const { check_parts(B::PARTS) };
 
         let values = B::index_values(args);
@@ -58,7 +58,7 @@ impl KeyScope {
     }
 
     /// Returns the key scope of the given `keys` part values of binding `B`, one
-    /// per `keys` part in [`PARTS`](Binding::PARTS) order.
+    /// per `keys` part in [`PARTS`](Scope::PARTS) order.
     ///
     /// It equals the key scope of every binding of `B` with the same `keys`
     /// values. Use it where only the key scope is known, such as when shredding
@@ -78,7 +78,7 @@ impl KeyScope {
     /// Returns [`Error::InvalidBinding`] when the values do not match the
     /// binding's `keys` parts: a missing or extra value, a value of the wrong
     /// kind, or an empty value.
-    pub fn of_keys<B: Binding>(values: &[PartValue<'_>]) -> Result<Self, Error> {
+    pub fn of_keys<B: Scope>(values: &[PartValue<'_>]) -> Result<Self, Error> {
         const { check_parts(B::PARTS) };
 
         let specs = B::PARTS.iter().filter(|spec| spec.role == PartRole::Keys);

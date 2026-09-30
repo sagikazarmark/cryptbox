@@ -1,0 +1,41 @@
+error[E0308]: mismatched types
+  --> tests/ui/record_mixed_scopes.rs:20:23
+   |
+13 | #[derive(cryptbox::Record)]
+   |          ----------------
+   |          |
+   |          arguments to this function are incorrect
+   |          in this derive macro expansion
+...
+20 |     #[cryptbox(seal = UserNote)]
+   |                       ^^^^^^^^ expected `&()`, found `&Tenant`
+   |
+   = note: expected reference `&()`
+              found reference `&Tenant`
+note: associated function defined here
+  --> tests/ui/record_mixed_scopes.rs:13:10
+   |
+13 | #[derive(cryptbox::Record)]
+   |          ^^^^^^^^^^^^^^^^
+   = note: this error originates in the derive macro `cryptbox::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+  --> tests/ui/record_mixed_scopes.rs:20:23
+   |
+13 | #[derive(cryptbox::Record)]
+   |          ----------------
+   |          |
+   |          arguments to this struct are incorrect
+   |          in this derive macro expansion
+...
+20 |     #[cryptbox(seal = UserNote)]
+   |                       ^^^^^^^^ expected `&()`, found `&Tenant`
+   |
+   = note: expected reference `&()`
+              found reference `&Tenant`
+note: tuple struct defined here
+  --> $WORKSPACE/src/binding/args.rs
+   |
+   | pub struct InRecord<'a, S, Id: ?Sized>(pub &'a S, pub &'a Id);
+   |            ^^^^^^^^
+   = note: this error originates in the derive macro `cryptbox::Record` (in Nightly builds, run with -Z macro-backtrace for more info)

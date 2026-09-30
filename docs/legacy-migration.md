@@ -44,7 +44,7 @@ longer compatible after encrypted writes.
 
 Implement and explicitly inject `LegacyFormat`; its synchronous
 `recover(&self, bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>, LegacyError>` returns
-plaintext bytes for the field codec. Keep network recovery in a custom store
+plaintext bytes for the seal's codec. Keep network recovery in a custom store
 or prefetch stage. The handler owns zeroization of its keys/intermediates and
 sanitized errors; CryptBox zeroizes the legacy/recovered buffers it owns, not
 SQLx buffers, application clones, storage or backups. Protect quarantine copies
@@ -122,12 +122,12 @@ Switch to blind-index-only lookup only after the [closure gates](#verification-a
 Configure `RowPlanner::<F>::new(encryption_keys)`, add the
 explicit handler with `with_legacy`, and register indexes in stored order with
 `with_index_with::<Spec>(index_keys)`. Omit `with_legacy` only for authorized
-plaintext-only data. Recovery decodes through the field codec, seals and
+plaintext-only data. Recovery decodes through the seal's codec, seals and
 derives every registered index. Stale CryptBox components are rewritten; current
 ones are retained under the [sweep rules](reencryption-sweep.md#sweep-loop).
 
-`RowPlanner::new` serves a [`FieldOnly`](bindings.md) field without a record. A
-bound field uses `RowPlanner::for_key_scope(key_scope, keys, row_args)`, one
+`RowPlanner::new` serves an unscoped seal without a record. A
+bound seal uses `RowPlanner::for_key_scope(key_scope, keys, row_args)`, one
 planner per key scope, because its keys are scoped too. The key scope comes from
 the job's configuration, never from the rows: a row whose `keys` columns name
 another scope is counted out of scope and left alone. The remaining binding
@@ -135,7 +135,7 @@ values and the record do come from the row's own columns, so a migration trusts
 those columns once, in exchange for having no request to authorize them against.
 Migrate only over columns the application already trusts, and establish their
 provenance with the same evidence this guide requires for legacy bytes. The
-packaged stores load no columns, so a bound field needs an application-owned
+packaged stores load no columns, so a bound seal needs an application-owned
 `SweepStore`. See
 [binding-declaration changes](reencryption-sweep.md#binding-declaration-changes) and
 [bound values come from an authorized source](bindings.md#bound-values-come-from-an-authorized-source).

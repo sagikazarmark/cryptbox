@@ -15,7 +15,7 @@
 //! authenticated readability, decoded-value validity, or index consistency.
 //! Obtain those assurances with separate decryption and index recomputation.
 //!
-//! The same sweep changes a field's binding declaration. [`RowPlanner::for_key_scope`]
+//! The same sweep changes a seal's binding declaration. [`RowPlanner::for_key_scope`]
 //! builds each row's binding arguments from its columns for one key scope, and
 //! [`RowPlanner::legacy_binding`] opens a legacy-binding window in which rows
 //! sealed with the older declaration are resealed. Until verification counts none of

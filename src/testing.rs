@@ -1,12 +1,12 @@
 //! Test helpers that pin persistent schema to committed fixtures and check
 //! which keyring protects a value.
 
-use crate::{Codec, EncryptionKeyring, Field, Sealed};
+use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 
-/// Asserts that field `F` encodes `value` as exactly the hex bytes in `expected`,
+/// Asserts that seal `F` encodes `value` as exactly the hex bytes in `expected`,
 /// and decodes those bytes back to a value that encodes identically.
 ///
-/// Commit one fixture per field and run this in a test: it fails when the
+/// Commit one fixture per seal and run this in a test: it fails when the
 /// stored bytes would change, as a serde attribute change on a `Json` or
 /// `Postcard` value type can do silently. See [guarding the schema in CI].
 ///
@@ -21,17 +21,16 @@ use crate::{Codec, EncryptionKeyring, Field, Sealed};
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Field, FieldId, FieldOnly, Padding, Utf8, testing::assert_encoding};
+/// use cryptbox::{Seal, SealId, Padding, Utf8, testing::assert_encoding};
 ///
 /// struct Nickname;
 ///
-/// impl Field for Nickname {
-///     const ID: FieldId = cryptbox::field_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
+/// impl Seal for Nickname {
+///     const ID: SealId = cryptbox::seal_id!("5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -45,7 +44,7 @@ use crate::{Codec, EncryptionKeyring, Field, Sealed};
 /// encodes differently. The message includes the actual bytes in hex, so use
 /// synthetic values, never production data.
 #[track_caller]
-pub fn assert_encoding<F: Field>(value: &F::Value, expected: &str) {
+pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
     let expected = hex::decode(expected).expect("fixture must be hex");
 
     let encoded = F::Codec::encode(value).expect("value must encode");
@@ -68,7 +67,7 @@ pub fn assert_encoding<F: Field>(value: &F::Value, expected: &str) {
 
 /// Asserts that `sealed` names a key that `keyring` holds, current or previous.
 ///
-/// Choosing which keyring protects a field or scope is application code, and a
+/// Choosing which keyring protects a seal or scope is application code, and a
 /// wrong choice fails silently at write time: the value seals and opens with the
 /// wrong keys, and survives destroying the right ones. Seal a value through the
 /// application's own key source and assert the keyring it should have chosen.
@@ -86,31 +85,30 @@ pub fn assert_encoding<F: Field>(value: &F::Value, expected: &str) {
 ///
 /// ```
 /// use cryptbox::{
-///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId, FieldOnly,
+///     EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Seal, SealId,
 ///     KeyScope, Padding, Sealed, Utf8, testing::assert_sealed_under,
 /// };
 ///
 /// struct Iban;
 ///
-/// impl Field for Iban {
-///     const ID: FieldId = cryptbox::field_id!("50000000-0000-4000-8000-000000000005");
+/// impl Seal for Iban {
+///     const ID: SealId = cryptbox::seal_id!("50000000-0000-4000-8000-000000000005");
 ///     const PADDING: Padding = Padding::NONE;
-///     const RECORD: bool = false;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Binding = FieldOnly;
+///     type Scope = ();
 ///     type Indexes = ();
 /// }
 ///
-/// /// Keeps payment fields under their own keyring.
+/// /// Keeps payment seals under their own keyring.
 /// struct AppKeys {
 ///     general: EncryptionKeyring,
 ///     payments: EncryptionKeyring,
 /// }
 ///
 /// impl EncryptionKeySource for AppKeys {
-///     fn encryption_keyring(&self, field: FieldId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
-///         Ok(if field == Iban::ID { self.payments.clone() } else { self.general.clone() })
+///     fn encryption_keyring(&self, seal: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
+///         Ok(if seal == Iban::ID { self.payments.clone() } else { self.general.clone() })
 ///     }
 /// }
 ///
@@ -128,13 +126,13 @@ pub fn assert_encoding<F: Field>(value: &F::Value, expected: &str) {
 /// # Panics
 ///
 /// Panics when `keyring` does not hold the key that `sealed` names. The message
-/// includes the field ID and the key ID, never the value.
+/// includes the seal ID and the key ID, never the value.
 #[track_caller]
-pub fn assert_sealed_under<F: Field>(sealed: &Sealed<F>, keyring: &EncryptionKeyring) {
+pub fn assert_sealed_under<F: Seal>(sealed: &Sealed<F>, keyring: &EncryptionKeyring) {
     let key = sealed.key_id();
     assert!(
         keyring.get(key).is_some(),
-        "field {} is sealed under key {key}, which the keyring does not hold",
+        "seal {} is sealed under key {key}, which the keyring does not hold",
         F::ID,
     );
 }

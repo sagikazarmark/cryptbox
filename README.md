@@ -23,9 +23,9 @@
 
 | Capability | Protection |
 | --- | --- |
-| ✅ It CAN | Protect encrypted fields in a stolen database dump when keys stay separate. |
+| ✅ It CAN | Protect encrypted values in a stolen database dump when keys stay separate. |
 | ❌ It CAN'T | Protect a compromised application. |
-| ❌ It CAN'T | Prevent replay, or cross-row substitution for fields that bind no record. |
+| ❌ It CAN'T | Prevent replay, or cross-row substitution for seals that bind no record. |
 
 [Try it](docs/first-field.md) · [How it works](docs/concepts.md) ·
 [Security](docs/security.md) · [Documentation](docs/README.md) ·
@@ -34,22 +34,21 @@
 ## Quick start
 
 Seal and open a string with an in-memory key. For setup instructions, follow
-[encrypt your first field](docs/first-field.md).
+[seal your first value](docs/first-field.md).
 
 ```rust
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, Padding, Sealed, Utf8,
+    EncryptionKey, EncryptionKeyring, Seal, SealId, Padding, Sealed, Utf8,
 };
 
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+impl Seal for UserEmail {
+    const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -65,9 +64,9 @@ fn main() -> Result<(), cryptbox::Error> {
 }
 ```
 
-`UserEmail` is a field: its ID binds every sealed value to this field, and it
-stores a `String` as UTF-8 without padding. `Sealed` holds the encrypted value;
-`open` returns the plaintext. `()` is the binding argument of a field bound to its
+`UserEmail` is a seal: its ID binds every value sealed with it to this seal, and
+it stores a `String` as UTF-8 without padding. `Sealed` holds the encrypted value;
+`open` returns the plaintext. `()` is the binding argument of a seal bound to its
 ID alone, and `&keys` supplies the keys. See
 [how CryptBox works](docs/concepts.md).
 

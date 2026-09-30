@@ -1,0 +1,29 @@
+error: a type with fields is its own value: remove `value`, or declare the seal as a unit struct to seal a separate value type
+ --> tests/ui/seal_form_misuse.rs:3:65
+  |
+3 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, codec = cryptbox::Utf8)]
+  |                                                                 ^^^^^^
+
+error: missing `codec`: a type with fields is its own value, so name how it is encoded with `#[cryptbox(codec = Codec)]`, or store its single field with `#[cryptbox(transparent)]`
+ --> tests/ui/seal_form_misuse.rs:9:8
+  |
+9 | struct WithoutCodec {
+  |        ^^^^^^^^^^^^
+
+error: `transparent` needs a struct with exactly one field; a unit struct is a marker over its `value` type
+  --> tests/ui/seal_form_misuse.rs:15:73
+   |
+15 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, transparent)]
+   |                                                                         ^^^^^^^^^^^
+
+error: `transparent` needs a struct with exactly one field
+  --> tests/ui/seal_form_misuse.rs:20:57
+   |
+20 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent)]
+   |                                                         ^^^^^^^^^^^
+
+error: `transparent` takes no value
+  --> tests/ui/seal_form_misuse.rs:25:57
+   |
+25 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", transparent = true)]
+   |                                                         ^^^^^^^^^^^

@@ -7,9 +7,7 @@ use sqlx::{
     sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef},
 };
 
-use crate::{
-    BlindIndex, BlindIndexRef, BlindIndexSpec, ColumnKeys, Field, FieldOnly, Plain, Sealed,
-};
+use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, ColumnKeys, Plain, Seal, Sealed};
 
 fn blob_type_info() -> SqliteTypeInfo {
     <Vec<u8> as Type<Sqlite>>::type_info()
@@ -21,7 +19,7 @@ fn blob_compatible(ty: &SqliteTypeInfo) -> bool {
 
 impl<F, K> Type<Sqlite> for Plain<F, K>
 where
-    F: Field<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
     K: ColumnKeys,
 {
     fn type_info() -> SqliteTypeInfo {
@@ -33,7 +31,7 @@ where
     }
 }
 
-impl<F: Field> Type<Sqlite> for Sealed<F> {
+impl<F: Seal> Type<Sqlite> for Sealed<F> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -65,7 +63,7 @@ impl<Spec> Type<Sqlite> for BlindIndexRef<'_, Spec> {
 
 impl<'q, F, K> Encode<'q, Sqlite> for Plain<F, K>
 where
-    F: Field<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
     K: ColumnKeys,
 {
     fn encode_by_ref(
@@ -83,7 +81,7 @@ where
     }
 }
 
-impl<'q, F: Field> Encode<'q, Sqlite> for Sealed<F> {
+impl<'q, F: Seal> Encode<'q, Sqlite> for Sealed<F> {
     fn encode_by_ref(
         &self,
         buffer: &mut Vec<SqliteArgumentValue<'q>>,
@@ -136,7 +134,7 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
 
 impl<'row, F, K> Decode<'row, Sqlite> for Plain<F, K>
 where
-    F: Field<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
     K: ColumnKeys,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
@@ -145,7 +143,7 @@ where
     }
 }
 
-impl<'row, F: Field> Decode<'row, Sqlite> for Sealed<F> {
+impl<'row, F: Seal> Decode<'row, Sqlite> for Sealed<F> {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
 
@@ -165,7 +163,7 @@ where
 }
 
 #[cfg(feature = "migrate")]
-impl<F: Field> Type<Sqlite> for crate::migrate::MaybeEncrypted<F> {
+impl<F: Seal> Type<Sqlite> for crate::migrate::MaybeEncrypted<F> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -182,7 +180,7 @@ impl<F: Field> Type<Sqlite> for crate::migrate::MaybeEncrypted<F> {
 #[cfg(feature = "migrate")]
 impl<'row, F> Decode<'row, Sqlite> for crate::migrate::MaybeEncrypted<F>
 where
-    F: Field,
+    F: Seal,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;

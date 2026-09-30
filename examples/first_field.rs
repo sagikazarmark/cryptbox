@@ -1,19 +1,16 @@
-//! First field-bound round trip with explicit, ephemeral keys.
+//! First seal-bound round trip with explicit, ephemeral keys.
 
 // ANCHOR: first-field
-use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Field, FieldId, FieldOnly, Padding, Sealed, Utf8,
-};
+use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8};
 
 struct UserEmail;
 
-impl Field for UserEmail {
-    const ID: FieldId = cryptbox::field_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+impl Seal for UserEmail {
+    const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -25,7 +22,7 @@ fn main() -> Result<(), cryptbox::Error> {
     let opened = sealed.open((), &keys)?;
     assert_eq!(opened, "mark@example.com");
     assert_eq!(email, "mark@example.com"); // Source retained.
-    println!("Field-bound round trip succeeded.");
+    println!("Seal-bound round trip succeeded.");
     Ok(())
 }
 // ANCHOR_END: first-field
@@ -36,13 +33,12 @@ mod tests {
 
     struct BillingEmail;
 
-    impl Field for BillingEmail {
-        const ID: FieldId = cryptbox::field_id!("124f036a-39c6-4197-a9bb-c92c471285ad");
+    impl Seal for BillingEmail {
+        const ID: SealId = cryptbox::seal_id!("124f036a-39c6-4197-a9bb-c92c471285ad");
         const PADDING: Padding = Padding::NONE;
-        const RECORD: bool = false;
         type Value = String;
         type Codec = Utf8;
-        type Binding = FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
 
@@ -52,7 +48,7 @@ mod tests {
     }
 
     #[test]
-    fn stored_email_cannot_be_read_as_another_field() -> Result<(), cryptbox::Error> {
+    fn stored_email_cannot_be_read_as_another_seal() -> Result<(), cryptbox::Error> {
         let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
         let sealed = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), (), &keys)?;
         let substituted = Sealed::<BillingEmail>::from_bytes(sealed.as_bytes().to_vec())?;

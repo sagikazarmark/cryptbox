@@ -4,19 +4,18 @@
 use std::collections::HashMap;
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, Field, FieldId, KeyScope,
-    Padding, RecordId, Sealed, Tenant, TenantId, Utf8,
+    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, KeyScope, Padding, Recorded,
+    Seal, SealId, Sealed, Tenant, TenantId, Utf8,
 };
 
 struct CustomerEmail;
 
-impl Field for CustomerEmail {
-    const ID: FieldId = cryptbox::field_id!("38fc9e4b-f1c5-4d9b-b90a-50f53fe6c792");
+impl Seal for CustomerEmail {
+    const ID: SealId = cryptbox::seal_id!("38fc9e4b-f1c5-4d9b-b90a-50f53fe6c792");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = true;
     type Value = String;
     type Codec = Utf8;
-    type Binding = Tenant;
+    type Scope = Recorded<Tenant, [u8; 16]>;
     type Indexes = ();
 }
 
@@ -24,7 +23,7 @@ impl Field for CustomerEmail {
 struct TenantKeyrings(HashMap<KeyScope, EncryptionKeyring>);
 
 impl EncryptionKeySource for TenantKeyrings {
-    fn encryption_keyring(&self, _: FieldId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
+    fn encryption_keyring(&self, _: SealId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
         // Cloning a keyring shares its keys. An unknown scope fails closed.
         self.0.get(scope).cloned().ok_or(Error::KeysUnavailable)
     }
@@ -54,8 +53,7 @@ fn main() -> Result<(), Error> {
         ),
     ]));
 
-    let ada = RecordId::from(ADA);
-    let grace = RecordId::from(GRACE);
+    let (ada, grace) = (&ADA, &GRACE);
     let email = "ada@acme.example".to_owned();
     let sealed = Sealed::<CustomerEmail>::seal(&email, (&acme, ada), &keys)?;
     assert_eq!(sealed.open((&acme, ada), &keys)?, email);
@@ -95,11 +93,7 @@ mod tests {
         let keys = TenantKeyrings(HashMap::new());
 
         assert!(matches!(
-            Sealed::<CustomerEmail>::seal(
-                &"ada@acme.example".to_owned(),
-                (&acme, RecordId::from(ADA)),
-                &keys,
-            ),
+            Sealed::<CustomerEmail>::seal(&"ada@acme.example".to_owned(), (&acme, &ADA), &keys,),
             Err(Error::KeysUnavailable)
         ));
         Ok(())

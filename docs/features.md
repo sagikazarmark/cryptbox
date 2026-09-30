@@ -5,12 +5,13 @@ included in the crate landing documentation.
 
 No features are enabled by default, and all features are additive:
 
-- `derive` adds `#[derive(Field)]`, `#[derive(Binding)]`,
-  `#[derive(BlindIndexSpec)]`, `#[derive(Plaintext)]`, and `#[derive(Record)]`
+- `derive` adds `#[derive(Seal)]`, `#[derive(Scope)]`,
+  `#[derive(BlindIndexSpec)]`, and `#[derive(Record)]`
   from the `cryptbox-derive` proc-macro crate. Each expands to exactly the trait
-  impls you would write by hand, plus the index-arguments struct a binding names
-  with `index_args`, and a record's sealed struct and per-field sealers, so a
-  manual impl remains a first-class alternative.
+  impls you would write by hand, plus the index-arguments struct a scope names
+  with `index_args`, and a record's sealed struct, the seals its fields
+  declare, and per-field sealers, so a manual impl remains a first-class
+  alternative.
   IDs are UUID string literals checked at compile time; a codec is never
   inferred from a type's shape.
 - `json` adds the `Json` codec. Its serialized representation is part of the
@@ -34,9 +35,9 @@ No features are enabled by default, and all features are additive:
   `RecordId`. Either binds the UUID's 16 bytes, exactly as a `[u8; 16]` does.
 
 The `SQLx` adapters automatically seal and open `Plain<F>`, the column for a
-`FieldOnly` field without a record or blind indexes. `Plain<F>` uses the keys
+unscoped seal without a record or blind indexes. `Plain<F>` uses the keys
 installed with `keys::install`; name another key source as `Plain<F, K>` to use
-application-owned keys. Seal every other field explicitly: `Sealed` and
+application-owned keys. Seal values of every other seal explicitly: `Sealed` and
 blind-index storage need no keys. These features do not
 choose an async runtime or TLS implementation for the application. Add `SQLx`
 0.8 directly with your backend and chosen runtime/TLS features; `CryptBox`'s

@@ -5,9 +5,7 @@ use sqlx::{
     postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef},
 };
 
-use crate::{
-    BlindIndex, BlindIndexRef, BlindIndexSpec, ColumnKeys, Field, FieldOnly, Plain, Sealed,
-};
+use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, ColumnKeys, Plain, Seal, Sealed};
 
 fn bytea_type_info() -> PgTypeInfo {
     <Vec<u8> as Type<Postgres>>::type_info()
@@ -19,7 +17,7 @@ fn bytea_compatible(ty: &PgTypeInfo) -> bool {
 
 impl<F, K> Type<Postgres> for Plain<F, K>
 where
-    F: Field<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
     K: ColumnKeys,
 {
     fn type_info() -> PgTypeInfo {
@@ -33,7 +31,7 @@ where
 
 impl<F, K> Encode<'_, Postgres> for Plain<F, K>
 where
-    F: Field<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
     K: ColumnKeys,
 {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
@@ -50,7 +48,7 @@ where
 
 impl<'row, F, K> Decode<'row, Postgres> for Plain<F, K>
 where
-    F: Field<Binding = FieldOnly, Indexes = ()>,
+    F: Seal<Scope = (), Indexes = ()>,
     K: ColumnKeys,
 {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
@@ -59,7 +57,7 @@ where
     }
 }
 
-impl<F: Field> Type<Postgres> for Sealed<F> {
+impl<F: Seal> Type<Postgres> for Sealed<F> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -69,7 +67,7 @@ impl<F: Field> Type<Postgres> for Sealed<F> {
     }
 }
 
-impl<F: Field> Encode<'_, Postgres> for Sealed<F> {
+impl<F: Seal> Encode<'_, Postgres> for Sealed<F> {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         buffer.extend_from_slice(self.as_bytes());
 
@@ -81,7 +79,7 @@ impl<F: Field> Encode<'_, Postgres> for Sealed<F> {
     }
 }
 
-impl<'row, F: Field> Decode<'row, Postgres> for Sealed<F> {
+impl<'row, F: Seal> Decode<'row, Postgres> for Sealed<F> {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
 
@@ -123,7 +121,7 @@ where
 }
 
 #[cfg(feature = "migrate")]
-impl<F: Field> Type<Postgres> for crate::migrate::MaybeEncrypted<F> {
+impl<F: Seal> Type<Postgres> for crate::migrate::MaybeEncrypted<F> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -140,7 +138,7 @@ impl<F: Field> Type<Postgres> for crate::migrate::MaybeEncrypted<F> {
 #[cfg(feature = "migrate")]
 impl<'row, F> Decode<'row, Postgres> for crate::migrate::MaybeEncrypted<F>
 where
-    F: Field,
+    F: Seal,
 {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;

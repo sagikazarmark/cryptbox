@@ -1,10 +1,10 @@
 //! Public-boundary tests for blind indexes and prepared storage values.
 
 use cryptbox::{
-    Binding, BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec,
-    EncryptionKey, EncryptionKeyring, Error, Field, FieldOnly, IndexId, IndexKeyId, KeyId, Padding,
-    PartKind, PartSpec, PartValue, PartValues, RecordId, Sealed, Utf8, field_id, index_id,
-    index_key_id, inspect_blind_index, key_id, part_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, PartKind, PartSpec, PartValue,
+    PartValues, Recorded, Scope, Seal, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
+    key_id, part_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -12,27 +12,25 @@ const ENCRYPTION_KEY_ID: KeyId = key_id!("50000000-0000-4000-8000-000000000005")
 const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("60000000-0000-4000-8000-000000000006");
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("70000000-0000-4000-8000-000000000007");
 
-struct EmailField;
+struct EmailSeal;
 
-impl Field for EmailField {
-    const ID: cryptbox::FieldId = field_id!("80000000-0000-4000-8000-000000000008");
+impl Seal for EmailSeal {
+    const ID: cryptbox::SealId = seal_id!("80000000-0000-4000-8000-000000000008");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
-struct PhoneField;
+struct PhoneSeal;
 
-impl Field for PhoneField {
-    const ID: cryptbox::FieldId = field_id!("90000000-0000-4000-8000-000000000009");
+impl Seal for PhoneSeal {
+    const ID: cryptbox::SealId = seal_id!("90000000-0000-4000-8000-000000000009");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -43,7 +41,7 @@ fn normalize_email(input: &str) -> Zeroizing<Vec<u8>> {
 struct EmailExact;
 
 impl BlindIndexSpec for EmailExact {
-    type Field = EmailField;
+    type Seal = EmailSeal;
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 13;
     const NORMALIZER: &'static str = "email/1";
@@ -58,11 +56,11 @@ impl BlindIndexSpec for EmailExact {
     }
 }
 
-/// The same index ID and normalization over another field.
+/// The same index ID and normalization over another seal.
 struct PhoneExact;
 
 impl BlindIndexSpec for PhoneExact {
-    type Field = PhoneField;
+    type Seal = PhoneSeal;
     const ID: IndexId = EmailExact::ID;
     const BITS: u16 = EmailExact::BITS;
     const NORMALIZER: &'static str = "email/1";
@@ -111,7 +109,7 @@ fn blind_indexes_are_deterministic_normalized_and_explicitly_truncated() {
 }
 
 #[test]
-fn field_and_index_domains_are_cryptographically_separated() {
+fn seal_and_index_domains_are_cryptographically_separated() {
     let keys = index_keys();
     let email_index = EmailExact::derive_with(&email("mark@example.com"), &(), &keys).unwrap();
     let phone_index = PhoneExact::derive_with(&email("mark@example.com"), &(), &keys).unwrap();
@@ -167,7 +165,7 @@ fn prepared_values_derive_the_sealed_value_and_indexes_from_one_source() {
     let index_keys = index_keys();
     let value = email("Mark@Example.com");
 
-    let prepared = Sealed::<EmailField>::prepare(&value, (), &encryption_keys)
+    let prepared = Sealed::<EmailSeal>::prepare(&value, (), &encryption_keys)
         .unwrap()
         .with_index_with::<EmailExact>(&index_keys)
         .unwrap();
@@ -183,7 +181,7 @@ fn prepared_values_derive_the_sealed_value_and_indexes_from_one_source() {
 struct EmailDomain;
 
 impl BlindIndexSpec for EmailDomain {
-    type Field = EmailField;
+    type Seal = EmailSeal;
     const ID: IndexId = index_id!("c0000000-0000-4000-8000-00000000000c");
     const BITS: u16 = 16;
     const NORMALIZER: &'static str = "email-domain/1";
@@ -218,15 +216,14 @@ struct Person {
     postal_code: String,
 }
 
-struct PersonField;
+struct PersonSeal;
 
-impl Field for PersonField {
-    const ID: cryptbox::FieldId = field_id!("d0000000-0000-4000-8000-00000000000d");
+impl Seal for PersonSeal {
+    const ID: cryptbox::SealId = seal_id!("d0000000-0000-4000-8000-00000000000d");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = Person;
     type Codec = PersonCodec;
-    type Binding = FieldOnly;
+    type Scope = ();
     type Indexes = ();
 }
 
@@ -250,7 +247,7 @@ impl cryptbox::Codec<Person> for PersonCodec {
 struct NameAndPostalCode;
 
 impl BlindIndexSpec for NameAndPostalCode {
-    type Field = PersonField;
+    type Seal = PersonSeal;
     const ID: IndexId = index_id!("b0000000-0000-4000-8000-00000000000b");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "name-postal-code/1";
@@ -315,7 +312,7 @@ macro_rules! truncation_spec {
         struct $name;
 
         impl BlindIndexSpec for $name {
-            type Field = EmailField;
+            type Seal = EmailSeal;
             const ID: IndexId = IndexId::from_bytes([$id_byte; 16]);
             const BITS: u16 = $bits;
             const NORMALIZER: &'static str = "exact/1";
@@ -340,7 +337,7 @@ truncation_spec!(TwoHundredFiftySixBits, 256, 5);
 
 fn assert_canonical_truncation<Spec>(expected_bytes: usize)
 where
-    Spec: BlindIndexSpec<Field = EmailField>,
+    Spec: BlindIndexSpec<Seal = EmailSeal>,
 {
     let index = Spec::derive_with(&email("truncation vector"), &(), &index_keys()).unwrap();
 
@@ -467,7 +464,7 @@ struct OrgRegion {
     region: i64,
 }
 
-impl Binding for OrgWorkspace {
+impl Scope for OrgWorkspace {
     const PARTS: &'static [PartSpec] = &[
         PartSpec::keys(
             part_id!("3a1f0c6e-58b2-4d0a-9e57-1c4b8f2d6a90"),
@@ -499,20 +496,19 @@ impl Binding for OrgWorkspace {
 
 struct TicketEmail;
 
-impl Field for TicketEmail {
-    const ID: cryptbox::FieldId = field_id!("c0000000-0000-4000-8000-00000000000c");
+impl Seal for TicketEmail {
+    const ID: cryptbox::SealId = seal_id!("c0000000-0000-4000-8000-00000000000c");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = true;
     type Value = String;
     type Codec = Utf8;
-    type Binding = OrgWorkspace;
+    type Scope = Recorded<OrgWorkspace, i64>;
     type Indexes = (TicketEmailExact,);
 }
 
 struct TicketEmailExact;
 
 impl BlindIndexSpec for TicketEmailExact {
-    type Field = TicketEmail;
+    type Seal = TicketEmail;
     const ID: IndexId = index_id!("d0000000-0000-4000-8000-00000000000d");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "email/1";
@@ -579,11 +575,10 @@ fn prepared_indexes_ignore_bound_only_parts_and_the_record() {
     let value = email("mark@example.com");
     let prepare = |workspace: &[u8], record: i64| {
         let scope = ticket_scope(1, 7, workspace);
-        let prepared =
-            Sealed::<TicketEmail>::prepare(&value, (&scope, RecordId::from(record)), &keys)
-                .unwrap()
-                .with_index_with::<TicketEmailExact>(&index_keys)
-                .unwrap();
+        let prepared = Sealed::<TicketEmail>::prepare(&value, (&scope, &record), &keys)
+            .unwrap()
+            .with_index_with::<TicketEmailExact>(&index_keys)
+            .unwrap();
         let index = prepared.index::<TicketEmailExact>().unwrap();
 
         index.as_bytes().to_vec()
@@ -606,7 +601,7 @@ fn probes_find_a_prepared_index_only_in_its_scope() {
     let index_keys = index_keys();
     let value = email("mark@example.com");
     let scope = ticket_scope(1, 7, b"ws-1");
-    let prepared = Sealed::<TicketEmail>::prepare(&value, (&scope, RecordId::from(1_i64)), &keys)
+    let prepared = Sealed::<TicketEmail>::prepare(&value, (&scope, &1_i64), &keys)
         .unwrap()
         .with_index_with::<TicketEmailExact>(&index_keys)
         .unwrap();
@@ -645,7 +640,7 @@ fn a_stored_index_is_consistent_only_under_its_own_scope() {
 #[derive(Clone, Hash, PartialEq, Eq)]
 struct Team(Vec<u8>);
 
-impl Binding for Team {
+impl Scope for Team {
     const PARTS: &'static [PartSpec] = &[PartSpec::keys(
         part_id!("5d9a2c41-7e3b-4f80-9b16-c2a4e8d07f53"),
         PartKind::Bytes,
@@ -663,20 +658,19 @@ impl Binding for Team {
 
 struct TeamEmail;
 
-impl Field for TeamEmail {
-    const ID: cryptbox::FieldId = field_id!("e0000000-0000-4000-8000-00000000000e");
+impl Seal for TeamEmail {
+    const ID: cryptbox::SealId = seal_id!("e0000000-0000-4000-8000-00000000000e");
     const PADDING: Padding = Padding::NONE;
-    const RECORD: bool = false;
     type Value = String;
     type Codec = Utf8;
-    type Binding = Team;
+    type Scope = Team;
     type Indexes = (TeamEmailExact,);
 }
 
 struct TeamEmailExact;
 
 impl BlindIndexSpec for TeamEmailExact {
-    type Field = TeamEmail;
+    type Seal = TeamEmail;
     const ID: IndexId = index_id!("f0000000-0000-4000-8000-00000000000f");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "email/1";

@@ -12,15 +12,14 @@ pub struct AddressCodec;
 pub struct HomeAddress;
 const _: () = {
     #[automatically_derived]
-    impl ::cryptbox::Field for HomeAddress {
-        const ID: ::cryptbox::FieldId = ::cryptbox::FieldId::from_u128(
+    impl ::cryptbox::Seal for HomeAddress {
+        const ID: ::cryptbox::SealId = ::cryptbox::SealId::from_u128(
             0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64,
         );
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
-        const RECORD: bool = false;
         type Value = Address;
         type Codec = AddressCodec;
-        type Binding = ::cryptbox::FieldOnly;
+        type Scope = ();
         type Indexes = ();
     }
 };
@@ -32,7 +31,7 @@ fn normalize_street(street: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>
 }
 #[cryptbox(
     id = "3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64",
-    field = HomeAddress,
+    seal = HomeAddress,
     bits = 64,
     query = str,
     normalize = normalize_street,
@@ -43,7 +42,7 @@ pub struct StreetLookup;
 const _: () = {
     #[automatically_derived]
     impl ::cryptbox::BlindIndexSpec for StreetLookup {
-        type Field = HomeAddress;
+        type Seal = HomeAddress;
         const ID: ::cryptbox::IndexId = ::cryptbox::IndexId::from_u128(
             0x3f5d8c2b_6e40_4b97_8c31_8a2f7d9e5b64,
         );
@@ -59,7 +58,7 @@ const _: () = {
             normalize_street(query)
         }
         fn normalize_value(
-            value: &<HomeAddress as ::cryptbox::Field>::Value,
+            value: &<HomeAddress as ::cryptbox::Seal>::Value,
         ) -> ::core::result::Result<
             ::cryptbox::__private::Zeroizing<::std::vec::Vec<u8>>,
             ::cryptbox::BlindIndexError,

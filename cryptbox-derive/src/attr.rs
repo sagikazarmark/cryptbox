@@ -15,13 +15,13 @@ pub(crate) enum Key {
     Value,
     Codec,
     Padding,
-    Field,
+    Seal,
     Bits,
     Query,
     Normalize,
     Normalizer,
     Project,
-    Binding,
+    Scope,
     Record,
     Indexes,
     IndexArgs,
@@ -33,22 +33,24 @@ pub(crate) enum Key {
     Attr,
     IndexColumns,
     Plaintext,
+    Transparent,
+    Name,
 }
 
 impl Key {
-    const ALL: [Self; 23] = [
+    const ALL: [Self; 25] = [
         Self::Crate,
         Self::Id,
         Self::Value,
         Self::Codec,
         Self::Padding,
-        Self::Field,
+        Self::Seal,
         Self::Bits,
         Self::Query,
         Self::Normalize,
         Self::Normalizer,
         Self::Project,
-        Self::Binding,
+        Self::Scope,
         Self::Record,
         Self::Indexes,
         Self::IndexArgs,
@@ -60,6 +62,8 @@ impl Key {
         Self::Attr,
         Self::IndexColumns,
         Self::Plaintext,
+        Self::Transparent,
+        Self::Name,
     ];
 
     fn name(self) -> &'static str {
@@ -69,15 +73,16 @@ impl Key {
             Self::Value => "value",
             Self::Codec => "codec",
             Self::Padding => "padding",
-            Self::Field => "field",
+            Self::Seal => "seal",
             Self::Bits => "bits",
             Self::Query => "query",
             Self::Normalize => "normalize",
             Self::Normalizer => "normalizer",
             Self::Project => "project",
-            Self::Binding => "binding",
-            // `RecordId` and `IndexColumns` reuse these names in `#[derive(Record)]`.
-            Self::Record | Self::RecordId => "record",
+            Self::Scope => "scope",
+            Self::Record => "record",
+            Self::RecordId => "record_id",
+            // `IndexColumns` reuses this name in `#[derive(Record)]`.
             Self::Indexes => "indexes",
             Self::IndexArgs => "index_args",
             Self::Part => "part",
@@ -86,6 +91,8 @@ impl Key {
             Self::Sealed => "sealed",
             Self::Attr => "attr",
             Self::Plaintext => "plaintext",
+            Self::Transparent => "transparent",
+            Self::Name => "name",
         }
     }
 
@@ -93,7 +100,7 @@ impl Key {
     fn is_flag(self) -> bool {
         matches!(
             self,
-            Self::Record | Self::Keys | Self::Index | Self::Plaintext
+            Self::Record | Self::Keys | Self::Index | Self::Plaintext | Self::Transparent
         )
     }
 }
@@ -159,13 +166,15 @@ pub(crate) struct Attrs {
     pub(crate) value: Option<Type>,
     pub(crate) codec: Option<Type>,
     pub(crate) padding: Option<Padding>,
-    pub(crate) field: Option<Type>,
+    pub(crate) seal: Option<Type>,
+    /// A bare `seal`, without `= Type`.
+    pub(crate) seal_own: Option<Span>,
     pub(crate) bits: Option<LitInt>,
     pub(crate) query: Option<Type>,
     pub(crate) normalize: Option<Path>,
     pub(crate) normalizer: Option<LitStr>,
     pub(crate) project: Option<Path>,
-    pub(crate) binding: Option<Type>,
+    pub(crate) scope: Option<Type>,
     pub(crate) record: Option<Span>,
     pub(crate) indexes: Option<Vec<Type>>,
     pub(crate) index_args: Option<Ident>,
@@ -174,9 +183,11 @@ pub(crate) struct Attrs {
     pub(crate) index: Option<Span>,
     pub(crate) record_id: Option<Ident>,
     pub(crate) sealed: Option<Ident>,
+    pub(crate) name: Option<Ident>,
     pub(crate) attr: Option<Vec<Meta>>,
     pub(crate) index_columns: Option<Vec<IndexColumn>>,
     pub(crate) plaintext: Option<Span>,
+    pub(crate) transparent: Option<Span>,
     seen: Vec<Key>,
 }
 
@@ -243,6 +254,11 @@ impl Attrs {
                     parse_index_columns(meta.input).map(|list| parsed.index_columns = Some(list))
                 } else if key == Key::Attr {
                     parse_attr(meta.input).map(|list| parsed.attr = Some(list))
+                } else if key == Key::Seal && (meta.input.is_empty() || meta.input.peek(Token![,]))
+                {
+                    // Each derive decides whether a bare `seal` means anything.
+                    parsed.seal_own = Some(meta.path.span());
+                    Ok(())
                 } else {
                     meta.value()
                         .and_then(|input| parsed.parse_value(key, input))
@@ -274,20 +290,22 @@ impl Attrs {
             Key::Value => self.value = Some(input.parse()?),
             Key::Codec => self.codec = Some(input.parse()?),
             Key::Padding => self.padding = Some(parse_padding(input)?),
-            Key::Field => self.field = Some(input.parse()?),
+            Key::Seal => self.seal = Some(input.parse()?),
             Key::Bits => self.bits = Some(parse_bits(input)?),
             Key::Query => self.query = Some(input.parse()?),
             Key::Normalize => self.normalize = Some(input.parse()?),
             Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
-            Key::Binding => self.binding = Some(input.parse()?),
+            Key::Scope => self.scope = Some(input.parse()?),
             Key::IndexArgs => self.index_args = Some(input.parse()?),
             Key::RecordId => self.record_id = Some(input.parse()?),
             Key::Sealed => self.sealed = Some(input.parse()?),
+            Key::Name => self.name = Some(input.parse()?),
             Key::Record
             | Key::Keys
             | Key::Index
             | Key::Plaintext
+            | Key::Transparent
             | Key::Indexes
             | Key::IndexColumns
             | Key::Attr => {
@@ -309,6 +327,7 @@ impl Attrs {
             Key::Keys => self.keys = Some(span),
             Key::Index => self.index = Some(span),
             Key::Plaintext => self.plaintext = Some(span),
+            Key::Transparent => self.transparent = Some(span),
             _ => unreachable!("only flags are parsed here"),
         }
 
@@ -475,7 +494,7 @@ fn parse_uuid(key: Key, input: ParseStream) -> syn::Result<UuidLiteral> {
     })
 }
 
-/// Parses the hyphenated form `cryptbox::FieldId::from_str` accepts.
+/// Parses the hyphenated form `cryptbox::SealId::from_str` accepts.
 fn uuid_value(text: &str) -> Option<u128> {
     let bytes = text.as_bytes();
     if bytes.len() != 36 {

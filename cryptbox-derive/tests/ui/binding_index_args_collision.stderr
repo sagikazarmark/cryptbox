@@ -1,5 +1,0 @@
-error: `index_args` names the struct this derive generates, so it can't be `OrgWorkspace` itself
- --> tests/ui/binding_index_args_collision.rs:2:25
-  |
-2 | #[cryptbox(index_args = OrgWorkspace)]
-  |                         ^^^^^^^^^^^^

@@ -8,7 +8,7 @@ use crate::attr::{Attrs, Errors, Key, required};
 
 const KEYS: &[Key] = &[
     Key::Id,
-    Key::Field,
+    Key::Seal,
     Key::Bits,
     Key::Query,
     Key::Normalize,
@@ -31,14 +31,17 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         "\"<uuid>\"",
         &mut errors,
     );
-    let field = required(
-        attrs.field.take(),
+    let seal = required(
+        attrs.seal.take(),
         &attrs,
-        Key::Field,
+        Key::Seal,
         name,
-        "Field",
+        "Seal",
         &mut errors,
     );
+    if let Some(span) = attrs.seal_own {
+        errors.push(syn::Error::new(span, "`seal` needs a value: `seal = Seal`"));
+    }
     let bits = required(
         attrs.bits.take(),
         &attrs,
@@ -74,8 +77,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         &mut errors,
     );
     errors.finish()?;
-    let (Some(id), Some(field), Some(bits), Some(query), Some(normalize), Some(normalizer_name)) =
-        (id, field, bits, query, normalize, normalizer_name)
+    let (Some(id), Some(seal), Some(bits), Some(query), Some(normalize), Some(normalizer_name)) =
+        (id, seal, bits, query, normalize, normalizer_name)
     else {
         unreachable!("missing keys are reported above");
     };
@@ -90,8 +93,8 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         let projected = quote_spanned!(project.span()=> &#project(#value_arg));
         quote_spanned!(normalize.span()=> #normalize(#projected))
     } else {
-        // Point a value that does not fit the normalizer at the `field` key.
-        let value = Ident::new("value", Span::mixed_site().located_at(field.span()));
+        // Point a value that does not fit the normalizer at the `seal` key.
+        let value = Ident::new("value", Span::mixed_site().located_at(seal.span()));
         quote_spanned!(normalize.span()=> #normalize(#value))
     };
 
@@ -107,7 +110,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         const _: () = {
             #[automatically_derived]
             impl #impl_generics #krate::BlindIndexSpec for #name #type_generics #where_clause {
-                type Field = #field;
+                type Seal = #seal;
                 const ID: #krate::IndexId = #krate::IndexId::from_u128(#id);
                 const BITS: u16 = #bits;
                 const NORMALIZER: &'static str = #normalizer_name;
@@ -118,7 +121,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
                 }
 
                 fn normalize_value(
-                    #value_arg: &<#field as #krate::Field>::Value,
+                    #value_arg: &<#seal as #krate::Seal>::Value,
                 ) -> #normalized {
                     #normalize_value
                 }

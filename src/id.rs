@@ -57,7 +57,7 @@ macro_rules! identifier {
 // Shared with `key`, which declares its key-generation IDs next to the keys.
 pub(crate) use identifier;
 
-identifier!(FieldId, "A stable logical encrypted-field identifier.");
+identifier!(SealId, "A stable seal identifier.");
 identifier!(IndexId, "A stable logical blind-index identifier.");
 identifier!(
     PartId,
@@ -89,12 +89,12 @@ pub(crate) fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {
         .map_err(|_| InvalidIdentifier)
 }
 
-/// Creates a [`FieldId`](crate::FieldId) from a UUID literal.
+/// Creates a [`SealId`](crate::SealId) from a UUID literal.
 #[macro_export]
-macro_rules! field_id {
+macro_rules! seal_id {
     ($value:literal) => {{
-        const ID: $crate::FieldId =
-            $crate::FieldId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
+        const ID: $crate::SealId =
+            $crate::SealId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
         ID
     }};
 }
@@ -121,22 +121,22 @@ macro_rules! part_id {
 
 #[cfg(test)]
 mod tests {
-    use super::{FieldId, InvalidIdentifier};
+    use super::{InvalidIdentifier, SealId};
 
     const HYPHENATED: &str = "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64";
 
     #[test]
     fn parses_and_displays_the_hyphenated_form() {
-        let id: FieldId = HYPHENATED.parse().unwrap();
+        let id: SealId = HYPHENATED.parse().unwrap();
 
-        assert_eq!(id, crate::field_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64"));
+        assert_eq!(id, crate::seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64"));
         assert_eq!(
             id,
-            FieldId::from_u128(0x0b6f_3c2a_8e41_4d57_a9c3_5e1f_2d7b_8a64)
+            SealId::from_u128(0x0b6f_3c2a_8e41_4d57_a9c3_5e1f_2d7b_8a64)
         );
         assert_eq!(id.to_string(), HYPHENATED);
         assert_eq!(
-            "0B6F3C2A-8E41-4D57-A9C3-5E1F2D7B8A64".parse::<FieldId>(),
+            "0B6F3C2A-8E41-4D57-A9C3-5E1F2D7B8A64".parse::<SealId>(),
             Ok(id)
         );
     }
@@ -151,7 +151,7 @@ mod tests {
             "0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64",
             "",
         ] {
-            assert_eq!(input.parse::<FieldId>(), Err(InvalidIdentifier), "{input}");
+            assert_eq!(input.parse::<SealId>(), Err(InvalidIdentifier), "{input}");
         }
     }
 }

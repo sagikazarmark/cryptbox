@@ -1,4 +1,4 @@
-#[derive(cryptbox::Field)]
+#[derive(cryptbox::Seal)]
 #[cryptbox(value = String)]
 struct UserEmail;
 

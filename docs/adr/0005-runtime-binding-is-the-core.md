@@ -38,6 +38,17 @@ status: accepted
 > Amended for terminology. A binding's *shape* is now its *declaration*, and the
 > shape fingerprint is the *binding fingerprint*, stored as 8 plain bytes. The
 > rest of this record keeps the original terms.
+>
+> Amended for terminology by [ADR-0007](0007-seals-may-be-their-own-values.md). A
+> *field* is now a *seal*, and the field ID a *seal ID*; the rest of this record
+> keeps the original terms.
+>
+> Amended by [ADR-0008](0008-records-declare-their-fields-seals.md). A seal binds a
+> record through its scope, `Recorded<S, Id>`, which adds the record ID as a
+> bound-only part under the nil part ID: `RECORD` and the separate record slot
+> are gone. `FieldOnly` is the empty scope `()`, and `Binding` is `Scope`. A
+> `#[derive(Record)]` declares a seal for each sealed field, so every storage
+> location keeps its own seal ID.
 
 Every seal and open binds the ciphertext to a runtime **binding**: the field ID,
 a declared scope (for example tenant, or org plus workspace), and optionally a

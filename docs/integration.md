@@ -10,7 +10,7 @@ This page explains those choices and their consequences. It builds on
 
 Encrypted storage is not entirely self-describing. An envelope identifies its
 format, suite, encryption-key generation, and whether its payload is padded, but
-the application supplies the expected field ID, binding, and codec. An
+the application supplies the expected seal ID, binding, and codec. An
 envelope also carries a fingerprint of its binding declaration, which only names a
 mismatch. A blind index
 additionally depends on a logical index ID and normalization rule that are not
@@ -21,29 +21,29 @@ These choices form persistent schema just as database column types do:
 | Choice | Why it must remain compatible |
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
-| Field ID | Every value is bound to its field ID; a different ID fails authentication. |
-| Binding declaration and record flag | Every value is bound to its binding's part IDs, kinds, and roles, and to its record when the field binds one; a different declaration reports `BindingMismatch`. |
+| Seal ID | Every value is bound to its seal ID; a different ID fails authentication. |
+| Binding declaration and record kind | Every value is bound to its binding's part IDs, kinds, and roles, and to its record when the seal binds one; a different declaration reports `BindingMismatch`. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
 Rust type names are not cryptographic identities. Renaming
-a type does not change its field ID; generating a new ID does. Changing these
+a type does not change its seal ID; generating a new ID does. Changing these
 policies requires a compatibility and migration plan, not just a new deployment.
 The [legacy migration guide](legacy-migration.md) covers adopting CryptBox over
-plaintext or another encryption solution; it is not a general field-schema
+plaintext or another encryption solution; it is not a general seal-schema
 migration procedure.
 
-A value type's `Plaintext` implementation names its default codec: `Utf8` for
-`String` and `Secret<String>`, `Raw` for `Vec<u8>` and `Secret<Vec<u8>>`. These
-mappings are permanent and no feature changes them. Other value types, including
-Serde types, either name their codec on the field or implement `Plaintext`
-themselves; that mapping is persistent schema too. Two fields over one value type
-(`HomeAddress` and `BillingAddress` over `Address`) have separate field IDs, so
+Only four value types have a default codec: `Utf8` for `String` and
+`Secret<String>`, `Raw` for `Vec<u8>` and `Secret<Vec<u8>>`. These mappings are
+permanent and no feature changes them. A seal over any other value type,
+including a Serde type, names its codec, which is persistent schema too; a
+`transparent` seal stores its single field with that field's codec. Two seals over one value type
+(`HomeAddress` and `BillingAddress` over `Address`) have separate seal IDs, so
 their ciphertext cannot be swapped.
 
 Serde codecs make the value type's Serde representation persistent schema.
 A serde attribute change on a value type, such as adding `rename_all`,
-`rename`, or `tag`, changes the stored bytes of every field that uses that
+`rename`, or `tag`, changes the stored bytes of every seal that uses that
 type. `Postcard` is positional: it stores no field or variant names. Reordering
 struct fields or enum variants, or changing an integer type, can decode existing
 bytes into wrong values without an error. `Json` stores names, so a renamed
@@ -60,22 +60,22 @@ with every change.
 Stored bytes do not describe this schema, so check it in tests:
 
 - **Golden bytes.** `cryptbox::testing::assert_encoding::<F>(&value, "…hex…")`
-  checks that a field still encodes a representative value to the committed bytes
-  and decodes them back. Commit one fixture per field, and treat it as essential
-  for `Json` and `Postcard` fields, whose bytes follow the value type's
+  checks that a seal still encodes a representative value to the committed bytes
+  and decodes them back. Commit one fixture per seal, and treat it as essential
+  for `Json` and `Postcard` seals, whose bytes follow the value type's
   derives and attributes. A failure means stored values would change; plan a
   migration or revert.
-- **Schema manifest.** `cryptbox::schema::Manifest` lists each registered field
+- **Schema manifest.** `cryptbox::schema::Manifest` lists each registered seal
   (ID, codec ID, padding, whether it binds a record, the binding
   fingerprint and parts with their kinds and roles, and the shred unit) and
-  index (ID, field, bits, normalizer). `Manifest::custody::<F>("…")` adds a
-  custody label to a field, such as `"payments KMS, one key per org"`, so
+  index (ID, seal, bits, normalizer). `Manifest::custody::<F>("…")` adds a
+  custody label to a seal, such as `"payments KMS, one key per org"`, so
   reviewers and auditors see which keys the application passes for it.
   Compare the `Display` output with a committed snapshot, and
   assert that `duplicates()` is empty. A snapshot diff needs review: for
   example, a codec ID, normalizer, or binding change needs a migration.
 - **Unique IDs.** `cryptbox::assert_unique_ids!(HomeAddress, BillingAddress)`
-  fails compilation when listed fields share a field ID, and
+  fails compilation when listed seals share a seal ID, and
   `assert_unique_ids!(indexes: EmailLookup, EmailDomain)` does the same for
   index IDs. It is a constant check, so it works with manual impls.
 
@@ -95,7 +95,7 @@ keys that should have protected it.
 
 Padding is not persistent schema. The envelope records, under authentication,
 whether its payload is padded, and readers remove padding only when that flag is
-set. A field's padding policy describes how new values are written: enabling,
+set. A seal's padding policy describes how new values are written: enabling,
 disabling, or resizing it keeps existing values readable, and a
 [re-encryption sweep](reencryption-sweep.md) rewrites them with the current
 policy. Current padding parameters also do not impose a limit on historical
@@ -112,9 +112,9 @@ keys are needed and where plaintext becomes available:
 | Read as `Sealed<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to open it, with the binding values of the row. Useful when only some loaded values need plaintext. |
 | Automatic SQLx `Plain<F>` | The adapter seals on encode and opens on decode. It reads keys from its `ColumnKeys` type `K`: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Plain<F, K>`. |
 
-The automatic `Plain<F>` column serves only `FieldOnly` fields without a record or
+The automatic `Plain<F>` column serves only unscoped seals without a record or
 blind indexes: a column decoder sees neither the row nor its scope, and would not
-write index columns. Seal bound and indexed fields explicitly. Explicit operations
+write index columns. Seal values of bound and indexed seals explicitly. Explicit operations
 are useful when dependencies and plaintext access should be visible at the call
 site. Automatic adapters are useful when
 encryption belongs consistently at the database boundary.
@@ -137,7 +137,7 @@ that stored data still needs: `EncryptionKeyring` for values and
 optional blind-index keyring. The **installed keys** back the process-wide forms,
 and a **`ColumnKeys`** type selects the keys of an automatic SQLx column.
 
-Which keyring protects which field and scope is the decision with the most
+Which keyring protects which seal and scope is the decision with the most
 silent failure modes; [choosing keyrings](choosing-keyrings.md) covers it in
 full, and [shredding a scope](shredding.md) covers what destroying one scope's
 keys does.
@@ -145,13 +145,13 @@ keys does.
 Operations take keys directly. Explicit `Sealed::seal`, `open`, `prepare`,
 `with_index_with`, and `probes_with` calls accept any **key source**
 (`EncryptionKeySource` or `BlindIndexKeySource`) and never read the installed
-keys. The library passes the source the field (or index) and the binding's key
+keys. The library passes the source the seal (or index) and the binding's key
 scope; keyrings and `Keys` ignore both and return themselves. This allows each
 test or application component to own its dependencies.
 
-Choosing which keyring protects which field or scope is application code. Pass
+Choosing which keyring protects which seal or scope is application code. Pass
 the payments keyring when sealing an IBAN and the general keyring when sealing an
-email, or implement a key source that picks one by field or key scope. Opening
+email, or implement a key source that picks one by seal or key scope. Opening
 with the wrong keyring fails loudly with `Error::UnknownEncryptionKey`, as long
 as key IDs are generated UUIDs, unique within a keyring, and never shared across
 keyrings. Sealing with the wrong keyring succeeds silently, so test the choice:
@@ -160,7 +160,7 @@ rules, and how to record and test custody.
 
 The process-wide forms (`Sealed::seal_global`, `open_global`, `with_index()`,
 `probes()`) are the explicit forms called with `keys::installed()`. Like the
-automatic column, `seal_global` and `open_global` serve only `FieldOnly` fields
+automatic column, `seal_global` and `open_global` serve only unscoped seals
 without a record.
 `keys::install(keys)` sets the installed keys once per process, from the binary
 entry point; a second call returns `AlreadyInstalled` and never replaces them.
@@ -174,7 +174,7 @@ because SQLx decoding receives no context. The default `K`, `GlobalKeys`, reads
 the installed keys. Implement `ColumnKeys` over an application-owned static
 `Keys` to use a second keyring or a test fixture without the global.
 `Plain::with_column_keys::<K>()` moves a value into another column type without
-resealing it. A field does not choose its keys.
+resealing it. A seal does not choose its keys.
 
 Teams that forbid the global can deny `keys::install` and the process-wide forms with
 Clippy's `disallowed_methods`, using
@@ -220,9 +220,9 @@ transaction. A single SQL statement can update ciphertext and its indexes togeth
 Multi-statement writes require an application-owned transaction, and concurrent
 updates need whatever conflict policy the application normally uses. Automatic
 sealing of one column would not maintain another column, so `Plain<F>` rejects a
-field that declares blind indexes.
+seal that declares blind indexes.
 
-A blind index is domain-separated by its field ID and by the
+A blind index is domain-separated by its seal ID and by the
 [index binding](wire-format.md#index-binding): the values of the binding's `keys`
 and `index` parts. Equal values in different key scopes therefore have different
 index bytes, and a query supplies those values as its index arguments. Bound-only
@@ -248,10 +248,10 @@ preparation does not erase them, and decoded values have their own lifetimes.
 copies. The [ownership reference](ownership.md) defines exact behavior by type
 and buffer.
 
-Fields, value types, codecs, normalizers, bindings, and key sources are
+Seals, value types, codecs, normalizers, bindings, and key sources are
 extensible; padding policies are a closed set of built-in const policies. A
 codec or normalizer cannot add scope or record authentication: that comes from
-the field's [binding](bindings.md). The
+the seal's [binding](bindings.md). The
 [custom-field example](../examples/custom_field/README.md)
 shows a zeroizing value, codec, normalizer, and key source working together.
 
@@ -260,7 +260,7 @@ shows a zeroizing value, codec, normalizer, and key source working together.
 - [Bindings](bindings.md) covers declaring a scope, part roles, record IDs, and
   where each bound value must come from.
 - [Choosing keyrings](choosing-keyrings.md) covers custody, key-ID rules, and
-  testing which keyring seals which field.
+  testing which keyring protects which seal.
 - [Testing and diagnostics](testing.md) covers key isolation and sanitized failures.
 - [Legacy adoption](legacy-migration.md) addresses existing plaintext or foreign
   ciphertext; review its prerequisites before enabling new encrypted writes.

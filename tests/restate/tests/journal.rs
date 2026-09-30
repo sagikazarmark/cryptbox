@@ -37,33 +37,32 @@ const EMAIL: &str = "ada@example.com";
 /// How Restate reports a journal mismatch in an invocation's last failure.
 const JOURNAL_MISMATCH: &str = "[570 Journal mismatch]";
 
-#[derive(cryptbox::Field)]
+#[derive(cryptbox::Seal)]
 #[cryptbox(
     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
     value = String,
-    binding = Tenant
+    scope = Tenant
 )]
 struct CustomerEmail;
 
-#[derive(cryptbox::Field)]
+#[derive(cryptbox::Seal)]
 #[cryptbox(
     id = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38",
     value = String,
-    binding = Tenant,
-    record
+    scope = cryptbox::Recorded<Tenant, i64>
 )]
 struct CustomerNote;
 
 #[derive(Debug, PartialEq, cryptbox::Record)]
 #[cryptbox(
-    record = id,
+    record_id = id,
     sealed = SealedCustomer,
     attr(derive(serde::Serialize, serde::Deserialize))
 )]
 struct Customer {
     #[cryptbox(plaintext)]
     id: i64,
-    #[cryptbox(field = CustomerNote)]
+    #[cryptbox(seal = CustomerNote)]
     note: String,
 }
 

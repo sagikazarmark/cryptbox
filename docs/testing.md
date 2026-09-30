@@ -7,7 +7,7 @@ keys. [Documentation](README.md).
 
 Give each test its own encryption and blind-index keyrings. Explicit
 `Sealed::seal`, `open` and `Sealed::prepare` calls take their keys and never read
-the installed keys; field binding still applies.
+the installed keys; seal binding still applies.
 
 For runnable tests, create a library with `cargo new --lib testing-local-consumer`,
 use [testing-local.toml](snippets/testing-local.toml) as `Cargo.toml`, and copy
@@ -27,12 +27,12 @@ For the design choice between automatic adapters and explicit ciphertext storage
 see [storage boundaries](integration.md#storage-boundaries). This example shows
 how to exercise the automatic path with the installed keys.
 
-An automatic SQLx column `Plain<F>` reads the installed keys; a field does not
+An automatic SQLx column `Plain<F>` reads the installed keys; a seal does not
 select its own keys. The [automatic example](snippets/testing-automatic.rs)
 installs both keyrings with `keys::install` once per process, so each fixture
 runs in its own process.
-`Plain` serves only fields without blind indexes, since a column cannot write
-its index. The example seals its indexed field explicitly with `Sealed::prepare`
+`Plain` serves only seals without blind indexes, since a column cannot write
+its index. The example seals its indexed value explicitly with `Sealed::prepare`
 and `with_index()`, and writes the pair atomically.
 
 To test automatic columns without the installed keys, implement `ColumnKeys`
@@ -72,7 +72,7 @@ compiles and deploys silently. Pin the schema with golden-bytes fixtures
 (`testing::assert_encoding`), a `schema::Manifest` snapshot, and
 `assert_unique_ids!`. See [guarding the schema in CI](integration.md#guarding-the-schema-in-ci).
 
-Choosing which keyring protects a field or scope is application code, and a
+Choosing which keyring protects a seal or scope is application code, and a
 wrong choice seals and opens without error. Seal a value through the
 application's key source and check it with
 `testing::assert_sealed_under::<F>(&sealed, &expected_keyring)`, which fails
@@ -80,7 +80,7 @@ when the value names a key that the keyring does not hold.
 
 ## Diagnostics
 
-Allowlist the stable `Field::ID`, a caller-owned static label, operation and sanitized
+Allowlist the stable `Seal::ID`, a caller-owned static label, operation and sanitized
 error category. Labels must not contain record data or secrets; even schema labels
 should go only to approved destinations. CryptBox does not emit logs.
 
@@ -90,7 +90,7 @@ does not sanitize surrounding application data. Sanitize configuration errors at
 their read boundary: `VarError::NotUnicode` can retain database credentials.
 
 The [diagnostics example](snippets/testing-diagnostics.rs) damages a tag and emits
-only field context plus `error=authentication_failed`. Create a binary with
+only the seal's identifiers plus `error=authentication_failed`. Create a binary with
 `cargo new testing-diagnostics-consumer`, use
 [testing-diagnostics.toml](snippets/testing-diagnostics.toml) as its manifest,
 copy the source to `src/main.rs`, and run `cargo run`.
