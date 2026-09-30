@@ -1,6 +1,8 @@
 use std::fmt;
 
-use super::{FromIndexValues, PartKind, PartSpec, PartType, PartValue, PartValues, Scope};
+use super::{
+    FromIndexValues, FromParts, PartKind, PartSpec, PartType, PartValue, PartValues, Scope,
+};
 use crate::Error;
 
 // The empty scope: values are bound to their seal ID only. Blind indexes take
@@ -24,6 +26,12 @@ impl FromIndexValues for () {
             [] => Ok(()),
             _ => Err(Error::InvalidBinding),
         }
+    }
+}
+
+impl FromParts for () {
+    fn from_parts(values: &[PartValue<'_>]) -> Result<(), Error> {
+        Self::from_index_values(values)
     }
 }
 
@@ -61,6 +69,12 @@ impl FromIndexValues for Tenant {
             [tenant] => TenantId::from_part_value(*tenant).map(Self),
             _ => Err(Error::InvalidBinding),
         }
+    }
+}
+
+impl FromParts for Tenant {
+    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
+        Self::from_index_values(values)
     }
 }
 

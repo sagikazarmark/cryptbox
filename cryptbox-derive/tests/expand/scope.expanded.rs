@@ -116,5 +116,26 @@ const _: () = {
             }
         }
     }
+    #[automatically_derived]
+    impl ::cryptbox::FromParts for OrgWorkspace {
+        fn from_parts(
+            values: &[::cryptbox::PartValue<'_>],
+        ) -> ::core::result::Result<Self, ::cryptbox::Error> {
+            match values {
+                [value0, value1, value2] => {
+                    ::core::result::Result::Ok(Self {
+                        org: <[u8; 16] as ::cryptbox::PartType>::from_part_value(
+                            *value0,
+                        )?,
+                        region: <i64 as ::cryptbox::PartType>::from_part_value(*value1)?,
+                        workspace: <Vec<
+                            u8,
+                        > as ::cryptbox::PartType>::from_part_value(*value2)?,
+                    })
+                }
+                _ => ::core::result::Result::Err(::cryptbox::Error::InvalidBinding),
+            }
+        }
+    }
 };
 fn main() {}

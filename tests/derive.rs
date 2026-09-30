@@ -445,6 +445,23 @@ fn a_derived_binding_declares_its_parts_sorted_by_part_id() {
     assert_eq!(OrgProject::PARTS, ManualOrgProject::PARTS);
 }
 
+#[test]
+fn a_derived_scope_is_built_back_from_its_part_values() {
+    use cryptbox::FromParts;
+
+    let scope = OrgProject {
+        workspace: [0x42; 16],
+        org: b"acme".to_vec(),
+        project: 7,
+    };
+
+    assert!(OrgProject::from_parts(scope.values().as_slice()).unwrap() == scope);
+    assert_eq!(
+        OrgProject::from_parts(&[]).err(),
+        Some(cryptbox::Error::InvalidBinding)
+    );
+}
+
 #[derive(Seal)]
 #[cryptbox(
     id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",

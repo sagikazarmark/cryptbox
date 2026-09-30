@@ -346,7 +346,8 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// expands to exactly the manual impls and the named struct. The real expansion
 /// spells the derived traits as absolute paths. `FromIndexValues` builds the
 /// index arguments back from their part values, for adapters that carry
-/// index arguments as text:
+/// index arguments as text, and `FromParts` builds the scope itself, as a view
+/// of another scope does:
 ///
 /// ```
 /// # #[derive(Clone, Hash, PartialEq, Eq)]
@@ -399,6 +400,19 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///             match values {
 ///                 [value0] => Ok(OrgSearch {
 ///                     org: <[u8; 16] as ::cryptbox::PartType>::from_part_value(*value0)?,
+///                 }),
+///                 _ => Err(::cryptbox::Error::InvalidBinding),
+///             }
+///         }
+///     }
+///
+///     #[automatically_derived]
+///     impl ::cryptbox::FromParts for OrgWorkspace {
+///         fn from_parts(values: &[::cryptbox::PartValue<'_>]) -> Result<Self, ::cryptbox::Error> {
+///             match values {
+///                 [value0, value1] => Ok(Self {
+///                     org: <[u8; 16] as ::cryptbox::PartType>::from_part_value(*value0)?,
+///                     workspace: <Vec<u8> as ::cryptbox::PartType>::from_part_value(*value1)?,
 ///                 }),
 ///                 _ => Err(::cryptbox::Error::InvalidBinding),
 ///             }

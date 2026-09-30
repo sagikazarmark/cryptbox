@@ -32,5 +32,20 @@ const _: () = {
             }
         }
     }
+    #[automatically_derived]
+    impl ::cryptbox::FromParts for Revision {
+        fn from_parts(
+            values: &[::cryptbox::PartValue<'_>],
+        ) -> ::core::result::Result<Self, ::cryptbox::Error> {
+            match values {
+                [value0] => {
+                    ::core::result::Result::Ok(Self {
+                        number: <i64 as ::cryptbox::PartType>::from_part_value(*value0)?,
+                    })
+                }
+                _ => ::core::result::Result::Err(::cryptbox::Error::InvalidBinding),
+            }
+        }
+    }
 };
 fn main() {}

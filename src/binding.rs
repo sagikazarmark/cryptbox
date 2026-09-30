@@ -181,6 +181,94 @@ pub trait Scope: Clone + Hash + Eq + Send + Sync + 'static {
     fn index_values(args: &Self::IndexArgs) -> PartValues<'_>;
 }
 
+/// A [`Scope`] that can be built back from its part values.
+///
+/// This is the inverse of [`Scope::values`]: given one value per part of
+/// [`PARTS`](Scope::PARTS), in order, it returns the scope that supplies them.
+/// It is how a **view** is built: a scope whose parts are a subset of another
+/// scope's, matched by part ID and kind, takes its values from that scope's
+/// values by part ID. `#[derive(Scope)]` implements it; a hand-written scope can
+/// read each value with [`PartType::from_part_value`].
+///
+/// ```
+/// use cryptbox::{FromParts, PartValue, Tenant, TenantId};
+///
+/// let acme = Tenant(TenantId::new("acme")?);
+///
+/// assert_eq!(Tenant::from_parts(&[PartValue::Bytes(b"acme")])?, acme);
+/// assert!(Tenant::from_parts(&[]).is_err());
+/// # Ok::<(), cryptbox::Error>(())
+/// ```
+pub trait FromParts: Scope {
+    /// Builds the scope from one value per part, in `PARTS` order.
+    ///
+    /// Building then reading back with [`Scope::values`] must return the same
+    /// values.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::InvalidBinding`] for a missing or extra value, or a value
+    /// its part's type cannot hold, such as one of another kind.
+    fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error>;
+}
+
+// Whether every part of `view` is a part of `scope`, with the same ID and kind.
+const fn is_view(view: &[PartSpec], scope: &[PartSpec]) -> bool {
+    let mut index = 0;
+    while index < view.len() {
+        let mut found = false;
+        let mut candidate = 0;
+        while candidate < scope.len() {
+            if u128::from_be_bytes(view[index].id) == u128::from_be_bytes(scope[candidate].id)
+                && view[index].kind as u8 == scope[candidate].kind as u8
+            {
+                found = true;
+            }
+            candidate += 1;
+        }
+        if !found {
+            return false;
+        }
+        index += 1;
+    }
+
+    true
+}
+
+// Panics become build errors in `const` context.
+pub(crate) const fn check_view(view: &[PartSpec], scope: &[PartSpec]) {
+    assert!(
+        is_view(view, scope),
+        "a view's parts must be parts of its scope, with the same part IDs and kinds"
+    );
+}
+
+/// Builds the view `V` of `scope`, taking each of its parts' values from
+/// `scope`'s by part ID.
+///
+/// A `V` that is not a view of `S` fails the build when the projection is first
+/// used; like the [`Scope`] checks, it runs after monomorphization.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "blind-index scopes and keys views project with it next"
+    )
+)]
+pub(crate) fn project_view<V: FromParts, S: Scope>(scope: &S) -> Result<V, Error> {
+    const {
+        check_parts(V::PARTS);
+        check_parts(S::PARTS);
+        check_view(V::PARTS, S::PARTS);
+    };
+
+    let values = scope.values();
+    check_values(S::PARTS, &values.0)?;
+    let projected = project(V::PARTS, &S::PARTS.iter().zip(&values.0))?;
+
+    V::from_parts(&projected)
+}
+
 /// A [`Scope`] whose index arguments can be built back from their part values.
 ///
 /// This is the inverse of [`Scope::index_values`]: given one value for each
@@ -320,7 +408,6 @@ pub(crate) fn check_values<'s>(
 
 /// Takes the value of each of `specs` from `parts` by part ID; a missing part or
 /// another kind is [`Error::InvalidBinding`].
-#[cfg(feature = "migrate")]
 fn project<'v>(
     specs: &[PartSpec],
     parts: &(impl Iterator<Item = (&'v PartSpec, &'v PartValue<'v>)> + Clone),
@@ -1147,5 +1234,58 @@ mod tests {
     #[should_panic(expected = "must not be nil")]
     fn nil_parts_fail() {
         check_parts(&[part([0; 16], PartRole::Bound)]);
+    }
+
+    /// The org of an [`OrgWorkspace`]: a view of it.
+    #[derive(Clone, Debug, Hash, PartialEq, Eq)]
+    struct Org {
+        org: [u8; 16],
+    }
+
+    impl Scope for Org {
+        const PARTS: &'static [PartSpec] = &[PartSpec::keys(
+            part_id!("11111111-1111-1111-1111-111111111111"),
+            PartKind::Uuid,
+        )];
+        type IndexArgs = Self;
+
+        fn values(&self) -> PartValues<'_> {
+            PartValues::from([PartValue::Uuid(self.org)])
+        }
+
+        fn index_values(args: &Self) -> PartValues<'_> {
+            args.values()
+        }
+    }
+
+    impl FromParts for Org {
+        fn from_parts(values: &[PartValue<'_>]) -> Result<Self, Error> {
+            match values {
+                [PartValue::Uuid(org)] => Ok(Self { org: *org }),
+                _ => Err(Error::InvalidBinding),
+            }
+        }
+    }
+
+    #[test]
+    fn a_view_takes_its_parts_values_from_the_scope_by_part_id() {
+        assert_eq!(
+            project_view::<Org, OrgWorkspace>(&ws1()).unwrap(),
+            Org { org: [0x33; 16] }
+        );
+        assert_eq!(project_view::<(), OrgWorkspace>(&ws1()).unwrap(), ());
+    }
+
+    #[test]
+    fn a_view_matches_parts_by_id_and_kind() {
+        let org = part(LOW, PartRole::Keys);
+        let org_as_bytes = PartSpec::new(LOW, PartKind::Bytes, PartRole::Keys);
+        let workspace = part(HIGH, PartRole::Bound);
+
+        assert!(is_view(&[], &[org, workspace]));
+        assert!(is_view(&[org], &[org, workspace]));
+        assert!(is_view(&[org, workspace], &[org, workspace]));
+        assert!(!is_view(&[org], &[workspace]));
+        assert!(!is_view(&[org_as_bytes], &[org, workspace]));
     }
 }
