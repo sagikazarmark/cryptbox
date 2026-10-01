@@ -4,6 +4,10 @@ status: accepted
 
 # Runtime binding is the core; fields declare its shape
 
+> Amended by [ADR-0011](0011-a-binding-is-the-seal-and-the-record.md): a
+> binding is the seal ID and, for a record's field, its record ID. Declared
+> parts and their values are removed; the layout below keeps them, empty.
+>
 > Amended when implemented (#23). A `Record` reads its record ID from the stored
 > row, because opening checks it: every field that declares `record` fails to
 > open under another ID. Storage can still return a whole authentic row in place

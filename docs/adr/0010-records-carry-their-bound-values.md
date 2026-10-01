@@ -4,6 +4,11 @@ status: accepted
 
 # Records carry their bound values; keys are passed in
 
+> Amended by [ADR-0011](0011-a-binding-is-the-seal-and-the-record.md): bound
+> values, bound ID types, and blind-index partitions are removed. A record's
+> sealed fields bind their seal and the record ID; its other columns are
+> plaintext. The rest of this decision stands.
+>
 > Amended when implemented. The open items settled as follows. An `Option<T>`
 > field is stored as `Option<Sealed<F>>`, and its indexes as
 > `Option<BlindIndex<S>>`; `Option` is the only wrapper the derive looks through,
