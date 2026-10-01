@@ -4,8 +4,7 @@
 use std::collections::HashMap;
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, KeyScope, Padding, Recorded,
-    Seal, SealId, Sealed, Tenant, TenantId, Utf8,
+    EncryptionKey, EncryptionKeyring, Error, Padding, Seal, SealId, Sealed, TenantId, Utf8,
 };
 
 struct CustomerEmail;
@@ -15,17 +14,18 @@ impl Seal for CustomerEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = Recorded<Tenant, [u8; 16]>;
+    type Bound = (TenantId,);
+    type Record = [u8; 16];
     type Indexes = ();
 }
 
 /// One keyring per tenant, so one tenant's data can be shredded on its own.
-struct TenantKeyrings(HashMap<KeyScope, EncryptionKeyring>);
+struct TenantKeyrings(HashMap<TenantId, EncryptionKeyring>);
 
-impl EncryptionKeySource for TenantKeyrings {
-    fn encryption_keyring(&self, _: SealId, scope: &KeyScope) -> Result<EncryptionKeyring, Error> {
-        // Cloning a keyring shares its keys. An unknown scope fails closed.
-        self.0.get(scope).cloned().ok_or(Error::KeysUnavailable)
+impl TenantKeyrings {
+    /// The keyring of `tenant`. An unknown tenant fails closed.
+    fn of(&self, tenant: &TenantId) -> Result<&EncryptionKeyring, Error> {
+        self.0.get(tenant).ok_or(Error::KeysUnavailable)
     }
 }
 
@@ -39,39 +39,44 @@ const GRACE: [u8; 16] = [
 
 fn main() -> Result<(), Error> {
     // Tenants come from the request's authorized claims, never from a stored row.
-    let acme = Tenant(TenantId::new("acme")?);
-    let globex = Tenant(TenantId::new("globex")?);
+    let acme = TenantId::new("acme")?;
+    let globex = TenantId::new("globex")?;
     // Ephemeral demo keys: an independent keyring per tenant on every run.
     let keys = TenantKeyrings(HashMap::from([
         (
-            KeyScope::of(&acme)?,
+            acme.clone(),
             EncryptionKeyring::new(EncryptionKey::generate()?, [])?,
         ),
         (
-            KeyScope::of(&globex)?,
+            globex.clone(),
             EncryptionKeyring::new(EncryptionKey::generate()?, [])?,
         ),
     ]));
 
     let (ada, grace) = (&ADA, &GRACE);
     let email = "ada@acme.example".to_owned();
-    let sealed = Sealed::<CustomerEmail>::seal(&email, (&acme, ada), &keys)?;
-    assert_eq!(sealed.open((&acme, ada), &keys)?, email);
+    let sealed = Sealed::<CustomerEmail>::seal(&email, (&acme, ada), keys.of(&acme)?)?;
+    assert_eq!(sealed.open((&acme, ada), keys.of(&acme)?)?, email);
 
     // Another record of the same tenant is a different binding.
     assert!(matches!(
-        sealed.open((&acme, grace), &keys),
+        sealed.open((&acme, grace), keys.of(&acme)?),
         Err(Error::AuthenticationFailed)
     ));
     // Another tenant's keyring does not hold the key this envelope names.
     assert!(matches!(
-        sealed.open((&globex, ada), &keys),
+        sealed.open((&globex, ada), keys.of(&globex)?),
         Err(Error::UnknownEncryptionKey(_))
     ));
 
     // Moving the record to another tenant is an explicit reseal under its keys.
-    let moved = sealed.reseal_across((&acme, ada), &keys, (&globex, ada), &keys)?;
-    assert_eq!(moved.open((&globex, ada), &keys)?, email);
+    let moved = sealed.reseal_across(
+        (&acme, ada),
+        keys.of(&acme)?,
+        (&globex, ada),
+        keys.of(&globex)?,
+    )?;
+    assert_eq!(moved.open((&globex, ada), keys.of(&globex)?)?, email);
 
     println!("Tenant-bound round trip succeeded.");
     Ok(())
@@ -89,24 +94,10 @@ mod tests {
 
     #[test]
     fn an_unknown_tenant_fails_closed() -> Result<(), Error> {
-        let acme = Tenant(TenantId::new("acme")?);
+        let acme = TenantId::new("acme")?;
         let keys = TenantKeyrings(HashMap::new());
 
-        assert!(matches!(
-            Sealed::<CustomerEmail>::seal(&"ada@acme.example".to_owned(), (&acme, &ADA), &keys,),
-            Err(Error::KeysUnavailable)
-        ));
-        Ok(())
-    }
-
-    #[test]
-    fn tenants_with_equal_key_scopes_share_a_keyring() -> Result<(), Error> {
-        let acme = Tenant(TenantId::new("acme")?);
-
-        assert_eq!(
-            KeyScope::of(&acme)?,
-            KeyScope::of_index::<Tenant>(&Tenant(TenantId::new("acme")?))?
-        );
+        assert!(matches!(keys.of(&acme), Err(Error::KeysUnavailable)));
         Ok(())
     }
 }

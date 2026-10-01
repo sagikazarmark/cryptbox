@@ -126,19 +126,17 @@ plaintext-only data. Recovery decodes through the seal's codec, seals and
 derives every registered index. Stale CryptBox components are rewritten; current
 ones are retained under the [sweep rules](reencryption-sweep.md#sweep-loop).
 
-`RowPlanner::new` serves an unscoped seal without a record. A
-bound seal uses `RowPlanner::for_key_scope(key_scope, keys, row_args)`, one
-planner per key scope, because its keys are scoped too. The key scope comes from
-the job's configuration, never from the rows: a row whose `keys` columns name
-another scope is counted out of scope and left alone. The remaining binding
-values and the record do come from the row's own columns, so a migration trusts
+`RowPlanner::new` serves a seal without bound values or a record. A bound seal
+uses `RowPlanner::for_rows(keys, row_args)`; with a keyring per org, configure
+one planner per org, from the job's configuration, and have the store select only
+that org's rows. The bound values and the record come from the row's own columns, so a migration trusts
 those columns once, in exchange for having no request to authorize them against.
 Migrate only over columns the application already trusts, and establish their
 provenance with the same evidence this guide requires for legacy bytes. The
 packaged stores load no columns, so a bound seal needs an application-owned
 `SweepStore`. See
 [binding-declaration changes](reencryption-sweep.md#binding-declaration-changes) and
-[bound values come from an authorized source](bindings.md#bound-values-come-from-an-authorized-source).
+[bound values are authenticated, then authorized](bindings.md#bound-values-are-authenticated-then-authorized).
 
 The packaged planner repairs missing indexes on **legacy** bytes by deriving them,
 but rejects empty/malformed indexes on existing CryptBox ciphertext. It also

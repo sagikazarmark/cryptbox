@@ -1,13 +1,13 @@
-//! Parses the shared `#[cryptbox(...)]` attribute namespace.
+//! Parses the derives' `#[cryptbox(…)]` attributes and the keys each accepts.
 
 use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote_spanned};
 use syn::{
-    Attribute, Ident, LitInt, LitStr, Meta, Path, Token, Type, meta::ParseNestedMeta,
-    parenthesized, parse::ParseStream, punctuated::Punctuated, spanned::Spanned,
+    Attribute, Ident, LitInt, LitStr, Path, Token, Type, parenthesized, parse::ParseStream,
+    punctuated::Punctuated, spanned::Spanned,
 };
 
-/// Every key of the namespace. Each derive accepts a subset.
+/// Every key of the helper attributes. Each attribute accepts a subset.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Key {
     Crate,
@@ -21,24 +21,16 @@ pub(crate) enum Key {
     Normalize,
     Normalizer,
     Project,
-    Scope,
+    Bound,
     Record,
+    Partition,
     Indexes,
-    IndexArgs,
-    Part,
-    Keys,
-    Index,
-    RecordId,
-    Sealed,
-    Attr,
-    IndexColumns,
-    Plaintext,
     Transparent,
-    Name,
+    Kind,
 }
 
 impl Key {
-    const ALL: [Self; 25] = [
+    const ALL: [Self; 17] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -50,23 +42,15 @@ impl Key {
         Self::Normalize,
         Self::Normalizer,
         Self::Project,
-        Self::Scope,
+        Self::Bound,
         Self::Record,
+        Self::Partition,
         Self::Indexes,
-        Self::IndexArgs,
-        Self::Part,
-        Self::Keys,
-        Self::Index,
-        Self::RecordId,
-        Self::Sealed,
-        Self::Attr,
-        Self::IndexColumns,
-        Self::Plaintext,
         Self::Transparent,
-        Self::Name,
+        Self::Kind,
     ];
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Crate => "crate",
             Self::Id => "id",
@@ -79,29 +63,13 @@ impl Key {
             Self::Normalize => "normalize",
             Self::Normalizer => "normalizer",
             Self::Project => "project",
-            Self::Scope => "scope",
+            Self::Bound => "bound",
             Self::Record => "record",
-            Self::RecordId => "record_id",
-            // `IndexColumns` reuses this name in `#[derive(Record)]`.
+            Self::Partition => "partition",
             Self::Indexes => "indexes",
-            Self::IndexArgs => "index_args",
-            Self::Part => "part",
-            Self::Keys => "keys",
-            Self::Index | Self::IndexColumns => "index",
-            Self::Sealed => "sealed",
-            Self::Attr => "attr",
-            Self::Plaintext => "plaintext",
             Self::Transparent => "transparent",
-            Self::Name => "name",
+            Self::Kind => "kind",
         }
-    }
-
-    /// Whether the key stands alone, without a value.
-    fn is_flag(self) -> bool {
-        matches!(
-            self,
-            Self::Record | Self::Keys | Self::Index | Self::Plaintext | Self::Transparent
-        )
     }
 }
 
@@ -109,16 +77,6 @@ impl Key {
 pub(crate) struct UuidLiteral {
     value: u128,
     span: Span,
-}
-
-impl UuidLiteral {
-    pub(crate) fn value(&self) -> u128 {
-        self.value
-    }
-
-    pub(crate) fn span(&self) -> Span {
-        self.span
-    }
 }
 
 impl ToTokens for UuidLiteral {
@@ -158,69 +116,64 @@ impl Padding {
     }
 }
 
-/// The parsed contents of every `#[cryptbox(...)]` attribute on one item.
-#[derive(Default)]
+/// The parsed contents of every `#[<attribute>(...)]` of one name on one item.
 pub(crate) struct Attrs {
+    /// The helper attribute's name, such as `seal`.
+    attribute: &'static str,
     pub(crate) krate: Option<Path>,
     pub(crate) id: Option<UuidLiteral>,
     pub(crate) value: Option<Type>,
     pub(crate) codec: Option<Type>,
     pub(crate) padding: Option<Padding>,
     pub(crate) seal: Option<Type>,
-    /// A bare `seal`, without `= Type`.
-    pub(crate) seal_own: Option<Span>,
     pub(crate) bits: Option<LitInt>,
     pub(crate) query: Option<Type>,
     pub(crate) normalize: Option<Path>,
     pub(crate) normalizer: Option<LitStr>,
     pub(crate) project: Option<Path>,
-    pub(crate) scope: Option<Type>,
-    pub(crate) record: Option<Span>,
+    pub(crate) bound: Option<Vec<Type>>,
+    pub(crate) record: Option<Type>,
+    pub(crate) partition: Option<Vec<Type>>,
     pub(crate) indexes: Option<Vec<Type>>,
-    pub(crate) index_args: Option<Ident>,
-    pub(crate) part: Option<UuidLiteral>,
-    pub(crate) keys: Option<Span>,
-    pub(crate) index: Option<Span>,
-    pub(crate) record_id: Option<Ident>,
-    pub(crate) sealed: Option<Ident>,
-    pub(crate) name: Option<Ident>,
-    pub(crate) attr: Option<Vec<Meta>>,
-    pub(crate) index_columns: Option<Vec<IndexColumn>>,
-    pub(crate) plaintext: Option<Span>,
+    pub(crate) kind: Option<UuidLiteral>,
     pub(crate) transparent: Option<Span>,
     seen: Vec<Key>,
 }
 
 impl Attrs {
-    /// Parses every `#[cryptbox(...)]` attribute, accepting only `keys`.
+    /// Parses every `#[<attribute>(...)]` of `attrs`, accepting only `keys`.
     ///
     /// Collects every error it can recover from instead of stopping at the first.
-    pub(crate) fn parse(attrs: &[Attribute], keys: &[Key], errors: &mut Errors) -> Self {
-        Self::parse_rejecting(attrs, keys, &[], errors)
-    }
-
-    /// Parses like [`Self::parse`], reporting each `rejected` key with its own
-    /// message instead of as unknown.
-    pub(crate) fn parse_rejecting(
+    pub(crate) fn parse(
         attrs: &[Attribute],
+        attribute: &'static str,
         keys: &[Key],
-        rejected: &[(Key, &str)],
         errors: &mut Errors,
     ) -> Self {
-        let mut parsed = Self::default();
+        let mut parsed = Self {
+            attribute,
+            krate: None,
+            id: None,
+            value: None,
+            codec: None,
+            padding: None,
+            seal: None,
+            bits: None,
+            query: None,
+            normalize: None,
+            normalizer: None,
+            project: None,
+            bound: None,
+            record: None,
+            partition: None,
+            indexes: None,
+            kind: None,
+            transparent: None,
+            seen: Vec::new(),
+        };
 
-        for attr in attrs.iter().filter(|attr| attr.path().is_ident("cryptbox")) {
+        for attr in attrs.iter().filter(|attr| attr.path().is_ident(attribute)) {
             let result = attr.parse_nested_meta(|meta| {
-                if let Some((key, message)) = rejected
-                    .iter()
-                    .find(|(key, _)| meta.path.is_ident(key.name()))
-                {
-                    parsed.seen.push(*key);
-                    errors.push(syn::Error::new_spanned(&meta.path, message));
-                    return skip_value(meta.input);
-                }
-
-                // Two keys can share a name, so look only among the accepted ones.
                 let Some(key) = Key::ALL
                     .into_iter()
                     .filter(|key| keys.contains(key))
@@ -229,7 +182,7 @@ impl Attrs {
                     errors.push(syn::Error::new_spanned(
                         &meta.path,
                         format!(
-                            "unknown `cryptbox` key `{}`; expected one of {}",
+                            "unknown `{attribute}` key `{}`; expected one of {}",
                             meta.path.to_token_stream(),
                             key_list(keys),
                         ),
@@ -240,28 +193,34 @@ impl Attrs {
                 if parsed.seen.contains(&key) {
                     errors.push(syn::Error::new_spanned(
                         &meta.path,
-                        format!("duplicate `cryptbox` key `{}`", key.name()),
+                        format!("duplicate `{attribute}` key `{}`", key.name()),
                     ));
                     return skip_value(meta.input);
                 }
                 parsed.seen.push(key);
 
-                let result = if key.is_flag() {
-                    parsed.parse_flag(key, &meta)
-                } else if key == Key::Indexes {
-                    parse_indexes(meta.input).map(|list| parsed.indexes = Some(list))
-                } else if key == Key::IndexColumns {
-                    parse_index_columns(meta.input).map(|list| parsed.index_columns = Some(list))
-                } else if key == Key::Attr {
-                    parse_attr(meta.input).map(|list| parsed.attr = Some(list))
-                } else if key == Key::Seal && (meta.input.is_empty() || meta.input.peek(Token![,]))
-                {
-                    // Each derive decides whether a bare `seal` means anything.
-                    parsed.seal_own = Some(meta.path.span());
-                    Ok(())
-                } else {
-                    meta.value()
-                        .and_then(|input| parsed.parse_value(key, input))
+                let result = match key {
+                    Key::Transparent => {
+                        if meta.input.is_empty() || meta.input.peek(Token![,]) {
+                            parsed.transparent = Some(meta.path.span());
+                            Ok(())
+                        } else {
+                            Err(meta.error("`transparent` takes no value"))
+                        }
+                    }
+                    Key::Indexes => parse_list(meta.input, "blind index", "indexes")
+                        .map(|list| parsed.indexes = Some(list)),
+                    Key::Bound => parse_list(meta.input, "bound ID type", "bound")
+                        .map(|list| parsed.bound = Some(list)),
+                    Key::Partition => parse_list(meta.input, "bound ID type", "partition")
+                        .map(|list| parsed.partition = Some(list)),
+                    _ if !meta.input.peek(Token![=]) => Err(meta.error(format!(
+                        "`{name}` needs a value: `{name} = …`",
+                        name = key.name()
+                    ))),
+                    _ => meta
+                        .value()
+                        .and_then(|input| parsed.parse_value(key, input)),
                 };
                 if let Err(error) = result {
                     errors.push(error);
@@ -285,8 +244,7 @@ impl Attrs {
                 let path: LitStr = input.parse()?;
                 self.krate = Some(path.parse()?);
             }
-            Key::Id => self.id = Some(parse_uuid(key, input)?),
-            Key::Part => self.part = Some(parse_uuid(key, input)?),
+            Key::Id => self.id = Some(parse_uuid(key.name(), input)?),
             Key::Value => self.value = Some(input.parse()?),
             Key::Codec => self.codec = Some(input.parse()?),
             Key::Padding => self.padding = Some(parse_padding(input)?),
@@ -296,39 +254,11 @@ impl Attrs {
             Key::Normalize => self.normalize = Some(input.parse()?),
             Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
-            Key::Scope => self.scope = Some(input.parse()?),
-            Key::IndexArgs => self.index_args = Some(input.parse()?),
-            Key::RecordId => self.record_id = Some(input.parse()?),
-            Key::Sealed => self.sealed = Some(input.parse()?),
-            Key::Name => self.name = Some(input.parse()?),
-            Key::Record
-            | Key::Keys
-            | Key::Index
-            | Key::Plaintext
-            | Key::Transparent
-            | Key::Indexes
-            | Key::IndexColumns
-            | Key::Attr => {
+            Key::Record => self.record = Some(input.parse()?),
+            Key::Kind => self.kind = Some(parse_uuid(key.name(), input)?),
+            Key::Transparent | Key::Indexes | Key::Bound | Key::Partition => {
                 unreachable!("flags and lists have no `= value`")
             }
-        }
-
-        Ok(())
-    }
-
-    fn parse_flag(&mut self, key: Key, meta: &ParseNestedMeta) -> syn::Result<()> {
-        if !meta.input.is_empty() && !meta.input.peek(Token![,]) {
-            return Err(meta.error(format!("`{}` takes no value", key.name())));
-        }
-
-        let span = meta.path.span();
-        match key {
-            Key::Record => self.record = Some(span),
-            Key::Keys => self.keys = Some(span),
-            Key::Index => self.index = Some(span),
-            Key::Plaintext => self.plaintext = Some(span),
-            Key::Transparent => self.transparent = Some(span),
-            _ => unreachable!("only flags are parsed here"),
         }
 
         Ok(())
@@ -360,7 +290,8 @@ pub(crate) fn required<T>(
         errors.push(syn::Error::new(
             item.span(),
             format!(
-                "missing `{name}`: add `#[cryptbox({name} = {example})]`",
+                "missing `{name}`: add `#[{attribute}({name} = {example})]`",
+                attribute = attrs.attribute,
                 name = key.name()
             ),
         ));
@@ -408,62 +339,21 @@ fn skip_value(input: ParseStream) -> syn::Result<()> {
 }
 
 /// Parses `indexes(A, B, …)`: at least one blind index.
-fn parse_indexes(input: ParseStream) -> syn::Result<Vec<Type>> {
+fn parse_list(input: ParseStream, item: &str, key: &str) -> syn::Result<Vec<Type>> {
     let content;
     let parens = parenthesized!(content in input);
     let list = Punctuated::<Type, Token![,]>::parse_terminated(&content)?;
     if list.is_empty() {
         return Err(syn::Error::new(
             parens.span.join(),
-            "list at least one blind index, or omit `indexes`",
+            format!("list at least one {item}, or omit `{key}`"),
         ));
     }
 
     Ok(list.into_iter().collect())
 }
 
-/// A blind index a record field writes, and the sealed struct's field that stores it.
-pub(crate) struct IndexColumn {
-    pub(crate) spec: Type,
-    pub(crate) column: Ident,
-}
-
-impl syn::parse::Parse for IndexColumn {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let spec = input.parse()?;
-        input.parse::<Token![as]>()?;
-        let column = input.parse()?;
-
-        Ok(Self { spec, column })
-    }
-}
-
-/// Parses `index(A as a, B as b, …)`: at least one blind index and its column.
-fn parse_index_columns(input: ParseStream) -> syn::Result<Vec<IndexColumn>> {
-    let content;
-    let parens = parenthesized!(content in input);
-    let list = Punctuated::<IndexColumn, Token![,]>::parse_terminated(&content)?;
-    if list.is_empty() {
-        return Err(syn::Error::new(
-            parens.span.join(),
-            "list at least one `Index as column`, or omit `index`",
-        ));
-    }
-
-    Ok(list.into_iter().collect())
-}
-
-/// Parses `attr(…)`: attributes for a generated item, without their `#[…]`.
-fn parse_attr(input: ParseStream) -> syn::Result<Vec<Meta>> {
-    let content;
-    parenthesized!(content in input);
-    let list = Punctuated::<Meta, Token![,]>::parse_terminated(&content)?;
-
-    Ok(list.into_iter().collect())
-}
-
-fn parse_uuid(key: Key, input: ParseStream) -> syn::Result<UuidLiteral> {
-    let name = key.name();
+pub(crate) fn parse_uuid(name: &str, input: ParseStream) -> syn::Result<UuidLiteral> {
     if !input.peek(LitStr) {
         let mut tokens = TokenStream::new();
         while !input.is_empty() && !input.peek(Token![,]) {
@@ -516,7 +406,7 @@ fn uuid_value(text: &str) -> Option<u128> {
     Some(value)
 }
 
-fn parse_padding(input: ParseStream) -> syn::Result<Padding> {
+pub(crate) fn parse_padding(input: ParseStream) -> syn::Result<Padding> {
     let policy: Ident = input.parse()?;
     let expected = "expected `none`, `block(size)`, or `length(len)`";
 
@@ -552,7 +442,7 @@ fn parse_padding(input: ParseStream) -> syn::Result<Padding> {
     }
 }
 
-fn parse_bits(input: ParseStream) -> syn::Result<LitInt> {
+pub(crate) fn parse_bits(input: ParseStream) -> syn::Result<LitInt> {
     let bits: LitInt = input.parse()?;
     let value = bits.base10_parse::<u16>()?;
 

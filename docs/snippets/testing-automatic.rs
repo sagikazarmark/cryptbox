@@ -16,7 +16,8 @@ impl Seal for Nickname {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -28,7 +29,8 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = (EmailLookup,);
 }
 
@@ -36,6 +38,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = UserEmail;
+    type Partition = ();
     const ID: cryptbox::IndexId = cryptbox::index_id!("ea0ffec1-651a-4d6b-bb01-d53a58006dfd");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -86,7 +89,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
         .await?;
     let nickname = Plain::<Nickname>::new(plaintext);
 
-    // Scope Plain exercises automatic sealing with the installed keys.
+    // Plain exercises automatic sealing with the installed keys.
     sqlx::query("INSERT INTO users (nickname) VALUES (?)")
         .bind(&nickname)
         .execute(&mut connection)

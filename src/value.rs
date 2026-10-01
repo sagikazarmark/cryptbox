@@ -1,10 +1,8 @@
 use std::{fmt, marker::PhantomData};
 
-use zeroize::{Zeroize, Zeroizing};
-
 use crate::{
-    Args, BindingDomain, Codec, EncryptionKeySource, Error, GlobalKeys, KeyId, Prepared, Seal,
-    binding::{domain, domains},
+    Args, BindingDomain, Codec, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal,
+    args::{domain, domain_and_values},
     bound,
     envelope::validated_key_id,
     keys,
@@ -16,7 +14,7 @@ use crate::{
 /// This is what applications store. [`Self::seal`] encodes, pads, and encrypts a
 /// value; [`Self::open`] authenticates and decrypts it under the same
 /// [binding arguments](Args), and returns the bare [`Seal::Value`]. Plaintext
-/// hygiene comes from the value type, such as [`Secret`].
+/// hygiene comes from the value type, such as [`Secret`](crate::Secret).
 ///
 /// Construction from bytes validates only the envelope structure. Authenticity
 /// is established by opening. `F` is not encoded in the envelope, so the type
@@ -39,7 +37,8 @@ use crate::{
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -105,7 +104,7 @@ impl<F: Seal> Sealed<F> {
     pub fn seal(
         value: &F::Value,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
         Self::seal_in(value, &domain(args)?, keys)
     }
@@ -113,10 +112,10 @@ impl<F: Seal> Sealed<F> {
     pub(crate) fn seal_in(
         value: &F::Value,
         domain: &BindingDomain,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
         let plaintext = F::Codec::encode(value)?;
-        let sealed = bound::seal(domain, F::PADDING, &plaintext, keys)?;
+        let sealed = bound::seal(domain, F::PADDING, &plaintext, keys.encryption_keyring())?;
 
         Ok(Self::from_validated_bytes(sealed))
     }
@@ -139,9 +138,10 @@ impl<F: Seal> Sealed<F> {
     pub fn open(
         &self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<F::Value, Error> {
-        let plaintext = bound::open(&domain(args)?, &self.bytes, keys)?;
+        let target = domain(args)?;
+        let plaintext = bound::open(&target, &self.bytes, keys.encryption_keyring())?;
 
         Ok(F::Codec::decode(&plaintext)?)
     }
@@ -158,14 +158,14 @@ impl<F: Seal> Sealed<F> {
     pub fn prepare<'a>(
         value: &'a F::Value,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Prepared<'a, F>, Error> {
-        let (domain, index_domain) = domains(args)?;
+        let (target, bound) = domain_and_values(args)?;
 
         Ok(Prepared::new(
             value,
-            Self::seal_in(value, &domain, keys)?,
-            index_domain,
+            Self::seal_in(value, &target, keys)?,
+            bound,
         ))
     }
 
@@ -190,9 +190,10 @@ impl<F: Seal> Sealed<F> {
     pub fn needs_reseal(
         &self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<bool, Error> {
-        bound::needs_reseal(&domain(args)?, F::PADDING, &self.bytes, keys)
+        let target = domain(args)?;
+        bound::needs_reseal(&target, F::PADDING, &self.bytes, keys.encryption_keyring())
     }
 
     /// Opens and reseals this value as `F` currently writes it, under the same
@@ -210,10 +211,16 @@ impl<F: Seal> Sealed<F> {
     pub fn reseal(
         &self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
-        let domain = domain(args)?;
-        let (_, sealed) = bound::reseal((&domain, keys), (&domain, keys), F::PADDING, &self.bytes)?;
+        let target = domain(args)?;
+        let keyring = keys.encryption_keyring();
+        let (_, sealed) = bound::reseal(
+            (&target, keyring),
+            (&target, keyring),
+            F::PADDING,
+            &self.bytes,
+        )?;
 
         Ok(Self::from_validated_bytes(sealed))
     }
@@ -232,13 +239,14 @@ impl<F: Seal> Sealed<F> {
     pub fn reseal_across(
         &self,
         from: impl Args<F>,
-        from_keys: &(impl EncryptionKeySource + ?Sized),
+        from_keys: &(impl EncryptionKeys + ?Sized),
         to: impl Args<F>,
-        to_keys: &(impl EncryptionKeySource + ?Sized),
+        to_keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
+        let (from, to) = (domain(from)?, domain(to)?);
         let (_, sealed) = bound::reseal(
-            (&domain(from)?, from_keys),
-            (&domain(to)?, to_keys),
+            (&from, from_keys.encryption_keyring()),
+            (&to, to_keys.encryption_keyring()),
             F::PADDING,
             &self.bytes,
         )?;
@@ -247,11 +255,11 @@ impl<F: Seal> Sealed<F> {
     }
 }
 
-impl<F: Seal<Scope = ()>> Sealed<F> {
+impl<F: Seal<Bound = (), Record = ()>> Sealed<F> {
     /// Seals `value` with the [installed keys](keys::installed).
     ///
     /// This is exactly `Self::seal(value, (), keys::installed()?)`. The
-    /// process-wide keys serve only unscoped seals without a record.
+    /// process-wide keys serve only seals without bound values or a record.
     ///
     /// # Errors
     ///
@@ -279,6 +287,13 @@ impl<F: Seal> TryFrom<Vec<u8>> for Sealed<F> {
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
         Self::from_bytes(bytes)
+    }
+}
+
+// Stores the envelope through `Vec<u8>`, as an ORM's `serialize_as` does.
+impl<F: Seal> From<Sealed<F>> for Vec<u8> {
+    fn from(sealed: Sealed<F>) -> Self {
+        sealed.into_bytes()
     }
 }
 
@@ -311,20 +326,20 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// A plaintext value of seal `F` that an automatic `SQLx` column seals on
 /// encode and opens on decode.
 ///
-/// A column decoder sees neither a row nor a scope, so `Plain` serves only
-/// unscoped seals without a record or blind indexes: its constructors
-/// and column impls require `F::Scope = ()` and `F::Indexes = ()`, and a
+/// A column decoder sees neither a row nor its bound values, so `Plain` serves
+/// only seals without bound values, a record, or blind indexes: its constructors
+/// and column impls require `F::Bound = ()`, `F::Record = ()`, and `F::Indexes = ()`, and a
 /// seal that binds a record fails the build.
 /// Use [`Sealed`] explicitly for every other seal.
 ///
-/// `K` is the column's key source. The default, [`GlobalKeys`], reads the keys
+/// `K` names the column's keys. The default, [`GlobalKeys`], reads the keys
 /// installed with [`keys::install`]; name another
 /// [`ColumnKeys`](crate::ColumnKeys) to use application-owned keys instead.
 ///
 /// `Plain` contains plaintext while it is in application memory. It redacts
 /// `Debug`, does not implement `Display`, `Deref`, `PartialEq`, or Serde, and
 /// requires explicit access through [`Self::expose_secret`]. It does not
-/// zeroize arbitrary values; use [`Secret`] when the value supports [`Zeroize`].
+/// zeroize arbitrary values; use [`Secret`](crate::Secret) when the value supports [`Zeroize`](zeroize::Zeroize).
 ///
 /// ```
 /// use cryptbox::{Seal, SealId, Padding, Plain, Utf8};
@@ -336,7 +351,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -347,7 +363,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// A bound seal is rejected:
 ///
 /// ```compile_fail,E0271
-/// use cryptbox::{Seal, SealId, Padding, Plain, Tenant, Utf8};
+/// use cryptbox::{Seal, SealId, Padding, Plain, TenantId, Utf8};
 ///
 /// struct CustomerEmail;
 ///
@@ -356,7 +372,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = Tenant;
+///     type Bound = (TenantId,);
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -378,7 +395,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = (EmailLookup,);
 /// }
 ///
@@ -386,6 +404,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///
 /// impl BlindIndexSpec for EmailLookup {
 ///     type Seal = UserEmail;
+///     type Partition = ();
 ///     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -406,7 +425,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// And a seal that binds a record is a type error:
 ///
 /// ```compile_fail,E0599
-/// # use cryptbox::{Padding, Plain, Recorded, Seal, SealId, Utf8};
+/// # use cryptbox::{Padding, Plain, Seal, SealId, Utf8};
 /// struct RowNote;
 ///
 /// impl Seal for RowNote {
@@ -414,7 +433,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = Recorded<(), i64>;
+///     type Bound = ();
+///     type Record = i64;
 ///     type Indexes = ();
 /// }
 ///
@@ -431,7 +451,8 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Scope = ();
+/// #     type Bound = ();
+/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// let left = Plain::<UserEmail>::new("secret");
@@ -450,7 +471,7 @@ pub struct Plain<F: Seal, K = GlobalKeys> {
 
 impl<F, K> Plain<F, K>
 where
-    F: Seal<Scope = (), Indexes = ()>,
+    F: Seal<Bound = (), Record = (), Indexes = ()>,
 {
     /// Wraps a plaintext value.
     ///
@@ -488,11 +509,11 @@ where
     }
 }
 
-// The automatic SQLx columns seal and open with their key source `K`.
+// The automatic SQLx columns seal and open with their keys `K`.
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 impl<F, K> Plain<F, K>
 where
-    F: Seal<Scope = (), Indexes = ()>,
+    F: Seal<Bound = (), Record = (), Indexes = ()>,
     K: crate::ColumnKeys,
 {
     pub(crate) fn seal_for_column(&self) -> Result<Sealed<F>, Error> {
@@ -522,50 +543,5 @@ where
 impl<F: Seal, K> fmt::Debug for Plain<F, K> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Plain([REDACTED])")
-    }
-}
-
-/// Plaintext with zeroization on drop and explicit access semantics.
-///
-/// Drop invokes `T`'s [`Zeroize`] implementation. Cloning creates a separate `T`
-/// with its own lifetime; it does not share a single erasure boundary. This cannot
-/// erase previous copies, superseded allocations, or OS copies. For an opened
-/// `String`, use `Secret::new(sealed.open(args, keys)?)`.
-/// A seal can also take `Secret<String>` or `Secret<Vec<u8>>` as its value type: their
-/// default codecs ([`crate::Utf8`], [`crate::Raw`]) write the same bytes.
-/// See the [custom-field example] and [ownership reference].
-///
-#[doc = concat!(
-    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
-)]
-pub struct Secret<T: Zeroize> {
-    value: Zeroizing<T>,
-}
-
-impl<T: Zeroize> Secret<T> {
-    /// Wraps plaintext that will be zeroized on drop.
-    pub fn new(value: T) -> Self {
-        Self {
-            value: Zeroizing::new(value),
-        }
-    }
-
-    /// Explicitly exposes the plaintext value.
-    #[must_use]
-    pub fn expose_secret(&self) -> &T {
-        &self.value
-    }
-}
-
-impl<T: Clone + Zeroize> Clone for Secret<T> {
-    fn clone(&self) -> Self {
-        Self::new((*self.value).clone())
-    }
-}
-
-impl<T: Zeroize> fmt::Debug for Secret<T> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Secret([REDACTED])")
     }
 }

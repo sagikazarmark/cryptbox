@@ -6,9 +6,8 @@ use std::{
 };
 
 use crate::{
-    BlindIndexSpec, Codec, IndexId, Padding, PartKind, PartRole, PartSpec, Scope, Seal, SealId,
-    SealScope,
-    binding::{PartsOf, declaration_fingerprint},
+    BlindIndexSpec, BoundList, Codec, IndexId, Padding, PartKind, PartSpec, Record, RecordIdType,
+    Seal, SealId, binding::declaration_fingerprint,
 };
 
 /// Lists seals and blind indexes with their persistent schema.
@@ -23,26 +22,27 @@ use crate::{
 /// - its seal ID, codec ID, and padding;
 /// - `record`: the kind of the record ID it is bound to, or `no`;
 /// - `binding`: the [binding fingerprint](crate::CiphertextInfo::context_fingerprint),
-///   order;
-/// - `shred unit`: the finest unit that destroying root keys can shred, if the
-///   application stores root keys per [key scope](crate::KeyScope): the
-///   [`keys`](crate::PartRole::Keys) parts, joined by `+`, or `keyring` when
-///   there are none and only the whole keyring can be. The library cannot see
-///   how keys are stored, so a coarser choice, such as one keyring for every
-///   tenant, shreds only that coarser unit; say so in the custody label;
-/// - `custody`: the label given with [`Self::custody`], if any.
+///   followed by each part's ID and kind, in part ID order.
 ///
-/// Each index lists its index ID, seal ID, bits, and normalizer name.
+/// Each index lists its index ID, seal ID, bits, normalizer name, and the parts
+/// of its partition, in part ID order.
+///
+/// Each record lists the seal IDs of its sealed fields, the field that holds
+/// its record ID, its bound fields, its plaintext fields, and the fields whose
+/// legacy declaration is still opened. A field stored as it is has no ID, so
+/// the manifest names it, and a field that should have been sealed shows up in
+/// the snapshot.
 ///
 /// The output names IDs, never Rust types, so it is the same on every
-/// toolchain and survives renaming or moving a marker. The value type is not
+/// toolchain and survives renaming or moving a marker; a record's field names
+/// are the one exception. The value type is not
 /// listed: the codec ID stands for its stored bytes, and golden-bytes fixtures
 /// ([`assert_encoding`](crate::testing::assert_encoding)) pin them.
 ///
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Padding, Recorded, Seal, SealId, Tenant, Utf8, schema::Manifest};
+/// use cryptbox::{Padding, Seal, SealId, TenantId, Utf8, schema::Manifest};
 ///
 /// struct Nickname;
 ///
@@ -51,13 +51,12 @@ use crate::{
 ///     const PADDING: Padding = Padding::block(16);
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = Recorded<Tenant, i64>;
+///     type Bound = (TenantId,);
+///     type Record = i64;
 ///     type Indexes = ();
 /// }
 ///
-/// let manifest = Manifest::new()
-///     .seal::<Nickname>()
-///     .custody::<Nickname>("general KMS, one key per tenant");
+/// let manifest = Manifest::new().seal::<Nickname>();
 ///
 /// assert!(manifest.duplicates().is_empty());
 /// assert_eq!(manifest.to_string(), "\
@@ -65,16 +64,25 @@ use crate::{
 ///   codec: utf8
 ///   padding: block(16)
 ///   record: i64
-///   binding: 75e187c06144e3b7
-///     part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
-///   shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
-///   custody: general KMS, one key per tenant
+///   binding: 53aad4c274f3c0c4
+///     part 1e8306bf-3135-4570-831c-6732f92550e9 bytes
 /// ");
 /// ```
 #[derive(Debug, Default)]
 pub struct Manifest {
     seals: Vec<SealEntry>,
     indexes: Vec<IndexEntry>,
+    records: Vec<RecordEntry>,
+}
+
+#[derive(Debug)]
+struct RecordEntry {
+    marker: TypeId,
+    seals: &'static [SealId],
+    record_id: &'static str,
+    bound: &'static [&'static str],
+    plaintext: &'static [&'static str],
+    legacy: &'static [&'static str],
 }
 
 #[derive(Debug)]
@@ -85,6 +93,7 @@ struct IndexEntry {
     seal: SealId,
     bits: u16,
     normalizer: &'static str,
+    parts: Vec<PartSpec>,
 }
 
 #[derive(Debug)]
@@ -95,9 +104,8 @@ struct SealEntry {
     codec: &'static str,
     padding: Padding,
     record: Option<PartKind>,
-    parts: &'static [PartSpec],
+    parts: Vec<PartSpec>,
     fingerprint: [u8; 8],
-    custody: Option<String>,
 }
 
 impl Manifest {
@@ -112,47 +120,20 @@ impl Manifest {
     /// Registering it again changes nothing.
     #[must_use]
     pub fn seal<F: Seal>(mut self) -> Self {
-        self.seal_entry::<F>();
-        self
-    }
-
-    /// Labels which keys protect seal `F`, registering it if needed.
-    ///
-    /// The library cannot see which keyring an application passes for a seal,
-    /// so the manifest records custody declaratively: the label appears in the
-    /// snapshot for reviewers and auditors, and a later label replaces an
-    /// earlier one. Name the key custody, such as `"payments KMS, per org"`,
-    /// never key material. Line breaks are escaped to keep the label on one
-    /// line. Test that the application passes those keys with
-    /// [`assert_sealed_under`](crate::testing::assert_sealed_under).
-    #[must_use]
-    pub fn custody<F: Seal>(mut self, label: impl Into<String>) -> Self {
-        self.seal_entry::<F>().custody = Some(label.into());
-        self
-    }
-
-    fn seal_entry<F: Seal>(&mut self) -> &mut SealEntry {
         let marker = TypeId::of::<F>();
-        let position = self
-            .seals
-            .iter()
-            .position(|seal| seal.marker == marker)
-            .unwrap_or_else(|| {
-                self.seals.push(SealEntry {
-                    marker,
-                    name: type_name::<F>(),
-                    id: F::ID,
-                    codec: <F::Codec as Codec<F::Value>>::ID,
-                    padding: F::PADDING,
-                    record: <F::Scope as SealScope>::RECORD,
-                    parts: <PartsOf<F> as Scope>::PARTS,
-                    fingerprint: declaration_fingerprint::<F::Scope>(),
-                    custody: None,
-                });
-                self.seals.len() - 1
+        if self.seals.iter().all(|seal| seal.marker != marker) {
+            self.seals.push(SealEntry {
+                marker,
+                name: type_name::<F>(),
+                id: F::ID,
+                codec: <F::Codec as Codec<F::Value>>::ID,
+                padding: F::PADDING,
+                record: <F::Record as RecordIdType>::RECORD,
+                parts: sorted(<F::Bound as BoundList>::PARTS),
+                fingerprint: declaration_fingerprint::<F::Bound, F::Record>(),
             });
-
-        &mut self.seals[position]
+        }
+        self
     }
 
     /// Registers blind index `I`.
@@ -170,6 +151,28 @@ impl Manifest {
                 seal: <I::Seal as Seal>::ID,
                 bits: I::BITS,
                 normalizer: I::NORMALIZER,
+                parts: sorted(<I::Partition as BoundList>::PARTS),
+            });
+        }
+        self
+    }
+
+    /// Registers record `R`: its sealed fields' seal IDs, and the names of its
+    /// record ID, bound, and plaintext fields.
+    ///
+    /// Register its seals separately with [`Self::seal`]. Registering it again
+    /// changes nothing.
+    #[must_use]
+    pub fn record<R: Record + 'static>(mut self) -> Self {
+        let marker = TypeId::of::<R>();
+        if self.records.iter().all(|record| record.marker != marker) {
+            self.records.push(RecordEntry {
+                marker,
+                seals: R::SEALS,
+                record_id: R::RECORD_ID,
+                bound: R::BOUND,
+                plaintext: R::PLAINTEXT,
+                legacy: R::LEGACY,
             });
         }
         self
@@ -254,41 +257,13 @@ impl fmt::Display for Manifest {
                 seal.record.map_or("no", kind_name)
             )?;
             writeln!(formatter, "  binding: {}", hex::encode(seal.fingerprint))?;
-            for part in seal.parts {
+            for part in &seal.parts {
                 writeln!(
                     formatter,
-                    "    part {} {} {}",
+                    "    part {} {}",
                     part.id(),
-                    kind_name(part.kind()),
-                    role_name(part.role()),
+                    kind_name(part.kind())
                 )?;
-            }
-            write!(formatter, "  shred unit: ")?;
-            let mut keys = seal
-                .parts
-                .iter()
-                .filter(|part| part.role() == PartRole::Keys);
-            match keys.next() {
-                // Without `keys` parts, only the whole keyring can be destroyed.
-                None => writeln!(formatter, "keyring")?,
-                Some(first) => {
-                    write!(formatter, "{}", first.id())?;
-                    for part in keys {
-                        write!(formatter, " + {}", part.id())?;
-                    }
-                    writeln!(formatter)?;
-                }
-            }
-            if let Some(custody) = &seal.custody {
-                write!(formatter, "  custody: ")?;
-                for character in custody.chars() {
-                    if character.is_control() || matches!(character, '\u{2028}' | '\u{2029}') {
-                        write!(formatter, "{}", character.escape_debug())?;
-                    } else {
-                        write!(formatter, "{character}")?;
-                    }
-                }
-                writeln!(formatter)?;
             }
         }
 
@@ -297,6 +272,41 @@ impl fmt::Display for Manifest {
             writeln!(formatter, "  seal: {}", index.seal)?;
             writeln!(formatter, "  bits: {}", index.bits)?;
             writeln!(formatter, "  normalizer: {}", index.normalizer)?;
+            // An index without a partition is unpartitioned.
+            if !index.parts.is_empty() {
+                writeln!(formatter, "  partition:")?;
+            }
+            for part in &index.parts {
+                writeln!(
+                    formatter,
+                    "    part {} {}",
+                    part.id(),
+                    kind_name(part.kind())
+                )?;
+            }
+        }
+
+        for record in &self.records {
+            writeln!(formatter, "record")?;
+            write!(formatter, "  seals:")?;
+            for (position, seal) in record.seals.iter().enumerate() {
+                let separator = if position == 0 { " " } else { ", " };
+                write!(formatter, "{separator}{seal}")?;
+            }
+            writeln!(formatter)?;
+            writeln!(formatter, "  record id: {}", record.record_id)?;
+            match record.bound {
+                [] => writeln!(formatter, "  bound: none")?,
+                fields => writeln!(formatter, "  bound: {}", fields.join(", "))?,
+            }
+            match record.plaintext {
+                [] => writeln!(formatter, "  plaintext: none")?,
+                fields => writeln!(formatter, "  plaintext: {}", fields.join(", "))?,
+            }
+            // Listed only while a window is open, so closing one shows in the diff.
+            if !record.legacy.is_empty() {
+                writeln!(formatter, "  legacy: {}", record.legacy.join(", "))?;
+            }
         }
 
         // Type names are not stable across compilers, so the snapshot names IDs only.
@@ -311,20 +321,20 @@ impl fmt::Display for Manifest {
     }
 }
 
+// Parts are listed by part ID, as the binding sorts them, so reordering a
+// bound list changes no snapshot.
+fn sorted(parts: &[PartSpec]) -> Vec<PartSpec> {
+    let mut parts = parts.to_vec();
+    parts.sort_by_key(|part| *part.id().as_bytes());
+    parts
+}
+
 // Manifest spellings are snapshot text: keep them stable.
 const fn kind_name(kind: PartKind) -> &'static str {
     match kind {
         PartKind::Uuid => "uuid",
         PartKind::I64 => "i64",
         PartKind::Bytes => "bytes",
-    }
-}
-
-const fn role_name(role: PartRole) -> &'static str {
-    match role {
-        PartRole::Keys => "keys",
-        PartRole::Index => "index",
-        PartRole::Bound => "bound",
     }
 }
 
@@ -346,7 +356,8 @@ const fn role_name(role: PartRole) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -357,7 +368,8 @@ const fn role_name(role: PartRole) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -374,7 +386,8 @@ const fn role_name(role: PartRole) -> &'static str {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Scope = ();
+/// #     type Bound = ();
+/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// struct BillingAddress;
@@ -384,7 +397,8 @@ const fn role_name(role: PartRole) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -402,13 +416,15 @@ const fn role_name(role: PartRole) -> &'static str {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Scope = ();
+/// #     type Bound = ();
+/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// struct Exact;
 ///
 /// impl BlindIndexSpec for Exact {
 ///     type Seal = Bytes;
+///     type Partition = ();
 ///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -421,6 +437,7 @@ const fn role_name(role: PartRole) -> &'static str {
 ///
 /// impl BlindIndexSpec for Prefix {
 ///     type Seal = Bytes;
+///     type Partition = ();
 ///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 16;
 ///     const NORMALIZER: &'static str = "prefix/1";

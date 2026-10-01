@@ -143,42 +143,46 @@ These behaviors make the following separate audit necessary.
 
 ## Binding-declaration changes
 
-A seal's binding declaration (its parts, their roles and whether it binds a record) is
-persistent schema, so changing it is a migration: an explicit legacy-binding
+A seal's binding declaration (the kinds of its bound values, and whether it binds a
+record) is persistent schema, so changing it is a migration: an explicit legacy-binding
 window, a reseal sweep, and lookups over both index declarations until the window
 closes ([ADR-0005](adr/0005-runtime-binding-is-the-core.md)).
 
-A bound seal's sweep is **partitioned by key scope**, because its keys are.
-Configure one planner per key scope with
-`RowPlanner::for_key_scope(key_scope, keys, row_args)`. The key scope comes from
-the job, never from the rows; `row_args` builds each row's `RowArgs` (its
-binding and record ID) from the columns the store loads into
-`SweepRow::columns`. The store selects only that key scope's rows. A row whose
-arguments name another key scope is left alone and counted as `out_of_scope`:
-an anomaly to investigate, not a row to rewrite. Packaged stores load no
-columns, so a bound seal needs an application-owned `SweepStore`.
+A planner seals with one keyring, so a sweep is **partitioned by the keys it
+uses**: with a keyring per org, configure one planner per org with
+`RowPlanner::for_rows(keys, row_args)`, and have the store select only that
+org's rows. `row_args` builds each row's `RowArgs` (its bound values and record
+ID) from the columns the store loads into `SweepRow::columns`. Packaged stores
+load no columns, so a bound seal needs an application-owned `SweepStore`.
 
-Open the window with `RowPlanner::legacy_binding::<Old>(old_keys)`, where `Old`
-is the seal scope the seal had before, such as `()`, `Tenant`, or
-`Recorded<Tenant, i64>`. Its parts take their values from each row's current
-scope by part ID, and when `Old` binds a record, from the row's record ID, which
-a row moving out of a record still passes with `RowArgs::with_record`. The
-window covers adding parts, moving into or out of a record, and changing a role,
-not removing a part or changing its kind. Rows
+Open the window with `RowPlanner::legacy_binding::<Old, OldRecord>(old_keys)`,
+where `Old` is the bound list the seal had before, such as `()` or
+`(TenantId,)`, and `OldRecord` its record then, such as `()` or `i64`; or, for
+a record field that names its old declaration with `legacy(…)`, with
+`RowPlanner::legacy_seal::<L>(old_keys)` and the legacy seal the derive declares,
+such as `CustomerEmailLegacy`, which also covers an old seal ID. `Old` takes each
+value from the row's current bound values, by kind, and when `OldRecord` is one,
+from the row's record ID, which a row moving out of a record still passes with
+`RowArgs::with_record`; `old_keys` is the keyring those rows were sealed with.
+The window covers adding bound values and moving into or out of a record, not
+removing a bound value or changing its kind. Rows
 are classified by the binding fingerprint in their header: a row of the old declaration is
 opened under it with `old_keys`, resealed under the current binding, and every
 index derived again, since the index binding may have changed. Rows of any
 other declaration still fail with `Error::BindingMismatch`.
 
-While the window is open, readers use `migrate::probes_across::<Old, S>` for
-probes over both [index bindings](wire-format.md#index-binding) and
-`migrate::open_across::<Old, _>` to open a candidate of either declaration. Close the
+While the window is open, readers use `migrate::probes_across::<Old, S>`, where
+`Old` is the [partition](bindings.md#partition-each-blind-index) `S` had before,
+for probes over both [index bindings](wire-format.md#index-binding), and
+`migrate::open_across::<Old, OldRecord, _>` to open a candidate of either
+declaration. A record's `Record::open` opens both declarations of a field with
+`legacy(…)` by itself. Close the
 window, and drop the old keys from the readers,
 only after a complete verification pass counts zero `legacy_binding` rows.
 
-To move a value to other binding values or keys under the same declaration, such as a
-record moving between workspaces or data changing residency, use
-`Sealed::reseal_across`.
+To move a value to other bound values or keys under the same declaration, such as
+a record moving between workspaces or data changing residency, open and seal the
+record again, or use `Sealed::reseal_across` for a standalone value.
 
 ## Verification and retirement
 
@@ -195,7 +199,7 @@ from trusted application schema, not stored metadata.
    continue, repeat complete passes until clean under your storage guarantees.
 2. **Verify migration state from the beginning.** `Sweep::verify` ignores rewrite
    progress and performs a fresh read-only pass. Require zero legacy,
-   legacy-binding, out-of-scope, stale and malformed rows. For `verify_batch`,
+   legacy-binding, stale and malformed rows. For `verify_batch`,
    start with no cursor, merge every report using `SweepReport::merge`, and
    follow checkpoints to `None` before evaluating `is_terminal()`. That method
    checks counts, not completion: a clean partial,

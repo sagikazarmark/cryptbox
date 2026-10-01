@@ -126,7 +126,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     assert_eq!(report.current, 4);
 
     // Separately demonstrate strict authenticated reading for this lookup.
-    let probes = EmailLookup::probes_with("first@example.com", &(), &index_keys)?;
+    let probes = EmailLookup::probes_with("first@example.com", (), &index_keys)?;
     let mut matched = 0;
     for probe in probes {
         let rows = sqlx::query("SELECT email_ciphertext FROM users WHERE email_bidx = ?")

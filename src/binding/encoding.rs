@@ -1,7 +1,7 @@
 use sha2::{Digest, Sha256};
 
-use super::{PartKind, PartRole, PartSpec, PartValue};
-use crate::{Error, SealId};
+use super::{PartKind, PartSpec, PartValue};
+use crate::Error;
 
 // A persistent domain separator, not a display string.
 // See ../../docs/wire-format.md#binding-fingerprint.
@@ -14,7 +14,7 @@ const FINGERPRINT_LABEL: &[u8] = b"cryptbox/binding-fingerprint/v1\0";
 /// The seal ID and part bytes are persistent KDF/AAD inputs, independent of Rust
 /// names. See ../../docs/wire-format.md#binding.
 pub(super) fn encode<'v>(
-    seal: SealId,
+    seal: &[u8; 16],
     parts: impl IntoIterator<Item = (&'v PartSpec, &'v PartValue<'v>)>,
 ) -> Result<Vec<u8>, Error> {
     let mut parts: Vec<_> = parts.into_iter().collect();
@@ -22,7 +22,7 @@ pub(super) fn encode<'v>(
     let count = u16::try_from(parts.len()).map_err(|_| Error::InvalidBinding)?;
 
     let mut encoded = Vec::new();
-    encoded.extend_from_slice(seal.as_bytes());
+    encoded.extend_from_slice(seal);
     encoded.extend_from_slice(&count.to_be_bytes());
     for (spec, value) in parts {
         encoded.extend_from_slice(&spec.id);
@@ -32,8 +32,8 @@ pub(super) fn encode<'v>(
     Ok(encoded)
 }
 
-/// Fingerprints a declaration from its part IDs, kinds, and roles, a record's
-/// part included, never values; part order does not matter.
+/// Fingerprints a declaration from its part IDs and kinds, a record's part
+/// included, never values; part order does not matter.
 pub(super) fn fingerprint(parts: &[PartSpec]) -> [u8; 8] {
     let mut parts = parts.to_vec();
     parts.sort_by_key(|spec| spec.id);
@@ -47,7 +47,7 @@ pub(super) fn fingerprint(parts: &[PartSpec]) -> [u8; 8] {
     hasher.update(count.to_be_bytes());
     for spec in parts {
         hasher.update(spec.id);
-        hasher.update([kind_code(spec.kind), role_code(spec.role)]);
+        hasher.update([kind_code(spec.kind), PART_ROLE]);
     }
 
     let digest = hasher.finalize();
@@ -86,11 +86,7 @@ const fn kind_code(kind: PartKind) -> u8 {
     }
 }
 
-// Role codes are persistent fingerprint input. See ../../docs/wire-format.md#binding-fingerprint.
-const fn role_code(role: PartRole) -> u8 {
-    match role {
-        PartRole::Keys => 1,
-        PartRole::Index => 2,
-        PartRole::Bound => 3,
-    }
-}
+// The role code is persistent fingerprint input, 3 for every part, the
+// record's included. 1 was the retired keys view and 2 the retired `index` role.
+// See ../../docs/wire-format.md#binding-fingerprint.
+const PART_ROLE: u8 = 3;

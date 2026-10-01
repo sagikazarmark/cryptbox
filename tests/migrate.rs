@@ -8,10 +8,9 @@ use std::{
 };
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, BlindIndexSpec,
-    EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId,
-    KeyScope, Padding, Seal, SealId, Sealed, Utf8, index_id, index_key_id, inspect_blind_index,
-    inspect_ciphertext, key_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
+    index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
@@ -32,7 +31,8 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -43,7 +43,8 @@ impl Seal for PaddedUserEmail {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -53,6 +54,7 @@ struct EmailDomain;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = UserEmail;
+    type Partition = ();
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -71,6 +73,7 @@ impl BlindIndexSpec for EmailLookup {
 
 impl BlindIndexSpec for EmailDomain {
     type Seal = UserEmail;
+    type Partition = ();
     const ID: IndexId = index_id!("70000000-0000-4000-8000-000000000007");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email-domain/1";
@@ -122,13 +125,13 @@ fn encrypt_email(email: &str, keys: &EncryptionKeyring) -> Vec<u8> {
 }
 
 fn derive_email_index(email: &str, index_keys: &BlindIndexKeyring) -> Vec<u8> {
-    EmailLookup::derive_with(&email.to_owned(), &(), index_keys)
+    EmailLookup::derive_with(&email.to_owned(), (), index_keys)
         .unwrap()
         .into_bytes()
 }
 
 fn derive_email_domain_index(email: &str, index_keys: &BlindIndexKeyring) -> Vec<u8> {
-    EmailDomain::derive_with(&email.to_owned(), &(), index_keys)
+    EmailDomain::derive_with(&email.to_owned(), (), index_keys)
         .unwrap()
         .into_bytes()
 }
@@ -987,71 +990,6 @@ fn stepped_verification_matches_a_full_pass() {
     assert_eq!(stepped, full);
     assert_eq!(store.update_calls, 0);
     assert_eq!(store.checkpoint_saves, 0);
-}
-
-fn envelope_rows() -> Vec<(i64, Vec<u8>, Vec<Vec<u8>>)> {
-    let keys = rotated_keys();
-    let index_keys = rotated_index_keys();
-    vec![
-        (
-            1,
-            encrypt_email("first@example.com", &keys),
-            vec![derive_email_index("first@example.com", &index_keys)],
-        ),
-        (
-            2,
-            encrypt_email("second@example.com", &keys),
-            vec![derive_email_index("second@example.com", &index_keys)],
-        ),
-    ]
-}
-
-fn assert_verification_aborts_without_keys(sweep: &Sweep<'_, UserEmail>) {
-    let mut store = MemoryStore::new(envelope_rows());
-
-    assert!(matches!(
-        futures_executor::block_on(sweep.verify(&mut store)),
-        Err(SweepError::Row(Error::KeysUnavailable))
-    ));
-    // The batch aborts rather than returning a report that counts every row
-    // as malformed.
-    assert!(matches!(
-        futures_executor::block_on(sweep.verify_batch(&mut store, None)),
-        Err(SweepError::Row(Error::KeysUnavailable))
-    ));
-}
-
-/// A key source whose keys are not loaded.
-struct UnloadedKeys;
-
-impl EncryptionKeySource for UnloadedKeys {
-    fn encryption_keyring(&self, _: SealId, _: &KeyScope) -> Result<EncryptionKeyring, Error> {
-        Err(Error::KeysUnavailable)
-    }
-}
-
-impl BlindIndexKeySource for UnloadedKeys {
-    fn blind_index_keyring(&self, _: IndexId, _: &KeyScope) -> Result<BlindIndexKeyring, Error> {
-        Err(Error::KeysUnavailable)
-    }
-}
-
-#[test]
-fn verification_aborts_when_encryption_keys_are_unavailable() {
-    let keys = UnloadedKeys;
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
-
-    assert_verification_aborts_without_keys(&Sweep::new(planner));
-}
-
-#[test]
-fn verification_aborts_when_blind_index_keys_are_unavailable() {
-    let keys = rotated_keys();
-    let index_keys = UnloadedKeys;
-    let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
-
-    assert_verification_aborts_without_keys(&Sweep::new(planner));
 }
 
 #[test]

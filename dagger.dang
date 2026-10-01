@@ -192,31 +192,6 @@ type Test {
     self.example("stored_values", feature: ["derive", "serde"])
   }
 
-  """
-  Run the Restate adapter's end-to-end test against a real restate-server.
-
-  The harness spawns the binary from the Restate image, and fails rather than
-  skips under CI.
-  """
-  restate: String! @check {
-    let server = Dagger
-      .container
-      .from("docker.restate.dev/restatedev/restate:1.7.8")
-      .file("/usr/local/bin/restate-server")
-
-    self
-      .container
-      .withFile("/usr/local/bin/restate-server", server)
-      .withEnvVariable("RESTATE_SERVER_BIN", "/usr/local/bin/restate-server")
-      .withEnvVariable("CI", "true")
-      .withExec([
-        "cargo", "test", "--locked",
-        "-p", "cryptbox-restate-e2e",
-        "--", "--ignored",
-      ])
-      .combinedOutput
-  }
-
   let example(
     """
     Name of the example target to run.

@@ -18,7 +18,8 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = Self;
         type Codec = Self;
-        type Scope = ();
+        type Bound = ();
+        type Record = ();
         type Indexes = ();
     }
     #[automatically_derived]

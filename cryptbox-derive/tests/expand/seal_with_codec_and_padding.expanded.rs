@@ -18,7 +18,8 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
         type Value = Address;
         type Codec = AddressCodec;
-        type Scope = ();
+        type Bound = ();
+        type Record = ();
         type Indexes = ();
     }
 };
@@ -34,7 +35,8 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::length(256usize);
         type Value = Address;
         type Codec = AddressCodec;
-        type Scope = ();
+        type Bound = ();
+        type Record = ();
         type Indexes = ();
     }
 };

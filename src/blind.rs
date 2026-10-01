@@ -4,8 +4,11 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
-    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring, Error,
-    IndexKeyId, Scope, Seal, binding::PartsOf, id::identifier, keys,
+    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeys, BoundList, BoundValues, Error,
+    IndexKeyId, PartValue, Seal,
+    binding::{bound_values, check_partition, project},
+    id::identifier,
+    keys,
 };
 
 mod format;
@@ -17,9 +20,6 @@ use recipe::derive_index;
 
 identifier!(IndexId, "A stable logical blind-index identifier.");
 
-/// The query-time arguments of `Spec`: its seal binding's `keys` and `index` part values.
-pub(crate) type IndexArgs<Spec> = <PartsOf<<Spec as BlindIndexSpec>::Seal> as Scope>::IndexArgs;
-
 /// A logical blind index over one seal.
 ///
 /// A specification binds an index to exactly one [`Seal`]: the seal's ID
@@ -30,14 +30,12 @@ pub(crate) type IndexArgs<Spec> = <PartsOf<<Spec as BlindIndexSpec>::Seal> as Sc
 /// an index can be computed from part of it, such as an email domain, or combine
 /// several of its parts.
 ///
-/// Indexes are scoped by the seal's [`Scope`]. Each operation takes the
-/// binding's [`IndexArgs`](Scope::IndexArgs), the values of its
-/// [`keys`](crate::PartRole::Keys) and [`index`](crate::PartRole::Index)
-/// parts, and derives in that scope; an unscoped seal passes `&()`. Equal
-/// values under other `keys` or `index` values derive unrelated indexes, and
-/// the key source receives the scope's [`KeyScope`](crate::KeyScope).
-/// Bound-only parts and the record never scope an index, since a query cannot
-/// know them. See the [index binding].
+/// Each index names its [`Partition`](Self::Partition): the seal's bound ID
+/// types a query supplies. Each operation takes the partition's values and
+/// derives in them; an unpartitioned index passes `()`. Equal values under other
+/// partition values derive unrelated indexes. Bound values left out of the
+/// partition and the record never partition an index, and two indexes over one
+/// seal may partition differently. See the [index binding].
 ///
 /// `BITS` must be between 1 and 256. The logical [`IndexId`] is part of key
 /// derivation but is not stored in the index bytes. Changing the ID,
@@ -57,7 +55,8 @@ pub(crate) type IndexArgs<Spec> = <PartsOf<<Spec as BlindIndexSpec>::Seal> as Sc
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -65,6 +64,7 @@ pub(crate) type IndexArgs<Spec> = <PartsOf<<Spec as BlindIndexSpec>::Seal> as Sc
 ///
 /// impl BlindIndexSpec for EmailLookup {
 ///     type Seal = UserEmail;
+///     type Partition = ();
 ///     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "email/1";
@@ -81,7 +81,7 @@ pub(crate) type IndexArgs<Spec> = <PartsOf<<Spec as BlindIndexSpec>::Seal> as Sc
 /// ```
 ///
 /// With the `derive` feature, `#[derive(BlindIndexSpec)]` writes exactly this
-/// impl from `#[cryptbox(id = "…", seal = UserEmail, bits = 32, query = str,
+/// impl from `#[blind_index(id = "…", seal = UserEmail, bits = 32, query = str,
 /// normalize = normalize_email, normalizer = "email/1")]`, given a free
 /// `normalize_email` function with `normalize_query`'s body.
 ///
@@ -96,13 +96,15 @@ pub(crate) type IndexArgs<Spec> = <PartsOf<<Spec as BlindIndexSpec>::Seal> as Sc
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Scope = ();
+/// #     type Bound = ();
+/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// struct ZeroBits;
 ///
 /// impl BlindIndexSpec for ZeroBits {
 ///     type Seal = Bytes;
+///     type Partition = ();
 ///     const ID: IndexId = IndexId::from_bytes([0; 16]);
 ///     const BITS: u16 = 0;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -123,13 +125,15 @@ pub(crate) type IndexArgs<Spec> = <PartsOf<<Spec as BlindIndexSpec>::Seal> as Sc
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Scope = ();
+/// #     type Bound = ();
+/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// struct TooManyBits;
 ///
 /// impl BlindIndexSpec for TooManyBits {
 ///     type Seal = Bytes;
+///     type Partition = ();
 ///     const ID: IndexId = IndexId::from_bytes([0; 16]);
 ///     const BITS: u16 = 300;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -139,6 +143,40 @@ pub(crate) type IndexArgs<Spec> = <PartsOf<<Spec as BlindIndexSpec>::Seal> as Sc
 /// }
 ///
 /// let _ = BlindIndex::<TooManyBits>::from_bytes(Vec::new());
+/// ```
+///
+/// So is a partition with a bound ID type the seal does not bind:
+///
+/// ```compile_fail,E0080
+/// # use cryptbox::{BlindIndexError, BlindIndexKeyring, BlindIndexKey, BlindIndexSpec, Seal, SealId, IndexId, Padding, Raw, TenantId};
+/// # use zeroize::Zeroizing;
+/// # struct Bytes;
+/// # impl Seal for Bytes {
+/// #     const ID: SealId = SealId::from_bytes([1; 16]);
+/// #     const PADDING: Padding = Padding::NONE;
+/// #     type Value = Vec<u8>;
+/// #     type Codec = Raw;
+/// #     type Bound = ();
+/// #     type Record = ();
+/// #     type Indexes = ();
+/// # }
+/// struct PerTenant;
+///
+/// impl BlindIndexSpec for PerTenant {
+///     type Seal = Bytes;
+///     type Partition = (TenantId,);
+///     const ID: IndexId = IndexId::from_bytes([3; 16]);
+///     const BITS: u16 = 32;
+///     const NORMALIZER: &'static str = "exact/1";
+///     type Query = [u8];
+/// #   fn normalize_query(q: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(q.to_vec())) }
+/// #   fn normalize_value(v: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(v.clone())) }
+/// }
+///
+/// # let keys = BlindIndexKeyring::new(BlindIndexKey::generate()?, [])?;
+/// let acme = TenantId::new("acme")?;
+/// let _ = PerTenant::probes_with(b"ada", &acme, &keys);
+/// # Ok::<(), cryptbox::Error>(())
 /// ```
 ///
 /// # Implementor obligations
@@ -175,6 +213,16 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// The seal whose values this index projects.
     type Seal: Seal;
 
+    /// The partition: the bound ID types that partition this index, whose
+    /// values a query supplies.
+    ///
+    /// Each must be one of the seal's [bound ID types](Seal::Bound);
+    /// otherwise the build fails when the index is first used. The seal's other
+    /// bound values are spanned: equal values under them derive equal indexes.
+    /// Use `()` for an unpartitioned index, or the seal's bound list to
+    /// partition by every bound value.
+    type Partition: BoundList;
+
     /// The stable logical index identifier.
     const ID: IndexId;
 
@@ -210,27 +258,32 @@ pub trait BlindIndexSpec: Sized + 'static {
     ) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>;
 
     /// Derives the current stored index for a value of [`Self::Seal`] in the
-    /// scope of `args`.
+    /// partition `partition`.
     ///
     /// Use this to recompute a stored index from decrypted plaintext. New
     /// writes usually derive indexes through [`crate::Prepared::with_index_with`],
-    /// which takes the scope from the binding the value was sealed with.
+    /// which projects the partition from the bound values the value was sealed
+    /// with.
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidBinding`] when `args` does not match the
-    /// binding's `keys` and `index` parts, or an error for normalization
-    /// failure or unavailable keys.
-    fn derive_with(
+    /// Returns [`Error::InvalidBinding`] for a partition value of another kind
+    /// than its type declares, or an error for normalization failure or
+    /// unavailable keys.
+    fn derive_with<'a>(
         value: &<Self::Seal as Seal>::Value,
-        args: &IndexArgs<Self>,
-        keys: &(impl BlindIndexKeySource + ?Sized),
+        partition: impl BoundValues<'a, Self::Partition>,
+        keys: &(impl BlindIndexKeys + ?Sized),
     ) -> Result<BlindIndex<Self>, Error> {
-        derive_value::<Self>(value, &index_domain::<Self>(args)?, keys)
+        derive_value::<Self>(
+            value,
+            &index_domain::<Self>(&bound_values(partition))?,
+            keys,
+        )
     }
 
-    /// Derives one candidate probe in the scope of `args` for every currently
-    /// readable index generation.
+    /// Derives one candidate probe in the partition `partition` for every
+    /// currently readable index generation.
     ///
     /// Results are candidates only; decrypt candidate rows and verify their
     /// normalized plaintext with [`Self::verify_candidate`].
@@ -242,21 +295,26 @@ pub trait BlindIndexSpec: Sized + 'static {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::InvalidBinding`] when `args` does not match the
-    /// binding's `keys` and `index` parts, or an error for normalization
-    /// failure or unavailable keys.
-    fn probes_with(
+    /// Returns [`Error::InvalidBinding`] for a partition value of another kind
+    /// than its type declares, or an error for normalization failure or
+    /// unavailable keys.
+    fn probes_with<'a>(
         query: &Self::Query,
-        args: &IndexArgs<Self>,
-        keys: &(impl BlindIndexKeySource + ?Sized),
+        partition: impl BoundValues<'a, Self::Partition>,
+        keys: &(impl BlindIndexKeys + ?Sized),
     ) -> Result<Vec<BlindIndex<Self>>, Error> {
-        derive_probes::<Self>(query, args, keys)
+        probes_in::<Self>(
+            query,
+            &index_domain::<Self>(&bound_values(partition))?,
+            keys,
+        )
     }
 
     /// Derives probes with the [installed keys](keys::installed).
     ///
-    /// This is exactly `Self::probes_with(query, &(), keys::installed()?)`.
-    /// The installed keys serve only unscoped seals.
+    /// This is exactly `Self::probes_with(query, (), keys::installed()?)`.
+    /// The installed keys serve only seals without bound values, whose indexes
+    /// are unpartitioned.
     ///
     /// # Errors
     ///
@@ -264,9 +322,10 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// probe derivation fails.
     fn probes(query: &Self::Query) -> Result<Vec<BlindIndex<Self>>, Error>
     where
-        Self::Seal: Seal<Scope = ()>,
+        Self: BlindIndexSpec<Partition = ()>,
+        Self::Seal: Seal<Bound = ()>,
     {
-        Self::probes_with(query, &(), keys::installed()?)
+        Self::probes_with(query, (), keys::installed()?)
     }
 
     /// Compares a normalized query with normalized candidate plaintext after lookup.
@@ -291,7 +350,7 @@ pub trait BlindIndexSpec: Sized + 'static {
     }
 
     /// Checks a stored index against the value it should have been derived
-    /// from in the scope of `args`.
+    /// from in the partition `partition`.
     ///
     /// Decrypt and authenticate the associated ciphertext before calling this.
     /// This resolves exactly the index-key generation that `stored` names,
@@ -305,16 +364,16 @@ pub trait BlindIndexSpec: Sized + 'static {
     ///
     /// Returns [`Error::UnknownBlindIndexKey`] when the keyring does not hold
     /// the generation named by `stored`, so an unverifiable index is reported
-    /// distinctly from an inconsistent one, and [`Error::InvalidBinding`] when
-    /// `args` does not match the binding's `keys` and `index` parts. Also
+    /// distinctly from an inconsistent one, and [`Error::InvalidBinding`] for a
+    /// partition value of another kind than its type declares. Also
     /// returns an error for normalization failure or unavailable keys.
-    fn is_consistent_with(
+    fn is_consistent_with<'a>(
         value: &<Self::Seal as Seal>::Value,
         stored: &BlindIndex<Self>,
-        args: &IndexArgs<Self>,
-        keys: &(impl BlindIndexKeySource + ?Sized),
+        partition: impl BoundValues<'a, Self::Partition>,
+        keys: &(impl BlindIndexKeys + ?Sized),
     ) -> Result<bool, Error> {
-        check_consistency::<Self>(value, stored, args, keys)
+        check_consistency::<Self>(value, stored, &bound_values(partition), keys)
     }
 }
 
@@ -337,7 +396,8 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = (InviteEmailLookup,);
 /// }
 ///
@@ -348,7 +408,8 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = (InviteEmailLookup,);
 /// }
 ///
@@ -356,6 +417,7 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///
 /// impl BlindIndexSpec for InviteEmailLookup {
 ///     type Seal = InviteEmail;
+///     type Partition = ();
 ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -485,6 +547,13 @@ impl<Spec: BlindIndexSpec> TryFrom<Vec<u8>> for BlindIndex<Spec> {
     }
 }
 
+// Stores the index through `Vec<u8>`, as an ORM's `serialize_as` does.
+impl<Spec> From<BlindIndex<Spec>> for Vec<u8> {
+    fn from(index: BlindIndex<Spec>) -> Self {
+        index.into_bytes()
+    }
+}
+
 impl<Spec> AsRef<[u8]> for BlindIndex<Spec> {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
@@ -556,21 +625,11 @@ impl<Spec> fmt::Debug for BlindIndexRef<'_, Spec> {
 pub(crate) fn derive_value<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
     domain: &BindingDomain,
-    keys: &(impl BlindIndexKeySource + ?Sized),
+    keys: &(impl BlindIndexKeys + ?Sized),
 ) -> Result<BlindIndex<Spec>, Error> {
-    let key = keyring::<Spec>(keys, domain)?.current().clone();
+    let key = keys.blind_index_keyring()?.current().clone();
 
     derive_value_with_key::<Spec>(value, domain, &key)
-}
-
-/// Returns the ID of the key that derives new stored indexes of `Spec` in
-/// `domain`, an index domain of `Spec`'s seal.
-#[cfg(feature = "migrate")]
-pub(crate) fn current_key_id<Spec: BlindIndexSpec>(
-    domain: &BindingDomain,
-    keys: &dyn BlindIndexKeySource,
-) -> Result<IndexKeyId, Error> {
-    Ok(keyring::<Spec>(keys, domain)?.current().id())
 }
 
 fn derive_value_with_key<Spec: BlindIndexSpec>(
@@ -583,24 +642,16 @@ fn derive_value_with_key<Spec: BlindIndexSpec>(
     derive_normalized::<Spec>(&normalized, domain, key)
 }
 
-fn derive_probes<Spec: BlindIndexSpec>(
-    query: &Spec::Query,
-    args: &IndexArgs<Spec>,
-    keys: &(impl BlindIndexKeySource + ?Sized),
-) -> Result<Vec<BlindIndex<Spec>>, Error> {
-    probes_in::<Spec>(query, &index_domain::<Spec>(args)?, keys)
-}
-
 /// Derives one probe of `Spec` in `domain`, an index domain of `Spec`'s seal,
 /// for every readable index generation.
 pub(crate) fn probes_in<Spec: BlindIndexSpec>(
     query: &Spec::Query,
     domain: &BindingDomain,
-    keys: &(impl BlindIndexKeySource + ?Sized),
+    keys: &(impl BlindIndexKeys + ?Sized),
 ) -> Result<Vec<BlindIndex<Spec>>, Error> {
     let normalized = Spec::normalize_query(query)?;
 
-    keyring::<Spec>(keys, domain)?
+    keys.blind_index_keyring()?
         .readable()
         .map(|key| derive_normalized::<Spec>(&normalized, domain, key))
         .collect()
@@ -609,12 +660,13 @@ pub(crate) fn probes_in<Spec: BlindIndexSpec>(
 fn check_consistency<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
     stored: &BlindIndex<Spec>,
-    args: &IndexArgs<Spec>,
-    keys: &(impl BlindIndexKeySource + ?Sized),
+    partition: &[PartValue<'_>],
+    keys: &(impl BlindIndexKeys + ?Sized),
 ) -> Result<bool, Error> {
-    let domain = index_domain::<Spec>(args)?;
+    let domain = index_domain::<Spec>(partition)?;
     let id = stored.index_key_id();
-    let key = keyring::<Spec>(keys, &domain)?
+    let key = keys
+        .blind_index_keyring()?
         .get(id)
         .cloned()
         .ok_or(Error::UnknownBlindIndexKey(id))?;
@@ -624,18 +676,33 @@ fn check_consistency<Spec: BlindIndexSpec>(
     Ok(derived.as_bytes().ct_eq(stored.as_bytes()).into())
 }
 
-// Blind indexes are domain-separated by their seal and the `keys` and `index`
-// parts of its binding, never by bound-only parts or a record.
-fn index_domain<Spec: BlindIndexSpec>(args: &IndexArgs<Spec>) -> Result<BindingDomain, Error> {
-    BindingDomain::index::<PartsOf<Spec::Seal>>(<Spec::Seal as Seal>::ID, args)
+// Blind indexes are domain-separated by their seal and their partition's
+// values, never by the bound values it spans or a record.
+pub(crate) fn index_domain<Spec: BlindIndexSpec>(
+    partition: &[PartValue<'_>],
+) -> Result<BindingDomain, Error> {
+    const {
+        check_partition(
+            <Spec::Partition as BoundList>::PARTS,
+            <<Spec::Seal as Seal>::Bound as BoundList>::PARTS,
+        );
+    };
+
+    BindingDomain::index::<Spec::Partition>(<Spec::Seal as Seal>::ID.as_bytes(), partition)
 }
 
-// Asks the source for the keyring of the index in the domain's key scope.
-fn keyring<Spec: BlindIndexSpec>(
-    keys: &(impl BlindIndexKeySource + ?Sized),
-    domain: &BindingDomain,
-) -> Result<BlindIndexKeyring, Error> {
-    keys.blind_index_keyring(Spec::ID, domain.key_scope())
+/// Projects the partition of `Spec` from `bound`, the bound values a value of
+/// its seal is sealed under, and encodes its index domain.
+pub(crate) fn projected_domain<Spec: BlindIndexSpec>(
+    bound: &[PartValue<'_>],
+) -> Result<BindingDomain, Error> {
+    let partition = project(
+        <Spec::Partition as BoundList>::PARTS,
+        <<Spec::Seal as Seal>::Bound as BoundList>::PARTS,
+        bound,
+    )?;
+
+    index_domain::<Spec>(&partition)
 }
 
 fn compare_normalized<Spec: BlindIndexSpec>(

@@ -17,7 +17,8 @@ impl Seal for EmailSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -25,6 +26,7 @@ struct EmailExact;
 
 impl BlindIndexSpec for EmailExact {
     type Seal = EmailSeal;
+    type Partition = ();
     const ID: IndexId = index_id!("a0000000-0000-4000-8000-00000000000a");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -49,7 +51,7 @@ fn blind_index() -> BlindIndex<EmailExact> {
     )
     .unwrap();
 
-    EmailExact::derive_with(&"mark@example.com".to_owned(), &(), &keys).unwrap()
+    EmailExact::derive_with(&"mark@example.com".to_owned(), (), &keys).unwrap()
 }
 
 fn encryption_keys() -> EncryptionKeyring {
@@ -64,14 +66,12 @@ fn sealed(keys: &EncryptionKeyring) -> Sealed<EmailSeal> {
     Sealed::seal(&"mark@example.com".to_owned(), (), keys).unwrap()
 }
 
+/// The bytes of a JSON form: unpadded base64url text.
 #[cfg(feature = "json")]
 fn json_bytes(value: &Value) -> Vec<u8> {
-    value
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|byte| u8::try_from(byte.as_u64().unwrap()).unwrap())
-        .collect()
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+
+    URL_SAFE_NO_PAD.decode(value.as_str().unwrap()).unwrap()
 }
 
 #[test]
@@ -90,6 +90,47 @@ fn sealed_serde_round_trips_only_the_envelope_bytes() {
     let restored: Sealed<EmailSeal> = serde_json::from_str(&json).unwrap();
     assert_eq!(sealed, restored);
     assert_eq!(restored.open((), &keys).unwrap(), "mark@example.com");
+}
+
+#[test]
+#[cfg(feature = "json")]
+fn json_reads_the_byte_array_form_too() {
+    let keys = encryption_keys();
+    let sealed = sealed(&keys);
+    let index = blind_index();
+
+    let array = serde_json::to_string(sealed.as_bytes()).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Sealed<EmailSeal>>(&array).unwrap(),
+        sealed
+    );
+    let array = serde_json::to_string(index.as_bytes()).unwrap();
+    assert_eq!(
+        serde_json::from_str::<BlindIndex<EmailExact>>(&array).unwrap(),
+        index
+    );
+}
+
+#[test]
+#[cfg(feature = "json")]
+fn json_rejects_other_spellings_of_the_text_form() {
+    let sealed = sealed(&encryption_keys());
+    let text: String = serde_json::from_value(serde_json::to_value(&sealed).unwrap()).unwrap();
+    let other = [
+        ("padded", format!("\"{text}==\"")),
+        (
+            "outside the url-safe alphabet",
+            format!("\"+{}\"", &text[1..]),
+        ),
+        ("not base64", "\"not base64!\"".to_owned()),
+    ];
+
+    for (case, json) in other {
+        assert!(
+            serde_json::from_str::<Sealed<EmailSeal>>(&json).is_err(),
+            "{case}"
+        );
+    }
 }
 
 #[test]
@@ -142,4 +183,15 @@ fn binary_serde_round_trips_sealed_and_blind_index_bytes() {
         postcard::from_bytes(&bytes).unwrap();
 
     assert_eq!(restored, (sealed, index));
+}
+
+#[test]
+fn stored_values_convert_to_and_from_their_bytes() {
+    let sealed = sealed(&encryption_keys());
+    let index = blind_index();
+
+    let bytes: Vec<u8> = sealed.clone().into();
+    assert_eq!(Sealed::<EmailSeal>::try_from(bytes).unwrap(), sealed);
+    let bytes: Vec<u8> = index.clone().into();
+    assert_eq!(BlindIndex::<EmailExact>::try_from(bytes).unwrap(), index);
 }

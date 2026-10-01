@@ -9,7 +9,7 @@ help: the trait `cryptbox::__private::DefaultCodec` is not implemented for `Addr
   |
 1 | struct Address {
   | ^^^^^^^^^^^^^^
-  = note: only `String`, `Vec<u8>`, `Secret<String>`, and `Secret<Vec<u8>>` have one: name the codec with `#[cryptbox(codec = …)]`, such as `cryptbox::Json`; the codec is persistent schema
+  = note: only `String`, `Vec<u8>`, `Secret<String>`, and `Secret<Vec<u8>>` have one: name the codec with `codec = …`, such as `codec = cryptbox::Json`; the codec is persistent schema
 help: the following other types implement trait `cryptbox::__private::DefaultCodec`
  --> $WORKSPACE/src/codec.rs
   |

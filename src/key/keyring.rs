@@ -19,9 +19,8 @@ use super::material::{BlindIndexKey, EncryptionKey, IndexKeyId, KeyId};
 /// is what makes opening with the wrong keyring fail loudly instead of trying
 /// unrelated material.
 ///
-/// A keyring is its own [`EncryptionKeySource`](crate::EncryptionKeySource): it
-/// serves every seal and scope alike. Which keyring protects which seal or
-/// scope is application code; see [choosing keyrings] for the mistakes the
+/// Operations take the keyring to use, or [`Keys`](crate::Keys). Which keyring
+/// protects which values is application code; see [choosing keyrings] for the mistakes the
 /// library cannot detect.
 ///
 #[doc = concat!(
@@ -80,8 +79,8 @@ impl fmt::Debug for EncryptionKeyring {
 /// See the complete [blind-index example] and [maintenance sweep example].
 ///
 /// Key IDs follow the same rules as for [`EncryptionKeyring`]: unique within a
-/// keyring, generated UUIDs, and never shared across keyrings. A keyring is its
-/// own [`BlindIndexKeySource`](crate::BlindIndexKeySource); see [choosing keyrings].
+/// keyring, generated UUIDs, and never shared across keyrings. See [choosing
+/// keyrings].
 ///
 #[doc = concat!(
     "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/blind_indexes.rs\n",

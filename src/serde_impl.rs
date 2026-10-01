@@ -1,5 +1,9 @@
+//! Serde for stored values: bytes in binary formats, and unpadded base64url
+//! text in human-readable ones, such as JSON.
+
 use std::{fmt, marker::PhantomData};
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
     de::{Error as _, SeqAccess, Visitor},
@@ -14,7 +18,8 @@ trait DeserializeFromBytes: Sized {
 }
 
 impl<F: Seal> DeserializeFromBytes for Sealed<F> {
-    const EXPECTING: &'static str = "a structurally valid CryptBox envelope";
+    const EXPECTING: &'static str =
+        "a structurally valid CryptBox envelope, as bytes or unpadded base64url";
 
     fn deserialize_from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
         Self::from_bytes(bytes)
@@ -22,10 +27,43 @@ impl<F: Seal> DeserializeFromBytes for Sealed<F> {
 }
 
 impl<Spec: BlindIndexSpec> DeserializeFromBytes for BlindIndex<Spec> {
-    const EXPECTING: &'static str = "a structurally valid CryptBox blind index";
+    const EXPECTING: &'static str =
+        "a structurally valid CryptBox blind index, as bytes or unpadded base64url";
 
     fn deserialize_from_bytes(bytes: Vec<u8>) -> Result<Self, Error> {
         Self::from_bytes(bytes)
+    }
+}
+
+/// Writes `bytes` as bytes, or as unpadded base64url text when the format is
+/// human-readable.
+fn serialize_bytes<S: Serializer>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
+    if !serializer.is_human_readable() {
+        return serializer.serialize_bytes(bytes);
+    }
+
+    let mut text = vec![0; base64::encoded_len(bytes.len(), false).unwrap_or(usize::MAX)];
+    let written = URL_SAFE_NO_PAD
+        .encode_slice(bytes, &mut text)
+        .map_err(serde::ser::Error::custom)?;
+    text.truncate(written);
+    // Base64 is ASCII.
+    let text = String::from_utf8(text).map_err(serde::ser::Error::custom)?;
+
+    serializer.serialize_str(&text)
+}
+
+/// Reads bytes, a sequence of bytes, or, in a human-readable format, unpadded
+/// base64url text.
+fn deserialize_bytes<'de, D, Value>(deserializer: D) -> Result<Value, D::Error>
+where
+    D: Deserializer<'de>,
+    Value: DeserializeFromBytes,
+{
+    if deserializer.is_human_readable() {
+        deserializer.deserialize_any(BytesVisitor(PhantomData))
+    } else {
+        deserializer.deserialize_bytes(BytesVisitor(PhantomData))
     }
 }
 
@@ -36,6 +74,19 @@ impl<'de, Value: DeserializeFromBytes> Visitor<'de> for BytesVisitor<Value> {
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(Value::EXPECTING)
+    }
+
+    fn visit_str<E>(self, text: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        let mut bytes = vec![0; base64::decoded_len_estimate(text.len())];
+        let read = URL_SAFE_NO_PAD
+            .decode_slice(text, &mut bytes)
+            .map_err(|_| E::custom(Error::InvalidEnvelope))?;
+        bytes.truncate(read);
+
+        Value::deserialize_from_bytes(bytes).map_err(E::custom)
     }
 
     fn visit_bytes<E>(self, bytes: &[u8]) -> Result<Self::Value, E>
@@ -67,47 +118,25 @@ impl<'de, Value: DeserializeFromBytes> Visitor<'de> for BytesVisitor<Value> {
 }
 
 impl<F: Seal> Serialize for Sealed<F> {
-    fn serialize<SerializerType>(
-        &self,
-        serializer: SerializerType,
-    ) -> Result<SerializerType::Ok, SerializerType::Error>
-    where
-        SerializerType: Serializer,
-    {
-        serializer.serialize_bytes(self.as_bytes())
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serialize_bytes(self.as_bytes(), serializer)
     }
 }
 
 impl<'de, F: Seal> Deserialize<'de> for Sealed<F> {
-    fn deserialize<DeserializerType>(
-        deserializer: DeserializerType,
-    ) -> Result<Self, DeserializerType::Error>
-    where
-        DeserializerType: Deserializer<'de>,
-    {
-        deserializer.deserialize_bytes(BytesVisitor(PhantomData))
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_bytes(deserializer)
     }
 }
 
 impl<Spec> Serialize for BlindIndex<Spec> {
-    fn serialize<SerializerType>(
-        &self,
-        serializer: SerializerType,
-    ) -> Result<SerializerType::Ok, SerializerType::Error>
-    where
-        SerializerType: Serializer,
-    {
-        serializer.serialize_bytes(self.as_bytes())
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serialize_bytes(self.as_bytes(), serializer)
     }
 }
 
 impl<'de, Spec: BlindIndexSpec> Deserialize<'de> for BlindIndex<Spec> {
-    fn deserialize<DeserializerType>(
-        deserializer: DeserializerType,
-    ) -> Result<Self, DeserializerType::Error>
-    where
-        DeserializerType: Deserializer<'de>,
-    {
-        deserializer.deserialize_bytes(BytesVisitor(PhantomData))
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_bytes(deserializer)
     }
 }

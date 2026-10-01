@@ -49,14 +49,15 @@ declares:
 - A **codec**, such as `Utf8`, to convert between the Rust value and bytes.
 - A **padding policy**, which can group different plaintext lengths into the same
   stored size. `Padding::NONE` preserves the encoded length.
-- A **binding**: the declared scope each value is bound to, such as a tenant, and
-  whether it is also bound to its record. The empty scope, `()`, binds a value
-  to its seal ID alone.
+- A **binding**: the **bound values** each value is bound to, such as the org and
+  workspace it belongs to, and whether it is also bound to its record. A seal
+  without bound values, `()`, binds a value to its seal ID alone.
 
-A binding's parts have roles: a `keys` part scopes key custody and blind
-indexes and is the unit you can shred, an `index` part scopes blind indexes only,
-and any other part is bound only. [Bind values to a scope](bindings.md) covers
-choosing them.
+A bound value is one of your own ID types, such as `OrgId`, marked once with the
+kind of value it is. A **record** stores its bound values and record ID as
+columns beside its sealed fields, and opening authenticates them; a blind index
+is partitioned by the bound values a query always knows.
+[Bind values to what they belong to](bindings.md) covers choosing them.
 
 The value type is your application's own type: it says how it encodes, never
 where it is stored. Only `String`, `Vec<u8>`, and their `Secret` wrappers have a
@@ -83,7 +84,7 @@ from the stored row. A `Record` is the one exception for its record ID, which it
 reads from the row: opening checks it for every seal that binds a record. A
 sealed email will not authenticate under a different seal, tenant, or record,
 even if they share a root key. Seals that should read each other's values
-declare the same seal ID and binding. An unscoped seal without a record
+declare the same seal ID and binding. A seal without bound values or a record
 identifies a seal alone, not a row or tenant: copying its values between rows
 sealed with the same seal can still succeed.
 
@@ -106,12 +107,12 @@ original generation. This is the foundation of key rotation.
 
 Operations take the keyring to use directly. Choosing which keyring protects a
 seal, such as a payments key hierarchy for an IBAN and a general one for an
-email, is application code: pass the right keyring, or implement a **key source**
-that picks one by seal or key scope.
+email, or a keyring per org, is application code: pass the right keyring,
+resolved in one place.
 
 The quickstart passes a keyring explicitly as `&keys`, so no global
-installation is needed. For keyring and key-context choices, see
-[integration design](integration.md#keyrings-and-key-sources); for the mistakes
+installation is needed. For keyring choices, see
+[integration design](integration.md#keyrings); for the mistakes
 that choice can make silently, [choosing keyrings](choosing-keyrings.md).
 
 ## Search uses a separate representation
@@ -148,10 +149,11 @@ constraints or a guarantee that storage returns every matching row.
 ## Storage adapters carry the representations
 
 SQLx adapters store sealed values in `BYTEA` or `BLOB` columns. You can seal
-explicitly and load `Sealed` for later opening. An unscoped seal without a
-record or blind indexes can instead use `Plain<F>`, which seals and opens
-automatically at the SQLx boundary; a column decoder sees neither a row nor a
-scope, so values of bound seals are always sealed explicitly. Serde support serializes
+explicitly and load a record's stored form or `Sealed` for later opening. A seal
+without bound values, a record, or blind indexes can instead use `Plain<F>`,
+which seals and opens automatically at the SQLx boundary; a column decoder sees
+neither a row nor its bound values, so values of bound seals are always sealed
+explicitly. Serde support serializes
 sealed values and blind-index bytes; it does not serialize plaintext `Plain`
 values.
 
@@ -166,7 +168,8 @@ seal that declares blind indexes, because it would not maintain their columns.
   [store it durably in SQLite](../examples/sqlite/README.md).
 - **Apply it:** [integration design and trade-offs](integration.md) explains
   persistent schema, storage boundaries, keys, and search.
-- **Scope it:** [bind values to a scope](bindings.md) adds a tenant or org, and
+- **Bind it:** [bind values to what they belong to](bindings.md) adds a tenant
+  or org, and
   [choosing keyrings](choosing-keyrings.md) decides whose keys protect it.
 - **Assess it:** [security and threat model](security.md) covers protections,
   limitations, and review status.

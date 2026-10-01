@@ -47,9 +47,7 @@ Replace `src/main.rs` with this [example](../examples/first_field.rs).
 <!-- BEGIN SHARED: first-field -->
 
 ```rust
-use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Seal, SealId, Padding, Sealed, Utf8,
-};
+use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8};
 
 struct UserEmail;
 
@@ -58,7 +56,8 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -90,12 +89,12 @@ Expect `Seal-bound round trip succeeded.` and exit status 0.
   plaintext `String`.
 - `UserEmail` is a seal. Its `ID` binds the sealed value to this seal; it stores
   a `String` value with the `Utf8` codec and no padding.
-- `()` is the binding argument: `Scope = ()` with no record binds the
-  value to its seal ID alone. A seal can declare a binding such as a tenant, and
-  a record, and then every call must pass their values; see
-  [bind values to a scope](bindings.md).
+- `()` is the binding argument: `Bound = ()` with no record binds the
+  value to its seal ID alone. A seal can declare bound values, such as a tenant,
+  and a record, and then every call must pass their values; see
+  [bind values to what they belong to](bindings.md).
 - `&keys` supplies keys explicitly, so these calls need no global installation.
-- An unscoped value is bound to its seal alone, not a row or tenant, so it does
+- A value without bound values is bound to its seal alone, not a row or tenant, so it does
   not stop substitution between rows of the same seal, or replay. `Padding::NONE` reveals encoded length.
 
 See [how CryptBox works](concepts.md) for the complete picture.
@@ -124,17 +123,17 @@ choices before you commit data to storage.
 ## Then: bind values to a tenant
 
 `UserEmail` binds its values to a seal ID alone. When values belong to separate
-tenants, orgs, or residencies, the seal declares a binding instead, every call
-passes its values, and each scope can have its own keyring:
+tenants, orgs, or residencies, the seal declares bound values instead, every call
+passes them, and each tenant can have its own keyring:
 
 ```sh
 cargo run --locked --example tenant_field
 ```
 
 Expect `Tenant-bound round trip succeeded.` Then read
-[bind values to a scope](bindings.md) for part roles and where bound values must
-come from, and [choosing keyrings](choosing-keyrings.md) for whose keys protect
-each scope.
+[bind values to what they belong to](bindings.md) for records and where bound
+values must come from, and [choosing keyrings](choosing-keyrings.md) for whose
+keys protect them.
 
 ## Other directions
 

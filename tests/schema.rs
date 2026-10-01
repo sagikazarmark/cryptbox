@@ -1,9 +1,9 @@
 //! Public-boundary tests for the schema manifest and unique-ID checks.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, IndexId, Padding, PartKind,
-    PartSpec, PartValue, PartValues, Raw, Recorded, Scope, Seal, SealId, Sealed, Tenant, Utf8,
-    index_id, inspect_ciphertext, part_id,
+    BlindIndexError, BlindIndexSpec, BoundId, EncryptionKey, EncryptionKeyring, IndexId, Padding,
+    PartId, PartKind, PartType, PartValue, Raw, Seal, SealId, Sealed, TenantId, Utf8, index_id,
+    inspect_ciphertext, part_id,
     schema::{Duplicate, Manifest},
     seal_id,
 };
@@ -16,7 +16,8 @@ impl Seal for Nickname {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -27,7 +28,8 @@ impl Seal for Avatar {
     const PADDING: Padding = Padding::block(64);
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -43,13 +45,11 @@ seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   padding: none
   record: no
   binding: 65640fc8333534b9
-  shred unit: keyring
 seal 9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e
   codec: raw
   padding: block(64)
   record: no
   binding: 65640fc8333534b9
-  shred unit: keyring
 "
     );
 }
@@ -61,12 +61,13 @@ impl Seal for TenantNote {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = Tenant;
+    type Bound = (TenantId,);
+    type Record = ();
     type Indexes = ();
 }
 
 #[test]
-fn manifest_shows_a_scoped_binding_and_its_shred_unit() {
+fn manifest_shows_a_scoped_binding() {
     // The tenant part and its binding fingerprint are in docs/wire-format.md#presets.
     assert_eq!(
         Manifest::new().seal::<TenantNote>().to_string(),
@@ -75,120 +76,42 @@ seal 4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37
   codec: utf8
   padding: none
   record: no
-  binding: 9b73125a52bc08d1
-    part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
-  shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
+  binding: 9b5379b1f03beb17
+    part 1e8306bf-3135-4570-831c-6732f92550e9 bytes
 "
     );
 }
 
-#[test]
-fn manifest_shows_custody_labels() {
-    let manifest = Manifest::new()
-        .seal::<TenantNote>()
-        .seal::<Nickname>()
-        .custody::<TenantNote>("per-tenant KMS key");
+/// Declares a bound ID type over a part type.
+macro_rules! bound_id {
+    ($name:ident($inner:ty), $kind:literal) => {
+        struct $name($inner);
 
-    assert_eq!(
-        manifest.to_string(),
-        "\
-seal 4b1e7c2d-9a3f-4e68-b0d5-2c8f6a1e9b37
-  codec: utf8
-  padding: none
-  record: no
-  binding: 9b73125a52bc08d1
-    part 1e8306bf-3135-4570-831c-6732f92550e9 bytes keys
-  shred unit: 1e8306bf-3135-4570-831c-6732f92550e9
-  custody: per-tenant KMS key
-seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
-  codec: utf8
-  padding: none
-  record: no
-  binding: 65640fc8333534b9
-  shred unit: keyring
-"
-    );
+        impl PartType for $name {
+            const KIND: PartKind = <$inner as PartType>::KIND;
+
+            fn part_value(&self) -> PartValue<'_> {
+                self.0.part_value()
+            }
+
+            fn from_part_value(value: PartValue<'_>) -> Result<Self, cryptbox::Error> {
+                <$inner>::from_part_value(value).map(Self)
+            }
+        }
+
+        impl BoundId for $name {
+            const KIND_ID: PartId = part_id!($kind);
+        }
+    };
 }
 
-#[test]
-fn labelling_custody_registers_the_seal_once() {
-    let labelled_first = Manifest::new()
-        .custody::<Nickname>("general KMS")
-        .seal::<Nickname>();
-    let registered_first = Manifest::new()
-        .seal::<Nickname>()
-        .custody::<Nickname>("payments KMS")
-        .custody::<Nickname>("general KMS");
-
-    assert_eq!(labelled_first.to_string(), registered_first.to_string());
-    assert_eq!(
-        labelled_first.to_string(),
-        "\
-seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
-  codec: utf8
-  padding: none
-  record: no
-  binding: 65640fc8333534b9
-  shred unit: keyring
-  custody: general KMS
-"
-    );
-}
-
-#[test]
-fn a_custody_label_stays_on_one_line() {
-    let manifest = Manifest::new().custody::<Nickname>("org's \"general\"\nKMS\u{2028}EU");
-
-    assert!(
-        manifest
-            .to_string()
-            .ends_with("  custody: org's \"general\"\\nKMS\\u{2028}EU\n")
-    );
-}
-
-/// Two `keys` parts, an `index` part, and a bound-only part, declared by hand.
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct ProjectScope {
-    region: i64,
-    org: [u8; 16],
-    project: Vec<u8>,
-    workspace: [u8; 16],
-}
-
-impl Scope for ProjectScope {
-    const PARTS: &'static [PartSpec] = &[
-        PartSpec::keys(
-            part_id!("1a2b3c4d-0000-4000-8000-000000000001"),
-            PartKind::I64,
-        ),
-        PartSpec::keys(
-            part_id!("2b3c4d5e-0000-4000-8000-000000000002"),
-            PartKind::Uuid,
-        ),
-        PartSpec::index(
-            part_id!("3c4d5e6f-0000-4000-8000-000000000003"),
-            PartKind::Bytes,
-        ),
-        PartSpec::bound(
-            part_id!("4d5e6f70-0000-4000-8000-000000000004"),
-            PartKind::Uuid,
-        ),
-    ];
-    type IndexArgs = ();
-
-    fn values(&self) -> PartValues<'_> {
-        PartValues::from([
-            PartValue::I64(self.region),
-            PartValue::Uuid(self.org),
-            PartValue::Bytes(&self.project),
-            PartValue::Uuid(self.workspace),
-        ])
-    }
-
-    fn index_values((): &()) -> PartValues<'_> {
-        PartValues::new()
-    }
-}
+bound_id!(RegionId(i64), "1a2b3c4d-0000-4000-8000-000000000001");
+bound_id!(OrgId([u8; 16]), "2b3c4d5e-0000-4000-8000-000000000002");
+bound_id!(ProjectId(Vec<u8>), "3c4d5e6f-0000-4000-8000-000000000003");
+bound_id!(
+    WorkspaceId([u8; 16]),
+    "4d5e6f70-0000-4000-8000-000000000004"
+);
 
 struct WorkspaceNote;
 
@@ -197,7 +120,9 @@ impl Seal for WorkspaceNote {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Scope = Recorded<ProjectScope, i64>;
+    // Listed out of part-ID order: the manifest sorts them.
+    type Bound = (WorkspaceId, ProjectId, OrgId, RegionId);
+    type Record = i64;
     type Indexes = ();
 }
 
@@ -212,25 +137,25 @@ seal 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
   codec: utf8
   padding: block(16)
   record: i64
-  binding: d93193108267f1ef
-    part 1a2b3c4d-0000-4000-8000-000000000001 i64 keys
-    part 2b3c4d5e-0000-4000-8000-000000000002 uuid keys
-    part 3c4d5e6f-0000-4000-8000-000000000003 bytes index
-    part 4d5e6f70-0000-4000-8000-000000000004 uuid bound
-  shred unit: 1a2b3c4d-0000-4000-8000-000000000001 + 2b3c4d5e-0000-4000-8000-000000000002
+  binding: 82a33aab775dbdb0
+    part 1a2b3c4d-0000-4000-8000-000000000001 i64
+    part 2b3c4d5e-0000-4000-8000-000000000002 uuid
+    part 3c4d5e6f-0000-4000-8000-000000000003 bytes
+    part 4d5e6f70-0000-4000-8000-000000000004 uuid
 "
     );
 
     // The fingerprint, computed with shasum from docs/wire-format.md#binding-fingerprint,
     // is the one a sealed value's header carries.
     let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
-    let scope = ProjectScope {
-        region: 7,
-        org: [1; 16],
-        project: b"apollo".to_vec(),
-        workspace: [2; 16],
-    };
-    let sealed = Sealed::<WorkspaceNote>::seal(&"hi".to_owned(), (&scope, &1_i64), &keys).unwrap();
+    let bound = (
+        WorkspaceId([2; 16]),
+        ProjectId(b"apollo".to_vec()),
+        OrgId([1; 16]),
+        RegionId(7),
+    );
+    let args = (&bound.0, &bound.1, &bound.2, &bound.3, &1_i64);
+    let sealed = Sealed::<WorkspaceNote>::seal(&"hi".to_owned(), args, &keys).unwrap();
     let header = inspect_ciphertext(sealed.as_bytes()).unwrap();
     assert!(snapshot.contains(&format!(
         "  binding: {}\n",
@@ -242,6 +167,7 @@ struct NicknameLookup;
 
 impl BlindIndexSpec for NicknameLookup {
     type Seal = Nickname;
+    type Partition = ();
     const ID: IndexId = index_id!("3d8b1f4e-6a2c-4e71-9f05-8c7d6b5a4e3f");
     const BITS: u16 = 24;
     const NORMALIZER: &'static str = "trim-lowercase/1";
@@ -279,7 +205,8 @@ impl Seal for DisplayName {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -314,6 +241,7 @@ struct DisplayNameLookup;
 
 impl BlindIndexSpec for DisplayNameLookup {
     type Seal = Nickname;
+    type Partition = ();
     const ID: IndexId = index_id!("3d8b1f4e-6a2c-4e71-9f05-8c7d6b5a4e3f");
     const BITS: u16 = 16;
     const NORMALIZER: &'static str = "exact/1";
@@ -366,7 +294,8 @@ mod serde_codecs {
         const PADDING: Padding = Padding::length(256);
         type Value = Address;
         type Codec = cryptbox::Json;
-        type Scope = ();
+        type Bound = ();
+        type Record = ();
         type Indexes = ();
     }
 
@@ -381,7 +310,6 @@ seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
   padding: length(256)
   record: no
   binding: 65640fc8333534b9
-  shred unit: keyring
 "
         );
     }
@@ -395,7 +323,8 @@ seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
         const PADDING: Padding = Padding::NONE;
         type Value = Address;
         type Codec = cryptbox::Postcard;
-        type Scope = ();
+        type Bound = ();
+        type Record = ();
         type Indexes = ();
     }
 
@@ -410,8 +339,74 @@ seal 7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13
   padding: none
   record: no
   binding: 65640fc8333534b9
-  shred unit: keyring
 "
         );
+    }
+}
+
+#[cfg(feature = "derive")]
+mod records {
+    use cryptbox::{Seal, TenantId, schema::Manifest};
+
+    /// A record whose stored form takes its default name, `StoredCustomer`.
+    #[derive(cryptbox::Record)]
+    pub struct Customer {
+        #[cryptbox(record_id)]
+        pub id: i64,
+        #[cryptbox(bound)]
+        pub tenant: TenantId,
+        #[cryptbox(seal = "dd965aff-c187-49ed-86fe-b75e63fd228d")]
+        pub email: String,
+        #[cryptbox(plaintext)]
+        pub created_at: i64,
+        #[cryptbox(plaintext)]
+        pub r#type: String,
+        #[cryptbox(seal = "c173ce33-731d-4051-b1d7-e5dd549c5371")]
+        pub note: String,
+    }
+
+    #[test]
+    fn manifest_lists_a_records_seals_and_fields() {
+        let manifest = Manifest::new().record::<Customer>().record::<Customer>();
+
+        assert_eq!(
+            manifest.to_string(),
+            "\
+record
+  seals: dd965aff-c187-49ed-86fe-b75e63fd228d, c173ce33-731d-4051-b1d7-e5dd549c5371
+  record id: id
+  bound: tenant
+  plaintext: created_at, type
+"
+        );
+        assert_eq!(
+            <CustomerEmail as Seal>::ID.to_string(),
+            "dd965aff-c187-49ed-86fe-b75e63fd228d"
+        );
+    }
+
+    #[test]
+    fn a_record_without_bound_or_plaintext_fields_says_so() {
+        #[derive(cryptbox::Record)]
+        struct Note {
+            #[cryptbox(record_id)]
+            id: i64,
+            #[cryptbox(seal = "4f3ca6a2-a683-49b7-8d1a-718b790f7154")]
+            body: String,
+        }
+
+        assert!(
+            Manifest::new()
+                .record::<Note>()
+                .to_string()
+                .ends_with("  record id: id\n  bound: none\n  plaintext: none\n")
+        );
+    }
+
+    #[test]
+    fn a_records_stored_form_defaults_to_stored_and_its_name() {
+        fn stored<R: cryptbox::Record<Stored = StoredCustomer>>() {}
+
+        stored::<Customer>();
     }
 }

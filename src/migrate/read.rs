@@ -2,7 +2,7 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
-use crate::{Args, Codec, EncryptionKeySource, Error, Seal, Sealed};
+use crate::{Args, Codec, EncryptionKeys, Error, Seal, Sealed};
 
 use super::{LegacyFormat, legacy};
 
@@ -57,7 +57,8 @@ use super::{LegacyFormat, legacy};
 ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
 ///     type Value = String;
 ///     type Codec = cryptbox::Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -157,7 +158,8 @@ where
     ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
     ///     type Value = Vec<u8>;
     ///     type Codec = cryptbox::Raw;
-    ///     type Scope = ();
+    ///     type Bound = ();
+    ///     type Record = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -188,7 +190,7 @@ where
     pub fn open(
         self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<F::Value, Error> {
         match self.state {
             State::Sealed(sealed) => sealed.open(args, keys),
@@ -210,7 +212,7 @@ where
     pub fn open_legacy(
         self,
         args: impl Args<F>,
-        keys: &(impl EncryptionKeySource + ?Sized),
+        keys: &(impl EncryptionKeys + ?Sized),
         legacy: &dyn LegacyFormat,
     ) -> Result<F::Value, Error> {
         match self.state {
@@ -223,7 +225,7 @@ where
 
 impl<F> MaybeEncrypted<F>
 where
-    F: Seal<Scope = ()>,
+    F: Seal<Bound = (), Record = ()>,
 {
     /// Consumes the read and opens it with the [installed keys](crate::keys::installed).
     ///

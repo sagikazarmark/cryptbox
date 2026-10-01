@@ -24,7 +24,8 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Scope = ();
+    type Bound = ();
+    type Record = ();
     type Indexes = ();
 }
 
@@ -32,6 +33,7 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = UserEmail;
+    type Partition = ();
     const ID: IndexId = index_id!("60000000-0000-4000-8000-000000000006");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "email/1";
@@ -164,7 +166,7 @@ async fn search(
     index_keys: &BlindIndexKeyring,
 ) -> (Vec<i64>, Vec<i64>) {
     let query = " ALICE@example.com ";
-    let probes = EmailLookup::probes_with(query, &(), index_keys).unwrap();
+    let probes = EmailLookup::probes_with(query, (), index_keys).unwrap();
     let mut candidates = Vec::new();
     let mut matches = Vec::new();
     for probe in probes {

@@ -222,6 +222,165 @@
   on two fields fails the build. The struct's `record = field` key is renamed
   `record_id = field`.
 
+- **Breaking:** a blind index names its own index scope (ADR-0009).
+  `BlindIndexSpec::Scope` is a view of the seal's scope: a scope whose parts are
+  parts of the seal's, matched by part ID and kind, and which holds every `keys`
+  part, checked when the index is first used. It replaces `Scope::IndexArgs`,
+  `Scope::index_values`, `FromIndexValues`, the `index` part role
+  (`PartSpec::index`), and the `index_args` key of `#[derive(Scope)]`:
+  `derive_with`, `probes_with`, and `is_consistent_with` take `&Self::Scope`, a
+  prepared value projects it from the scope it was sealed under, and
+  `#[derive(BlindIndexSpec)]` takes `scope = …`, defaulting to the seal's whole
+  scope. Two indexes over one seal may partition differently. `FromParts`
+  builds a scope back from its part values, and `#[derive(Scope)]` implements
+  it. `migrate::probes_across::<Old, S>` names the old index scope, and
+  the schema manifest lists each index's scope. `KeyScope::of_index` is removed. Index bytes do not
+  change; a seal whose scope had `index` parts gets a new binding fingerprint,
+  since those parts are now bound only.
+
+- **Breaking:** key sources are typed by a seal's keys view (ADR-0009).
+  `Seal::Keys` names the view of the scope that key custody follows, checked
+  when the seal is first used. `#[derive(Seal)]` and a
+  `#[derive(Record)]` field take `keys = …`, defaulting to the scope, and
+  `Record::Keys` is the keys view all of a record's fields share.
+  `EncryptionKeySource<K>::encryption_keyring(&self, seal, keys: &K)` and
+  `BlindIndexKeySource<K>::blind_index_keyring(&self, index, keys: &K)` receive
+  its values, projected from the binding arguments or a blind index's scope;
+  keyrings and `Keys` implement both for every `K`. `KeyScope` is removed: a
+  keys view is `Hash + Eq`, so a source keys its map by it, such as
+  `HashMap<Tenant, EncryptionKeyring>`. `RowPlanner::for_key_scope` becomes
+  `RowPlanner::for_keys(view, keys, row_args)`; `legacy_binding`,
+  `open_across`, and `probes_across` also name the old keys view, as
+  `legacy_binding::<Old, OldKeys>`. The schema manifest's shred unit is
+  the keys view's parts. Stored bytes do not change.
+
+- **Breaking:** parts have no roles (ADR-0009). `PartSpec::new(id, kind)`
+  replaces `PartSpec::keys` and `PartSpec::bound`; `PartRole` and
+  `PartSpec::role` are removed, and `#[derive(Scope)]` rejects the `keys` flag
+  on a part. What a part scopes is decided by the views that include it: the
+  binding fingerprint gives role code `01` to a part of the seal's keys view
+  and `03` to any other, the record included, and a value of a keys-view part
+  can't be empty. The manifest prints each part's role from the keys view, and
+  each index scope part's from its seal's. Every seal keeps its fingerprint,
+  since its keys view held exactly its `keys` parts.
+
+- **Breaking:** derive attributes are named after their derive, and
+  `#[cryptbox(…)]` is retired (ADR-0009): `#[seal(…)]` for `#[derive(Seal)]`,
+  `#[blind_index(…)]` for `#[derive(BlindIndexSpec)]`, `#[part("…")]` on a
+  scope's fields with `#[scope(crate = "…")]`, and for `#[derive(Record)]`
+  `#[record(sealed = …, attr(…))]` with, on fields, `#[record_id]`,
+  `#[seal(id = "…", …)]` for a field's own seal, `#[seal(F)]` for an existing
+  one, a bare `#[seal]` for a field whose type is a seal, and
+  `#[blind_index(Spec as column, …)]`. A record field without `#[seal…]` is
+  stored as it is, so `plaintext` and `record_id = field` are gone.
+
+- **Breaking:** a record lists its schema for the manifest (ADR-0009).
+  `Record` gains `SEALS`, the sealed fields' seal IDs, `RECORD_ID`, the record
+  ID field's name, and `PLAINTEXT`, the other plaintext fields' names, which
+  `#[derive(Record)]` generates. `schema::Manifest::record::<R>()` lists them,
+  so a field that should have been sealed shows up as a snapshot diff; field
+  names are the manifest's one Rust name. The sealed struct's name defaults to
+  `Sealed` and the record's name, so `#[record(sealed = …)]` is optional.
+
+  Migrating to views (ADR-0009):
+
+  | Before | Now |
+  | --- | --- |
+  | `#[cryptbox(part = "…", keys)] org` | `#[part("…")] org`, and `keys = Org` on the seal, where `Org` is a view holding the org |
+  | `#[cryptbox(index_args = Search)]` and `index` parts | a view `Search` named by `#[blind_index(scope = Search, …)]` |
+  | `PartSpec::keys(id, kind)`, `PartSpec::bound(id, kind)` | `PartSpec::new(id, kind)` |
+  | `impl EncryptionKeySource for S`, `fn encryption_keyring(&self, seal, scope: &KeyScope)` | `impl EncryptionKeySource<Tenant> for S`, `fn encryption_keyring(&self, seal, tenant: &Tenant)` |
+  | `HashMap<KeyScope, EncryptionKeyring>` | `HashMap<Tenant, EncryptionKeyring>` |
+  | `RowPlanner::for_key_scope(KeyScope::of(&acme)?, keys, row_args)` | `RowPlanner::for_keys(acme, keys, row_args)` |
+  | `.legacy_binding::<Tenant>(old_keys)`, `open_across::<(), _>`, `probes_across::<(), S>` | `.legacy_binding::<Tenant, Tenant>(old_keys)`, `open_across::<(), (), _>`, `probes_across::<(), (), S>` |
+  | `#[cryptbox(id = "…", value = String)]` on a seal | `#[seal(id = "…", value = String)]` |
+  | `#[cryptbox(id = "…", seal = S, bits = 32, …)]` on a blind index | `#[blind_index(id = "…", seal = S, bits = 32, …)]` |
+  | `#[cryptbox(record_id = id, sealed = SealedCustomer)]` | `#[record_id]` on `id`; `#[record(sealed = …)]` only to rename `SealedCustomer` |
+  | `#[cryptbox(id = "…", index(S as s))]` on a record field | `#[seal(id = "…")]` and `#[blind_index(S as s)]` |
+  | `#[cryptbox(seal = F)]`, `#[cryptbox(seal)]` | `#[seal(F)]`, `#[seal]` |
+  | `#[cryptbox(plaintext)]` | nothing |
+
+- **Breaking:** operations take keys, not key sources (ADR-0010).
+  `EncryptionKeySource`, `BlindIndexKeySource`, and keys views (`Seal::Keys`,
+  `Record::Keys`, the `keys = …` derive key) are removed. Sealing and opening
+  take `impl EncryptionKeys`, an `EncryptionKeyring` or `Keys`; blind-index
+  operations take `impl BlindIndexKeys`, a `BlindIndexKeyring` or `Keys`; and a
+  record takes `impl RecordKeys`, `Keys` when it has blind indexes. Which keyring
+  protects which values is application code, resolved before the call.
+  `Manifest::custody`, the manifest's shred unit, and the `keys` role are
+  removed: every part's role byte is `03`, so a seal whose declaration had a keys
+  view gets a new binding fingerprint. Blind-index bytes do not change.
+
+- **Breaking:** a binding is a list of bound ID types (ADR-0010). An
+  application's own ID newtype derives `BoundId` with
+  `#[cryptbox(kind = "…")]`, the part ID every value of it is bound under, and
+  `TenantId` is a ready-made one. `Seal::Bound` is a list of them, `()` or a
+  tuple of up to four with each kind once, checked at compile time, and
+  `Seal::Record` is `()` or the record ID's type. `Scope`, `#[derive(Scope)]`,
+  `Recorded`, `SealScope`, `FromParts`, the `Tenant` preset, and views are
+  removed. Binding arguments are flat: the bound values in order, then the
+  record ID, such as `&org`, `(&org, &workspace)`, or `(&org, &id)`.
+  `BlindIndexSpec::Partition` names the bound ID types that partition an index,
+  some of its seal's, with `partition(…)` on the derive; `derive_with`,
+  `probes_with`, and `is_consistent_with` take their values the same way.
+  Binding bytes are unchanged for the same part IDs, kinds, and values.
+
+- **Breaking:** records carry their bound values (ADR-0010). Every field of
+  `#[derive(Record)]` has one role: `record_id`, `bound`, `seal = "…"` (with
+  `codec`, `padding`, `name`, `blind_index(…)`, and `legacy(…)`), or
+  `plaintext`; a field without one fails the build. Every sealed field is bound
+  to its own seal, all of the record's bound values, and its record ID, which
+  the stored form keeps as columns and opening reads and authenticates.
+  `Record::seal(&keys)` and `Record::open(stored, &keys)` take no binding
+  arguments, and `Record::open_expecting` checks a row before decrypting it,
+  reporting `Error::UnexpectedRecord`. The stored form is `Stored{Record}` by
+  default; `stored(…)` renames it and forwards attributes to it, at the record
+  or a field. A blind index is declared on its field with
+  `blind_index(id, across(…), bits, normalize, normalizer)` and searched through
+  an `Index` handle const named after its column, such as
+  `Customer::EMAIL_INDEX`, whose `probes` and `open_matching` take the
+  partition; `open_matching` refuses rows of another partition with
+  `Error::OutsidePartition`. `Option<T>` fields are stored as
+  `Option<Sealed<F>>`. Per-field sealers, existing seals on record fields
+  (`seal = F`, a bare `seal`), and self-valued fields are removed.
+
+- **Breaking:** legacy-binding windows name bound lists (ADR-0010).
+  `RowPlanner::for_keys` becomes `RowPlanner::for_rows(keys, row_args)`, and
+  `RowArgs::new(values)` owns its values. `legacy_binding::<Old, OldRecord>`,
+  `open_across::<Old, OldRecord, _>`, and `probes_across::<Old, S>` name the old
+  bound list, record, and partition. A record field declares its old
+  declaration with `legacy(seal = "…", bound(…), record = false)`; the record opens
+  both declarations, `RowPlanner::legacy_seal::<L>` sweeps them, and the
+  manifest lists open windows. `RowState::OutOfScope` and the report's
+  `out_of_scope` count are removed.
+
+- **Breaking:** `Sealed<F>` and `BlindIndex<S>` serialize as unpadded base64url
+  text in human-readable Serde formats, such as JSON, instead of an integer
+  array, and deserialize from text, bytes, or a sequence. Binary formats are
+  unchanged. `From<Sealed<F>> for Vec<u8>` and `From<BlindIndex<S>> for Vec<u8>`
+  are added for ORMs that store bytes.
+
+  Migrating to bound values (ADR-0010):
+
+  | Before | Now |
+  | --- | --- |
+  | `#[derive(Scope)] struct Org { #[part("…")] org: Uuid }` | `#[derive(BoundId)] #[cryptbox(kind = "…")] struct OrgId(Uuid);` |
+  | `Tenant(TenantId)` | `TenantId` |
+  | `#[seal(id = "…", value = String, scope = Org)]` | `#[cryptbox(id = "…", value = String, bound(OrgId))]` |
+  | `type Scope = Recorded<Org, Uuid>`, `(&org_scope, &id)` | `type Bound = (OrgId,); type Record = Uuid;`, `(&org, &id)` |
+  | `keys = Org`, `impl EncryptionKeySource<Org> for S` | nothing; pass the org's keyring to each call |
+  | `#[blind_index(scope = Search, …)]` | `#[cryptbox(partition(OrgId), …)]` |
+  | `#[record(sealed = SealedCustomer)]` | `#[cryptbox(stored(name = StoredCustomer))]` |
+  | a plaintext record field | `#[cryptbox(plaintext)]` |
+  | `#[record_id]` | `#[cryptbox(record_id)]` |
+  | a scope passed to `seal`, `open` | `#[cryptbox(bound)]` fields on the record |
+  | `#[seal(id = "…")]` and `#[blind_index(Spec as email_index)]` on a field | `#[cryptbox(seal = "…", blind_index(id = "…", …))]` |
+  | `record.seal(&org_scope, &keys)`, `Customer::open(sealed, &org_scope, &keys)` | `record.seal(&keys)`, `Customer::open(stored, &keys)` |
+  | `Spec::probes_with(query, &scope, &keys)` plus manual candidate checks | `Customer::EMAIL_INDEX.probes(query, &org, &keys)` and `open_matching` |
+  | `RowPlanner::for_keys(view, keys, row_args)` | `RowPlanner::for_rows(keys, row_args)`, one planner per keyring |
+  | `legacy_binding::<Old, OldKeys>`, `open_across::<Old, OldKeys, _>`, `probes_across::<Old, OldKeys, S>` | `legacy_binding::<Old, OldRecord>`, `open_across::<Old, OldRecord, _>`, `probes_across::<Old, S>` |
+  | `Manifest::custody::<F>("…")` | a committed custody table and `testing::assert_sealed_under` |
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls
@@ -401,19 +560,6 @@
   their part values: `#[derive(Binding)]` implements it, and so do `FieldOnly`
   and `Tenant`. Add `PartValues::as_slice`, and `KeyScope::of_keys::<B>(values)`,
   the key scope of `keys` part values alone.
-- Add the `restate` feature for Restate handlers (`restate-sdk` 0.12, Rust
-  1.90). `Sealed` and `BlindIndex` implement Restate's `Serialize`,
-  `Deserialize`, and `PayloadMetadata` as `application/octet-stream` without a
-  schema; the codec never encrypts, because replay compares journaled bytes.
-  `restate::seal`, `restate::seal_with`, `restate::seal_record`, and
-  `restate::seal_record_with` seal inside `ctx.run`, fetching inside the same
-  `run` for the `_with` forms, so plaintext is never a `run` result.
-  `restate::handler_error` makes data and request faults terminal and
-  environment faults retryable. `restate::ObjectKey<B>` encodes a binding's
-  index arguments as a strict, canonical Virtual Object key, keys parts first,
-  parses it back (`Error::InvalidObjectKey` otherwise), and gives a key
-  scope's prefix for admin queries. See `docs/restate.md` for what the journal
-  exposes and the org-shredding runbook.
 - **Breaking:** the schema manifest shows bindings and custody instead of Rust
   types. Each field lists whether it binds a record, its binding
   fingerprint, each part's ID, kind, and role, and its shred

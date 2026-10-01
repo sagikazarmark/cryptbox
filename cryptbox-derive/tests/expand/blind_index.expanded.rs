@@ -11,7 +11,8 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Scope = ();
+        type Bound = ();
+        type Record = ();
         type Indexes = ();
     }
 };
@@ -31,6 +32,7 @@ const _: () = {
     #[automatically_derived]
     impl ::cryptbox::BlindIndexSpec for EmailLookup {
         type Seal = UserEmail;
+        type Partition = <UserEmail as ::cryptbox::Seal>::Bound;
         const ID: ::cryptbox::IndexId = ::cryptbox::IndexId::from_u128(
             0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53,
         );

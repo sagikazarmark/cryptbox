@@ -5,13 +5,12 @@ included in the crate landing documentation.
 
 No features are enabled by default, and all features are additive:
 
-- `derive` adds `#[derive(Seal)]`, `#[derive(Scope)]`,
+- `derive` adds `#[derive(Seal)]`, `#[derive(BoundId)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Record)]`
   from the `cryptbox-derive` proc-macro crate. Each expands to exactly the trait
-  impls you would write by hand, plus the index-arguments struct a scope names
-  with `index_args`, and a record's sealed struct, the seals its fields
-  declare, and per-field sealers, so a manual impl remains a first-class
-  alternative.
+  impls you would write by hand, plus a record's stored form, the seals and blind
+  indexes its fields declare, and their index handles, so a manual impl remains a
+  first-class alternative.
   IDs are UUID string literals checked at compile time; a codec is never
   inferred from a type's shape.
 - `json` adds the `Json` codec. Its serialized representation is part of the
@@ -22,21 +21,16 @@ No features are enabled by default, and all features are additive:
   window only; the default decoding path stays strict.
 - `postcard` adds the `Postcard` codec. Its serialized representation is part of
   the persistent schema. It implies `serde`; values need Serde traits.
-- `restate` adds the `restate` module for [Restate](https://restate.dev) handlers:
-  journal codecs for `Sealed` and `BlindIndex`, sealing inside `ctx.run` so replay
-  finds the same bytes, error classification, and `ObjectKey`, a strict Virtual
-  Object key for a binding's index arguments. It uses `restate-sdk` 0.12 and
-  implies `serde`. See the [Restate guide].
 - `serde` adds explicit serialization of `Sealed` and `BlindIndex` stored
-  bytes. It never adds serialization for plaintext `Plain` values.
+  bytes: unpadded base64url text in human-readable formats, bytes otherwise. It never adds serialization for plaintext `Plain` values.
 - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
 - `sqlx-sqlite` adds `SQLx` 0.8 `BLOB` storage for `SQLite`.
-- `uuid` lets a binding part hold a `uuid::Uuid`, and converts one into a
-  `RecordId`. Either binds the UUID's 16 bytes, exactly as a `[u8; 16]` does.
+- `uuid` lets a bound ID type or record ID hold a `uuid::Uuid`, and converts one
+  into a `RecordId`. Either binds the UUID's 16 bytes, exactly as a `[u8; 16]` does.
 
 The `SQLx` adapters automatically seal and open `Plain<F>`, the column for a
-unscoped seal without a record or blind indexes. `Plain<F>` uses the keys
-installed with `keys::install`; name another key source as `Plain<F, K>` to use
+seal without bound values, a record, or blind indexes. `Plain<F>` uses the keys
+installed with `keys::install`; name other column keys as `Plain<F, K>` to use
 application-owned keys. Seal values of every other seal explicitly: `Sealed` and
 blind-index storage need no keys. These features do not
 choose an async runtime or TLS implementation for the application. Add `SQLx`
@@ -48,7 +42,7 @@ derives likewise require a direct `serde` dependency with `derive`; enabling
 
 Feature-gated availability: the derive macros require `derive`; `Json` requires
 `json`; `Postcard` requires `postcard`; `migrate` and its core types require
-`migrate`; the `restate` module requires `restate`.
+`migrate`.
 `migrate::PostgresSweepStore` additionally requires `sqlx-postgres`,
 `migrate::SqliteSweepStore` requires `sqlx-sqlite`, and `migrate::SweepTable`
 requires either backend. Stored-value Serde implementations require `serde`;
@@ -68,8 +62,7 @@ checking stored-index consistency requires separate recomputation. See the
 ## Platforms and tested configurations
 
 This is a standard-library crate requiring Rust **1.85 or newer** (edition 2024),
-not a `no_std` crate. The `restate` feature needs Rust 1.90, as `restate-sdk`
-does. Encryption and random key/identifier generation require a target on which
+not a `no_std` crate. Encryption and random key/identifier generation require a target on which
 `getrandom` 0.4 can obtain secure operating-system entropy; entropy failure is
 returned as an error. Consult its
 [target support](https://docs.rs/getrandom/0.4.3/getrandom/#supported-targets)
@@ -83,13 +76,11 @@ CPUs and some non-ARM microcontrollers, are not supported for secret operations.
 The complete production target review is not yet finished.
 
 The repository CI checks Rust 1.85 with locked all-target compilation of every
-feature except `restate` on Ubuntu, and stable Rust with all-feature tests,
+feature on Ubuntu, and stable Rust with all-feature tests,
 independent `SQLx` feature compilation (each backend with and without
 `migrate`), and default/all-feature rustdoc. Dagger uses the configured Rust
 Linux container, runs examples, and supplies PostgreSQL to execute the live
-round-trip and packaged-sweep tests, including the otherwise ignored cases. It
-also runs the Restate adapter's end-to-end test against a real
-`restate-server`. See the
+round-trip and packaged-sweep tests, including the otherwise ignored cases. See the
 [live-backend check instructions].
 These are tested configurations, not a reviewed target allowlist; no macOS,
 Windows, browser, or embedded CI matrix is claimed.
@@ -101,4 +92,3 @@ or consult the [API reference](https://docs.rs/cryptbox/latest/cryptbox/).
 [stored-value walkthrough]: ../examples/stored_values/README.md
 [live-backend check instructions]: documentation.md#live-postgresql
 [task index]: README.md
-[Restate guide]: restate.md

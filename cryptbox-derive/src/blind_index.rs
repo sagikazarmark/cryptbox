@@ -2,13 +2,14 @@
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{DeriveInput, Ident, spanned::Spanned};
+use syn::{DeriveInput, Ident, Path, Type, spanned::Spanned};
 
 use crate::attr::{Attrs, Errors, Key, required};
 
 const KEYS: &[Key] = &[
     Key::Id,
     Key::Seal,
+    Key::Partition,
     Key::Bits,
     Key::Query,
     Key::Normalize,
@@ -19,7 +20,7 @@ const KEYS: &[Key] = &[
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    let mut attrs = Attrs::parse(&input.attrs, KEYS, &mut errors);
+    let mut attrs = Attrs::parse(&input.attrs, "cryptbox", KEYS, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
 
@@ -39,9 +40,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         "Seal",
         &mut errors,
     );
-    if let Some(span) = attrs.seal_own {
-        errors.push(syn::Error::new(span, "`seal` needs a value: `seal = Seal`"));
-    }
     let bits = required(
         attrs.bits.take(),
         &attrs,
@@ -89,14 +87,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
     // Span the calls on the user's paths so type errors point at the attribute.
     let normalize_query = quote_spanned!(normalize.span()=> #normalize(#query_arg));
-    let normalize_value = if let Some(project) = &attrs.project {
-        let projected = quote_spanned!(project.span()=> &#project(#value_arg));
-        quote_spanned!(normalize.span()=> #normalize(#projected))
-    } else {
-        // Point a value that does not fit the normalizer at the `seal` key.
-        let value = Ident::new("value", Span::mixed_site().located_at(seal.span()));
-        quote_spanned!(normalize.span()=> #normalize(#value))
-    };
+    let normalize_value = normalize_value(&normalize, attrs.project.as_ref(), &seal, &value_arg);
 
     let normalized = quote! {
         ::core::result::Result<
@@ -104,6 +95,11 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #krate::BlindIndexError,
         >
     };
+    // Without `partition`, the index is partitioned by every bound value of its seal.
+    let partition = attrs.partition.take().map_or_else(
+        || quote!(<#seal as #krate::Seal>::Bound),
+        |partition| quote!((#(#partition,)*)),
+    );
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
     Ok(quote! {
@@ -111,6 +107,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #[automatically_derived]
             impl #impl_generics #krate::BlindIndexSpec for #name #type_generics #where_clause {
                 type Seal = #seal;
+                type Partition = #partition;
                 const ID: #krate::IndexId = #krate::IndexId::from_u128(#id);
                 const BITS: u16 = #bits;
                 const NORMALIZER: &'static str = #normalizer_name;
@@ -128,4 +125,21 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             }
         };
     })
+}
+
+// Calls the normalizer on the sealed value, or on its projection.
+fn normalize_value(
+    normalize: &Path,
+    project: Option<&Path>,
+    seal: &Type,
+    value_arg: &Ident,
+) -> TokenStream {
+    if let Some(project) = project {
+        let projected = quote_spanned!(project.span()=> &#project(#value_arg));
+        quote_spanned!(normalize.span()=> #normalize(#projected))
+    } else {
+        // Point a value that does not fit the normalizer at the `seal` key.
+        let value = Ident::new("value", Span::mixed_site().located_at(seal.span()));
+        quote_spanned!(normalize.span()=> #normalize(#value))
+    }
 }

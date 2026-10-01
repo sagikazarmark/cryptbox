@@ -1,5 +1,5 @@
 use crate::id::identifier;
-use crate::{Codec, IndexList, Padding, SealScope};
+use crate::{BoundList, Codec, IndexList, Padding, RecordIdType};
 
 identifier!(SealId, "A stable seal identifier.");
 
@@ -16,9 +16,10 @@ identifier!(SealId, "A stable seal identifier.");
 /// ID and codec read each other's values.
 ///
 /// Every sealed value is bound at runtime to its seal ID, to the values of the
-/// seal's [`Scope`](crate::Scope) (such as a tenant), and, when its scope is
-/// [`Recorded`](crate::Recorded), to the ID of the record it is stored in. Opening it as another seal, or under other binding values or
-/// another record, fails authentication. The binding arguments of each call are
+/// seal's [bound ID types](Self::Bound), such as a tenant, and, when it binds a
+/// [record](Self::Record), to the ID of the record it is stored in. Opening it as
+/// another seal, or under other bound values or another record, fails
+/// authentication. The binding arguments of each call are
 /// typed by the seal; see [`Args`](crate::Args).
 ///
 /// Generate a unique ID for each seal, keep it stable across Rust and database
@@ -52,7 +53,8 @@ identifier!(SealId, "A stable seal identifier.");
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Scope = ();
+///     type Bound = ();
+///     type Record = ();
 ///     type Indexes = ();
 /// }
 /// ```
@@ -60,8 +62,8 @@ identifier!(SealId, "A stable seal identifier.");
 /// With the `derive` feature, `#[derive(Seal)]` writes this impl from
 /// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
 /// taking `String`'s built-in default codec, `Utf8`.
-/// Add `scope = Tenant` or `indexes(EmailLookup)` to set [`Self::Scope`] or
-/// [`Self::Indexes`]. On a type with
+/// Add `bound(TenantId)`, `record = i64`, or `indexes(EmailLookup)` to set
+/// [`Self::Bound`], [`Self::Record`], or [`Self::Indexes`]. On a type with
 /// fields, the derive makes the type its own value: `codec = Json` encodes it
 /// whole, and `transparent` stores its single field.
 ///
@@ -79,7 +81,7 @@ identifier!(SealId, "A stable seal identifier.");
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a seal",
     label = "not a seal",
-    note = "declare one with `#[derive(cryptbox::Seal)]`; in a `#[derive(Record)]`, declare a field's own seal with `#[cryptbox(id = \"…\")]`, or mark it `#[cryptbox(plaintext)]`"
+    note = "declare one with `#[derive(cryptbox::Seal)]`; in a `#[derive(Record)]`, mark a field `#[cryptbox(seal = \"<uuid>\")]`"
 )]
 pub trait Seal: 'static {
     /// The stable identifier, independent of Rust and database names.
@@ -103,14 +105,18 @@ pub trait Seal: 'static {
     /// defaults to [`Utf8`](crate::Utf8) or [`Raw`](crate::Raw).
     type Codec: Codec<Self::Value>;
 
-    /// The declared scope every value is bound to, such as a tenant, and
-    /// whether it is bound to a record.
+    /// The bound ID types every value is bound to, such as `(OrgId, WorkspaceId)`,
+    /// or `()` for none: a [`BoundList`].
     ///
-    /// The empty scope, `()`, binds values to the seal ID alone, and
-    /// [`Recorded<S, Id>`](crate::Recorded) adds the record a value is stored in.
-    /// The binding's declaration is persistent schema; its values are supplied at
-    /// each call. See [`Scope`](crate::Scope) and [`SealScope`].
-    type Scope: SealScope;
+    /// Their kinds are persistent schema; their values are supplied at each call,
+    /// in this order. Which keys protect a value is the caller's choice: with a
+    /// keyring per tenant, destroying one tenant's root keys shreds that tenant's
+    /// values alone.
+    type Bound: BoundList;
+
+    /// The type of the ID of the record every value is stored in and bound to,
+    /// such as `i64`, or `()` for none: a [`RecordIdType`].
+    type Record: RecordIdType;
 
     /// The blind indexes declared over this seal, as a tuple of
     /// [`BlindIndexSpec`](crate::BlindIndexSpec)s, or `()` for none.

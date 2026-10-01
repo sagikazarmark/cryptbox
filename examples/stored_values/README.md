@@ -18,7 +18,7 @@ The program checks a serialized round trip and demonstrates that damaged
 ciphertext can pass structural parsing but fail authentication. It leaves no files
 behind and can be rerun without setup. See [main.rs](main.rs) for the assertions.
 
-The fixed keys are public fixtures. For persistence, use [durable key/ID pairs](../../docs/integration.md#keyrings-and-key-sources)
+The fixed keys are public fixtures. For persistence, use [durable key/ID pairs](../../docs/integration.md#keyrings)
 and write ciphertext and indexes atomically.
 
 ## Follow the value through storage
@@ -26,7 +26,7 @@ and write ciphertext and indexes atomically.
 - The plaintext is an ordinary `String`, never serialized. Seal it explicitly
   with `Sealed::prepare`, which borrows rather than erases the source.
 - `StoredUser` owns `Sealed<UserEmail>` and `BlindIndex<EmailLookup>`.
-  Serde stores their complete bytes (integer arrays in JSON).
+  Serde stores their complete bytes (unpadded base64url text in JSON).
 - Deserialization, like `from_bytes`, checks **structure only**: no key lookup,
   authentication, decryption or index recomputation. Typed wrappers express the
   caller's intended seal/index, not proof of origin.

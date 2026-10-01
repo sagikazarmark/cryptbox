@@ -85,28 +85,6 @@ cargo test --locked --test e2e --no-default-features --features migrate,sqlx-pos
 Each PostgreSQL scenario creates and removes its own schema. Recovery uses SQLite
 database copies. These scenarios modify their test database.
 
-### Live Restate
-
-The `tests/restate` workspace package runs a service against a real
-`restate-server`. It suspends and replays after a `ctx.set` and a call carrying
-`Sealed<F>`, and checks that sealing outside `ctx.run` is a journal mismatch.
-It needs Rust 1.92 and a Unix host. Dagger runs it with the server binary from
-the Restate image:
-
-```sh
-dagger check cryptbox:test:restate
-```
-
-Otherwise, name a server binary, or a running server that can reach the test
-endpoint (a container reaches it at `host.docker.internal`; set
-`RESTATE_ENDPOINT_HOST` to change it):
-
-```sh
-RESTATE_SERVER_BIN=/path/to/restate-server cargo test --locked -p cryptbox-restate-e2e -- --ignored
-RESTATE_ADMIN_URL=http://127.0.0.1:9070 RESTATE_INGRESS_URL=http://127.0.0.1:8080 \
-  cargo test --locked -p cryptbox-restate-e2e -- --ignored
-```
-
 ## Editing shared sources
 
 - Edit the README quickstart directly; it is independent of the first-field

@@ -1,8 +1,8 @@
 # Declare a custom seal with explicit plaintext ownership
 
 [The example](main.rs) declares `Handle(Secret<String>)`, a seal that is its own
-value, for a 1–64 character ASCII account handle, with a validating codec, normalizer and synchronous
-key source.
+value, for a 1–64 character ASCII account handle, with a validating codec, normalizer and a refreshed
+keyring snapshot.
 [Examples](../README.md) · [Documentation](../../docs/README.md).
 
 ## Run the example
@@ -17,7 +17,7 @@ Expect `Custom field round trip and normalized lookup succeeded.` The program
 uses fresh in-memory keys each time and leaves no files behind. It can be rerun
 without setup.
 
-Keys are ephemeral; use [durable key/ID pairs](../../docs/integration.md#keyrings-and-key-sources)
+Keys are ephemeral; use [durable key/ID pairs](../../docs/integration.md#keyrings)
 before persisting data.
 
 ## Why these implementations?
@@ -34,8 +34,8 @@ before persisting data.
 - **`HandleEquality`** validates the same alphabet and lowercases inside a
   zeroizing buffer. Queries are bare `Secret<String>`s; stored values are handles. Writes, probes and candidate comparison share that rule.
   The 128-bit index leaks equality/frequency and is not a uniqueness constraint.
-- **`CachedEncryptionKeys`** is a key source that serves a local keyring snapshot
-  without I/O on the encryption path. The application owns loading, refresh, synchronization and failure policy.
+- **`CachedEncryptionKeys`** hands out a keyring from a local snapshot, without
+  I/O on the encryption path, and each operation is passed the keyring it hands out. The application owns loading, refresh, synchronization and failure policy.
 - **`Secret<String>`** zeroizes the handle's string on drop, and its redacting
   `Debug` lets `Handle` derive `Debug` safely. Preparation still borrows the
   plaintext; dropping `Prepared` does not erase it. `open` returns the decoded
@@ -47,8 +47,7 @@ before persisting data.
 | --- | --- |
 | [Codec](https://docs.rs/cryptbox/latest/cryptbox/trait.Codec.html) | Preserve encoding compatibility; return zeroizing encoded bytes and owned decoded values. Sanitize input-bearing errors and protect intermediate allocations. |
 | [BlindIndexSpec](https://docs.rs/cryptbox/latest/cryptbox/trait.BlindIndexSpec.html) | Declare the index over exactly one seal. `normalize_value` and `normalize_query` must agree on stable, deterministic equality rules for writes, all readable-generation probes and candidate comparison. Process only the indexed value; protect sensitive buffers. |
-| [EncryptionKeySource](https://docs.rs/cryptbox/latest/cryptbox/trait.EncryptionKeySource.html) | Return the keyring that protects the seal and key scope from a local snapshot, without I/O. Return `KeysUnavailable` when the snapshot is not loaded. Keep key IDs generated UUIDs, unique, and never shared across keyrings, and keep previous keys while values sealed with them remain. Choosing the wrong keyring seals silently; see [choosing keyrings](../../docs/choosing-keyrings.md). |
-| [BlindIndexKeySource](https://docs.rs/cryptbox/latest/cryptbox/trait.BlindIndexKeySource.html) | The same rules for blind-index keyrings, keyed by index. Provision index roots independently from encryption roots. |
+| Keys you pass in | Hand operations a keyring from a local snapshot, without I/O, and report `KeysUnavailable` when the snapshot is not loaded. Keep key IDs generated UUIDs, unique, and never shared across keyrings, and keep previous keys while values sealed with them remain. Choosing the wrong keyring seals silently; see [choosing keyrings](../../docs/choosing-keyrings.md). Provision blind-index roots independently from encryption roots. |
 
 Preallocate before copying sensitive bytes: `Zeroizing<Vec<u8>>` wipes its current
 allocation, not allocations already released by growth. When growth is unavoidable,
@@ -70,7 +69,7 @@ when adapting this example, then integrate it into [SQLx storage](../sqlite/READ
 ## Use it in your application
 
 Use `HandleCodec`, `HandleEquality`, and `CachedEncryptionKeys` in [main.rs](main.rs)
-as starting points for your own value type and key source. Add `zeroize` directly
+as starting points for your own value type and refreshed keys. Add `zeroize` directly
 because the extension interfaces return `Zeroizing<Vec<u8>>`. Keep the codec and
 normalizer's validation rules aligned, and replace the demonstration's generated
 keys with your application's durable keyrings. The tests beside the source show

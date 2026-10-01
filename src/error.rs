@@ -103,8 +103,8 @@ pub enum Error {
     /// Normalizing a blind-index input failed.
     #[error("blind-index normalization failed")]
     BlindIndexNormalizationFailed,
-    /// A key source could not supply a keyring, such as keys that a KMS has
-    /// not loaded yet.
+    /// Keys could not be supplied, such as keys that a KMS has not loaded yet,
+    /// or a [`ColumnKeys`](crate::ColumnKeys) that could not load them.
     #[error("keys are unavailable")]
     KeysUnavailable,
     /// A global convenience was used before [`keys::install`](crate::keys::install).
@@ -115,6 +115,14 @@ pub enum Error {
     /// [`Keys::with_blind_indexes`](crate::Keys::with_blind_indexes).
     #[error("no blind-index keyring is configured")]
     BlindIndexKeysNotConfigured,
+    /// A stored row is outside the partition of the lookup that selected it,
+    /// so it was not decrypted; see [`Index::open_matching`](crate::Index::open_matching).
+    #[error("stored record is outside the lookup's partition")]
+    OutsidePartition,
+    /// A stored row is not the one the caller expected, so it was not
+    /// decrypted; see [`Record::open_expecting`](crate::Record::open_expecting).
+    #[error("stored record is not the one expected")]
+    UnexpectedRecord,
     /// A keyring contains the same encryption key ID more than once.
     #[error("duplicate encryption key ID {0}")]
     DuplicateEncryptionKey(KeyId),
@@ -144,8 +152,7 @@ pub enum Error {
     InvalidPadding,
     /// A binding's declared parts or supplied values are invalid.
     ///
-    /// For example, part IDs repeat, a value's kind differs from its part's, or
-    /// a `keys` part value is empty.
+    /// For example, part IDs repeat, or a value's kind differs from its part's.
     #[error("binding is invalid")]
     InvalidBinding,
     /// A blind-index representation or bit count is invalid.
@@ -167,11 +174,6 @@ pub enum Error {
         /// The number of blind-index columns the row supplied.
         actual: usize,
     },
-    /// A Restate object key is not the canonical encoding of a binding's index
-    /// arguments; see [`restate::ObjectKey`](crate::restate::ObjectKey).
-    #[cfg(feature = "restate")]
-    #[error("object key is not a canonical encoding of the binding's index arguments")]
-    InvalidObjectKey,
     /// A previous encryption format could not recover the stored value.
     #[cfg(feature = "migrate")]
     #[error("legacy recovery failed: {0}")]

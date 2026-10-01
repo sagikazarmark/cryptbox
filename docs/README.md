@@ -11,21 +11,20 @@ Choose the entry point that fits your question:
 ## Integrate into a project
 
 - [Integration design and trade-offs](integration.md): persistent schema, storage boundaries, keys, and search.
-- [Bind values to a scope](bindings.md): part roles, authorized binding values, record IDs, and moving a record, with a runnable [tenant example](../examples/tenant_field.rs).
+- [Bind values to what they belong to](bindings.md): bound ID types, records, blind-index partitions, record IDs, and moving a record, with a runnable [tenant example](../examples/tenant_field.rs) and [records example](../examples/records/README.md).
 - [Choosing keyrings](choosing-keyrings.md): custody, key-ID rules, the silent failure modes, and testing the choice.
 - [SQLite example](../examples/sqlite/README.md): run and adapt durable encrypted storage with a separate-process read.
 - [Searchable storage example](../examples/searchable/README.md): atomic writes and verified equality lookup on PostgreSQL or SQLite.
-- [Automatic SQLx adapters](testing.md#automatic-adapters): a runnable example and its key-context lifetime.
+- [Automatic SQLx adapters](testing.md#automatic-adapters): a runnable example and its column keys.
 - [Stored-values example](../examples/stored_values/README.md): ciphertext and index serialization with Serde.
-- [Custom-field example](../examples/custom_field/README.md): codecs, normalization, key sources, and wrapped plaintext.
+- [Custom-field example](../examples/custom_field/README.md): codecs, normalization, refreshed keys, and wrapped plaintext.
 - [Testing and diagnostics](testing.md): isolated keys and sanitized failures.
 - [Adopt existing data](legacy-migration.md): prerequisites and rollout for plaintext or previous-solution ciphertext.
-- [Restate handlers](restate.md): seal inside `ctx.run`, object keys, what the journal exposes, and shredding an org.
 
 ## Operate
 
 - [Key lifecycle](key-rotation.md): stage, promote, roll back, retire, and recover.
-- [Shred a scope](shredding.md): prerequisites, caches, backups, and what destroying a scope's keys leaves behind.
+- [Shred a tenant](shredding.md): prerequisites, caches, backups, and what destroying a tenant's keys leaves behind.
 - [Maintenance sweeps](reencryption-sweep.md): rewrite and verify existing storage.
 - [Retirement and recovery](key-rotation.md#retirement-and-recovery): backup dependencies, isolated restores, and online key removal.
 - [Close a legacy migration](legacy-migration.md#verification-and-closing-the-window): verify converted data and return to strict reads.

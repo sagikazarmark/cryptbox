@@ -1,142 +1,66 @@
-//! Public-boundary tests for records: whole rows sealed and opened under one binding.
+//! Public-boundary tests for records: rows that carry their bound values.
+#![cfg(feature = "derive")]
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeySource, BlindIndexKeyring,
-    BlindIndexSpec, EncryptionKey, EncryptionKeySource, EncryptionKeyring, Error, IndexId, Keys,
-    Padding, Record, Recorded, Seal, SealId, Sealed, Tenant, TenantId, Utf8,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BoundId, EncryptionKey, EncryptionKeyring,
+    Error, Keys, Padding, Record, Seal, SealId, Sealed, Utf8,
 };
 use zeroize::Zeroizing;
 
-/// A customer's email, bound to its tenant and record.
-struct CustomerEmail;
+/// An org's ID.
+#[derive(BoundId, Clone, Copy, Debug, PartialEq)]
+#[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
+struct OrgId([u8; 16]);
 
-impl Seal for CustomerEmail {
-    const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
-    type Scope = Recorded<Tenant, i64>;
-    type Indexes = (EmailLookup,);
+/// A workspace's ID.
+#[derive(BoundId, Clone, Copy, Debug, PartialEq)]
+#[cryptbox(kind = "78f0169a-f024-402b-9cdf-f436864fa17f")]
+struct WorkspaceId([u8; 16]);
+
+#[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
+fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    Ok(Zeroizing::new(
+        email.trim().to_ascii_lowercase().into_bytes(),
+    ))
 }
 
-/// A customer's note, bound to its tenant only.
-struct CustomerNote;
-
-impl Seal for CustomerNote {
-    const ID: SealId = cryptbox::seal_id!("0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
-    type Scope = Tenant;
-    type Indexes = ();
-}
-
-/// A case-insensitive email lookup. One bit, so most rows are false candidates.
-struct EmailLookup;
-
-impl BlindIndexSpec for EmailLookup {
-    type Seal = CustomerEmail;
-    const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
-    const BITS: u16 = 1;
-    const NORMALIZER: &'static str = "email/1";
-    type Query = str;
-
-    fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(Zeroizing::new(
-            query.trim().to_ascii_lowercase().into_bytes(),
-        ))
-    }
-
-    fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Self::normalize_query(value)
-    }
-}
-
-/// A hand-written record, as `#[derive(Record)]` documents its expansion.
-#[derive(Clone, Debug, PartialEq)]
+/// A customer of one workspace of an org.
+#[derive(Clone, Debug, PartialEq, Record)]
+#[cryptbox(stored(derive(Clone, Debug)))]
 struct Customer {
+    #[cryptbox(record_id)]
     id: i64,
+    #[cryptbox(bound)]
+    org: OrgId,
+    #[cryptbox(bound)]
+    workspace: WorkspaceId,
+    /// The primary contact address, searchable across the org's workspaces.
+    #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
+    #[cryptbox(blind_index(
+        id = "ab78afa9-7aaa-499c-8239-037b7e136130",
+        across(workspace),
+        bits = 1,
+        normalize = normalize_email,
+        normalizer = "email/1",
+    ))]
     email: String,
-    note: String,
+    /// A note, searchable within one workspace.
+    #[cryptbox(seal = "5d1f0c3a-8f6e-4b1d-9a7c-2e4b6d8f0a13", padding = block(16))]
+    #[cryptbox(blind_index(
+        id = "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0",
+        bits = 32,
+        normalize = normalize_email,
+        normalizer = "note/1",
+    ))]
+    note: Option<String>,
+    #[cryptbox(plaintext)]
+    created_at: i64,
 }
 
-struct SealedCustomer {
-    id: i64,
-    email: Sealed<CustomerEmail>,
-    email_lookup: BlindIndex<EmailLookup>,
-    note: Sealed<CustomerNote>,
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)] // The derive's sealers take the record ID by reference.
-impl Customer {
-    fn seal_email<K>(
-        value: &String,
-        binding: &Tenant,
-        record: &i64,
-        keys: &K,
-    ) -> Result<(Sealed<CustomerEmail>, BlindIndex<EmailLookup>), Error>
-    where
-        K: EncryptionKeySource + BlindIndexKeySource + ?Sized,
-    {
-        let prepared = Sealed::<CustomerEmail>::prepare(value, (binding, record), keys)?
-            .with_index_with::<EmailLookup>(keys)?;
-        let email_lookup = prepared.index::<EmailLookup>()?.to_blind_index();
-
-        Ok((prepared.into_sealed(), email_lookup))
-    }
-
-    fn seal_note<K>(
-        value: &String,
-        binding: &Tenant,
-        _record: &i64,
-        keys: &K,
-    ) -> Result<Sealed<CustomerNote>, Error>
-    where
-        K: EncryptionKeySource + ?Sized,
-    {
-        Sealed::<CustomerNote>::seal(value, binding, keys)
-    }
-}
-
-impl Record for Customer {
-    type Sealed = SealedCustomer;
-    type Scope = Tenant;
-
-    fn seal<K>(&self, binding: &Tenant, keys: &K) -> Result<SealedCustomer, Error>
-    where
-        K: EncryptionKeySource + BlindIndexKeySource + ?Sized,
-    {
-        let (email, email_lookup) = Self::seal_email(&self.email, binding, &self.id, keys)?;
-        let note = Self::seal_note(&self.note, binding, &self.id, keys)?;
-
-        Ok(SealedCustomer {
-            id: self.id,
-            email,
-            email_lookup,
-            note,
-        })
-    }
-
-    fn open<K>(sealed: SealedCustomer, binding: &Tenant, keys: &K) -> Result<Self, Error>
-    where
-        K: EncryptionKeySource + ?Sized,
-    {
-        let email = sealed.email.open((binding, &sealed.id), keys)?;
-        let note = sealed.note.open(binding, keys)?;
-
-        Ok(Self {
-            id: sealed.id,
-            email,
-            note,
-        })
-    }
-}
-
-impl cryptbox::IndexedBy<EmailLookup> for Customer {
-    fn indexed_value(&self) -> &String {
-        &self.email
-    }
-}
+const ACME: OrgId = OrgId([1; 16]);
+const GLOBEX: OrgId = OrgId([2; 16]);
+const SALES: WorkspaceId = WorkspaceId([10; 16]);
+const SUPPORT: WorkspaceId = WorkspaceId([11; 16]);
 
 // Fixed index keys keep the false candidates of the one-bit index deterministic.
 fn keys() -> Keys {
@@ -153,472 +77,530 @@ fn keys() -> Keys {
         .with_blind_indexes(BlindIndexKeyring::new(blind_indexes, []).unwrap())
 }
 
-fn tenant(name: &[u8]) -> Tenant {
-    Tenant(TenantId::new(name.to_vec()).unwrap())
-}
-
-fn customer(id: i64, email: &str) -> Customer {
+fn customer(id: i64, workspace: WorkspaceId, email: &str) -> Customer {
     Customer {
         id,
+        org: ACME,
+        workspace,
         email: email.to_owned(),
-        note: format!("note {id}"),
+        note: Some(format!("note {id}")),
+        created_at: 1_700_000_000,
     }
 }
 
 #[test]
-fn a_record_round_trips_under_its_binding() {
+fn a_record_round_trips() {
     let keys = keys();
-    let acme = tenant(b"acme");
-    let ada = customer(7, "ada@example.com");
+    let ada = customer(7, SALES, "ada@example.com");
 
-    let sealed = ada.seal(&acme, &keys).unwrap();
+    let stored = ada.seal(&keys).unwrap();
 
-    assert_eq!(Customer::open(sealed, &acme, &keys).unwrap(), ada);
+    assert_eq!(
+        (stored.id, stored.org, stored.created_at),
+        (7, ACME, ada.created_at)
+    );
+    assert_eq!(Customer::open(stored, &keys).unwrap(), ada);
 }
 
 #[test]
-fn a_seal_that_binds_the_record_cannot_move_to_another_record() {
+fn an_absent_optional_field_is_stored_absent() {
     let keys = keys();
-    let acme = tenant(b"acme");
-    let ada = customer(7, "ada@example.com").seal(&acme, &keys).unwrap();
-    let mut bob = customer(8, "bob@example.com").seal(&acme, &keys).unwrap();
-
-    bob.email = ada.email;
-
-    assert_eq!(
-        Customer::open(bob, &acme, &keys).unwrap_err(),
-        Error::AuthenticationFailed
-    );
-}
-
-#[test]
-fn a_seal_that_binds_no_record_is_bound_to_the_binding_alone() {
-    let keys = keys();
-    let acme = tenant(b"acme");
-    let ada = customer(7, "ada@example.com").seal(&acme, &keys).unwrap();
-
-    assert_eq!(ada.note.open(&acme, &keys).unwrap(), "note 7");
-    assert_eq!(
-        Customer::open(ada, &tenant(b"globex"), &keys).unwrap_err(),
-        Error::AuthenticationFailed
-    );
-}
-
-#[test]
-fn open_matching_drops_false_candidates() {
-    let keys = keys();
-    let acme = tenant(b"acme");
-    let emails = [
-        "ada@example.com",
-        "bob@example.com",
-        " ADA@example.com",
-        "carol@example.com",
-        "dave@example.com",
-        "erin@example.com",
-        "frank@example.com",
-        "grace@example.com",
-    ];
-    let rows = (0..)
-        .zip(emails)
-        .map(|(id, email)| customer(id, email).seal(&acme, &keys).unwrap());
-
-    // What a store returns for the probes: every row whose stored index matches one.
-    let probes = EmailLookup::probes_with("ada@example.com", &acme, &keys).unwrap();
-    let candidates: Vec<_> = rows
-        .filter(|row| probes.contains(&row.email_lookup))
-        .collect();
-    let candidate_ids: Vec<_> = candidates.iter().map(|row| row.id).collect();
-    // One index bit leaves about half of the other rows as false candidates.
-    assert!(
-        candidate_ids.len() > 2,
-        "no false candidates: {candidate_ids:?}"
-    );
-
-    let matches = cryptbox::open_matching::<Customer, EmailLookup>(
-        candidates,
-        "ada@example.com",
-        &acme,
-        &keys,
-    )
-    .unwrap();
-
-    assert_eq!(
-        matches,
-        [
-            customer(0, "ada@example.com"),
-            customer(2, " ADA@example.com")
-        ]
-    );
-}
-
-#[cfg(feature = "derive")]
-mod derived {
-    use super::{
-        BlindIndexSpec, Customer, CustomerEmail, CustomerNote, EmailLookup, Record, SealedCustomer,
-        keys, tenant,
+    let ada = Customer {
+        note: None,
+        ..customer(7, SALES, "ada@example.com")
     };
 
-    /// The derived equivalent of [`Customer`].
-    #[derive(Clone, Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record_id = id, sealed = SealedDerivedCustomer)]
-    struct DerivedCustomer {
-        #[cryptbox(plaintext)]
-        id: i64,
-        #[cryptbox(seal = CustomerEmail, index(EmailLookup as email_lookup))]
-        email: String,
-        #[cryptbox(seal = CustomerNote)]
-        note: String,
-    }
+    let stored = ada.seal(&keys).unwrap();
 
-    fn derived(id: i64, email: &str) -> DerivedCustomer {
-        DerivedCustomer {
-            id,
-            email: email.to_owned(),
-            note: format!("note {id}"),
-        }
-    }
+    assert!(stored.note.is_none() && stored.note_index.is_none());
+    assert_eq!(Customer::open(stored, &keys).unwrap(), ada);
+}
 
-    #[test]
-    fn a_derived_record_opens_rows_of_its_hand_written_equivalent() {
-        let keys = keys();
-        let acme = tenant(b"acme");
-        let manual = super::customer(7, "ada@example.com")
-            .seal(&acme, &keys)
-            .unwrap();
+#[test]
+fn a_moved_row_fails_to_open() {
+    let keys = keys();
+    let stored = customer(7, SALES, "ada@example.com").seal(&keys).unwrap();
+    let moved = [
+        (
+            "org",
+            StoredCustomer {
+                org: GLOBEX,
+                ..stored.clone()
+            },
+        ),
+        (
+            "workspace",
+            StoredCustomer {
+                workspace: SUPPORT,
+                ..stored.clone()
+            },
+        ),
+        ("record", StoredCustomer { id: 8, ..stored }),
+    ];
 
-        let sealed = SealedDerivedCustomer {
-            id: manual.id,
-            email: manual.email,
-            email_lookup: manual.email_lookup,
-            note: manual.note,
-        };
-
+    for (case, row) in moved {
         assert_eq!(
-            DerivedCustomer::open(sealed, &acme, &keys).unwrap(),
-            derived(7, "ada@example.com")
+            Customer::open(row, &keys).unwrap_err(),
+            Error::AuthenticationFailed,
+            "{case}"
         );
     }
+}
 
-    #[test]
-    fn a_hand_written_record_opens_rows_of_its_derived_equivalent() {
-        let keys = keys();
-        let acme = tenant(b"acme");
-        let derived = derived(7, "ada@example.com").seal(&acme, &keys).unwrap();
-        // Blind indexes are deterministic: both write the same one.
-        let manual = super::customer(7, "ada@example.com")
-            .seal(&acme, &keys)
-            .unwrap();
-        assert_eq!(derived.email_lookup, manual.email_lookup);
+#[test]
+fn a_value_copied_from_another_row_fails_to_open() {
+    let keys = keys();
+    let ada = customer(7, SALES, "ada@example.com").seal(&keys).unwrap();
+    let bob = customer(8, SALES, "bob@example.com").seal(&keys).unwrap();
 
-        let sealed = SealedCustomer {
-            id: derived.id,
-            email: derived.email,
-            email_lookup: derived.email_lookup,
-            note: derived.note,
-        };
-
-        assert_eq!(
-            Customer::open(sealed, &acme, &keys).unwrap(),
-            super::customer(7, "ada@example.com")
-        );
-    }
-
-    #[test]
-    fn a_field_sealer_seals_one_field_with_its_indexes_for_a_partial_update() {
-        let keys = keys();
-        let acme = tenant(b"acme");
-        let row = derived(7, "ada@example.com").seal(&acme, &keys).unwrap();
-
-        let (email, email_lookup) =
-            DerivedCustomer::seal_email(&"ada@example.org".to_owned(), &acme, &7, &keys).unwrap();
-        let note = DerivedCustomer::seal_note(&"updated".to_owned(), &acme, &7, &keys).unwrap();
-
-        let updated = SealedDerivedCustomer {
-            email,
-            email_lookup,
-            note,
-            ..row
-        };
-        let probes = EmailLookup::probes_with("ada@example.org", &acme, &keys).unwrap();
-        assert!(probes.contains(&updated.email_lookup));
-        assert_eq!(
-            updated.email.open((&acme, &7_i64), &keys).unwrap(),
-            "ada@example.org"
-        );
-        assert_eq!(
-            DerivedCustomer::open(updated, &acme, &keys).unwrap(),
-            DerivedCustomer {
-                id: 7,
-                email: "ada@example.org".to_owned(),
-                note: "updated".to_owned(),
-            }
-        );
-    }
-
-    #[test]
-    fn open_matching_finds_derived_records() {
-        let keys = keys();
-        let acme = tenant(b"acme");
-        let rows = [
-            derived(0, "ada@example.com").seal(&acme, &keys).unwrap(),
-            derived(1, "bob@example.com").seal(&acme, &keys).unwrap(),
-        ];
-
-        let matches = cryptbox::open_matching::<DerivedCustomer, EmailLookup>(
-            rows,
-            "ADA@example.com",
-            &acme,
-            &keys,
+    assert_eq!(
+        Customer::open(
+            StoredCustomer {
+                email: ada.email,
+                ..bob
+            },
+            &keys
         )
+        .unwrap_err(),
+        Error::AuthenticationFailed
+    );
+}
+
+#[test]
+fn another_orgs_keys_do_not_open_a_row() {
+    let stored = customer(7, SALES, "ada@example.com").seal(&keys()).unwrap();
+    let other = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+
+    assert!(matches!(
+        Customer::open(stored, &other).unwrap_err(),
+        Error::UnknownEncryptionKey(_)
+    ));
+}
+
+#[test]
+fn open_expecting_rejects_a_row_before_decrypting_it() {
+    let stored = customer(7, SALES, "ada@example.com").seal(&keys()).unwrap();
+    // Keys that could not open it: the rejection comes first.
+    let other = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+
+    assert_eq!(
+        Customer::open_expecting(stored.clone(), &other, |row| row.org == GLOBEX).unwrap_err(),
+        Error::UnexpectedRecord
+    );
+    assert_eq!(
+        Customer::open_expecting(stored, &keys(), |row| row.org == ACME).unwrap(),
+        customer(7, SALES, "ada@example.com")
+    );
+}
+
+#[test]
+fn a_record_with_blind_indexes_needs_blind_index_keys() {
+    let keys = keys();
+
+    assert_eq!(
+        customer(7, SALES, "ada@example.com")
+            .seal(&keys.encryption)
+            .unwrap_err(),
+        Error::BlindIndexKeysNotConfigured
+    );
+}
+
+/// Seals customers of `org`, in several workspaces.
+fn rows(keys: &Keys, org: OrgId) -> Vec<StoredCustomer> {
+    [
+        (1, SALES, "ada@example.com"),
+        (2, SUPPORT, " Ada@Example.com"),
+        (3, SUPPORT, "grace@example.com"),
+        (4, SALES, "hedy@example.com"),
+        (5, SALES, "joan@example.com"),
+    ]
+    .into_iter()
+    .map(|(id, workspace, email)| Customer {
+        org,
+        ..customer(id, workspace, email)
+    })
+    .map(|customer| customer.seal(keys).unwrap())
+    .collect()
+}
+
+#[test]
+fn an_index_across_workspaces_finds_matches_in_every_workspace_of_the_org() {
+    let keys = keys();
+    let probes = Customer::EMAIL_INDEX
+        .probes("ada@example.com", &ACME, &keys)
+        .unwrap();
+    let candidates: Vec<_> = rows(&keys, ACME)
+        .into_iter()
+        .filter(|row| probes.contains(&row.email_index))
+        .collect();
+    assert!(
+        candidates.len() > 2,
+        "the one-bit index selects false candidates"
+    );
+
+    let hits = Customer::EMAIL_INDEX
+        .open_matching("ada@example.com", &ACME, candidates, &keys)
         .unwrap();
 
-        assert_eq!(matches, [derived(0, "ada@example.com")]);
-    }
+    let found: Vec<_> = hits
+        .into_iter()
+        .map(|hit| hit.map(|customer| (customer.id, customer.workspace)))
+        .collect();
+    assert_eq!(found, [Ok((1, SALES)), Ok((2, SUPPORT))]);
 }
 
-#[cfg(feature = "derive")]
-mod own_seals {
-    use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Record, Seal, Sealed, Tenant};
-    use zeroize::Zeroizing;
-
-    use super::{
-        Customer, CustomerEmail, CustomerNote, EmailLookup, SealedCustomer, customer, keys, tenant,
+#[test]
+fn an_index_partitions_by_the_bound_values_it_does_not_span() {
+    let keys = keys();
+    let ada = customer(7, SALES, "ada@example.com").seal(&keys).unwrap();
+    let probe = |org| {
+        Customer::EMAIL_INDEX
+            .probes("ada@example.com", &org, &keys)
+            .unwrap()
     };
 
-    /// [`Customer`] with its email's seal declared on the field: the same ID,
-    /// scope, and record binding as [`CustomerEmail`], so the same bytes.
-    #[derive(Clone, Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record_id = id, sealed = SealedInlineCustomer)]
-    pub struct InlineCustomer {
-        #[cryptbox(plaintext)]
+    assert_eq!(probe(ACME), std::slice::from_ref(&ada.email_index));
+    assert_ne!(probe(GLOBEX), [ada.email_index]);
+}
+
+#[test]
+fn rows_outside_the_partition_are_refused_without_decrypting() {
+    let keys = keys();
+    let other = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+
+    let hits = Customer::EMAIL_INDEX
+        .open_matching("ada@example.com", &ACME, rows(&keys, GLOBEX), &other)
+        .unwrap();
+
+    assert_eq!(hits.len(), 5);
+    assert!(hits.iter().all(|hit| hit == &Err(Error::OutsidePartition)));
+}
+
+#[test]
+fn an_index_partitioned_by_two_bound_values_takes_a_partition_struct() {
+    let keys = keys();
+    let stored = customer(7, SALES, "ada@example.com").seal(&keys).unwrap();
+    let sales = CustomerNoteIndexPartition {
+        org: ACME,
+        workspace: SALES,
+    };
+
+    let probes = Customer::NOTE_INDEX
+        .probes("note 7", &sales, &keys)
+        .unwrap();
+    assert_eq!(Some(&probes[0]), stored.note_index.as_ref());
+    assert_eq!(
+        Customer::NOTE_INDEX
+            .open_matching("note 7", &sales, [stored.clone()], &keys)
+            .unwrap(),
+        [Ok(customer(7, SALES, "ada@example.com"))]
+    );
+
+    let support = CustomerNoteIndexPartition {
+        org: ACME,
+        workspace: SUPPORT,
+    };
+    assert_eq!(
+        Customer::NOTE_INDEX
+            .open_matching("note 7", &support, [stored], &keys)
+            .unwrap(),
+        [Err(Error::OutsidePartition)]
+    );
+}
+
+/// A row bound to its org alone, without blind indexes, with a renamed seal and
+/// stored form.
+#[derive(Debug, PartialEq, Record)]
+#[cryptbox(stored(name = NoteRow))]
+struct Note {
+    #[cryptbox(record_id)]
+    id: i64,
+    #[cryptbox(bound)]
+    org: OrgId,
+    #[cryptbox(seal = "6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51", name = NoteBody)]
+    body: String,
+}
+
+#[test]
+fn a_record_without_blind_indexes_takes_an_encryption_keyring() {
+    let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+    let note = Note {
+        id: 1,
+        org: ACME,
+        body: "ship it".to_owned(),
+    };
+
+    let row: NoteRow = note.seal(&keys).unwrap();
+    let body: &Sealed<NoteBody> = &row.body;
+
+    assert_eq!(body.open((&ACME, &1), &keys).unwrap(), "ship it");
+    assert_eq!(Note::open(row, &keys).unwrap(), note);
+}
+
+/// The seal a record declares for `Note::body`, written by hand.
+struct ManualNoteBody;
+
+impl Seal for ManualNoteBody {
+    const ID: SealId = cryptbox::seal_id!("6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
+    type Bound = (OrgId,);
+    type Record = i64;
+    type Indexes = ();
+}
+
+#[test]
+fn a_record_field_is_bound_to_its_seal_bound_values_and_record_id() {
+    let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+    let body = Sealed::<ManualNoteBody>::seal(&"ship it".to_owned(), (&ACME, &1), &keys).unwrap();
+    let row = NoteRow {
+        id: 1,
+        org: ACME,
+        body: Sealed::from_bytes(body.into_bytes()).unwrap(),
+    };
+
+    assert_eq!(Note::open(row, &keys).unwrap().body, "ship it");
+}
+
+#[cfg(feature = "json")]
+mod serde_forms {
+    use cryptbox::{BoundId, EncryptionKey, EncryptionKeyring, Record};
+    use serde::{Deserialize, Serialize};
+
+    /// A tenant, carried in messages.
+    #[derive(BoundId, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+    #[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
+    #[serde(transparent)]
+    struct TenantKey(i64);
+
+    /// A record carried as a message, its stored form serialized by Serde.
+    #[derive(Debug, PartialEq, Record)]
+    #[cryptbox(stored(derive(Serialize, Deserialize)))]
+    struct Event {
+        #[cryptbox(record_id)]
+        #[cryptbox(stored(serde(rename = "eventId")))]
         id: i64,
-        #[cryptbox(
-            id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-            scope = Tenant,
-            index(InlineEmailLookup as email_lookup),
-        )]
-        email: String,
-        #[cryptbox(seal = CustomerNote)]
-        note: String,
-    }
-
-    fn normalize_email(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        EmailLookup::normalize_query(query)
-    }
-
-    /// [`EmailLookup`] over the field's own seal.
-    #[derive(cryptbox::BlindIndexSpec)]
-    #[cryptbox(
-        id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-        seal = InlineCustomerEmail,
-        bits = 1,
-        query = str,
-        normalize = normalize_email,
-        normalizer = "email/1",
-    )]
-    struct InlineEmailLookup;
-
-    /// A field seal under another name.
-    #[derive(Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record_id = id, sealed = SealedRenamed)]
-    struct Renamed {
-        #[cryptbox(plaintext)]
-        id: i64,
-        #[cryptbox(id = "5b7d9f13-2c4e-4a68-8b0d-1f3e5a7c9b24", name = RenamedNickname)]
-        nickname: String,
+        #[cryptbox(bound)]
+        tenant: TenantKey,
+        #[cryptbox(seal = "3a9d4e21-7b6c-4f58-9e0a-1c2b3d4e5f60")]
+        detail: String,
     }
 
     #[test]
-    fn a_field_seal_is_named_after_its_record_and_field() {
-        assert_eq!(InlineCustomerEmail::ID, CustomerEmail::ID);
-        assert_eq!(
-            RenamedNickname::ID,
-            cryptbox::seal_id!("5b7d9f13-2c4e-4a68-8b0d-1f3e5a7c9b24")
-        );
-    }
-
-    #[test]
-    fn a_field_seal_writes_the_bytes_of_its_hand_written_equivalent() {
-        let keys = keys();
-        let acme = tenant(b"acme");
-        let inline = InlineCustomer {
-            id: 7,
-            email: "ada@example.com".to_owned(),
-            note: "note 7".to_owned(),
+    fn stored_attributes_are_forwarded_to_the_stored_form() {
+        let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+        let event = Event {
+            id: 3,
+            tenant: TenantKey(9),
+            detail: "created".to_owned(),
         };
-        let row = inline.seal(&acme, &keys).unwrap();
-        let manual = customer(7, "ada@example.com").seal(&acme, &keys).unwrap();
-        // Blind indexes are deterministic: both write the same one.
-        assert_eq!(row.email_lookup.as_bytes(), manual.email_lookup.as_bytes());
 
-        let sealed = SealedCustomer {
-            id: row.id,
-            email: Sealed::from_bytes(row.email.into_bytes()).unwrap(),
-            email_lookup: BlindIndex::from_bytes(row.email_lookup.into_bytes()).unwrap(),
-            note: row.note,
-        };
-        assert_eq!(
-            Customer::open(sealed, &acme, &keys).unwrap(),
-            customer(7, "ada@example.com")
-        );
-    }
+        let json = serde_json::to_value(event.seal(&keys).unwrap()).unwrap();
+        assert_eq!(json["eventId"], 3);
+        assert_eq!(json["tenant"], 9);
 
-    #[test]
-    fn a_field_seal_is_bound_to_its_record() {
-        let keys = keys();
-        let acme = tenant(b"acme");
-        let (email, _) =
-            InlineCustomer::seal_email(&"ada@example.com".to_owned(), &acme, &7, &keys).unwrap();
-
-        assert_eq!(email.open((&acme, &7), &keys).unwrap(), "ada@example.com");
-        assert_eq!(
-            email.open((&acme, &8), &keys).unwrap_err(),
-            cryptbox::Error::AuthenticationFailed
-        );
-        let renamed = Renamed {
-            id: 1,
-            nickname: "ada".to_owned(),
-        };
-        let row = renamed.seal(&(), &keys).unwrap();
-        assert_eq!(row.nickname.open(((), &1), &keys).unwrap(), "ada");
+        let stored: StoredEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(Event::open(stored, &keys).unwrap(), event);
     }
 }
 
-#[cfg(feature = "derive")]
-mod self_valued {
-    use cryptbox::{BlindIndex, BlindIndexError, BlindIndexSpec, Record, Tenant};
-    use zeroize::Zeroizing;
-
-    use super::{Customer, CustomerNote, EmailLookup, SealedCustomer, customer, keys, tenant};
-
-    /// [`super::CustomerEmail`] as its own value: the same ID, bytes, and index.
-    #[derive(Clone, Debug, PartialEq, cryptbox::Seal)]
-    #[cryptbox(
-        id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-        transparent,
-        scope = cryptbox::Recorded<Tenant, i64>,
-        indexes(OwnEmailLookup),
-    )]
-    struct OwnEmail(String);
-
-    impl OwnEmail {
-        fn as_str(&self) -> &str {
-            &self.0
-        }
-    }
-
-    fn normalize_email(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        EmailLookup::normalize_query(query)
-    }
-
-    /// [`EmailLookup`] over [`OwnEmail`].
-    #[derive(cryptbox::BlindIndexSpec)]
-    #[cryptbox(
-        id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-        seal = OwnEmail,
-        bits = 1,
-        query = str,
-        normalize = normalize_email,
-        normalizer = "email/1",
-        project = OwnEmail::as_str,
-    )]
-    struct OwnEmailLookup;
-
-    /// [`Customer`] with a field whose type is its own seal.
-    #[derive(Clone, Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record_id = id, sealed = SealedOwnCustomer)]
-    struct OwnCustomer {
-        #[cryptbox(plaintext)]
-        id: i64,
-        #[cryptbox(seal, index(OwnEmailLookup as email_lookup))]
-        email: OwnEmail,
-        #[cryptbox(seal = CustomerNote)]
-        note: String,
-    }
-
-    #[test]
-    fn a_field_sealed_as_its_own_type_reads_as_its_marker_equivalent() {
-        let keys = keys();
-        let acme = tenant(b"acme");
-        let own = OwnCustomer {
-            id: 7,
-            email: OwnEmail("ada@example.com".to_owned()),
-            note: "note 7".to_owned(),
-        };
-        let row = own.seal(&acme, &keys).unwrap();
-        let manual = customer(7, "ada@example.com").seal(&acme, &keys).unwrap();
-        // Blind indexes are deterministic: both write the same one.
-        assert_eq!(row.email_lookup.as_bytes(), manual.email_lookup.as_bytes());
-
-        let sealed = SealedCustomer {
-            id: row.id,
-            email: cryptbox::Sealed::from_bytes(row.email.into_bytes()).unwrap(),
-            email_lookup: BlindIndex::from_bytes(row.email_lookup.into_bytes()).unwrap(),
-            note: row.note,
-        };
-
-        assert_eq!(
-            Customer::open(sealed, &acme, &keys).unwrap(),
-            customer(7, "ada@example.com")
-        );
-    }
-}
-
-#[cfg(all(feature = "derive", feature = "sqlx-sqlite"))]
+#[cfg(feature = "sqlx-sqlite")]
 mod sqlite {
+    use cryptbox::{BoundId, EncryptionKey, EncryptionKeyring, Record};
     use sqlx::{Connection, sqlite::SqliteConnection};
 
-    use super::{CustomerEmail, CustomerNote, EmailLookup, Record, keys, tenant};
+    /// A tenant, stored as its integer.
+    #[derive(BoundId, Clone, Copy, Debug, PartialEq, sqlx::Type)]
+    #[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
+    #[sqlx(transparent)]
+    struct TenantKey(i64);
 
-    /// A record whose sealed struct is read with `sqlx::FromRow`.
-    #[derive(Debug, PartialEq, cryptbox::Record)]
-    #[cryptbox(record_id = id, sealed = SealedStoredCustomer, attr(derive(sqlx::FromRow)))]
-    #[sqlx(rename_all = "UPPERCASE")]
-    struct StoredCustomer {
-        #[cryptbox(plaintext)]
+    /// A record whose stored form is read with `sqlx::FromRow`.
+    #[derive(Debug, PartialEq, Record)]
+    #[cryptbox(stored(derive(sqlx::FromRow), sqlx(rename_all = "UPPERCASE")))]
+    struct Customer {
+        #[cryptbox(record_id)]
         id: i64,
-        #[cryptbox(seal = CustomerEmail, index(EmailLookup as email_lookup))]
-        #[sqlx(rename = "EMAIL_CIPHERTEXT")]
+        #[cryptbox(bound)]
+        tenant: TenantKey,
+        #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
+        #[cryptbox(stored(sqlx(rename = "EMAIL_CIPHERTEXT")))]
         email: String,
-        #[cryptbox(seal = CustomerNote)]
-        note: String,
     }
 
     #[test]
-    fn a_sealed_struct_reads_rows_with_forwarded_sqlx_attributes() {
-        let keys = keys();
-        let acme = tenant(b"acme");
-        let ada = StoredCustomer {
+    fn a_stored_form_reads_rows_with_forwarded_sqlx_attributes() {
+        let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+        let ada = Customer {
             id: 7,
+            tenant: TenantKey(3),
             email: "ada@example.com".to_owned(),
-            note: "VIP".to_owned(),
         };
-        let sealed = ada.seal(&acme, &keys).unwrap();
+        let stored = ada.seal(&keys).unwrap();
 
-        let stored = futures_executor::block_on(async {
+        let read = futures_executor::block_on(async {
             let mut connection = SqliteConnection::connect("sqlite::memory:").await.unwrap();
             sqlx::query(
-                "CREATE TABLE customers \
-                 (ID INTEGER, EMAIL_CIPHERTEXT BLOB, EMAIL_LOOKUP BLOB, NOTE BLOB)",
+                "CREATE TABLE customers (ID INTEGER, TENANT INTEGER, EMAIL_CIPHERTEXT BLOB)",
             )
             .execute(&mut connection)
             .await
             .unwrap();
-            sqlx::query("INSERT INTO customers VALUES (?, ?, ?, ?)")
-                .bind(sealed.id)
-                .bind(&sealed.email)
-                .bind(&sealed.email_lookup)
-                .bind(&sealed.note)
+            sqlx::query("INSERT INTO customers VALUES (?, ?, ?)")
+                .bind(stored.id)
+                .bind(stored.tenant)
+                .bind(&stored.email)
                 .execute(&mut connection)
                 .await
                 .unwrap();
 
-            sqlx::query_as::<_, SealedStoredCustomer>("SELECT * FROM customers")
+            sqlx::query_as::<_, StoredCustomer>("SELECT * FROM customers WHERE TENANT = ?")
+                .bind(TenantKey(3))
                 .fetch_one(&mut connection)
                 .await
                 .unwrap()
         });
 
-        assert_eq!(StoredCustomer::open(stored, &acme, &keys).unwrap(), ada);
+        assert_eq!(
+            Customer::open_expecting(read, &keys, |row| row.id == 7).unwrap(),
+            ada
+        );
+    }
+}
+
+/// A contact's email, as it was sealed before it moved into its record:
+/// unbound.
+struct UnboundEmail;
+
+impl Seal for UnboundEmail {
+    const ID: SealId = cryptbox::seal_id!("9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
+    type Bound = ();
+    type Record = ();
+    type Indexes = ();
+}
+
+/// A contact whose email is now bound to its org and record, and whose note
+/// moved from another seal ID.
+#[derive(Debug, PartialEq, Record)]
+#[cryptbox(stored(derive(Clone)))]
+struct Contact {
+    #[cryptbox(record_id)]
+    id: i64,
+    #[cryptbox(bound)]
+    org: OrgId,
+    #[cryptbox(seal = "9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24")]
+    #[cryptbox(legacy(record = false))]
+    email: String,
+    #[cryptbox(seal = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38")]
+    #[cryptbox(legacy(seal = "4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95", bound(org)))]
+    note: String,
+}
+
+/// The seal `Contact::note` had before: another ID, the same binding.
+struct OldNote;
+
+impl Seal for OldNote {
+    const ID: SealId = cryptbox::seal_id!("4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95");
+    const PADDING: Padding = Padding::NONE;
+    type Value = String;
+    type Codec = Utf8;
+    type Bound = (OrgId,);
+    type Record = i64;
+    type Indexes = ();
+}
+
+fn legacy_contact(keys: &EncryptionKeyring) -> StoredContact {
+    let email = Sealed::<UnboundEmail>::seal(&"ada@example.com".to_owned(), (), keys).unwrap();
+    let note = Sealed::<OldNote>::seal(&"VIP".to_owned(), (&ACME, &7), keys).unwrap();
+
+    StoredContact {
+        id: 7,
+        org: ACME,
+        email: Sealed::from_bytes(email.into_bytes()).unwrap(),
+        note: Sealed::from_bytes(note.into_bytes()).unwrap(),
+    }
+}
+
+#[test]
+fn a_legacy_window_opens_rows_sealed_with_the_old_declaration() {
+    let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+    let contact = Contact {
+        id: 7,
+        org: ACME,
+        email: "ada@example.com".to_owned(),
+        note: "VIP".to_owned(),
+    };
+
+    assert_eq!(
+        Contact::open(legacy_contact(&keys), &keys).unwrap(),
+        contact
+    );
+    // New rows are written with the current declaration, and read back.
+    assert_eq!(
+        Contact::open(contact.seal(&keys).unwrap(), &keys).unwrap(),
+        contact
+    );
+}
+
+#[test]
+fn a_legacy_window_still_authenticates_the_row() {
+    let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+    let moved = StoredContact {
+        org: GLOBEX,
+        ..legacy_contact(&keys)
+    };
+
+    assert_eq!(
+        Contact::open(moved, &keys).unwrap_err(),
+        Error::AuthenticationFailed
+    );
+}
+
+#[test]
+fn the_manifest_lists_open_legacy_windows() {
+    let manifest = cryptbox::schema::Manifest::new()
+        .record::<Contact>()
+        .to_string();
+
+    assert!(manifest.ends_with("  legacy: email, note\n"), "{manifest}");
+}
+
+#[cfg(feature = "migrate")]
+mod sweep {
+    use cryptbox::{
+        EncryptionKey, EncryptionKeyring, Record,
+        migrate::{RowArgs, RowPlanner, RowState},
+    };
+
+    use super::{ACME, Contact, ContactEmail, ContactEmailLegacy, StoredContact, legacy_contact};
+
+    #[test]
+    fn a_planner_reseals_rows_of_a_legacy_seal() {
+        let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+        let row = legacy_contact(&keys);
+        let planner = RowPlanner::<ContactEmail, StoredContact>::for_rows(&keys, |row| {
+            Ok(RowArgs::new(&row.org).with_record(row.id.into()))
+        })
+        .legacy_seal::<ContactEmailLegacy>(&keys);
+
+        let outcome = planner.plan_row(&row, row.email.as_bytes(), &[]).unwrap();
+
+        assert_eq!(outcome.state(), RowState::LegacyBinding);
+        let resealed = StoredContact {
+            email: cryptbox::Sealed::from_bytes(outcome.write().unwrap().ciphertext()).unwrap(),
+            ..row
+        };
+        assert_eq!(
+            resealed.email.open((&ACME, &7), &keys).unwrap(),
+            "ada@example.com"
+        );
+        assert_eq!(
+            Contact::open(resealed, &keys).unwrap().email,
+            "ada@example.com"
+        );
     }
 }
