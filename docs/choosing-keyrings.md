@@ -11,7 +11,7 @@ how to test the choice.
 
 | Property | Who establishes it |
 | --- | --- |
-| Ciphertext cannot move across seals, bound values, or records | The library: the binding is in the AAD and the key derivation |
+| Ciphertext cannot move across seals or records | The library: the binding is in the AAD and the key derivation |
 | Opening with the wrong keyring fails loudly | The library, **provided** key IDs follow the [rules below](#key-id-rules) |
 | Values of one tenant are sealed under that tenant's keyring | Your code: an unchecked decision at write time |
 | A seal's values are sealed under the custody it requires | Your code: never checked |
@@ -89,7 +89,7 @@ sealing path. Load and refresh keys outside these calls and serve a local
 snapshot: a function that takes what the value belongs to, such as its org, and
 returns the keyring that protects it, or an error. The
 [tenant example](../examples/tenant_field.rs) resolves one keyring per tenant
-from a `HashMap<TenantId, EncryptionKeyring>` in three lines, and passes it to
+from a `HashMap<&str, EncryptionKeyring>` in three lines, and passes it to
 each call.
 
 Cloning a keyring shares its keys rather than copying material, which is what
@@ -101,8 +101,7 @@ makes refreshing simple:
   [custom-field example](../examples/custom_field/main.rs)'s
   `CachedEncryptionKeys` holds its snapshot in an `RwLock` and replaces it
   wholesale.
-- **Cache per tenant.** A bound ID type can key a map of keyrings when it
-  implements `Hash + Eq`.
+- **Cache per tenant.** Key a map of keyrings by your tenant ID type.
 - **Fail closed.** Return `Error::KeysUnavailable` when the snapshot is not
   loaded or the tenant is unknown, rather than falling back to another tenant's
   keys. A refresh that fails must not widen access.
@@ -114,9 +113,9 @@ Blind-index keyrings follow the same rules, with independently generated roots;
 `Keys` pairs an encryption keyring with one.
 
 For the automatic SQLx column, the keys are a type: `Plain<F, K>` reads its keys
-from `K`, the installed keys by default. It serves only seals without bound
-values, a record, or blind indexes, because a column decoder sees neither the
-row nor its bound values. Everything bound is sealed explicitly. See
+from `K`, the installed keys by default. It serves only seals without a record or
+blind indexes, because a column decoder does not see the row. Record-bound
+values are sealed explicitly. See
 [keyrings](integration.md#keyrings) for the process-wide forms and how to
 forbid them.
 

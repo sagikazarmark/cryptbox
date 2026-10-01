@@ -3,8 +3,8 @@
 Crypto-shredding destroys one tenant's root keys, such as one org's, so that
 every value sealed under them becomes unreadable, wherever a copy of those bytes
 is. It is a procedure over your own key custody, storage inventory, and caches;
-CryptBox supplies the binding that keeps a tenant's values from being moved into
-another tenant's rows, and nothing else.
+CryptBox supplies keys that are passed in, so each tenant's values can be sealed
+under that tenant's keys, and nothing else.
 [Documentation](README.md) · [Bindings](bindings.md) · [Choosing keyrings](choosing-keyrings.md).
 
 ## What shredding does and does not do

@@ -49,15 +49,13 @@ declares:
 - A **codec**, such as `Utf8`, to convert between the Rust value and bytes.
 - A **padding policy**, which can group different plaintext lengths into the same
   stored size. `Padding::NONE` preserves the encoded length.
-- A **binding**: the **bound values** each value is bound to, such as the org and
-  workspace it belongs to, and whether it is also bound to its record. A seal
-  without bound values, `()`, binds a value to its seal ID alone.
+- A **binding**: whether each value is also bound to its **record**, the row it
+  is stored in. A seal without a record binds a value to its seal ID alone.
 
-A bound value is one of your own ID types, such as `OrgId`, marked once with the
-kind of value it is. A **record** stores its bound values and record ID as
-columns beside its sealed fields, and opening authenticates them; a blind index
-is partitioned by the bound values a query always knows.
-[Bind values to what they belong to](bindings.md) covers choosing them.
+A **record** stores its record ID as a column beside its sealed fields, and
+opening authenticates it; its other columns, such as an org, are plaintext the
+application authorizes on. Tenants are kept apart by keys: a keyring per tenant.
+[Bind values to their seal and record](bindings.md) covers both.
 
 The value type is your application's own type: it says how it encodes, never
 where it is stored. Only `String`, `Vec<u8>`, and their `Secret` wrappers have a
@@ -82,10 +80,10 @@ the seal's binding, and to its record when the seal binds one. The binding's
 request, are passed to each call and must come from an authorized source, never
 from the stored row. A `Record` is the one exception for its record ID, which it
 reads from the row: opening checks it for every seal that binds a record. A
-sealed email will not authenticate under a different seal, tenant, or record,
-even if they share a root key. Seals that should read each other's values
-declare the same seal ID and binding. A seal without bound values or a record
-identifies a seal alone, not a row or tenant: copying its values between rows
+sealed email will not authenticate under a different seal or record, even if they
+share a root key, and not with another tenant's keyring. Seals that should read each other's values
+declare the same seal ID and binding. A seal without a record identifies a seal
+alone, not a row or tenant: copying its values between rows
 sealed with the same seal can still succeed.
 
 A seal is different from an encryption **suite**. The seal describes
@@ -150,10 +148,9 @@ constraints or a guarantee that storage returns every matching row.
 
 SQLx adapters store sealed values in `BYTEA` or `BLOB` columns. You can seal
 explicitly and load a record's stored form or `Sealed` for later opening. A seal
-without bound values, a record, or blind indexes can instead use `Plain<F>`,
-which seals and opens automatically at the SQLx boundary; a column decoder sees
-neither a row nor its bound values, so values of bound seals are always sealed
-explicitly. Serde support serializes
+without a record or blind indexes can instead use `Plain<F>`, which seals and
+opens automatically at the SQLx boundary; a column decoder does not see the row,
+so values of record-bound seals are always sealed explicitly. Serde support serializes
 sealed values and blind-index bytes; it does not serialize plaintext `Plain`
 values.
 
@@ -168,8 +165,8 @@ seal that declares blind indexes, because it would not maintain their columns.
   [store it durably in SQLite](../examples/sqlite/README.md).
 - **Apply it:** [integration design and trade-offs](integration.md) explains
   persistent schema, storage boundaries, keys, and search.
-- **Bind it:** [bind values to what they belong to](bindings.md) adds a tenant
-  or org, and
+- **Bind it:** [bind values to their seal and record](bindings.md) binds
+  values to their record and keeps tenants apart, and
   [choosing keyrings](choosing-keyrings.md) decides whose keys protect it.
 - **Assess it:** [security and threat model](security.md) covers protections,
   limitations, and review status.

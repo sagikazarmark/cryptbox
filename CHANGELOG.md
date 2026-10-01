@@ -381,6 +381,55 @@
   | `legacy_binding::<Old, OldKeys>`, `open_across::<Old, OldKeys, _>`, `probes_across::<Old, OldKeys, S>` | `legacy_binding::<Old, OldRecord>`, `open_across::<Old, OldRecord, _>`, `probes_across::<Old, S>` |
   | `Manifest::custody::<F>("…")` | a committed custody table and `testing::assert_sealed_under` |
 
+- **Breaking:** a binding is the seal and the record (ADR-0011). Bound values
+  are removed: `Seal::Bound`, `BoundId` and `#[derive(BoundId)]`, `BoundList`,
+  `BoundValues`, `TenantId`, `PartId`, `PartSpec`, and `part_id!`. A seal binds
+  its seal ID, and its record when `Seal::Record` names the record ID's type;
+  binding arguments are `()` or `&id`. `PartType` is the trait of record ID
+  types and loses `from_part_value`. Tenants are kept apart by keys: with a
+  keyring per tenant, another tenant's value fails with `UnknownEncryptionKey`.
+  Values sealed without bound values keep their bytes.
+
+- **Breaking:** blind indexes are derived under their seal ID alone
+  (ADR-0011). `BlindIndexSpec::Partition`, the `partition(…)` key, and
+  `across(…)` are removed: `derive_with(value, keys)`, `probes_with(query,
+  keys)`, `is_consistent_with(value, stored, keys)`, and an index handle's
+  `probes(query, keys)` and `open_matching(query, rows, keys)` take no
+  partition, and the generated partition structs and `Error::OutsidePartition`
+  are gone. Equal values of one seal derive equal indexes under the same keys;
+  a blind-index keyring per tenant keeps them apart. `BlindIndexSpec::probes`
+  and `Prepared::with_index` serve any seal.
+
+- **Breaking:** a record's fields are its record ID, sealed fields, and
+  plaintext fields (ADR-0011). The `bound` role is removed: an org or workspace
+  column is `plaintext`, authorized by the application, before decrypting with
+  `open_expecting` or after. `Record::BOUND` and the manifest's `bound:` line are
+  removed. `legacy(…)` takes `seal` and `record`.
+
+- **Breaking:** migration windows name only the old record (ADR-0011).
+  `RowPlanner::for_rows(keys, record_id)` takes a closure that reads each row's
+  `RecordId`, and `RowArgs` is removed. `legacy_binding::<OldRecord>` and
+  `open_across::<OldRecord, _>` drop the old bound list, and
+  `migrate::probes_across` is removed: moving into or out of a record keeps the
+  index binding, so a lookup probes with each keyring whose indexes are stored.
+
+  Migrating from bound values (ADR-0011):
+
+  | Before | Now |
+  | --- | --- |
+  | `#[derive(BoundId)] #[cryptbox(kind = "…")] struct OrgId(Uuid);` | `struct OrgId(Uuid);`, a plain newtype |
+  | `#[cryptbox(bound)] org: OrgId` on a record | `#[cryptbox(plaintext)] org: OrgId`, and the org's keyring |
+  | `#[cryptbox(…, bound(OrgId), record = i64)]` on a seal | `#[cryptbox(…, record = i64)]` |
+  | `Sealed::seal(&v, (&org, &id), &keys)`, `Sealed::seal(&v, &org, &keys)` | `Sealed::seal(&v, &id, &keys)`, `Sealed::seal(&v, (), &org_keys)` |
+  | `across(workspace)`, `partition(OrgId)` | nothing; select candidates `WHERE org = ?` and keep a blind-index keyring per org |
+  | `Customer::EMAIL_INDEX.probes(q, &org, &keys)`, `.open_matching(q, &org, rows, &keys)` | `Customer::EMAIL_INDEX.probes(q, &keys)`, `.open_matching(q, rows, &keys)` |
+  | `Spec::derive_with(&v, (), &keys)`, `Spec::probes_with(q, (), &keys)` | `Spec::derive_with(&v, &keys)`, `Spec::probes_with(q, &keys)` |
+  | `legacy(bound(org), record = false)` | `legacy(record = false)` |
+  | `RowPlanner::for_rows(keys, \|row\| Ok(RowArgs::new(&org).with_record(row.id.into())))` | `RowPlanner::for_rows(keys, \|row\| Ok(row.id.into()))` |
+  | `legacy_binding::<Old, OldRecord>`, `open_across::<Old, OldRecord, _>` | `legacy_binding::<OldRecord>`, `open_across::<OldRecord, _>` |
+  | `probes_across::<Old, S>(q, partition, keys, old_keys)` | `S::probes_with(q, keys)` and `S::probes_with(q, old_keys)` |
+  | `TenantId::new("acme")?` | your own tenant ID, keying a map of keyrings |
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

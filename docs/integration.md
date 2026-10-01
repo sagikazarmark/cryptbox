@@ -22,7 +22,7 @@ These choices form persistent schema just as database column types do:
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
 | Seal ID | Every value is bound to its seal ID; a different ID fails authentication. |
-| Binding declaration and record kind | Every value is bound to the kinds of its bound values, and to its record when the seal binds one; a different declaration reports `BindingMismatch`. |
+| Binding declaration and record kind | Every value is bound to its record when the seal binds one, under the record ID's kind; a different declaration reports `BindingMismatch`. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
@@ -66,10 +66,9 @@ Stored bytes do not describe this schema, so check it in tests:
   derives and attributes. A failure means stored values would change; plan a
   migration or revert.
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered seal
-  (ID, codec ID, padding, whether it binds a record, and the binding
-  fingerprint with each bound value's part ID and kind), index (ID, seal, bits,
-  normalizer, and partition), and record (its seals, record ID field, bound
-  fields, plaintext fields, and open legacy windows by name, so a field that
+  (ID, codec ID, padding, the record ID's kind, and the binding fingerprint),
+  index (ID, seal, bits, and normalizer), and record (its seals, record ID
+  field, plaintext fields, and open legacy windows by name, so a field that
   should have been sealed shows up). Compare the `Display` output with a
   committed snapshot, and
   assert that `duplicates()` is empty. A snapshot diff needs review: for
@@ -109,12 +108,12 @@ keys are needed and where plaintext becomes available:
 | Approach | Behavior and consequence |
 | --- | --- |
 | Explicit sealing or preparation | Produce a sealed value before calling storage. Key failures happen at that explicit step; the stored representation can then cross a database or serialization boundary. |
-| Read as a stored form or `Sealed<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to open it: a record reads its bound values from the row. Useful when only some loaded values need plaintext. |
+| Read as a stored form or `Sealed<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to open it: a record reads its record ID from the row. Useful when only some loaded values need plaintext. |
 | Automatic SQLx `Plain<F>` | The adapter seals on encode and opens on decode. It reads keys from its `ColumnKeys` type `K`: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Plain<F, K>`. |
 
-The automatic `Plain<F>` column serves only seals without bound values, a
-record, or blind indexes: a column decoder sees neither the row nor its bound
-values, and would not write index columns. Seal values of bound and indexed seals explicitly. Explicit operations
+The automatic `Plain<F>` column serves only seals without a record or blind
+indexes: a column decoder does not see the row, and would not write index
+columns. Seal values of record-bound and indexed seals explicitly. Explicit operations
 are useful when dependencies and plaintext access should be visible at the call
 site. Automatic adapters are useful when
 encryption belongs consistently at the database boundary.
@@ -139,8 +138,8 @@ attributes to it, at the record or at a field:
 
 | Layer | Stored form |
 | --- | --- |
-| SQLx | `stored(derive(sqlx::FromRow))`. `Sealed<F>` and `BlindIndex<S>` are `BLOB` or `bytea`; a bound ID newtype derives `sqlx::Type` with `#[sqlx(transparent)]`. |
-| Diesel | `stored(derive(Queryable, Selectable, Insertable), diesel(table_name = …))`, and `stored(diesel(serialize_as = Vec<u8>, deserialize_as = Vec<u8>))` on each sealed field and index column, through `From<Sealed<F>> for Vec<u8>` and `TryFrom<Vec<u8>>`. A bound ID newtype needs Diesel's usual newtype impls. |
+| SQLx | `stored(derive(sqlx::FromRow))`. `Sealed<F>` and `BlindIndex<S>` are `BLOB` or `bytea`; an ID newtype derives `sqlx::Type` with `#[sqlx(transparent)]`. |
+| Diesel | `stored(derive(Queryable, Selectable, Insertable), diesel(table_name = …))`, and `stored(diesel(serialize_as = Vec<u8>, deserialize_as = Vec<u8>))` on each sealed field and index column, through `From<Sealed<F>> for Vec<u8>` and `TryFrom<Vec<u8>>`. An ID newtype needs Diesel's usual newtype impls. |
 | serde | `stored(derive(Serialize, Deserialize))`. Human-readable formats, such as JSON, write sealed values and blind indexes as unpadded base64url text and read text or byte sequences; binary formats write bytes. |
 
 The stored form's field order follows the record's, each index column after its
@@ -178,8 +177,8 @@ rules, and how to record and test custody.
 
 The process-wide forms (`Sealed::seal_global`, `open_global`, `with_index()`,
 `probes()`) are the explicit forms called with `keys::installed()`. Like the
-automatic column, `seal_global` and `open_global` serve only seals without
-bound values or a record.
+automatic column, `seal_global` and `open_global` serve only seals without a
+record.
 `keys::install(keys)` sets the installed keys once per process, from the binary
 entry point; a second call returns `AlreadyInstalled` and never replaces them.
 Before installation the process-wide forms return `Error::KeysNotInstalled`: there is
@@ -240,15 +239,13 @@ updates need whatever conflict policy the application normally uses. Automatic
 sealing of one column would not maintain another column, so `Plain<F>` rejects a
 seal that declares blind indexes.
 
-A blind index is domain-separated by its seal ID and by the
-[index binding](wire-format.md#index-binding): the values of its partition, all
-of its seal's bound values except those it spans. Equal values in different
-partitions therefore have different index bytes, and a query supplies the
-partition. The bound values an index spans, such as the workspaces of an
-org-wide index, and the record do not participate, because a query cannot know
-them, so equal values in two workspaces of one org share index bytes. Choose
-partitions with that in mind; see
-[bindings](bindings.md#partition-each-blind-index).
+A blind index is domain-separated by its seal ID, its
+[index binding](wire-format.md#index-binding), and its keys. The record does not
+participate, because a query cannot know it, so equal values of one seal share
+index bytes under the same keys: in two orgs that share a blind-index keyring,
+equal emails derive equal indexes. Give each org its own blind-index keyring when
+that equality must stay within the org, and select candidates within what the
+caller may read; see [bindings](bindings.md#blind-indexes).
 
 Search availability also depends on retaining all readable index-key generations.
 An application can decrypt a row successfully yet omit it from lookup if the
@@ -268,16 +265,17 @@ preparation does not erase them, and decoded values have their own lifetimes.
 copies. The [ownership reference](ownership.md) defines exact behavior by type
 and buffer.
 
-Seals, value types, codecs, normalizers, and bound ID types are extensible; padding policies are a closed set of built-in const policies. A
-codec or normalizer cannot add bound-value or record authentication: that comes
-from the seal's [binding](bindings.md). The
+Seals, value types, codecs, normalizers, and record ID types are extensible;
+padding policies are a closed set of built-in const policies. A codec or
+normalizer cannot add record authentication: that comes from the seal's
+[binding](bindings.md). The
 [custom-field example](../examples/custom_field/README.md)
 shows a zeroizing value, codec, normalizer, and refreshed keys working together.
 
 ## From design to a working application
 
-- [Bindings](bindings.md) covers bound values, records, blind-index partitions,
-  and where each bound value must come from.
+- [Bindings](bindings.md) covers records, record IDs, blind indexes, and
+  keeping tenants apart.
 - [Choosing keyrings](choosing-keyrings.md) covers custody, key-ID rules, and
   testing which keyring protects which seal.
 - [Testing and diagnostics](testing.md) covers key isolation and sanitized failures.

@@ -5,7 +5,7 @@ included in the crate landing documentation.
 
 No features are enabled by default, and all features are additive:
 
-- `derive` adds `#[derive(Seal)]`, `#[derive(BoundId)]`,
+- `derive` adds `#[derive(Seal)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Record)]`
   from the `cryptbox-derive` proc-macro crate. Each expands to exactly the trait
   impls you would write by hand, plus a record's stored form, the seals and blind
@@ -25,11 +25,10 @@ No features are enabled by default, and all features are additive:
   bytes: unpadded base64url text in human-readable formats, bytes otherwise. It never adds serialization for plaintext `Plain` values.
 - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
 - `sqlx-sqlite` adds `SQLx` 0.8 `BLOB` storage for `SQLite`.
-- `uuid` lets a bound ID type or record ID hold a `uuid::Uuid`, and converts one
-  into a `RecordId`. Either binds the UUID's 16 bytes, exactly as a `[u8; 16]` does.
+- `uuid` lets a record ID be a `uuid::Uuid`, and converts one into a `RecordId`. Either binds the UUID's 16 bytes, exactly as a `[u8; 16]` does.
 
 The `SQLx` adapters automatically seal and open `Plain<F>`, the column for a
-seal without bound values, a record, or blind indexes. `Plain<F>` uses the keys
+seal without a record or blind indexes. `Plain<F>` uses the keys
 installed with `keys::install`; name other column keys as `Plain<F, K>` to use
 application-owned keys. Seal values of every other seal explicitly: `Sealed` and
 blind-index storage need no keys. These features do not
