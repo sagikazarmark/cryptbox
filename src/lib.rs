@@ -113,8 +113,7 @@
 #![doc = concat!(
     "\n[stored-value walkthrough]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/stored_values/README.md\n",
     "[live-backend check instructions]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/documentation.md#live-postgresql\n",
-    "[task index]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/README.md\n",
-    "[Restate guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/restate.md\n\n",
+    "[task index]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/README.md\n\n",
     include_str!("../docs/features.md"),
 )]
 //!
@@ -188,8 +187,6 @@ pub mod migrate;
 mod padding;
 mod prepare;
 mod record;
-#[cfg(feature = "restate")]
-pub mod restate;
 pub mod schema;
 mod seal;
 mod secret;

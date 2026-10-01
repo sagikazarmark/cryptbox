@@ -1,5 +1,4 @@
 use super::{PartId, PartSpec, PartType, PartValue, TenantId, presets::TENANT_PART};
-use crate::Error;
 
 /// An application ID type whose values a seal's values are bound to, such as
 /// an org or a workspace ID.
@@ -74,12 +73,8 @@ pub trait BoundList: sealed::Sealed + 'static {
 
 mod sealed {
     use super::{BoundList, PartValue};
-    use crate::Error;
 
-    pub trait Sealed: Sized {
-        /// Reads the list's values back, in list order.
-        fn from_part_values(values: &[PartValue<'_>]) -> Result<Self, Error>;
-    }
+    pub trait Sealed {}
 
     pub trait Values<'a, L: BoundList> {
         fn part_values(self) -> Vec<PartValue<'a>>;
@@ -104,12 +99,6 @@ pub(crate) fn bound_values<'a, L: BoundList>(
     values: impl BoundValues<'a, L>,
 ) -> Vec<PartValue<'a>> {
     sealed::Values::part_values(values)
-}
-
-/// Reads the values of list `L` back from its part values, in list order.
-#[cfg(feature = "restate")]
-pub(crate) fn from_part_values<L: BoundList>(values: &[PartValue<'_>]) -> Result<L, Error> {
-    sealed::Sealed::from_part_values(values)
 }
 
 /// Bound values that outlive the arguments they were read from.
@@ -167,14 +156,7 @@ const fn check_bound_parts(parts: &[PartSpec]) {
     }
 }
 
-impl sealed::Sealed for () {
-    fn from_part_values(values: &[PartValue<'_>]) -> Result<Self, Error> {
-        match values {
-            [] => Ok(()),
-            _ => Err(Error::InvalidBinding),
-        }
-    }
-}
+impl sealed::Sealed for () {}
 
 impl sealed::Values<'_, ()> for () {
     fn part_values(self) -> Vec<PartValue<'static>> {
@@ -188,14 +170,7 @@ impl BoundList for () {
 
 macro_rules! bound_list {
     ($($ty:ident $value:ident),+) => {
-        impl<$($ty: BoundId),+> sealed::Sealed for ($($ty,)+) {
-            fn from_part_values(values: &[PartValue<'_>]) -> Result<Self, Error> {
-                match *values {
-                    [$($value),+] => Ok(($($ty::from_part_value($value)?,)+)),
-                    _ => Err(Error::InvalidBinding),
-                }
-            }
-        }
+        impl<$($ty: BoundId),+> sealed::Sealed for ($($ty,)+) {}
 
         impl<$($ty: BoundId),+> BoundList for ($($ty,)+) {
             const PARTS: &'static [PartSpec] = {

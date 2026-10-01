@@ -22,10 +22,10 @@ status: accepted
 > declaration with `legacy(seal, bound, record)`, and the derive declares it as
 > a `{Seal}Legacy` seal: its header's fingerprint chooses the declaration, and
 > when only the seal ID changed, so the fingerprints are equal, a value that
-> fails to authenticate is tried under the legacy seal. `restate::ObjectKey`
-> encodes bound values in list order and takes a leading sublist as a prefix, and
-> `RowArgs` owns its values. Record fields no longer take an existing seal or a
-> self-valued seal, and records no longer generate per-field sealers.
+> fails to authenticate is tried under the legacy seal. `RowArgs` owns its
+> values. Record fields no longer take an existing seal or a self-valued seal,
+> and records no longer generate per-field sealers. The Restate adapter, and
+> with it `restate::ObjectKey`, was removed.
 
 A record stores the values its sealed fields are bound to as its own columns,
 and every operation takes the keys to use. Custody, the part of a binding that

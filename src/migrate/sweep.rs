@@ -433,8 +433,5 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::DuplicatePreparedIndex(_)
         | Error::BlindIndexNotPrepared(_)
         | Error::IndexColumnMismatch { .. } => false,
-        // A request's object key, never a row's stored bytes.
-        #[cfg(feature = "restate")]
-        Error::InvalidObjectKey => false,
     }
 }

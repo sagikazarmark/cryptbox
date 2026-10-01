@@ -233,9 +233,8 @@
   `#[derive(BlindIndexSpec)]` takes `scope = …`, defaulting to the seal's whole
   scope. Two indexes over one seal may partition differently. `FromParts`
   builds a scope back from its part values, and `#[derive(Scope)]` implements
-  it. `migrate::probes_across::<Old, S>` names the old index scope,
-  `restate::ObjectKey<B>` encodes every part of `B`, and the schema manifest
-  lists each index's scope. `KeyScope::of_index` is removed. Index bytes do not
+  it. `migrate::probes_across::<Old, S>` names the old index scope, and
+  the schema manifest lists each index's scope. `KeyScope::of_index` is removed. Index bytes do not
   change; a seal whose scope had `index` parts gets a new binding fingerprint,
   since those parts are now bound only.
 
@@ -252,8 +251,7 @@
   `HashMap<Tenant, EncryptionKeyring>`. `RowPlanner::for_key_scope` becomes
   `RowPlanner::for_keys(view, keys, row_args)`; `legacy_binding`,
   `open_across`, and `probes_across` also name the old keys view, as
-  `legacy_binding::<Old, OldKeys>`. `restate::ObjectKey<B, K = B>` leads with
-  the parts of `K` and takes `prefix(&K)`. The schema manifest's shred unit is
+  `legacy_binding::<Old, OldKeys>`. The schema manifest's shred unit is
   the keys view's parts. Stored bytes do not change.
 
 - **Breaking:** parts have no roles (ADR-0009). `PartSpec::new(id, kind)`
@@ -295,7 +293,6 @@
   | `HashMap<KeyScope, EncryptionKeyring>` | `HashMap<Tenant, EncryptionKeyring>` |
   | `RowPlanner::for_key_scope(KeyScope::of(&acme)?, keys, row_args)` | `RowPlanner::for_keys(acme, keys, row_args)` |
   | `.legacy_binding::<Tenant>(old_keys)`, `open_across::<(), _>`, `probes_across::<(), S>` | `.legacy_binding::<Tenant, Tenant>(old_keys)`, `open_across::<(), (), _>`, `probes_across::<(), (), S>` |
-  | `ObjectKey::<B>::prefix(&KeyScope::of(&b)?)` | `ObjectKey::<B, K>::prefix(&k)`, `K` the view that leads the object key |
   | `#[cryptbox(id = "…", value = String)]` on a seal | `#[seal(id = "…", value = String)]` |
   | `#[cryptbox(id = "…", seal = S, bits = 32, …)]` on a blind index | `#[blind_index(id = "…", seal = S, bits = 32, …)]` |
   | `#[cryptbox(record_id = id, sealed = SealedCustomer)]` | `#[record_id]` on `id`; `#[record(sealed = …)]` only to rename `SealedCustomer` |
@@ -357,12 +354,6 @@
   manifest lists open windows. `RowState::OutOfScope` and the report's
   `out_of_scope` count are removed.
 
-- **Breaking:** `restate::ObjectKey<B>` takes a bound list and encodes its
-  values in list order: `encode(values)`, `parse(key)`, and
-  `prefix::<P>(values)` for a leading sublist, such as an org's objects of an
-  `(OrgId, WorkspaceId)` key. `restate::seal_record` and `seal_record_with`
-  take a record's keys and no binding arguments.
-
 - **Breaking:** `Sealed<F>` and `BlindIndex<S>` serialize as unpadded base64url
   text in human-readable Serde formats, such as JSON, instead of an integer
   array, and deserialize from text, bytes, or a sequence. Binary formats are
@@ -374,7 +365,7 @@
   | Before | Now |
   | --- | --- |
   | `#[derive(Scope)] struct Org { #[part("…")] org: Uuid }` | `#[derive(BoundId)] #[cryptbox(kind = "…")] struct OrgId(Uuid);` |
-  | `Tenant(TenantId)`, `ObjectKey::<Tenant>` | `TenantId`, `ObjectKey::<(TenantId,)>` |
+  | `Tenant(TenantId)` | `TenantId` |
   | `#[seal(id = "…", value = String, scope = Org)]` | `#[cryptbox(id = "…", value = String, bound(OrgId))]` |
   | `type Scope = Recorded<Org, Uuid>`, `(&org_scope, &id)` | `type Bound = (OrgId,); type Record = Uuid;`, `(&org, &id)` |
   | `keys = Org`, `impl EncryptionKeySource<Org> for S` | nothing; pass the org's keyring to each call |
@@ -388,7 +379,6 @@
   | `Spec::probes_with(query, &scope, &keys)` plus manual candidate checks | `Customer::EMAIL_INDEX.probes(query, &org, &keys)` and `open_matching` |
   | `RowPlanner::for_keys(view, keys, row_args)` | `RowPlanner::for_rows(keys, row_args)`, one planner per keyring |
   | `legacy_binding::<Old, OldKeys>`, `open_across::<Old, OldKeys, _>`, `probes_across::<Old, OldKeys, S>` | `legacy_binding::<Old, OldRecord>`, `open_across::<Old, OldRecord, _>`, `probes_across::<Old, S>` |
-  | `ObjectKey::<B, K>::prefix(&k)` | `ObjectKey::<B>::prefix::<P>(values)` |
   | `Manifest::custody::<F>("…")` | a committed custody table and `testing::assert_sealed_under` |
 
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
@@ -570,19 +560,6 @@
   their part values: `#[derive(Binding)]` implements it, and so do `FieldOnly`
   and `Tenant`. Add `PartValues::as_slice`, and `KeyScope::of_keys::<B>(values)`,
   the key scope of `keys` part values alone.
-- Add the `restate` feature for Restate handlers (`restate-sdk` 0.12, Rust
-  1.90). `Sealed` and `BlindIndex` implement Restate's `Serialize`,
-  `Deserialize`, and `PayloadMetadata` as `application/octet-stream` without a
-  schema; the codec never encrypts, because replay compares journaled bytes.
-  `restate::seal`, `restate::seal_with`, `restate::seal_record`, and
-  `restate::seal_record_with` seal inside `ctx.run`, fetching inside the same
-  `run` for the `_with` forms, so plaintext is never a `run` result.
-  `restate::handler_error` makes data and request faults terminal and
-  environment faults retryable. `restate::ObjectKey<B>` encodes a binding's
-  index arguments as a strict, canonical Virtual Object key, keys parts first,
-  parses it back (`Error::InvalidObjectKey` otherwise), and gives a key
-  scope's prefix for admin queries. See `docs/restate.md` for what the journal
-  exposes and the org-shredding runbook.
 - **Breaking:** the schema manifest shows bindings and custody instead of Rust
   types. Each field lists whether it binds a record, its binding
   fingerprint, each part's ID, kind, and role, and its shred

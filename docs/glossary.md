@@ -151,14 +151,6 @@ The application-defined conversion that gives equivalent values the same bytes
 for blind-index derivation and candidate comparison. It is persistent schema;
 the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 
-**Object key**:
-The canonical text form of bound values, usually a blind index's partition, that
-keys a Restate Virtual Object (`restate::ObjectKey`): the values in list order,
-each spelled exactly one way. Every object key of one org of an
-`(OrgId, WorkspaceId)` list starts with that org's prefix. It is plaintext to
-Restate, and it names values only as far as its caller was authorized for them.
-<!-- Agent guidance: “object key” is Restate's term for the key of a Virtual Object; do not call it a “key” alone, which reads as key material. -->
-
 **Partition**:
 The bound values that partition a blind index (`BlindIndexSpec::Partition`):
 all of its seal's bound values except those it spans, named with `across(…)` on

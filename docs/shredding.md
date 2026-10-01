@@ -13,7 +13,7 @@ another tenant's rows, and nothing else.
 | --- | --- |
 | Sealed values of that tenant, in live tables, replicas, exports, and backups | Unreadable, including copies you do not control |
 | Blind-index columns of that tenant | No longer queryable: probes need the index root |
-| Plaintext columns, object keys, row counts, sizes, and timestamps | Untouched |
+| Plaintext columns, queue and workflow keys, row counts, sizes, and timestamps | Untouched |
 | Equal values having equal index bytes | Still visible: the correlation survives the key |
 | Keys already leaked, or plaintext already copied out | Unaffected |
 | The bytes themselves | Still on disk until your storage and its backups expire them |
@@ -83,12 +83,11 @@ Treat a tenant whose custody map is undocumented or untested as not shreddable.
    whole binding.
 
 4. **Account for the plaintext around the sealed values.** Shredding removes no
-   plaintext. Delete or redact, per the inventory: tenant identifiers and object
-   keys, unencrypted columns, search projections and analytics copies built from
+   plaintext. Delete or redact, per the inventory: tenant identifiers and queue or
+   workflow keys, unencrypted columns, search projections and analytics copies built from
    decrypted values, message payloads, and any export produced while the data was
-   readable. For a Restate deployment, follow
-   [shredding an org](restate.md#runbook-shredding-an-org), which drains
-   invocations and purges journals and state before the keys go.
+   readable. Durable workflow engines and queues keep journals,
+   inputs, and state: drain and purge them before the keys go.
 
 5. **Destroy both roles' roots.** Remove the tenant's encryption root and its
    blind-index root through your secret store's destruction mechanism, including
@@ -140,7 +139,5 @@ Backups are the reason shredding is worth doing and the reason it needs care:
   depends on.
 - [Key lifecycle and recovery](key-rotation.md#retirement-and-recovery): online
   removal, recovery retention, and destruction evidence.
-- [Restate handlers](restate.md#runbook-shredding-an-org): draining and purging
-  a Restate deployment.
 - [Security and threat model](security.md): what encryption protects and what it
   does not.

@@ -20,7 +20,6 @@ Choose the entry point that fits your question:
 - [Custom-field example](../examples/custom_field/README.md): codecs, normalization, refreshed keys, and wrapped plaintext.
 - [Testing and diagnostics](testing.md): isolated keys and sanitized failures.
 - [Adopt existing data](legacy-migration.md): prerequisites and rollout for plaintext or previous-solution ciphertext.
-- [Restate handlers](restate.md): seal inside `ctx.run`, object keys, what the journal exposes, and shredding an org.
 
 ## Operate
 
