@@ -79,19 +79,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(plaintext, "Mark@Example.com");
 
     // Separately check index consistency, here after convergence to the current key.
-    let recomputed = EmailLookup::derive_with(&plaintext, (), &index_keys)?;
+    let recomputed = EmailLookup::derive_with(&plaintext, &index_keys)?;
     assert_eq!(restored.email_lookup, recomputed);
 
     // Lookup searches every readable generation and compares authenticated plaintext.
     let query = "mark@example.com";
-    let probes = EmailLookup::probes_with(query, (), &index_keys)?;
+    let probes = EmailLookup::probes_with(query, &index_keys)?;
     let matches = probes.iter().any(|probe| probe == &restored.email_lookup)
         && EmailLookup::verify_candidate(query, &plaintext)?;
     assert!(matches);
 
     // Plaintext comparison alone cannot detect a stored index for another value.
-    let unrelated_index =
-        EmailLookup::derive_with(&"other@example.com".to_owned(), (), &index_keys)?;
+    let unrelated_index = EmailLookup::derive_with(&"other@example.com".to_owned(), &index_keys)?;
     assert_ne!(unrelated_index, recomputed);
     assert!(EmailLookup::verify_candidate(query, &plaintext)?);
 

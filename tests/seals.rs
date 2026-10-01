@@ -56,7 +56,6 @@ impl Seal for HomeAddress {
     const PADDING: Padding = Padding::NONE;
     type Value = Address;
     type Codec = AddressCodec;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -69,7 +68,6 @@ impl Seal for BillingAddress {
     const PADDING: Padding = Padding::block(16);
     type Value = Address;
     type Codec = AddressCodec;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -123,7 +121,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -135,7 +132,6 @@ impl Seal for SecretUserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = Secret<String>;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -147,7 +143,6 @@ impl Seal for ApiToken {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -159,7 +154,6 @@ impl Seal for SecretApiToken {
     const PADDING: Padding = Padding::NONE;
     type Value = Secret<Vec<u8>>;
     type Codec = Raw;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }

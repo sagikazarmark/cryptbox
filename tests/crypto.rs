@@ -24,7 +24,6 @@ impl Seal for EmailSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -36,13 +35,12 @@ impl Seal for PaddedEmailSeal {
     const PADDING: Padding = Padding::block(16);
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
 
 // Raw seals carry opaque bytes through `Sealed`, as the byte-level API did.
-fn encrypt<F: Seal<Value = Vec<u8>, Bound = (), Record = ()>>(
+fn encrypt<F: Seal<Value = Vec<u8>, Record = ()>>(
     plaintext: &[u8],
     keys: &EncryptionKeyring,
 ) -> Vec<u8> {
@@ -51,7 +49,7 @@ fn encrypt<F: Seal<Value = Vec<u8>, Bound = (), Record = ()>>(
         .into_bytes()
 }
 
-fn decrypt<F: Seal<Value = Vec<u8>, Bound = (), Record = ()>>(
+fn decrypt<F: Seal<Value = Vec<u8>, Record = ()>>(
     ciphertext: &[u8],
     keys: &EncryptionKeyring,
 ) -> Result<Vec<u8>, Error> {
@@ -65,7 +63,6 @@ impl Seal for PhoneSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -256,7 +253,6 @@ impl Seal for TypedEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }

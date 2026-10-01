@@ -2,8 +2,7 @@ use std::fmt;
 
 use crate::{
     BlindIndexKeys, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed,
-    binding::OwnedBinding,
-    blind::{derive_value, projected_domain},
+    blind::{derive_value, index_domain},
     keys,
 };
 
@@ -29,9 +28,6 @@ where
 {
     source: &'a F::Value,
     sealed: Sealed<F>,
-    // The bound values the value is sealed under, from which each index projects
-    // its partition.
-    bound: OwnedBinding,
     indexes: Vec<PreparedIndex>,
 }
 
@@ -53,11 +49,10 @@ impl<'a, F> Prepared<'a, F>
 where
     F: Seal,
 {
-    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F>, bound: OwnedBinding) -> Self {
+    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F>) -> Self {
         Self {
             source,
             sealed,
-            bound,
             indexes: Vec::new(),
         }
     }
@@ -78,10 +73,6 @@ where
 
     /// Adds an index derived from the same source value as the sealed value.
     ///
-    /// The index is partitioned by its [partition](BlindIndexSpec::Partition),
-    /// projected from the bound values the value was sealed under, so probes in
-    /// the same partition find it.
-    ///
     /// The index must be declared over this seal. Attaching another seal's
     /// index is a type error:
     ///
@@ -99,7 +90,6 @@ where
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Bound = ();
     ///     type Record = ();
     ///     type Indexes = ();
     /// }
@@ -111,7 +101,6 @@ where
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Bound = ();
     ///     type Record = ();
     ///     type Indexes = ();
     /// }
@@ -120,7 +109,6 @@ where
     ///
     /// impl BlindIndexSpec for InviteEmailLookup {
     ///     type Seal = InviteEmail;
-    ///     type Partition = ();
     ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
     ///     const BITS: u16 = 32;
     ///     const NORMALIZER: &'static str = "exact/1";
@@ -161,11 +149,7 @@ where
             return Err(Error::DuplicatePreparedIndex(Spec::ID));
         }
 
-        let index = derive_value::<Spec>(
-            self.source,
-            &projected_domain::<Spec>(&self.bound.values())?,
-            keys,
-        )?;
+        let index = derive_value::<Spec>(self.source, &index_domain::<Spec>(), keys)?;
         self.indexes.push(PreparedIndex {
             id: Spec::ID,
             bytes: index.into_bytes(),
@@ -176,8 +160,7 @@ where
 
     /// Adds an index with the [installed keys](keys::installed).
     ///
-    /// This is exactly `self.with_index_with::<Spec>(keys::installed()?)`. The
-    /// installed keys serve only seals without bound values.
+    /// This is exactly `self.with_index_with::<Spec>(keys::installed()?)`.
     ///
     /// # Errors
     ///
@@ -185,7 +168,6 @@ where
     /// duplicate index IDs, unavailable keys, or failed index derivation.
     pub fn with_index<Spec>(self) -> Result<Self, Error>
     where
-        F: Seal<Bound = ()>,
         Spec: BlindIndexSpec<Seal = F>,
     {
         self.with_index_with::<Spec>(keys::installed()?)

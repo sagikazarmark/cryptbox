@@ -10,7 +10,6 @@ impl Seal for Nickname {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -48,7 +47,6 @@ impl Seal for DriftingNickname {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = DriftingCodec;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -91,7 +89,6 @@ mod json {
         const PADDING: Padding = Padding::NONE;
         type Value = before::Address;
         type Codec = Json;
-        type Bound = ();
         type Record = ();
         type Indexes = ();
     }
@@ -103,7 +100,6 @@ mod json {
         const PADDING: Padding = Padding::NONE;
         type Value = Address;
         type Codec = Json;
-        type Bound = ();
         type Record = ();
         type Indexes = ();
     }
@@ -134,7 +130,6 @@ mod json {
         const PADDING: Padding = Padding::NONE;
         type Value = f64;
         type Codec = Json;
-        type Bound = ();
         type Record = ();
         type Indexes = ();
     }

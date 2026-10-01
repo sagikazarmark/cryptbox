@@ -11,16 +11,12 @@ use syn::{
 use crate::attr::{Errors, Padding, UuidLiteral, parse_bits, parse_padding, parse_uuid};
 
 /// The keys of a record field's `#[cryptbox(…)]`.
-const FIELD_KEYS: &str = "`record_id`, `bound`, `seal`, `plaintext`, `codec`, `padding`, `name`, \
+const FIELD_KEYS: &str = "`record_id`, `seal`, `plaintext`, `codec`, `padding`, `name`, \
                           `blind_index`, or `stored`";
-
-/// The most bound values a record binds: the arity of `BoundList`.
-const MAX_BOUND: usize = 4;
 
 /// What a field is to the record.
 enum Role {
     RecordId,
-    Bound,
     Seal(Box<Sealing>),
     Plaintext,
 }
@@ -41,8 +37,6 @@ struct LegacyDecl {
     span: Span,
     /// Its seal ID, or `None` for the current one.
     seal: Option<UuidLiteral>,
-    /// The bound fields it bound.
-    bound: Vec<Ident>,
     /// Whether it bound the record ID.
     record: bool,
 }
@@ -51,7 +45,6 @@ struct LegacyDecl {
 struct IndexDecl {
     span: Span,
     id: UuidLiteral,
-    across: Vec<Ident>,
     bits: LitInt,
     normalize: Path,
     normalizer: LitStr,
@@ -151,8 +144,6 @@ fn parse_field_attrs(field: &syn::Field, ident: &Ident, errors: &mut Errors) -> 
             let span = meta.path.span();
             if meta.path.is_ident("record_id") {
                 parsed.roles.push((span, "record_id"));
-            } else if meta.path.is_ident("bound") {
-                parsed.roles.push((span, "bound"));
             } else if meta.path.is_ident("plaintext") {
                 parsed.roles.push((span, "plaintext"));
             } else if meta.path.is_ident("seal") {
@@ -199,8 +190,7 @@ fn parse_field<'a>(field: &'a syn::Field, errors: &mut Errors) -> Option<Field<'
                 ident.span(),
                 format!(
                     "`{ident}` has no role: mark it `#[cryptbox(seal = \"<uuid>\")]` to encrypt \
-                     it, `#[cryptbox(plaintext)]` to store it as it is, \
-                     `#[cryptbox(bound)]` to bind the record's sealed fields to it, or \
+                     it, `#[cryptbox(plaintext)]` to store it as it is, or \
                      `#[cryptbox(record_id)]`"
                 ),
             ));
@@ -212,7 +202,7 @@ fn parse_field<'a>(field: &'a syn::Field, errors: &mut Errors) -> Option<Field<'
                 *span,
                 format!(
                     "`{ident}` has more than one role: a field is exactly one of `record_id`, \
-                     `bound`, `seal`, or `plaintext`"
+                     `seal`, or `plaintext`"
                 ),
             ));
             return None;
@@ -255,7 +245,6 @@ fn parse_field<'a>(field: &'a syn::Field, errors: &mut Errors) -> Option<Field<'
         }
         match role {
             "record_id" => Role::RecordId,
-            "bound" => Role::Bound,
             _ => Role::Plaintext,
         }
     };
@@ -278,24 +267,17 @@ fn parse_legacy(meta: &ParseNestedMeta<'_>) -> syn::Result<LegacyDecl> {
     let mut legacy = LegacyDecl {
         span: meta.path.span(),
         seal: None,
-        bound: Vec::new(),
         record: true,
     };
 
     meta.parse_nested_meta(|inner| {
         if inner.path.is_ident("seal") {
             legacy.seal = Some(parse_uuid("seal", inner.value()?)?);
-        } else if inner.path.is_ident("bound") {
-            let content;
-            syn::parenthesized!(content in inner.input);
-            legacy
-                .bound
-                .extend(Punctuated::<Ident, Token![,]>::parse_terminated(&content)?);
         } else if inner.path.is_ident("record") {
             legacy.record = inner.value()?.parse::<syn::LitBool>()?.value;
         } else {
             return Err(inner.error(format!(
-                "unknown `legacy` key `{}`; expected one of `seal`, `bound`, or `record`",
+                "unknown `legacy` key `{}`; expected `seal` or `record`",
                 path_string(&inner.path)
             )));
         }
@@ -308,7 +290,6 @@ fn parse_legacy(meta: &ParseNestedMeta<'_>) -> syn::Result<LegacyDecl> {
 fn parse_index(field: &Ident, meta: &ParseNestedMeta<'_>) -> syn::Result<IndexDecl> {
     let span = meta.path.span();
     let mut id = None;
-    let mut across = Vec::new();
     let mut bits = None;
     let mut normalize = None;
     let mut normalizer = None;
@@ -319,10 +300,6 @@ fn parse_index(field: &Ident, meta: &ParseNestedMeta<'_>) -> syn::Result<IndexDe
     meta.parse_nested_meta(|inner| {
         if inner.path.is_ident("id") {
             id = Some(parse_uuid("id", inner.value()?)?);
-        } else if inner.path.is_ident("across") {
-            let content;
-            syn::parenthesized!(content in inner.input);
-            across.extend(Punctuated::<Ident, Token![,]>::parse_terminated(&content)?);
         } else if inner.path.is_ident("bits") {
             bits = Some(parse_bits(inner.value()?)?);
         } else if inner.path.is_ident("normalize") {
@@ -337,8 +314,8 @@ fn parse_index(field: &Ident, meta: &ParseNestedMeta<'_>) -> syn::Result<IndexDe
             column = Some(inner.value()?.parse()?);
         } else {
             return Err(inner.error(format!(
-                "unknown `blind_index` key `{}`; expected one of `id`, `across`, `bits`, \
-                 `normalize`, `normalizer`, `query`, `project`, or `column`",
+                "unknown `blind_index` key `{}`; expected one of `id`, `bits`, `normalize`, \
+                 `normalizer`, `query`, `project`, or `column`",
                 path_string(&inner.path)
             )));
         }
@@ -354,7 +331,6 @@ fn parse_index(field: &Ident, meta: &ParseNestedMeta<'_>) -> syn::Result<IndexDe
     Ok(IndexDecl {
         span,
         id: id.ok_or_else(|| missing("id", "\"<uuid>\""))?,
-        across,
         bits: bits.ok_or_else(|| missing("bits", "32"))?,
         normalize: normalize.ok_or_else(|| missing("normalize", "normalize_fn"))?,
         normalizer: normalizer.ok_or_else(|| missing("normalizer", "\"email/1\""))?,
@@ -419,8 +395,8 @@ fn parse_record_attrs(input: &DeriveInput, errors: &mut Errors) -> RecordAttrs {
     parsed
 }
 
-/// Checks the record as a whole: one record ID, at least one sealed field, at
-/// most four bound values, `across` naming bound fields, and distinct columns.
+/// Checks the record as a whole: one record ID, at least one sealed field, and
+/// distinct columns.
 fn check_record(name: &Ident, fields: &[Field<'_>], errors: &mut Errors) {
     let record_ids: Vec<_> = fields
         .iter()
@@ -450,20 +426,7 @@ fn check_record(name: &Ident, fields: &[Field<'_>], errors: &mut Errors) {
         ));
     }
 
-    let bound: Vec<&Field<'_>> = fields
-        .iter()
-        .filter(|f| matches!(f.role, Role::Bound))
-        .collect();
-    if let Some(extra) = bound.get(MAX_BOUND) {
-        errors.push(syn::Error::new(
-            extra.ident.span(),
-            format!("a record binds at most {MAX_BOUND} bound values"),
-        ));
-    }
-    for field in fields
-        .iter()
-        .filter(|f| matches!(f.role, Role::Bound | Role::RecordId))
-    {
+    for field in fields.iter().filter(|f| matches!(f.role, Role::RecordId)) {
         if field.optional_inner().is_some() {
             errors.push(syn::Error::new(
                 field.ty.span(),
@@ -477,37 +440,7 @@ fn check_record(name: &Ident, fields: &[Field<'_>], errors: &mut Errors) {
 
     let mut columns: Vec<&Ident> = fields.iter().map(|f| f.ident).collect();
     for field in fields {
-        if let Some(legacy) = field.sealing().and_then(|s| s.legacy.as_ref()) {
-            for old in &legacy.bound {
-                if !bound.iter().any(|b| b.ident == old) {
-                    errors.push(syn::Error::new(
-                        old.span(),
-                        format!(
-                            "`{old}` is not a bound value of `{name}`; a legacy declaration \
-                             binds some of the record's bound values"
-                        ),
-                    ));
-                }
-            }
-        }
         for index in field.sealing().map_or(&[][..], |s| &s.indexes) {
-            for across in &index.across {
-                if !bound.iter().any(|b| b.ident == across) {
-                    let names: Vec<_> = bound.iter().map(|b| format!("`{}`", b.ident)).collect();
-                    errors.push(syn::Error::new(
-                        across.span(),
-                        format!(
-                            "`{across}` is not a bound value of `{name}`; `across` names the \
-                             bound values the index spans: {}",
-                            if names.is_empty() {
-                                "this record has none".to_owned()
-                            } else {
-                                names.join(", ")
-                            }
-                        ),
-                    ));
-                }
-            }
             if columns.contains(&&index.column) {
                 errors.push(syn::Error::new(
                     index.column.span(),
@@ -592,14 +525,12 @@ struct SealItem<'t> {
 }
 
 impl SealItem<'_> {
-    #[expect(clippy::too_many_arguments, reason = "one per item of the impl")]
     fn tokens(
         &self,
         krate: &Path,
         name: &Ident,
         doc: &str,
         id: &UuidLiteral,
-        bound: &[&Type],
         record: &TokenStream,
         indexes: &TokenStream,
     ) -> TokenStream {
@@ -609,7 +540,6 @@ impl SealItem<'_> {
             codec,
             padding,
         } = self;
-        let bound = bound.iter().map(|ty| quote_spanned!(ty.span()=> #ty));
 
         quote! {
             #[doc = #doc]
@@ -622,7 +552,6 @@ impl SealItem<'_> {
                     const PADDING: #krate::Padding = #padding;
                     type Value = #value;
                     type Codec = #codec;
-                    type Bound = (#(#bound,)*);
                     type Record = #record;
                     type Indexes = #indexes;
                 }
@@ -639,7 +568,6 @@ struct Expansion<'a> {
     stored_attrs: Vec<Meta>,
     fields: &'a [Field<'a>],
     record_id: &'a Field<'a>,
-    bound: Vec<&'a Field<'a>>,
 }
 
 impl<'a> Expansion<'a> {
@@ -657,10 +585,6 @@ impl<'a> Expansion<'a> {
                 .iter()
                 .find(|f| matches!(f.role, Role::RecordId))
                 .expect("the record ID is checked above"),
-            bound: fields
-                .iter()
-                .filter(|f| matches!(f.role, Role::Bound))
-                .collect(),
         }
     }
 
@@ -675,15 +599,6 @@ impl<'a> Expansion<'a> {
         })
     }
 
-    /// The bound field named `ident`, which the record checks exists.
-    fn bound_field(&self, ident: &Ident) -> &'a Field<'a> {
-        self.bound
-            .iter()
-            .copied()
-            .find(|b| b.ident == ident)
-            .expect("legacy bound fields are checked above")
-    }
-
     fn spec_name(&self, index: &IndexDecl) -> Ident {
         format_ident!(
             "{}{}",
@@ -691,15 +606,6 @@ impl<'a> Expansion<'a> {
             pascal(&index.column),
             span = index.column.span()
         )
-    }
-
-    /// The bound fields that partition `index`: every bound field it does not span.
-    fn partition(&self, index: &IndexDecl) -> Vec<&'a Field<'a>> {
-        self.bound
-            .iter()
-            .copied()
-            .filter(|b| !index.across.iter().any(|a| a == b.ident))
-            .collect()
     }
 
     /// Opens `value`, a sealed field's value in `stored`, under its current
@@ -726,68 +632,40 @@ impl<'a> Expansion<'a> {
     }
 
     /// The binding arguments of a legacy declaration, read from `source`: the
-    /// bound values it bound, then the record ID if it bound one.
+    /// record ID if it bound one, or `()`.
     fn legacy_args(&self, legacy: &LegacyDecl, source: &TokenStream) -> TokenStream {
-        let record_id = legacy.record.then_some(self.record_id.ident);
-        let values: Vec<_> = legacy
-            .bound
-            .iter()
-            .chain(record_id)
-            .map(|ident| quote!(&#source.#ident))
-            .collect();
-        match values.as_slice() {
-            [] => quote!(()),
-            [one] => one.clone(),
-            many => quote!((#(#many),*)),
+        if legacy.record {
+            self.args(source)
+        } else {
+            quote!(())
         }
     }
 
-    /// The partition values of `index`, read from the record: `()`, one bound
-    /// value, or a tuple of them.
-    fn partition_args(&self, index: &IndexDecl) -> TokenStream {
-        match self.partition(index).as_slice() {
-            [] => quote!(()),
-            [one] => {
-                let one = one.ident;
-                quote!(&self.#one)
-            }
-            many => {
-                let many = many.iter().map(|f| f.ident);
-                quote!((#(&self.#many,)*))
-            }
-        }
-    }
-
-    /// The binding arguments of a sealed field: its bound values, then the
-    /// record ID, read from `source`.
+    /// The binding arguments of a sealed field: the record ID, read from
+    /// `source`.
     fn args(&self, source: &TokenStream) -> TokenStream {
-        let bound = self.bound.iter().map(|f| f.ident);
         let record_id = self.record_id.ident;
-        quote!((#(&#source.#bound,)* &#source.#record_id))
+        quote!(&#source.#record_id)
     }
 
     fn tokens(&self) -> TokenStream {
         let krate = &self.krate;
-        // First, and spanned at each field: a bound field that is no bound ID, or
-        // a record ID that is no part type, is reported there.
-        let checks = self.bound.iter().map(|f| (f.ty, quote!(#krate::BoundId)));
-        let checks = checks
-            .chain([(self.record_id.ty, quote!(#krate::PartType))])
-            .map(|(ty, bound)| {
-                quote_spanned! {ty.span()=>
-                    const _: fn() = || {
-                        fn check<T: #bound + ?::core::marker::Sized>() {}
-                        check::<#ty>();
-                    };
-                }
-            });
+        // First, and spanned at the field: a record ID that is no part type is
+        // reported there.
+        let ty = self.record_id.ty;
+        let check = quote_spanned! {ty.span()=>
+            const _: fn() = || {
+                fn check<T: #krate::PartType + ?::core::marker::Sized>() {}
+                check::<#ty>();
+            };
+        };
         let seals = self.fields.iter().filter_map(|f| self.seal_items(f));
         let stored = self.stored_struct();
         let record = self.record_impl();
         let handles = self.handles();
 
         quote! {
-            #(#checks)*
+            #check
             #(#seals)*
             #stored
             #record
@@ -835,8 +713,6 @@ impl<'a> Expansion<'a> {
                 field.ident
             ),
             &sealing.id,
-            // Spanned at each field, so a type that is no bound ID is reported there.
-            &self.bound.iter().map(|f| f.ty).collect::<Vec<_>>(),
             &record_ty,
             &quote!((#(#specs,)*)),
         );
@@ -846,11 +722,6 @@ impl<'a> Expansion<'a> {
             .zip(&specs)
             .map(|(index, spec)| self.index_spec(field, &seal, index, spec));
         let legacy = sealing.legacy.as_ref().map(|legacy| {
-            let bound: Vec<_> = legacy
-                .bound
-                .iter()
-                .map(|old| self.bound_field(old).ty)
-                .collect();
             item.tokens(
                 krate,
                 &legacy_name(&seal),
@@ -860,7 +731,6 @@ impl<'a> Expansion<'a> {
                     field.ident
                 ),
                 legacy.seal.as_ref().unwrap_or(&sealing.id),
-                &bound,
                 &if legacy.record {
                     record_ty.clone()
                 } else {
@@ -899,7 +769,6 @@ impl<'a> Expansion<'a> {
             column,
             ..
         } = index;
-        let partition = self.partition(index).into_iter().map(|f| f.ty);
         let query_arg = Ident::new("query", Span::mixed_site());
         let value_arg = Ident::new("value", Span::mixed_site());
         let normalize_value = project.as_ref().map_or_else(
@@ -925,7 +794,6 @@ impl<'a> Expansion<'a> {
                 #[automatically_derived]
                 impl #krate::BlindIndexSpec for #spec {
                     type Seal = #seal;
-                    type Partition = (#(#partition,)*);
                     const ID: #krate::IndexId = #krate::IndexId::from_u128(#id);
                     const BITS: u16 = #bits;
                     const NORMALIZER: &'static str = #normalizer;
@@ -1038,13 +906,11 @@ impl<'a> Expansion<'a> {
             for index in &sealing.indexes {
                 let spec = self.spec_name(index);
                 let column = &index.column;
-                let partition = self.partition_args(index);
                 let derived = each(
                     quote!(self),
                     quote! {
                         <#spec as #krate::BlindIndexSpec>::derive_with(
                             #value,
-                            #partition,
                             #krate::RecordKeys::record_blind_index_keyring(#keys)?,
                         )?
                     },
@@ -1097,7 +963,7 @@ impl<'a> Expansion<'a> {
     }
 
     /// The record's schema for the manifest: its seals' IDs, and the names of its
-    /// record ID, bound, and plaintext fields, in field order.
+    /// record ID and plaintext fields, in field order.
     fn schema_consts(&self) -> TokenStream {
         let krate = &self.krate;
         let seal_ids = self
@@ -1116,7 +982,6 @@ impl<'a> Expansion<'a> {
                 .map(|f| LitStr::new(&f.ident.unraw().to_string(), f.ident.span()))
                 .collect()
         };
-        let bound = names(|role| matches!(role, Role::Bound));
         let plaintext = names(|role| matches!(role, Role::Plaintext));
         let legacy: Vec<LitStr> = self
             .fields
@@ -1129,18 +994,14 @@ impl<'a> Expansion<'a> {
             const LEGACY: &'static [&'static str] = &[#(#legacy),*];
             const SEALS: &'static [#krate::SealId] = &[#(#seal_ids),*];
             const RECORD_ID: &'static str = #record_id;
-            const BOUND: &'static [&'static str] = &[#(#bound),*];
             const PLAINTEXT: &'static [&'static str] = &[#(#plaintext),*];
         }
     }
 
-    /// Each blind index's handle, a const named after its column, and the
-    /// partition struct of an index partitioned by two or more bound values.
+    /// Each blind index's handle, a const named after its column.
     fn handles(&self) -> TokenStream {
         let krate = &self.krate;
         let name = &self.input.ident;
-        let stored_name = &self.stored_name;
-        let mut items = Vec::new();
         let mut consts = Vec::new();
 
         for field in self.fields {
@@ -1164,62 +1025,20 @@ impl<'a> Expansion<'a> {
                     column.unraw().to_string().to_uppercase(),
                     span = column.span()
                 );
-                let part_value = quote!(#krate::PartType::part_value);
-                let (partition_ty, values, in_partition) = match self.partition(index).as_slice() {
-                    [] => (quote!(()), quote!(::std::vec::Vec::new()), quote!(true)),
-                    [one] => {
-                        let (field, ty) = (one.ident, one.ty);
-                        (
-                            quote!(#ty),
-                            quote!(::std::vec::Vec::from([#part_value(partition)])),
-                            quote!(#part_value(&row.#field) == #part_value(partition)),
-                        )
-                    }
-                    many => {
-                        let partition_name = format_ident!("{}Partition", spec);
-                        let idents: Vec<_> = many.iter().map(|f| f.ident).collect();
-                        let tys = many.iter().map(|f| f.ty);
-                        let doc = format!(
-                            "The partition of [`{name}::{handle}`]: the bound values its queries \
-                             supply."
-                        );
-                        let field_docs = idents
-                            .iter()
-                            .map(|ident| format!("The `{ident}` of the rows to search."));
-                        items.push(quote! {
-                            #[doc = #doc]
-                            #vis struct #partition_name {
-                                #(#[doc = #field_docs] pub #idents: #tys,)*
-                            }
-                        });
-                        (
-                            quote!(#partition_name),
-                            quote!(::std::vec::Vec::from([#(#part_value(&partition.#idents)),*])),
-                            quote!(#(#part_value(&row.#idents) == #part_value(&partition.#idents))&&*),
-                        )
-                    }
-                };
-                let doc = format!(
-                    "The `{column}` blind index of `{ident}`, searched within its partition."
-                );
+                let doc = format!("The `{column}` blind index of `{ident}`.");
                 consts.push(quote! {
                     #[doc = #doc]
-                    #vis const #handle: #krate::Index<#name, #spec, #partition_ty> =
-                        #krate::Index::__new(
-                            |partition| #values,
-                            |row: &#stored_name, partition| #in_partition,
-                            |record: &#name| -> ::core::option::Option<&#value_ty> { #value },
-                        );
+                    #vis const #handle: #krate::Index<#name, #spec> = #krate::Index::__new(
+                        |record: &#name| -> ::core::option::Option<&#value_ty> { #value },
+                    );
                 });
             }
         }
 
         if consts.is_empty() {
-            return quote!(#(#items)*);
+            return TokenStream::new();
         }
         quote! {
-            #(#items)*
-
             #[automatically_derived]
             impl #name {
                 #(#consts)*

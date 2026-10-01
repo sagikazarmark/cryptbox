@@ -54,7 +54,6 @@ impl Seal for Handle {
     const PADDING: Padding = Padding::NONE;
     type Value = Self;
     type Codec = HandleCodec;
-    type Bound = ();
     type Record = ();
     type Indexes = (HandleEquality,);
 }
@@ -63,7 +62,6 @@ struct HandleEquality;
 
 impl BlindIndexSpec for HandleEquality {
     type Seal = Handle;
-    type Partition = ();
     const ID: cryptbox::IndexId = cryptbox::index_id!("6c0e20d5-cb30-4b84-8dd1-995f872b417c");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "handle-lowercase/1";
@@ -140,7 +138,7 @@ fn main() -> Result<(), cryptbox::Error> {
     // After index-key promotion, query every readable generation, including old data.
     let index_reader = BlindIndexKeyring::new(BlindIndexKey::generate()?, [old_index_key])?;
     let query = Secret::new("ALICE-7".to_owned());
-    let probes = HandleEquality::probes_with(&query, (), &index_reader)?;
+    let probes = HandleEquality::probes_with(&query, &index_reader)?;
     assert_eq!(probes.len(), 2);
     assert!(probes.iter().any(|probe| probe.as_bytes() == stored_index));
     // An index hit is only a candidate: authenticate and compare normalized plaintext.
@@ -270,7 +268,6 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
             const PADDING: Padding = Padding::NONE;
             type Value = String;
             type Codec = cryptbox::Utf8;
-            type Bound = ();
             type Record = ();
             type Indexes = ();
         }

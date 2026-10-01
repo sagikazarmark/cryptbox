@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    BlindIndexSpec, BoundList, Codec, IndexId, Padding, PartKind, PartSpec, Record, RecordIdType,
-    Seal, SealId, binding::declaration_fingerprint,
+    BlindIndexSpec, Codec, IndexId, Padding, PartKind, Record, RecordIdType, Seal, SealId,
+    binding::declaration_fingerprint,
 };
 
 /// Lists seals and blind indexes with their persistent schema.
@@ -21,14 +21,12 @@ use crate::{
 ///
 /// - its seal ID, codec ID, and padding;
 /// - `record`: the kind of the record ID it is bound to, or `no`;
-/// - `binding`: the [binding fingerprint](crate::CiphertextInfo::context_fingerprint),
-///   followed by each part's ID and kind, in part ID order.
+/// - `binding`: the [binding fingerprint](crate::CiphertextInfo::context_fingerprint).
 ///
-/// Each index lists its index ID, seal ID, bits, normalizer name, and the parts
-/// of its partition, in part ID order.
+/// Each index lists its index ID, seal ID, bits, and normalizer name.
 ///
 /// Each record lists the seal IDs of its sealed fields, the field that holds
-/// its record ID, its bound fields, its plaintext fields, and the fields whose
+/// its record ID, its plaintext fields, and the fields whose
 /// legacy declaration is still opened. A field stored as it is has no ID, so
 /// the manifest names it, and a field that should have been sealed shows up in
 /// the snapshot.
@@ -42,7 +40,7 @@ use crate::{
 /// # Examples
 ///
 /// ```
-/// use cryptbox::{Padding, Seal, SealId, TenantId, Utf8, schema::Manifest};
+/// use cryptbox::{Padding, Seal, SealId, Utf8, schema::Manifest};
 ///
 /// struct Nickname;
 ///
@@ -51,7 +49,6 @@ use crate::{
 ///     const PADDING: Padding = Padding::block(16);
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Bound = (TenantId,);
 ///     type Record = i64;
 ///     type Indexes = ();
 /// }
@@ -64,8 +61,7 @@ use crate::{
 ///   codec: utf8
 ///   padding: block(16)
 ///   record: i64
-///   binding: 53aad4c274f3c0c4
-///     part 1e8306bf-3135-4570-831c-6732f92550e9 bytes
+///   binding: 76081b730530f822
 /// ");
 /// ```
 #[derive(Debug, Default)]
@@ -80,7 +76,6 @@ struct RecordEntry {
     marker: TypeId,
     seals: &'static [SealId],
     record_id: &'static str,
-    bound: &'static [&'static str],
     plaintext: &'static [&'static str],
     legacy: &'static [&'static str],
 }
@@ -93,7 +88,6 @@ struct IndexEntry {
     seal: SealId,
     bits: u16,
     normalizer: &'static str,
-    parts: Vec<PartSpec>,
 }
 
 #[derive(Debug)]
@@ -104,7 +98,6 @@ struct SealEntry {
     codec: &'static str,
     padding: Padding,
     record: Option<PartKind>,
-    parts: Vec<PartSpec>,
     fingerprint: [u8; 8],
 }
 
@@ -129,8 +122,7 @@ impl Manifest {
                 codec: <F::Codec as Codec<F::Value>>::ID,
                 padding: F::PADDING,
                 record: <F::Record as RecordIdType>::RECORD,
-                parts: sorted(<F::Bound as BoundList>::PARTS),
-                fingerprint: declaration_fingerprint::<F::Bound, F::Record>(),
+                fingerprint: declaration_fingerprint::<F::Record>(),
             });
         }
         self
@@ -151,14 +143,13 @@ impl Manifest {
                 seal: <I::Seal as Seal>::ID,
                 bits: I::BITS,
                 normalizer: I::NORMALIZER,
-                parts: sorted(<I::Partition as BoundList>::PARTS),
             });
         }
         self
     }
 
     /// Registers record `R`: its sealed fields' seal IDs, and the names of its
-    /// record ID, bound, and plaintext fields.
+    /// record ID and plaintext fields.
     ///
     /// Register its seals separately with [`Self::seal`]. Registering it again
     /// changes nothing.
@@ -170,7 +161,6 @@ impl Manifest {
                 marker,
                 seals: R::SEALS,
                 record_id: R::RECORD_ID,
-                bound: R::BOUND,
                 plaintext: R::PLAINTEXT,
                 legacy: R::LEGACY,
             });
@@ -257,14 +247,6 @@ impl fmt::Display for Manifest {
                 seal.record.map_or("no", kind_name)
             )?;
             writeln!(formatter, "  binding: {}", hex::encode(seal.fingerprint))?;
-            for part in &seal.parts {
-                writeln!(
-                    formatter,
-                    "    part {} {}",
-                    part.id(),
-                    kind_name(part.kind())
-                )?;
-            }
         }
 
         for index in &self.indexes {
@@ -272,18 +254,6 @@ impl fmt::Display for Manifest {
             writeln!(formatter, "  seal: {}", index.seal)?;
             writeln!(formatter, "  bits: {}", index.bits)?;
             writeln!(formatter, "  normalizer: {}", index.normalizer)?;
-            // An index without a partition is unpartitioned.
-            if !index.parts.is_empty() {
-                writeln!(formatter, "  partition:")?;
-            }
-            for part in &index.parts {
-                writeln!(
-                    formatter,
-                    "    part {} {}",
-                    part.id(),
-                    kind_name(part.kind())
-                )?;
-            }
         }
 
         for record in &self.records {
@@ -295,10 +265,6 @@ impl fmt::Display for Manifest {
             }
             writeln!(formatter)?;
             writeln!(formatter, "  record id: {}", record.record_id)?;
-            match record.bound {
-                [] => writeln!(formatter, "  bound: none")?,
-                fields => writeln!(formatter, "  bound: {}", fields.join(", "))?,
-            }
             match record.plaintext {
                 [] => writeln!(formatter, "  plaintext: none")?,
                 fields => writeln!(formatter, "  plaintext: {}", fields.join(", "))?,
@@ -319,14 +285,6 @@ impl fmt::Display for Manifest {
 
         Ok(())
     }
-}
-
-// Parts are listed by part ID, as the binding sorts them, so reordering a
-// bound list changes no snapshot.
-fn sorted(parts: &[PartSpec]) -> Vec<PartSpec> {
-    let mut parts = parts.to_vec();
-    parts.sort_by_key(|part| *part.id().as_bytes());
-    parts
 }
 
 // Manifest spellings are snapshot text: keep them stable.
@@ -356,7 +314,6 @@ const fn kind_name(kind: PartKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Bound = ();
 ///     type Record = ();
 ///     type Indexes = ();
 /// }
@@ -368,7 +325,6 @@ const fn kind_name(kind: PartKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Bound = ();
 ///     type Record = ();
 ///     type Indexes = ();
 /// }
@@ -386,7 +342,6 @@ const fn kind_name(kind: PartKind) -> &'static str {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Bound = ();
 /// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
@@ -397,7 +352,6 @@ const fn kind_name(kind: PartKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Bound = ();
 ///     type Record = ();
 ///     type Indexes = ();
 /// }
@@ -416,7 +370,6 @@ const fn kind_name(kind: PartKind) -> &'static str {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Bound = ();
 /// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
@@ -424,7 +377,6 @@ const fn kind_name(kind: PartKind) -> &'static str {
 ///
 /// impl BlindIndexSpec for Exact {
 ///     type Seal = Bytes;
-///     type Partition = ();
 ///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "exact/1";
@@ -437,7 +389,6 @@ const fn kind_name(kind: PartKind) -> &'static str {
 ///
 /// impl BlindIndexSpec for Prefix {
 ///     type Seal = Bytes;
-///     type Partition = ();
 ///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 16;
 ///     const NORMALIZER: &'static str = "prefix/1";

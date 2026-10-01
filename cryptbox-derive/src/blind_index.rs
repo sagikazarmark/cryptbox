@@ -9,7 +9,6 @@ use crate::attr::{Attrs, Errors, Key, required};
 const KEYS: &[Key] = &[
     Key::Id,
     Key::Seal,
-    Key::Partition,
     Key::Bits,
     Key::Query,
     Key::Normalize,
@@ -95,11 +94,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #krate::BlindIndexError,
         >
     };
-    // Without `partition`, the index is partitioned by every bound value of its seal.
-    let partition = attrs.partition.take().map_or_else(
-        || quote!(<#seal as #krate::Seal>::Bound),
-        |partition| quote!((#(#partition,)*)),
-    );
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
     Ok(quote! {
@@ -107,7 +101,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #[automatically_derived]
             impl #impl_generics #krate::BlindIndexSpec for #name #type_generics #where_clause {
                 type Seal = #seal;
-                type Partition = #partition;
                 const ID: #krate::IndexId = #krate::IndexId::from_u128(#id);
                 const BITS: u16 = #bits;
                 const NORMALIZER: &'static str = #normalizer_name;

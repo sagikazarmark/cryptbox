@@ -6,8 +6,7 @@
 //! with absolute `::cryptbox::` paths. It adds no `Debug`, `Deref`, `From`, or
 //! hidden items, so the manual impl stays a first-class alternative. The
 //! generated items are `Record`'s stored form, the seals and blind-index
-//! specs its fields declare, its index handles and partition structs, and
-//! compile-time checks.
+//! specs its fields declare, its index handles, and compile-time checks.
 //!
 //! Every derive takes `#[cryptbox(…)]`, on the item and, for `Record`, on its
 //! fields, and accepts `crate = "path"` in its item-level attribute, for code
@@ -15,7 +14,6 @@
 
 mod attr;
 mod blind_index;
-mod bound_id;
 mod record;
 mod seal;
 
@@ -31,7 +29,6 @@ use syn::{DeriveInput, parse_macro_input};
 /// | `codec = Type` | on a type with fields, unless `transparent` | The codec. See below for its defaults. |
 /// | `transparent` | no | Stores a type's single field alone. |
 /// | `padding = …` | no | `none` (the default), `block(size)`, or `length(len)`. |
-/// | `bound(Type, …)` | no | The bound ID types values are bound to (`Bound`), in argument order. Defaults to none. |
 /// | `record = Type` | no | The type of the record ID values are bound to (`Record`). Defaults to none. |
 /// | `indexes(Type, …)` | no | The seal's blind indexes (`Indexes`). Defaults to none. |
 ///
@@ -53,8 +50,8 @@ use syn::{DeriveInput, parse_macro_input};
 ///   stores exactly the bytes of a marker over the field's type with the same
 ///   ID and codec, so the two read each other's values.
 ///
-/// Without `bound`, `record`, and `indexes`, values are bound to their seal ID
-/// alone: `Bound = ()`, `Record = ()`, and no declared blind indexes.
+/// Without `record` and `indexes`, values are bound to their seal ID alone:
+/// `Record = ()`, and no declared blind indexes.
 ///
 /// ```
 /// #[derive(cryptbox::Seal)]
@@ -78,14 +75,13 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
 ///         type Value = String;
 ///         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-///         type Bound = ();
 ///         type Record = ();
 ///         type Indexes = ();
 ///     }
 /// };
 /// ```
 ///
-/// A seal bound to a tenant and a record, with a blind index:
+/// A seal bound to a record, with a blind index:
 ///
 /// ```
 /// # use cryptbox::BlindIndexError;
@@ -97,7 +93,6 @@ use syn::{DeriveInput, parse_macro_input};
 /// #[cryptbox(
 ///     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
 ///     value = String,
-///     bound(cryptbox::TenantId),
 ///     record = i64,
 ///     indexes(EmailLookup),
 /// )]
@@ -122,7 +117,6 @@ use syn::{DeriveInput, parse_macro_input};
 /// # pub struct EmailLookup;
 /// # impl cryptbox::BlindIndexSpec for EmailLookup {
 /// #     type Seal = CustomerEmail;
-/// #     type Partition = (cryptbox::TenantId,);
 /// #     const ID: cryptbox::IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
 /// #     const BITS: u16 = 32;
 /// #     const NORMALIZER: &'static str = "email/1";
@@ -142,7 +136,6 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
 ///         type Value = String;
 ///         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-///         type Bound = (cryptbox::TenantId,);
 ///         type Record = i64;
 ///         type Indexes = (EmailLookup,);
 ///     }
@@ -187,7 +180,6 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
 ///         type Value = Self;
 ///         type Codec = Self;
-///         type Bound = ();
 ///         type Record = ();
 ///         type Indexes = ();
 ///     }
@@ -223,7 +215,6 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 /// | --- | --- | --- |
 /// | `id = "…"` | yes | The index ID, a hyphenated UUID string literal. |
 /// | `seal = Type` | yes | The seal whose values the index projects. |
-/// | `partition(Type, …)` | no | The bound ID types that partition the index, which a query supplies: some of the seal's bound types. Defaults to all of them. |
 /// | `bits = N` | yes | The retained index bits, from 1 to 256. |
 /// | `query = Type` | yes | The lookup input, such as `str`. |
 /// | `normalize = path` | yes | A `fn(&Query) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>`. |
@@ -265,9 +256,7 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 /// ```
 ///
 /// expands to exactly the manual impl. The real expansion spells `Result`, `Vec`,
-/// and `zeroize::Zeroizing` as absolute paths, the last through `cryptbox`, and
-/// without `partition` names the seal's bound list as `<UserEmail as
-/// Seal>::Bound`, here `()`:
+/// and `zeroize::Zeroizing` as absolute paths, the last through `cryptbox`:
 ///
 /// ```
 /// # use cryptbox::BlindIndexError;
@@ -283,7 +272,6 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 ///     #[automatically_derived]
 ///     impl ::cryptbox::BlindIndexSpec for EmailLookup {
 ///         type Seal = UserEmail;
-///         type Partition = ();
 ///         const ID: ::cryptbox::IndexId =
 ///             ::cryptbox::IndexId::from_u128(0x2e4c7b1a_5d3f_4a86_9b20_7f1e6c8d4a53);
 ///         const BITS: u16 = 32;
@@ -312,49 +300,6 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
     derive(input, blind_index::expand)
 }
 
-/// Derives `cryptbox::BoundId` and `cryptbox::PartType` for a newtype over one
-/// ID, such as an org ID, which seals bind their values to.
-///
-/// | `#[cryptbox(…)]` key | Required | Meaning |
-/// | --- | --- | --- |
-/// | `kind = "<uuid>"` | yes | The kind of value, `BoundId::KIND_ID`: a fresh UUID, persistent schema. |
-/// | `crate = "path"` | no | The path to `cryptbox`. |
-///
-/// The field's type is any `PartType`, such as `[u8; 16]`, `uuid::Uuid` with
-/// `cryptbox`'s `uuid` feature, `i64`, or `Vec<u8>`; the newtype binds as it.
-///
-/// ```
-/// #[derive(cryptbox::BoundId)]
-/// #[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
-/// struct OrgId([u8; 16]);
-/// ```
-///
-/// expands to:
-///
-/// ```
-/// # struct OrgId([u8; 16]);
-/// impl cryptbox::PartType for OrgId {
-///     const KIND: cryptbox::PartKind = <[u8; 16] as cryptbox::PartType>::KIND;
-///
-///     fn part_value(&self) -> cryptbox::PartValue<'_> {
-///         <[u8; 16] as cryptbox::PartType>::part_value(&self.0)
-///     }
-///
-///     fn from_part_value(value: cryptbox::PartValue<'_>) -> Result<Self, cryptbox::Error> {
-///         <[u8; 16] as cryptbox::PartType>::from_part_value(value).map(Self)
-///     }
-/// }
-///
-/// impl cryptbox::BoundId for OrgId {
-///     const KIND_ID: cryptbox::PartId =
-///         cryptbox::PartId::from_u128(0x59881c28_3003_4047_847f_d7cc73b140e5);
-/// }
-/// ```
-#[proc_macro_derive(BoundId, attributes(cryptbox))]
-pub fn derive_bound_id(input: TokenStream) -> TokenStream {
-    derive(input, bound_id::expand)
-}
-
 /// Derives `cryptbox::Record` for a row struct, and generates its stored form,
 /// the seals its fields declare, and a handle for each blind index.
 ///
@@ -364,9 +309,8 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 /// | Field role | Meaning |
 /// | --- | --- |
 /// | `record_id` | The record ID, exactly one field. Every sealed field is bound to it. |
-/// | `bound` | A bound value, such as an org: a `BoundId` type, up to four fields. Every sealed field is bound to all of them. |
 /// | `seal = "<uuid>"` | Encrypted, under the field's own seal with this seal ID. |
-/// | `plaintext` | Stored as it is. |
+/// | `plaintext` | Stored as it is, such as an org: authorize on it like any other column. |
 ///
 /// A sealed field also takes `codec = Type`, `padding = …`, as for
 /// `#[derive(Seal)]`, and `name = Name` to name its seal instead of the
@@ -380,7 +324,6 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 /// | `bits = N` | yes | The retained index bits, from 1 to 256. |
 /// | `normalize = path`, `normalizer = "…"` | yes | As for `#[derive(BlindIndexSpec)]`. |
 /// | `query = Type`, `project = path` | no | As for `#[derive(BlindIndexSpec)]`; `query` defaults to `str`. |
-/// | `across(field, …)` | no | The bound fields the index spans. It is partitioned by the others. |
 /// | `column = name` | no | The stored form's index column. Defaults to the field's name and `_index`. |
 ///
 /// A sealed field's `legacy(…)` names the declaration it had before, so rows
@@ -389,7 +332,6 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 /// | `legacy(…)` key | Meaning |
 /// | --- | --- |
 /// | `seal = "…"` | Its seal ID. Defaults to the current one. |
-/// | `bound(field, …)` | The bound fields it bound, in order. Defaults to none. |
 /// | `record = bool` | Whether it bound the record ID. Defaults to `true`. |
 ///
 /// `Record::open` opens a value under the declaration its header names, and
@@ -408,8 +350,8 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 ///
 /// The stored form has the record's fields in order, each sealed field as its
 /// `Sealed<Seal>`, and each blind index in a `BlindIndex<Spec>` column after its
-/// field. `Record::seal` clones the record ID, bound, and plaintext fields, so
-/// they implement `Clone`.
+/// field. `Record::seal` clones the record ID and plaintext fields, so they
+/// implement `Clone`.
 ///
 /// ```
 /// # use cryptbox::BlindIndexError;
@@ -417,16 +359,12 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 /// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
-/// #[derive(Clone, cryptbox::BoundId)]
-/// #[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
-/// pub struct OrgId([u8; 16]);
-///
 /// #[derive(cryptbox::Record)]
 /// pub struct Customer {
 ///     #[cryptbox(record_id)]
 ///     pub id: i64,
-///     #[cryptbox(bound)]
-///     pub org: OrgId,
+///     #[cryptbox(plaintext)]
+///     pub org: i64,
 ///     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
 ///     #[cryptbox(blind_index(
 ///         id = "ab78afa9-7aaa-499c-8239-037b7e136130",
@@ -443,23 +381,20 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 /// expands to exactly this hand-written code. The real expansion spells
 /// `Result`, `Option`, `Clone`, `Sized`, and the codec as absolute paths, wraps
 /// each impl in `const _: () = { … };`, forwards docs, and checks, at compile
-/// time, that each bound field is a `BoundId` and the record ID a `PartType`:
+/// time, that the record ID is a `PartType`:
 ///
 /// ```
 /// # use cryptbox::{
 /// #     BlindIndex, BlindIndexError, BlindIndexSpec, EncryptionKeys, Error, Index, IndexId,
-/// #     Padding, PartType, Record, RecordKeys, Seal, SealId, Sealed, Utf8,
+/// #     Padding, Record, RecordKeys, Seal, SealId, Sealed, Utf8,
 /// # };
 /// # use zeroize::Zeroizing;
 /// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
 /// # }
-/// # #[derive(Clone, cryptbox::BoundId)]
-/// # #[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
-/// # pub struct OrgId([u8; 16]);
 /// # pub struct Customer {
 /// #     pub id: i64,
-/// #     pub org: OrgId,
+/// #     pub org: i64,
 /// #     pub email: String,
 /// #     pub created_at: i64,
 /// # }
@@ -471,7 +406,6 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Bound = (OrgId,);
 ///     type Record = i64;
 ///     type Indexes = (CustomerEmailIndex,);
 /// }
@@ -481,7 +415,6 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 ///
 /// impl BlindIndexSpec for CustomerEmailIndex {
 ///     type Seal = CustomerEmail;
-///     type Partition = (OrgId,);
 ///     const ID: IndexId = IndexId::from_u128(0xab78afa9_7aaa_499c_8239_037b7e136130);
 ///     const BITS: u16 = 32;
 ///     const NORMALIZER: &'static str = "email/1";
@@ -499,7 +432,7 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 /// /// The stored form of [`Customer`].
 /// pub struct StoredCustomer {
 ///     pub id: i64,
-///     pub org: OrgId,
+///     pub org: i64,
 ///     pub email: Sealed<CustomerEmail>,
 ///     /// The `email_index` blind index of `email`.
 ///     pub email_index: BlindIndex<CustomerEmailIndex>,
@@ -511,19 +444,15 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 ///
 ///     const SEALS: &'static [SealId] = &[<CustomerEmail as Seal>::ID];
 ///     const RECORD_ID: &'static str = "id";
-///     const BOUND: &'static [&'static str] = &["org"];
-///     const PLAINTEXT: &'static [&'static str] = &["created_at"];
+///     const PLAINTEXT: &'static [&'static str] = &["org", "created_at"];
 ///
 ///     fn seal<K>(&self, keys: &K) -> Result<StoredCustomer, Error>
 ///     where
 ///         K: RecordKeys + ?Sized,
 ///     {
-///         let email = Sealed::<CustomerEmail>::seal(&self.email, (&self.org, &self.id), keys)?;
-///         let email_index = CustomerEmailIndex::derive_with(
-///             &self.email,
-///             &self.org,
-///             keys.record_blind_index_keyring()?,
-///         )?;
+///         let email = Sealed::<CustomerEmail>::seal(&self.email, &self.id, keys)?;
+///         let email_index =
+///             CustomerEmailIndex::derive_with(&self.email, keys.record_blind_index_keyring()?)?;
 ///
 ///         Ok(StoredCustomer {
 ///             id: Clone::clone(&self.id),
@@ -538,7 +467,7 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 ///     where
 ///         K: EncryptionKeys + ?Sized,
 ///     {
-///         let email = stored.email.open((&stored.org, &stored.id), keys)?;
+///         let email = stored.email.open(&stored.id, keys)?;
 ///
 ///         Ok(Self {
 ///             id: stored.id,
@@ -550,20 +479,11 @@ pub fn derive_bound_id(input: TokenStream) -> TokenStream {
 /// }
 ///
 /// impl Customer {
-///     /// The `email_index` blind index of `email`, searched within its partition.
-///     pub const EMAIL_INDEX: Index<Customer, CustomerEmailIndex, OrgId> = Index::__new(
-///         |partition| Vec::from([PartType::part_value(partition)]),
-///         |row: &StoredCustomer, partition| {
-///             PartType::part_value(&row.org) == PartType::part_value(partition)
-///         },
-///         |record: &Customer| -> Option<&String> { Some(&record.email) },
-///     );
+///     /// The `email_index` blind index of `email`.
+///     pub const EMAIL_INDEX: Index<Customer, CustomerEmailIndex> =
+///         Index::__new(|record: &Customer| -> Option<&String> { Some(&record.email) });
 /// }
 /// ```
-///
-/// An index partitioned by two or more bound values takes a generated struct
-/// with a field per bound value, named after the spec and `Partition`, such as
-/// `CustomerNoteIndexPartition`; one that spans every bound value takes `()`.
 #[proc_macro_derive(Record, attributes(cryptbox))]
 pub fn derive_record(input: TokenStream) -> TokenStream {
     derive(input, record::expand)

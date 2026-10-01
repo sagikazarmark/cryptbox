@@ -2,8 +2,8 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Raw, Seal, Sealed, TenantId,
-    Utf8, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id, seal_id,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Raw, Seal, Sealed, Utf8,
+    index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -17,7 +17,7 @@ fn keys() -> EncryptionKeyring {
     EncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap()
 }
 
-fn read<F: Seal<Bound = (), Record = ()>>(vector: &str) -> Result<F::Value, Error> {
+fn read<F: Seal<Record = ()>>(vector: &str) -> Result<F::Value, Error> {
     Sealed::<F>::from_bytes(hex::decode(vector).unwrap())
         .unwrap()
         .open((), &keys())
@@ -30,7 +30,6 @@ impl Seal for VectorSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -42,7 +41,6 @@ impl Seal for PaddedVectorSeal {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -84,7 +82,6 @@ struct VectorIndex;
 
 impl BlindIndexSpec for VectorIndex {
     type Seal = VectorSeal;
-    type Partition = ();
     const ID: IndexId = index_id!("abcdefab-cdef-4def-8def-abcdefabcdef");
     const BITS: u16 = 13;
     const NORMALIZER: &'static str = "exact/1";
@@ -105,8 +102,8 @@ fn experimental_blind_index_vector_is_stable() {
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
 
-    let index = VectorIndex::derive_with(&b"normalized@example.com".to_vec(), (), &keys).unwrap();
-    let probes = VectorIndex::probes_with("normalized@example.com", (), &keys).unwrap();
+    let index = VectorIndex::derive_with(&b"normalized@example.com".to_vec(), &keys).unwrap();
+    let probes = VectorIndex::probes_with("normalized@example.com", &keys).unwrap();
 
     assert_eq!(hex::encode(index.as_bytes()), VECTOR);
     assert_eq!(probes.len(), 1);
@@ -123,52 +120,4 @@ fn format_1_blind_indexes_are_rejected() {
         inspect_blind_index(&format_1).unwrap_err(),
         Error::InvalidBlindIndex
     );
-}
-
-struct TenantVectorSeal;
-
-impl Seal for TenantVectorSeal {
-    const ID: cryptbox::SealId = VectorSeal::ID;
-    const PADDING: Padding = Padding::NONE;
-    type Value = Vec<u8>;
-    type Codec = Raw;
-    type Bound = (TenantId,);
-    type Record = ();
-    type Indexes = ();
-}
-
-struct TenantVectorIndex;
-
-impl BlindIndexSpec for TenantVectorIndex {
-    type Seal = TenantVectorSeal;
-    type Partition = (TenantId,);
-    const ID: IndexId = VectorIndex::ID;
-    const BITS: u16 = VectorIndex::BITS;
-    const NORMALIZER: &'static str = "exact/1";
-    type Query = str;
-
-    fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(Zeroizing::new(query.as_bytes().to_vec()))
-    }
-
-    fn normalize_value(value: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        Ok(Zeroizing::new(value.clone()))
-    }
-}
-
-#[test]
-fn experimental_scoped_blind_index_vector_is_stable() {
-    // docs/wire-format.md#scoped-blind-index-vector
-    const VECTOR: &str = "02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d8b88";
-    let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
-    let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
-    let acme = TenantId::new(b"acme".to_vec()).unwrap();
-
-    let index =
-        TenantVectorIndex::derive_with(&b"normalized@example.com".to_vec(), &acme, &keys).unwrap();
-    let probes = TenantVectorIndex::probes_with("normalized@example.com", &acme, &keys).unwrap();
-
-    assert_eq!(hex::encode(index.as_bytes()), VECTOR);
-    assert_eq!(probes.len(), 1);
-    assert_eq!(hex::encode(probes[0].as_bytes()), VECTOR);
 }

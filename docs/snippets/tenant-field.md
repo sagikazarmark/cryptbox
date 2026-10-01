@@ -1,9 +1,7 @@
 ```rust
 use std::collections::HashMap;
 
-use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Error, Padding, Seal, SealId, Sealed, TenantId, Utf8,
-};
+use cryptbox::{EncryptionKey, EncryptionKeyring, Error, Padding, Seal, SealId, Sealed, Utf8};
 
 struct CustomerEmail;
 
@@ -12,17 +10,17 @@ impl Seal for CustomerEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = (TenantId,);
     type Record = [u8; 16];
     type Indexes = ();
 }
 
-/// One keyring per tenant, so one tenant's data can be shredded on its own.
-struct TenantKeyrings(HashMap<TenantId, EncryptionKeyring>);
+/// One keyring per tenant, so tenants cannot open each other's values and one
+/// tenant's data can be shredded on its own.
+struct TenantKeyrings(HashMap<&'static str, EncryptionKeyring>);
 
 impl TenantKeyrings {
     /// The keyring of `tenant`. An unknown tenant fails closed.
-    fn of(&self, tenant: &TenantId) -> Result<&EncryptionKeyring, Error> {
+    fn of(&self, tenant: &str) -> Result<&EncryptionKeyring, Error> {
         self.0.get(tenant).ok_or(Error::KeysUnavailable)
     }
 }
@@ -36,47 +34,38 @@ const GRACE: [u8; 16] = [
 ];
 
 fn main() -> Result<(), Error> {
-    // Tenants come from the request's authorized claims, never from a stored row.
-    let acme = TenantId::new("acme")?;
-    let globex = TenantId::new("globex")?;
     // Ephemeral demo keys: an independent keyring per tenant on every run.
     let keys = TenantKeyrings(HashMap::from([
         (
-            acme.clone(),
+            "acme",
             EncryptionKeyring::new(EncryptionKey::generate()?, [])?,
         ),
         (
-            globex.clone(),
+            "globex",
             EncryptionKeyring::new(EncryptionKey::generate()?, [])?,
         ),
     ]));
 
-    let (ada, grace) = (&ADA, &GRACE);
     let email = "ada@acme.example".to_owned();
-    let sealed = Sealed::<CustomerEmail>::seal(&email, (&acme, ada), keys.of(&acme)?)?;
-    assert_eq!(sealed.open((&acme, ada), keys.of(&acme)?)?, email);
+    let sealed = Sealed::<CustomerEmail>::seal(&email, &ADA, keys.of("acme")?)?;
+    assert_eq!(sealed.open(&ADA, keys.of("acme")?)?, email);
 
-    // Another record of the same tenant is a different binding.
+    // Another record is a different binding.
     assert!(matches!(
-        sealed.open((&acme, grace), keys.of(&acme)?),
+        sealed.open(&GRACE, keys.of("acme")?),
         Err(Error::AuthenticationFailed)
     ));
     // Another tenant's keyring does not hold the key this envelope names.
     assert!(matches!(
-        sealed.open((&globex, ada), keys.of(&globex)?),
+        sealed.open(&ADA, keys.of("globex")?),
         Err(Error::UnknownEncryptionKey(_))
     ));
 
     // Moving the record to another tenant is an explicit reseal under its keys.
-    let moved = sealed.reseal_across(
-        (&acme, ada),
-        keys.of(&acme)?,
-        (&globex, ada),
-        keys.of(&globex)?,
-    )?;
-    assert_eq!(moved.open((&globex, ada), keys.of(&globex)?)?, email);
+    let moved = sealed.reseal_across(&ADA, keys.of("acme")?, &ADA, keys.of("globex")?)?;
+    assert_eq!(moved.open(&ADA, keys.of("globex")?)?, email);
 
-    println!("Tenant-bound round trip succeeded.");
+    println!("Record-bound round trip with a keyring per tenant succeeded.");
     Ok(())
 }
 ```

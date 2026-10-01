@@ -1,34 +1,40 @@
-error[E0277]: `[u8; 16]` is not a bound ID type
- --> tests/ui/record_type_errors.rs:2:10
+error[E0277]: the trait bound `String: RecordIdType` is not satisfied
+ --> tests/ui/record_type_errors.rs:5:9
   |
-2 | #[derive(cryptbox::Record)]
-  |          ^^^^^^^^^^^^^^^^ a bound value needs a type that implements `BoundId`
+5 |     id: String,
+  |         ^^^^^^ the trait `PartType` is not implemented for `String`
   |
-  = help: the trait `BoundId` is not implemented for `[u8; 16]`
-  = note: wrap the ID in a newtype, such as `struct OrgId(Uuid);`, and add `#[derive(BoundId)]` and `#[cryptbox(kind = "<uuid>")]` to it
-help: the trait `BoundId` is implemented for `TenantId`
- --> $WORKSPACE/src/binding/bound_id.rs
+help: the following other types implement trait `PartType`
+ --> $WORKSPACE/src/binding/part.rs
   |
-  | impl BoundId for TenantId {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^
-  = note: required for `([u8; 16],)` to implement `BoundList`
-note: required by a bound in `cryptbox::Seal::Bound`
+  | impl PartType for [u8; 16] {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
+...
+  | impl PartType for i64 {
+  | ^^^^^^^^^^^^^^^^^^^^^ `i64`
+...
+  | impl PartType for Vec<u8> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
+...
+  | impl PartType for Box<[u8]> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<[u8]>`
+  = note: required for `String` to implement `RecordIdType`
+note: required by a bound in `cryptbox::Seal::Record`
  --> $WORKSPACE/src/seal.rs
   |
-  |     type Bound: BoundList;
-  |                 ^^^^^^^^^ required by this bound in `Seal::Bound`
-  = note: this error originates in the derive macro `cryptbox::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+  |     type Record: RecordIdType;
+  |                  ^^^^^^^^^^^^ required by this bound in `Seal::Record`
 
 error[E0277]: `Address` has no default codec
-  --> tests/ui/record_type_errors.rs:22:14
+  --> tests/ui/record_type_errors.rs:20:14
    |
-22 |     address: Address,
+20 |     address: Address,
    |              ^^^^^^^ `Address` has no built-in codec
    |
 help: the trait `cryptbox::__private::DefaultCodec` is not implemented for `Address`
-  --> tests/ui/record_type_errors.rs:12:1
+  --> tests/ui/record_type_errors.rs:10:1
    |
-12 | struct Address {
+10 | struct Address {
    | ^^^^^^^^^^^^^^
    = note: only `String`, `Vec<u8>`, `Secret<String>`, and `Secret<Vec<u8>>` have one: name the codec with `codec = …`, such as `codec = cryptbox::Json`; the codec is persistent schema
 help: the following other types implement trait `cryptbox::__private::DefaultCodec`
@@ -46,45 +52,63 @@ help: the following other types implement trait `cryptbox::__private::DefaultCod
    | impl DefaultCodec for Secret<Vec<u8>> {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Secret<Vec<u8>>`
 
-error[E0277]: `[u8; 16]` is not a bound ID type
- --> tests/ui/record_type_errors.rs:7:10
+error[E0277]: `String` is not a record ID type
+ --> tests/ui/record_type_errors.rs:5:9
   |
-7 |     org: [u8; 16],
-  |          ^^^^^^^^ a bound value needs a type that implements `BoundId`
+5 |     id: String,
+  |         ^^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
-  = help: the trait `BoundId` is not implemented for `[u8; 16]`
-  = note: wrap the ID in a newtype, such as `struct OrgId(Uuid);`, and add `#[derive(BoundId)]` and `#[cryptbox(kind = "<uuid>")]` to it
-help: the trait `BoundId` is implemented for `TenantId`
- --> $WORKSPACE/src/binding/bound_id.rs
+  = help: the trait `PartType` is not implemented for `String`
+  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, `uuid::Uuid` with the `uuid` feature, or implement `cryptbox::PartType`; encode text as bytes
+help: the following other types implement trait `PartType`
+ --> $WORKSPACE/src/binding/part.rs
   |
-  | impl BoundId for TenantId {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^
+  | impl PartType for [u8; 16] {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
+...
+  | impl PartType for i64 {
+  | ^^^^^^^^^^^^^^^^^^^^^ `i64`
+...
+  | impl PartType for Vec<u8> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
+...
+  | impl PartType for Box<[u8]> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<[u8]>`
 note: required by a bound in `_::{closure#0}::check`
  --> tests/ui/record_type_errors.rs:2:10
   |
 2 | #[derive(cryptbox::Record)]
   |          ^^^^^^^^^^^^^^^^ required by this bound in `check`
 ...
-7 |     org: [u8; 16],
-  |          -------- required by a bound in this function
+5 |     id: String,
+  |         ------ required by a bound in this function
   = note: this error originates in the derive macro `cryptbox::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: `[u8; 16]` is not a bound ID type
+error[E0277]: `&String` are not binding arguments of seal `TextIdEmail`
  --> tests/ui/record_type_errors.rs:2:10
   |
 2 | #[derive(cryptbox::Record)]
-  |          ^^^^^^^^^^^^^^^^ a bound value needs a type that implements `BoundId`
+  |          ^^^^^^^^^^^^^^^^ not the arguments `TextIdEmail` binds
   |
-  = help: the trait `BoundId` is not implemented for `[u8; 16]`
-  = note: wrap the ID in a newtype, such as `struct OrgId(Uuid);`, and add `#[derive(BoundId)]` and `#[cryptbox(kind = "<uuid>")]` to it
-help: the trait `BoundId` is implemented for `TenantId`
- --> $WORKSPACE/src/binding/bound_id.rs
+  = help: the trait `PartType` is not implemented for `String`
+  = note: pass `()`, or `&record_id` when `Seal::Record` is a record ID type
+help: the following other types implement trait `PartType`
+ --> $WORKSPACE/src/binding/part.rs
   |
-  | impl BoundId for TenantId {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^
-  = note: required for `(&[u8; 16], &i64)` to implement `cryptbox::args::sealed::ArgsFor<([u8; 16],), i64>`
-  = note: required for `(&[u8; 16], &i64)` to implement `cryptbox::args::sealed::Sealed<PlainUuidEmail>`
-  = note: required for `(&[u8; 16], &i64)` to implement `cryptbox::Args<PlainUuidEmail>`
+  | impl PartType for [u8; 16] {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
+...
+  | impl PartType for i64 {
+  | ^^^^^^^^^^^^^^^^^^^^^ `i64`
+...
+  | impl PartType for Vec<u8> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
+...
+  | impl PartType for Box<[u8]> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<[u8]>`
+  = note: required for `&String` to implement `cryptbox::args::sealed::ArgsFor<String>`
+  = note: required for `&String` to implement `cryptbox::args::sealed::Sealed<TextIdEmail>`
+  = note: required for `&String` to implement `cryptbox::Args<TextIdEmail>`
 note: required by a bound in `Sealed::<F>::seal`
  --> $WORKSPACE/src/value.rs
   |
@@ -95,22 +119,31 @@ note: required by a bound in `Sealed::<F>::seal`
   |                    ^^^^^^^ required by this bound in `Sealed::<F>::seal`
   = note: this error originates in the derive macro `cryptbox::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
 
-error[E0277]: `[u8; 16]` is not a bound ID type
+error[E0277]: `&String` are not binding arguments of seal `TextIdEmail`
  --> tests/ui/record_type_errors.rs:2:10
   |
 2 | #[derive(cryptbox::Record)]
-  |          ^^^^^^^^^^^^^^^^ a bound value needs a type that implements `BoundId`
+  |          ^^^^^^^^^^^^^^^^ not the arguments `TextIdEmail` binds
   |
-  = help: the trait `BoundId` is not implemented for `[u8; 16]`
-  = note: wrap the ID in a newtype, such as `struct OrgId(Uuid);`, and add `#[derive(BoundId)]` and `#[cryptbox(kind = "<uuid>")]` to it
-help: the trait `BoundId` is implemented for `TenantId`
- --> $WORKSPACE/src/binding/bound_id.rs
+  = help: the trait `PartType` is not implemented for `String`
+  = note: pass `()`, or `&record_id` when `Seal::Record` is a record ID type
+help: the following other types implement trait `PartType`
+ --> $WORKSPACE/src/binding/part.rs
   |
-  | impl BoundId for TenantId {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^
-  = note: required for `(&[u8; 16], &i64)` to implement `cryptbox::args::sealed::ArgsFor<([u8; 16],), i64>`
-  = note: required for `(&[u8; 16], &i64)` to implement `cryptbox::args::sealed::Sealed<PlainUuidEmail>`
-  = note: required for `(&[u8; 16], &i64)` to implement `cryptbox::Args<PlainUuidEmail>`
+  | impl PartType for [u8; 16] {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
+...
+  | impl PartType for i64 {
+  | ^^^^^^^^^^^^^^^^^^^^^ `i64`
+...
+  | impl PartType for Vec<u8> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
+...
+  | impl PartType for Box<[u8]> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<[u8]>`
+  = note: required for `&String` to implement `cryptbox::args::sealed::ArgsFor<String>`
+  = note: required for `&String` to implement `cryptbox::args::sealed::Sealed<TextIdEmail>`
+  = note: required for `&String` to implement `cryptbox::Args<TextIdEmail>`
 note: required by a bound in `Sealed::<F>::open`
  --> $WORKSPACE/src/value.rs
   |

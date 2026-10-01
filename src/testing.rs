@@ -30,7 +30,6 @@ use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Bound = ();
 ///     type Record = ();
 ///     type Indexes = ();
 /// }
@@ -97,7 +96,6 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Bound = ();
 ///     type Record = ();
 ///     type Indexes = ();
 /// }

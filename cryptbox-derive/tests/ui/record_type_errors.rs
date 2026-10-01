@@ -1,10 +1,8 @@
-/// Not a bound ID: a bound field needs one, so the kind of value is declared.
+/// Not a record ID type: a record ID is a UUID, an `i64`, or bytes.
 #[derive(cryptbox::Record)]
-struct PlainUuid {
+struct TextId {
     #[cryptbox(record_id)]
-    id: i64,
-    #[cryptbox(bound)]
-    org: [u8; 16],
+    id: String,
     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
     email: String,
 }

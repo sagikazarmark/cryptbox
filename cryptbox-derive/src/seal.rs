@@ -12,7 +12,6 @@ const KEYS: &[Key] = &[
     Key::Codec,
     Key::Transparent,
     Key::Padding,
-    Key::Bound,
     Key::Record,
     Key::Indexes,
     Key::Crate,
@@ -56,8 +55,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         || quote!(#krate::Padding::NONE),
         |padding| padding.to_tokens(&krate),
     );
-    let bound = attrs.bound.take().unwrap_or_default();
-    let bound = quote!((#(#bound,)*));
     let record = attrs
         .record
         .take()
@@ -103,9 +100,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
-    let items = seal_items(
-        &krate, &id, &padding, &value, &codec, &bound, &record, &indexes,
-    );
+    let items = seal_items(&krate, &id, &padding, &value, &codec, &record, &indexes);
 
     Ok(quote! {
         const _: () = {
@@ -120,14 +115,12 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 }
 
 /// The items of a `Seal` impl, as every derive that declares a seal writes them.
-#[expect(clippy::too_many_arguments, reason = "one per item of the impl")]
 pub(crate) fn seal_items(
     krate: &Path,
     id: &UuidLiteral,
     padding: &TokenStream,
     value: &TokenStream,
     codec: &TokenStream,
-    bound: &TokenStream,
     record: &TokenStream,
     indexes: &[Type],
 ) -> TokenStream {
@@ -136,7 +129,6 @@ pub(crate) fn seal_items(
         const PADDING: #krate::Padding = #padding;
         type Value = #value;
         type Codec = #codec;
-        type Bound = #bound;
         type Record = #record;
         type Indexes = (#(#indexes,)*);
     }

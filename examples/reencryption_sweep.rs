@@ -122,7 +122,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let current_index_keys = BlindIndexKeyring::new(current_index_key, [])?;
     assert!(verify_sweep(&mut connection, &current_keys, &current_index_keys).await?);
     assert_eq!(
-        EmailLookup::probes_with("first@example.com", (), &current_index_keys)?.len(),
+        EmailLookup::probes_with("first@example.com", &current_index_keys)?.len(),
         1
     );
 
@@ -205,7 +205,7 @@ async fn sweep_batch(
         };
         let rewritten_index = if index_is_stale {
             let plaintext = rewritten_ciphertext.open((), keys)?;
-            EmailLookup::derive_with(&plaintext, (), index_keys)?
+            EmailLookup::derive_with(&plaintext, index_keys)?
         } else {
             index
         };

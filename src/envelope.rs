@@ -175,10 +175,10 @@ mod tests {
     }
 
     #[test]
-    fn scoped_vector_is_stable() {
-        let bytes = hex::decode(SCOPED_CONTEXT).unwrap();
+    fn record_vector_is_stable() {
+        let bytes = hex::decode(RECORD_CONTEXT).unwrap();
         let envelope = seal_with_nonce(
-            context(&bytes, fingerprint(SCOPED_FINGERPRINT)),
+            context(&bytes, fingerprint(RECORD_FINGERPRINT)),
             Padding::NONE,
             b"cryptbox vector",
             &vector_key(),
@@ -191,75 +191,47 @@ mod tests {
             concat!(
                 "4342580002010011111111222243338444555555555555",
                 // Context fingerprint, then the nonce.
-                "0d940ea58b80d8bd",
+                "76081b730530f822",
                 "000102030405060708090a0b0c0d0e0f1011121314151617",
             )
         );
-        assert_eq!(hex::encode(envelope), SCOPED_VECTOR);
+        assert_eq!(hex::encode(envelope), RECORD_VECTOR);
     }
 
-    #[test]
-    fn scoped_record_vector_is_stable() {
-        let bytes = hex::decode(SCOPED_RECORD_CONTEXT).unwrap();
-        let envelope = seal_with_nonce(
-            context(&bytes, fingerprint(SCOPED_RECORD_FINGERPRINT)),
-            Padding::NONE,
-            b"cryptbox vector",
-            &vector_key(),
-            vector_nonce(),
-        )
-        .unwrap();
-
-        assert_eq!(hex::encode(&envelope[23..31]), SCOPED_RECORD_FINGERPRINT);
-        assert_eq!(hex::encode(envelope), SCOPED_RECORD_VECTOR);
-    }
-
-    // docs/wire-format.md#provisional-bound-vectors
-    const UNSCOPED_CONTEXT: &str = "123456781234423482341234567890ab0000";
-    // The empty declaration's fingerprint, which an unscoped binding carries.
-    const UNSCOPED_FINGERPRINT: &str = "65640fc8333534b9";
-    const SCOPED_CONTEXT: &str = "123456781234423482341234567890ab00021111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
-    const SCOPED_RECORD_CONTEXT: &str = "123456781234423482341234567890ab000300000000000000000000000000000000020000000800000000000000071111111111111111111111111111111101000000103333333333333333333333333333333322222222222222222222222222222222030000000477732d31";
-    const SCOPED_FINGERPRINT: &str = "0d940ea58b80d8bd";
-    const SCOPED_RECORD_FINGERPRINT: &str = "27689c2e3de5d291";
-    const SCOPED_VECTOR: &str = "43425800020100111111112222433384445555555555550d940ea58b80d8bd000102030405060708090a0b0c0d0e0f101112131415161760a4cae4f6c4caea7d60b5730503156361817eff41170fa37c4d0a55ca82bd";
-    const SCOPED_RECORD_VECTOR: &str = "434258000201001111111122224333844455555555555527689c2e3de5d291000102030405060708090a0b0c0d0e0f10111213141516174f25a5c9a5434209ef7a02cea389bff059087653aa6f82eee5dc8a6d39ed7f";
+    // docs/wire-format.md#provisional-record-vector
+    const UNBOUND_CONTEXT: &str = "123456781234423482341234567890ab0000";
+    // The empty declaration's fingerprint, which a binding without a record carries.
+    const UNBOUND_FINGERPRINT: &str = "65640fc8333534b9";
+    const RECORD_CONTEXT: &str = "123456781234423482341234567890ab00010000000000000000000000000000000002000000080000000000000007";
+    const RECORD_FINGERPRINT: &str = "76081b730530f822";
+    const RECORD_VECTOR: &str = "434258000201001111111122224333844455555555555576081b730530f822000102030405060708090a0b0c0d0e0f1011121314151617c899d84358bcff6b35f9bb49eea2c2e906efc22bcad85fd463c7217135fe97";
 
     #[test]
-    fn scoped_vectors_open_under_their_context() {
-        for (vector, bytes, expected) in [
-            (SCOPED_VECTOR, SCOPED_CONTEXT, SCOPED_FINGERPRINT),
-            (
-                SCOPED_RECORD_VECTOR,
-                SCOPED_RECORD_CONTEXT,
-                SCOPED_RECORD_FINGERPRINT,
-            ),
-        ] {
-            let envelope = hex::decode(vector).unwrap();
-            let bytes = hex::decode(bytes).unwrap();
+    fn the_record_vector_opens_under_its_context() {
+        let envelope = hex::decode(RECORD_VECTOR).unwrap();
+        let bytes = hex::decode(RECORD_CONTEXT).unwrap();
 
-            assert_eq!(
-                open(
-                    context(&bytes, fingerprint(expected)),
-                    &envelope,
-                    &keyring()
-                )
-                .unwrap()
-                .as_slice(),
-                b"cryptbox vector"
-            );
-        }
+        assert_eq!(
+            open(
+                context(&bytes, fingerprint(RECORD_FINGERPRINT)),
+                &envelope,
+                &keyring()
+            )
+            .unwrap()
+            .as_slice(),
+            b"cryptbox vector"
+        );
     }
 
     #[test]
     fn a_sealed_value_round_trips_and_reports_its_fingerprint() {
-        let bytes = hex::decode(SCOPED_RECORD_CONTEXT).unwrap();
-        let context = context(&bytes, fingerprint(SCOPED_RECORD_FINGERPRINT));
+        let bytes = hex::decode(RECORD_CONTEXT).unwrap();
+        let context = context(&bytes, fingerprint(RECORD_FINGERPRINT));
         let envelope = seal(context, Padding::NONE, b"secret", &keyring()).unwrap();
 
         assert_eq!(
             inspect_ciphertext(&envelope).unwrap().context_fingerprint(),
-            fingerprint(SCOPED_RECORD_FINGERPRINT)
+            fingerprint(RECORD_FINGERPRINT)
         );
         assert_eq!(
             open(context, &envelope, &keyring()).unwrap().as_slice(),
@@ -269,8 +241,8 @@ mod tests {
 
     #[test]
     fn every_header_carries_the_fingerprint() {
-        let bytes = hex::decode(UNSCOPED_CONTEXT).unwrap();
-        let expected = fingerprint(UNSCOPED_FINGERPRINT);
+        let bytes = hex::decode(UNBOUND_CONTEXT).unwrap();
+        let expected = fingerprint(UNBOUND_FINGERPRINT);
         let envelope = seal(
             context(&bytes, expected),
             Padding::NONE,
@@ -288,8 +260,8 @@ mod tests {
 
     #[test]
     fn other_context_bytes_fail_authentication() {
-        let bytes = hex::decode(SCOPED_RECORD_CONTEXT).unwrap();
-        let expected = fingerprint(SCOPED_RECORD_FINGERPRINT);
+        let bytes = hex::decode(RECORD_CONTEXT).unwrap();
+        let expected = fingerprint(RECORD_FINGERPRINT);
         let envelope = seal(
             context(&bytes, expected),
             Padding::NONE,
@@ -314,19 +286,19 @@ mod tests {
 
     #[test]
     fn a_different_fingerprint_reports_binding_mismatch_before_any_key() {
-        let unscoped_bytes = hex::decode(UNSCOPED_CONTEXT).unwrap();
-        let scoped_bytes = hex::decode(SCOPED_CONTEXT).unwrap();
-        let unscoped = context(&unscoped_bytes, fingerprint(UNSCOPED_FINGERPRINT));
-        let scoped = context(&scoped_bytes, fingerprint(SCOPED_FINGERPRINT));
-        let with_record = context(&scoped_bytes, fingerprint(SCOPED_RECORD_FINGERPRINT));
-        let unscoped_envelope = seal(unscoped, Padding::NONE, b"secret", &keyring()).unwrap();
-        let scoped_envelope = seal(scoped, Padding::NONE, b"secret", &keyring()).unwrap();
+        let unbound_bytes = hex::decode(UNBOUND_CONTEXT).unwrap();
+        let record_bytes = hex::decode(RECORD_CONTEXT).unwrap();
+        let unbound = context(&unbound_bytes, fingerprint(UNBOUND_FINGERPRINT));
+        let record = context(&record_bytes, fingerprint(RECORD_FINGERPRINT));
+        let other = context(&record_bytes, [7; 8]);
+        let unbound_envelope = seal(unbound, Padding::NONE, b"secret", &keyring()).unwrap();
+        let record_envelope = seal(record, Padding::NONE, b"secret", &keyring()).unwrap();
 
         // `check` takes no keyring: the mismatch is reported before any key is chosen.
         for (case, reader, envelope) in [
-            ("unscoped reads scoped", unscoped, &scoped_envelope),
-            ("scoped reads unscoped", scoped, &unscoped_envelope),
-            ("other fingerprint", with_record, &scoped_envelope),
+            ("unbound reads record", unbound, &record_envelope),
+            ("record reads unbound", record, &unbound_envelope),
+            ("other fingerprint", other, &record_envelope),
         ] {
             assert_eq!(
                 check(reader, envelope).err(),
@@ -338,11 +310,11 @@ mod tests {
 
     #[test]
     fn a_resealed_fingerprint_fails_authentication() {
-        // A role change keeps the context bytes but changes the fingerprint.
-        let bytes = hex::decode(SCOPED_CONTEXT).unwrap();
+        // A fingerprint changed in the header keeps the context bytes.
+        let bytes = hex::decode(RECORD_CONTEXT).unwrap();
         let other = [7; 8];
         let mut envelope = seal(
-            context(&bytes, fingerprint(SCOPED_FINGERPRINT)),
+            context(&bytes, fingerprint(RECORD_FINGERPRINT)),
             Padding::NONE,
             b"secret",
             &keyring(),
@@ -358,9 +330,9 @@ mod tests {
 
     #[test]
     fn an_unknown_key_is_reported_after_the_check() {
-        let bytes = hex::decode(UNSCOPED_CONTEXT).unwrap();
+        let bytes = hex::decode(UNBOUND_CONTEXT).unwrap();
         let envelope = seal(
-            context(&bytes, fingerprint(UNSCOPED_FINGERPRINT)),
+            context(&bytes, fingerprint(UNBOUND_FINGERPRINT)),
             Padding::NONE,
             b"secret",
             &keyring(),
@@ -377,7 +349,7 @@ mod tests {
 
         assert_eq!(
             open(
-                context(&bytes, fingerprint(UNSCOPED_FINGERPRINT)),
+                context(&bytes, fingerprint(UNBOUND_FINGERPRINT)),
                 &envelope,
                 &other
             )
@@ -388,9 +360,9 @@ mod tests {
 
     #[test]
     fn experimental_padded_format_2_vector_is_stable() {
-        let bytes = hex::decode(UNSCOPED_CONTEXT).unwrap();
+        let bytes = hex::decode(UNBOUND_CONTEXT).unwrap();
         let envelope = seal_with_nonce(
-            context(&bytes, fingerprint(UNSCOPED_FINGERPRINT)),
+            context(&bytes, fingerprint(UNBOUND_FINGERPRINT)),
             Padding::block(16),
             b"cryptbox vector",
             &vector_key(),
@@ -406,9 +378,9 @@ mod tests {
 
     #[test]
     fn experimental_format_2_vector_is_stable() {
-        let bytes = hex::decode(UNSCOPED_CONTEXT).unwrap();
+        let bytes = hex::decode(UNBOUND_CONTEXT).unwrap();
         let envelope = seal_with_nonce(
-            context(&bytes, fingerprint(UNSCOPED_FINGERPRINT)),
+            context(&bytes, fingerprint(UNBOUND_FINGERPRINT)),
             Padding::NONE,
             b"cryptbox vector",
             &vector_key(),

@@ -26,7 +26,6 @@ impl Seal for Email {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -35,7 +34,6 @@ struct EmailLookup;
 
 impl BlindIndexSpec for EmailLookup {
     type Seal = Email;
-    type Partition = ();
     const ID: IndexId = index_id!("50000000-0000-4000-8000-000000000005");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -107,7 +105,7 @@ fn global_keys_install_once_back_only_the_global_conveniences() {
     assert_eq!(global_sealed.open_global().unwrap(), "mark@example.com");
     assert_eq!(
         EmailLookup::probes("mark@example.com").unwrap(),
-        EmailLookup::probes_with("mark@example.com", (), &installed_indexes).unwrap()
+        EmailLookup::probes_with("mark@example.com", &installed_indexes).unwrap()
     );
 
     // Explicit forms ignore the installed keys.
@@ -130,10 +128,10 @@ fn global_keys_install_once_back_only_the_global_conveniences() {
         .unwrap();
     assert_eq!(
         prepared.index::<EmailLookup>().unwrap().as_bytes(),
-        EmailLookup::probes_with("mark@example.com", (), &explicit_indexes).unwrap()[0].as_bytes()
+        EmailLookup::probes_with("mark@example.com", &explicit_indexes).unwrap()[0].as_bytes()
     );
     assert_ne!(
-        EmailLookup::probes_with("mark@example.com", (), &explicit_indexes).unwrap(),
+        EmailLookup::probes_with("mark@example.com", &explicit_indexes).unwrap(),
         EmailLookup::probes("mark@example.com").unwrap()
     );
 }
@@ -144,7 +142,7 @@ fn keys_without_a_blind_index_keyring_reject_index_operations() {
     let email = "mark@example.com".to_owned();
 
     assert_eq!(
-        EmailLookup::probes_with("mark@example.com", (), &keys).unwrap_err(),
+        EmailLookup::probes_with("mark@example.com", &keys).unwrap_err(),
         Error::BlindIndexKeysNotConfigured
     );
     assert_eq!(

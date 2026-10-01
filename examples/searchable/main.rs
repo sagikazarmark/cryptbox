@@ -214,7 +214,7 @@ async fn audit_current(
             let sealed: SealedEmail = row.try_get("email")?;
             let value = sealed.open((), encryption)?;
             validate_email(&value)?;
-            let expected = EmailLookup::derive_with(&value, (), indexes)?;
+            let expected = EmailLookup::derive_with(&value, indexes)?;
             if expected.as_bytes() != row.try_get::<Vec<u8>, _>("email_lookup")? {
                 return Err("index consistency check failed".into());
             }
@@ -355,7 +355,7 @@ fn rotation_ready(
         return Err("canary plaintext mismatch".into());
     }
     let token = hex::decode(lines[1])?;
-    let probes = EmailLookup::probes_with(CANARY, (), indexes)?;
+    let probes = EmailLookup::probes_with(CANARY, indexes)?;
     if !probes.iter().any(|probe| probe.as_bytes() == token) {
         return Err("canary index generation unavailable or mismatched".into());
     }
@@ -419,7 +419,7 @@ async fn search(
     encryption: &EncryptionKeyring,
     indexes: &BlindIndexKeyring,
 ) -> Result<()> {
-    let probes = EmailLookup::probes_with(query, (), indexes)?;
+    let probes = EmailLookup::probes_with(query, indexes)?;
     let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
     let mut values = sql.separated(", ");
     for probe in &probes {

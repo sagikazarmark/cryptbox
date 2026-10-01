@@ -1,7 +1,3 @@
-#[derive(cryptbox::BoundId)]
-#[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
-struct OrgId([u8; 16]);
-
 // A field without a role would be stored as it is by accident.
 #[derive(cryptbox::Record)]
 struct MissingRole {
@@ -26,8 +22,19 @@ struct UnknownKey {
 struct TwoRoles {
     #[cryptbox(record_id, seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
     id: i64,
+    #[cryptbox(plaintext)]
+    org: i64,
+}
+
+// Bound values are retired: an org is a plaintext column.
+#[derive(cryptbox::Record)]
+struct RetiredBound {
+    #[cryptbox(record_id)]
+    id: i64,
     #[cryptbox(bound)]
-    org: OrgId,
+    org: i64,
+    #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
+    email: String,
 }
 
 // A seal ID is a whole UUID.

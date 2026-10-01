@@ -38,7 +38,6 @@ impl Seal for TestSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -47,7 +46,6 @@ struct IndexSpec;
 
 impl BlindIndexSpec for IndexSpec {
     type Seal = TestSeal;
-    type Partition = ();
     const ID: IndexId = index_id!("d0000000-0000-4000-8000-00000000000d");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";

@@ -14,7 +14,6 @@ impl Seal for TestSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -23,7 +22,6 @@ struct ExactValue;
 
 impl BlindIndexSpec for ExactValue {
     type Seal = TestSeal;
-    type Partition = ();
     const ID: IndexId = index_id!("abcdefab-cdef-4abc-8def-abcdefabcdef");
     const BITS: u16 = 128;
     const NORMALIZER: &'static str = "exact/1";
@@ -95,8 +93,8 @@ fn blind_index_keys_load_from_hex_and_base64() {
     let base64_keys = BlindIndexKeyring::new(base64_key, []).unwrap();
 
     assert_eq!(
-        ExactValue::derive_with(&b"loaded key".to_vec(), (), &hex_keys).unwrap(),
-        ExactValue::derive_with(&b"loaded key".to_vec(), (), &base64_keys).unwrap(),
+        ExactValue::derive_with(&b"loaded key".to_vec(), &hex_keys).unwrap(),
+        ExactValue::derive_with(&b"loaded key".to_vec(), &base64_keys).unwrap(),
     );
 }
 

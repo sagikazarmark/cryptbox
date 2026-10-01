@@ -1,35 +1,35 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    Args, BlindIndex, BlindIndexKeys, BlindIndexSpec, EncryptionKeys, Error, PartValue, RecordKeys,
-    Seal, SealId, Sealed,
+    Args, BlindIndex, BlindIndexKeys, BlindIndexSpec, EncryptionKeys, Error, RecordKeys, Seal,
+    SealId, Sealed,
     binding::declaration_fingerprint,
     blind::{index_domain, probes_in},
     inspect_ciphertext,
 };
 
-/// A row whose sealed fields are bound to their seals, to the row's bound
-/// values, and to its record ID, all of which the row stores.
+/// A row whose sealed fields are bound to their seals and to its record ID,
+/// which the row stores.
 ///
 /// A record pairs a plaintext struct with its stored form, [`Self::Stored`]:
-/// the record ID, bound values, and plaintext fields as they are, each sealed
+/// the record ID and plaintext fields as they are, each sealed
 /// field as its [`Sealed`](crate::Sealed) value, and a
 /// [`BlindIndex`] column per blind index. [`Self::seal`] encrypts every sealed
 /// field and derives its indexes; [`Self::open`] authenticates and opens them.
 ///
-/// The record ID and bound values, such as an org, are read from the stored row
-/// and authenticated by opening: a row whose org column was changed, or whose
-/// sealed value was copied from another row, fails to open. They say where the
-/// row belongs; authorize on the opened record's bound values, or check them
-/// before opening with [`Self::open_expecting`].
+/// The record ID is read from the stored row and authenticated by opening: a
+/// sealed value copied from another row or field fails to open. Plaintext
+/// columns, such as an org, are not authenticated: authorize on them like any
+/// other column, before decrypting with [`Self::open_expecting`] or after. With
+/// a keyring per org, another org's row fails to open with
+/// [`Error::UnknownEncryptionKey`].
 ///
 /// With the `derive` feature, `#[derive(Record)]` generates the stored form,
 /// this impl, a seal for each sealed field, a blind-index spec and an
-/// [`Index`] handle for each blind index, and the partition struct of each
-/// index partitioned by two or more bound values.
+/// [`Index`] handle for each blind index.
 pub trait Record: Sized {
-    /// The stored form: the record ID, bound values, and plaintext fields as
-    /// they are, the sealed fields, and a column per blind index.
+    /// The stored form: the record ID and plaintext fields as they are, the
+    /// sealed fields, and a column per blind index.
     type Stored;
 
     /// The seal ID of each sealed field, in field order.
@@ -40,9 +40,6 @@ pub trait Record: Sized {
 
     /// The name of the field that holds the record ID.
     const RECORD_ID: &'static str;
-
-    /// The names of the bound fields, in field order.
-    const BOUND: &'static [&'static str];
 
     /// The names of the fields stored as they are, in field order.
     ///
@@ -58,8 +55,8 @@ pub trait Record: Sized {
     /// closing a window shows up in its snapshot.
     const LEGACY: &'static [&'static str] = &[];
 
-    /// Encrypts every sealed field under the record's bound values and ID, and
-    /// derives its blind indexes.
+    /// Encrypts every sealed field under the record ID, and derives its blind
+    /// indexes.
     ///
     /// A record without blind indexes takes an
     /// [`EncryptionKeyring`](crate::EncryptionKeyring); one with blind indexes
@@ -74,22 +71,21 @@ pub trait Record: Sized {
     where
         K: RecordKeys + ?Sized;
 
-    /// Opens the sealed fields of `stored` under its bound values and ID.
+    /// Opens the sealed fields of `stored` under its record ID.
     ///
     /// Stored blind indexes are neither read nor checked.
     ///
     /// # Errors
     ///
     /// Returns any error of opening a field, such as
-    /// [`Error::AuthenticationFailed`] for a value of another record or bound
-    /// value.
+    /// [`Error::AuthenticationFailed`] for a value of another record.
     fn open<K>(stored: Self::Stored, keys: &K) -> Result<Self, Error>
     where
         K: EncryptionKeys + ?Sized;
 
     /// Opens `stored` only if `expect` accepts it, checked before anything is
-    /// decrypted: compare its record ID or bound values with those the caller
-    /// asked for or may read.
+    /// decrypted: compare its record ID or plaintext columns, such as an org,
+    /// with those the caller asked for or may read.
     ///
     /// # Errors
     ///
@@ -111,72 +107,53 @@ pub trait Record: Sized {
     }
 }
 
-/// The part values of a partition, in its spec's order.
-type PartitionValues<P> = for<'p> fn(&'p P) -> Vec<PartValue<'p>>;
-
-/// A blind index of record `R`, spec `S`, searched within partition `P`: the
-/// bound values that partition it, which a query supplies.
+/// A blind index of record `R` and spec `S`.
 ///
 /// `#[derive(Record)]` declares one as a const named after the index column,
-/// such as `Customer::EMAIL_INDEX`. `P` is the bound ID type of an index
-/// partitioned by one bound value, a generated struct with a field per bound
-/// value for two or more, or `()` for an index that spans them all.
-pub struct Index<R: Record, S: BlindIndexSpec, P> {
-    partition: PartitionValues<P>,
-    in_partition: fn(&R::Stored, &P) -> bool,
+/// such as `Customer::EMAIL_INDEX`. An index is derived under its seal alone:
+/// equal values in different tenants derive equal indexes under shared keys, and
+/// unrelated ones under a blind-index keyring per tenant.
+pub struct Index<R: Record, S: BlindIndexSpec> {
     value: fn(&R) -> Option<&<S::Seal as Seal>::Value>,
     marker: PhantomData<fn() -> (R, S)>,
 }
 
-impl<R: Record, S: BlindIndexSpec, P> Index<R, S, P> {
+impl<R: Record, S: BlindIndexSpec> Index<R, S> {
     /// Creates the handle of an index. Not public API: `#[derive(Record)]`
     /// declares handles.
     #[doc(hidden)]
-    pub const fn __new(
-        partition: PartitionValues<P>,
-        in_partition: fn(&R::Stored, &P) -> bool,
-        value: fn(&R) -> Option<&<S::Seal as Seal>::Value>,
-    ) -> Self {
+    pub const fn __new(value: fn(&R) -> Option<&<S::Seal as Seal>::Value>) -> Self {
         Self {
-            partition,
-            in_partition,
             value,
             marker: PhantomData,
         }
     }
 
-    /// Derives the probes for `query` in `partition`, one per readable index
-    /// key; select the rows whose index column holds any of them.
+    /// Derives the probes for `query`, one per readable index key; select the
+    /// rows whose index column holds any of them, within what the caller may
+    /// read, such as `WHERE org = ?`.
     ///
     /// # Errors
     ///
-    /// Returns an error for normalization failure, a partition value of
-    /// another kind than its type declares, or keys without a blind-index
-    /// keyring.
+    /// Returns an error for normalization failure, or keys without a
+    /// blind-index keyring.
     pub fn probes(
         &self,
         query: &S::Query,
-        partition: &P,
         keys: &(impl BlindIndexKeys + ?Sized),
     ) -> Result<Vec<BlindIndex<S>>, Error> {
-        probes_in::<S>(
-            query,
-            &index_domain::<S>(&(self.partition)(partition))?,
-            keys,
-        )
+        probes_in::<S>(query, &index_domain::<S>(), keys)
     }
 
-    /// Opens the candidate rows of a lookup in `partition` and keeps the
-    /// matches, with one result per row kept, in the order of `rows`.
+    /// Opens the candidate rows of a lookup and keeps the matches, with one
+    /// result per row kept, in the order of `rows`.
     ///
     /// A truncated index selects false candidates too, so each row is opened
     /// and its value compared with `query` by
     /// [`BlindIndexSpec::verify_candidate`]; rows that do not match are dropped.
-    /// A row outside `partition` is reported as [`Error::OutsidePartition`]
-    /// without being decrypted, and a row that fails to open as its error: never
-    /// as a non-match. The bound values the index spans, such as a workspace
-    /// under an org-wide search, are read from each row and authenticated:
-    /// authorize on them.
+    /// A row that fails to open is reported as its error, never as a non-match.
+    /// Plaintext columns, such as an org, are not authenticated: select within
+    /// what the caller may read, and authorize on each hit.
     ///
     /// # Errors
     ///
@@ -184,7 +161,6 @@ impl<R: Record, S: BlindIndexSpec, P> Index<R, S, P> {
     pub fn open_matching(
         &self,
         query: &S::Query,
-        partition: &P,
         rows: impl IntoIterator<Item = R::Stored>,
         keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Vec<Result<R, Error>>, Error> {
@@ -192,10 +168,6 @@ impl<R: Record, S: BlindIndexSpec, P> Index<R, S, P> {
         let mut results = Vec::new();
 
         for row in rows {
-            if !(self.in_partition)(&row, partition) {
-                results.push(Err(Error::OutsidePartition));
-                continue;
-            }
             let record = match R::open(row, keys) {
                 Ok(record) => record,
                 Err(error) => {
@@ -214,15 +186,15 @@ impl<R: Record, S: BlindIndexSpec, P> Index<R, S, P> {
     }
 }
 
-impl<R: Record, S: BlindIndexSpec, P> Clone for Index<R, S, P> {
+impl<R: Record, S: BlindIndexSpec> Clone for Index<R, S> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<R: Record, S: BlindIndexSpec, P> Copy for Index<R, S, P> {}
+impl<R: Record, S: BlindIndexSpec> Copy for Index<R, S> {}
 
-impl<R: Record, S: BlindIndexSpec, P> fmt::Debug for Index<R, S, P> {
+impl<R: Record, S: BlindIndexSpec> fmt::Debug for Index<R, S> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("Index")
@@ -256,8 +228,8 @@ where
     L: Seal<Value = F::Value>,
 {
     let stored = inspect_ciphertext(sealed.as_bytes())?.context_fingerprint();
-    let current = declaration_fingerprint::<F::Bound, F::Record>();
-    let old = declaration_fingerprint::<L::Bound, L::Record>();
+    let current = declaration_fingerprint::<F::Record>();
+    let old = declaration_fingerprint::<L::Record>();
 
     if stored == current {
         match sealed.open(args, keys) {

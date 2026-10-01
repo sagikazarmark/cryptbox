@@ -1,29 +1,28 @@
-//! Records that carry their bound values: a tenant's customers in SQLite, an
-//! org-wide search across workspaces, and a record carried as a JSON message.
+//! Records bound to their record IDs, with a keyring per org: an org's customers
+//! in SQLite, a search across its workspaces, and a record carried as a JSON
+//! message.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BoundId, EncryptionKey, EncryptionKeyring,
-    Error, Json, Keys, Record,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, Error,
+    Json, Keys, Record,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Connection, SqliteConnection};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-// ANCHOR: bound-ids
+// ANCHOR: ids
 /// An org, the tenant: each org has its own keys.
-#[derive(BoundId, Clone, Copy, Debug, PartialEq, Serialize, Deserialize, sqlx::Type)]
-#[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, sqlx::Type)]
 #[serde(transparent)]
 #[sqlx(transparent)]
 struct OrgId(Uuid);
 
 /// A workspace within an org.
-#[derive(BoundId, Clone, Copy, Debug, PartialEq, sqlx::Type)]
-#[cryptbox(kind = "78f0169a-f024-402b-9cdf-f436864fa17f")]
+#[derive(Clone, Copy, Debug, PartialEq, sqlx::Type)]
 #[sqlx(transparent)]
 struct WorkspaceId(Uuid);
-// ANCHOR_END: bound-ids
+// ANCHOR_END: ids
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
 fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -39,15 +38,14 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 struct Customer {
     #[cryptbox(record_id)]
     id: Uuid,
-    #[cryptbox(bound)]
+    #[cryptbox(plaintext)]
     org: OrgId,
-    #[cryptbox(bound)]
+    #[cryptbox(plaintext)]
     workspace: WorkspaceId,
     /// Searchable across the org's workspaces.
     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
     #[cryptbox(blind_index(
         id = "ab78afa9-7aaa-499c-8239-037b7e136130",
-        across(workspace),
         bits = 32,
         normalize = normalize_email,
         normalizer = "email/1",
@@ -117,7 +115,8 @@ async fn get(
 }
 // ANCHOR_END: get
 
-/// Finds the customers of `org` with `email`, in every workspace.
+/// Finds the customers of `org` with `email`, in every workspace, with the org's
+/// keys.
 // ANCHOR: search
 async fn search(
     db: &mut SqliteConnection,
@@ -125,7 +124,7 @@ async fn search(
     org: OrgId,
     email: &str,
 ) -> Result<Vec<Customer>, Box<dyn std::error::Error>> {
-    let probes = Customer::EMAIL_INDEX.probes(email, &org, keys)?;
+    let probes = Customer::EMAIL_INDEX.probes(email, keys)?;
     let placeholders = vec!["?"; probes.len()].join(", ");
     let sql = format!("SELECT * FROM customer WHERE org = ? AND email_index IN ({placeholders})");
     let mut select = sqlx::query_as::<_, StoredCustomer>(&sql).bind(org);
@@ -134,9 +133,9 @@ async fn search(
     }
     let rows = select.fetch_all(db).await?;
 
-    // Opens each candidate and drops false ones; a row of another org would be
-    // refused before decrypting it.
-    let hits = Customer::EMAIL_INDEX.open_matching(email, &org, rows, keys)?;
+    // Opens each candidate and drops false ones; the query selected the org's
+    // rows, and a row under another org's keys would fail to open.
+    let hits = Customer::EMAIL_INDEX.open_matching(email, rows, keys)?;
     Ok(hits.into_iter().collect::<Result<_, _>>()?)
 }
 // ANCHOR_END: search
@@ -150,7 +149,7 @@ struct CustomerCreated {
     #[cryptbox(record_id)]
     #[cryptbox(stored(serde(rename = "eventId")))]
     event_id: Uuid,
-    #[cryptbox(bound)]
+    #[cryptbox(plaintext)]
     org: OrgId,
     #[cryptbox(seal = "3a9d4e21-7b6c-4f58-9e0a-1c2b3d4e5f60", codec = Json)]
     address: Address,

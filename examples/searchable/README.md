@@ -249,7 +249,7 @@ async fn search(
     encryption: &EncryptionKeyring,
     indexes: &BlindIndexKeyring,
 ) -> Result<()> {
-    let probes = EmailLookup::probes_with(query, (), indexes)?;
+    let probes = EmailLookup::probes_with(query, indexes)?;
     let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
     let mut values = sql.separated(", ");
     for probe in &probes {

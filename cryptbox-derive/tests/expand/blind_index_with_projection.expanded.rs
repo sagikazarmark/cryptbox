@@ -19,7 +19,6 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = Address;
         type Codec = AddressCodec;
-        type Bound = ();
         type Record = ();
         type Indexes = ();
     }
@@ -44,7 +43,6 @@ const _: () = {
     #[automatically_derived]
     impl ::cryptbox::BlindIndexSpec for StreetLookup {
         type Seal = HomeAddress;
-        type Partition = <HomeAddress as ::cryptbox::Seal>::Bound;
         const ID: ::cryptbox::IndexId = ::cryptbox::IndexId::from_u128(
             0x3f5d8c2b_6e40_4b97_8c31_8a2f7d9e5b64,
         );

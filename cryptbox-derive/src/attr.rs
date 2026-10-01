@@ -21,16 +21,13 @@ pub(crate) enum Key {
     Normalize,
     Normalizer,
     Project,
-    Bound,
     Record,
-    Partition,
     Indexes,
     Transparent,
-    Kind,
 }
 
 impl Key {
-    const ALL: [Self; 17] = [
+    const ALL: [Self; 14] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -42,12 +39,9 @@ impl Key {
         Self::Normalize,
         Self::Normalizer,
         Self::Project,
-        Self::Bound,
         Self::Record,
-        Self::Partition,
         Self::Indexes,
         Self::Transparent,
-        Self::Kind,
     ];
 
     pub(crate) fn name(self) -> &'static str {
@@ -63,12 +57,9 @@ impl Key {
             Self::Normalize => "normalize",
             Self::Normalizer => "normalizer",
             Self::Project => "project",
-            Self::Bound => "bound",
             Self::Record => "record",
-            Self::Partition => "partition",
             Self::Indexes => "indexes",
             Self::Transparent => "transparent",
-            Self::Kind => "kind",
         }
     }
 }
@@ -131,11 +122,8 @@ pub(crate) struct Attrs {
     pub(crate) normalize: Option<Path>,
     pub(crate) normalizer: Option<LitStr>,
     pub(crate) project: Option<Path>,
-    pub(crate) bound: Option<Vec<Type>>,
     pub(crate) record: Option<Type>,
-    pub(crate) partition: Option<Vec<Type>>,
     pub(crate) indexes: Option<Vec<Type>>,
-    pub(crate) kind: Option<UuidLiteral>,
     pub(crate) transparent: Option<Span>,
     seen: Vec<Key>,
 }
@@ -163,11 +151,8 @@ impl Attrs {
             normalize: None,
             normalizer: None,
             project: None,
-            bound: None,
             record: None,
-            partition: None,
             indexes: None,
-            kind: None,
             transparent: None,
             seen: Vec::new(),
         };
@@ -210,10 +195,6 @@ impl Attrs {
                     }
                     Key::Indexes => parse_list(meta.input, "blind index", "indexes")
                         .map(|list| parsed.indexes = Some(list)),
-                    Key::Bound => parse_list(meta.input, "bound ID type", "bound")
-                        .map(|list| parsed.bound = Some(list)),
-                    Key::Partition => parse_list(meta.input, "bound ID type", "partition")
-                        .map(|list| parsed.partition = Some(list)),
                     _ if !meta.input.peek(Token![=]) => Err(meta.error(format!(
                         "`{name}` needs a value: `{name} = …`",
                         name = key.name()
@@ -255,8 +236,7 @@ impl Attrs {
             Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
             Key::Record => self.record = Some(input.parse()?),
-            Key::Kind => self.kind = Some(parse_uuid(key.name(), input)?),
-            Key::Transparent | Key::Indexes | Key::Bound | Key::Partition => {
+            Key::Transparent | Key::Indexes => {
                 unreachable!("flags and lists have no `= value`")
             }
         }

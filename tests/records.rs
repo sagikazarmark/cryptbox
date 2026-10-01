@@ -1,20 +1,19 @@
-//! Public-boundary tests for records: rows that carry their bound values.
+//! Public-boundary tests for records: rows whose sealed fields are bound to
+//! their seals and record ID.
 #![cfg(feature = "derive")]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BoundId, EncryptionKey, EncryptionKeyring,
-    Error, Keys, Padding, Record, Seal, SealId, Sealed, Utf8,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, Error,
+    Keys, Padding, Record, Seal, SealId, Sealed, Utf8,
 };
 use zeroize::Zeroizing;
 
 /// An org's ID.
-#[derive(BoundId, Clone, Copy, Debug, PartialEq)]
-#[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct OrgId([u8; 16]);
 
 /// A workspace's ID.
-#[derive(BoundId, Clone, Copy, Debug, PartialEq)]
-#[cryptbox(kind = "78f0169a-f024-402b-9cdf-f436864fa17f")]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct WorkspaceId([u8; 16]);
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
@@ -30,21 +29,20 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 struct Customer {
     #[cryptbox(record_id)]
     id: i64,
-    #[cryptbox(bound)]
+    #[cryptbox(plaintext)]
     org: OrgId,
-    #[cryptbox(bound)]
+    #[cryptbox(plaintext)]
     workspace: WorkspaceId,
-    /// The primary contact address, searchable across the org's workspaces.
+    /// The primary contact address, searchable.
     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
     #[cryptbox(blind_index(
         id = "ab78afa9-7aaa-499c-8239-037b7e136130",
-        across(workspace),
         bits = 1,
         normalize = normalize_email,
         normalizer = "email/1",
     ))]
     email: String,
-    /// A note, searchable within one workspace.
+    /// A note, searchable too.
     #[cryptbox(seal = "5d1f0c3a-8f6e-4b1d-9a7c-2e4b6d8f0a13", padding = block(16))]
     #[cryptbox(blind_index(
         id = "0f1e2d3c-4b5a-4968-8776-a5b4c3d2e1f0",
@@ -75,6 +73,12 @@ fn keys() -> Keys {
 
     Keys::new(EncryptionKeyring::new(encryption, []).unwrap())
         .with_blind_indexes(BlindIndexKeyring::new(blind_indexes, []).unwrap())
+}
+
+/// Another org's keys: a keyring per org keeps orgs apart.
+fn other_keys() -> Keys {
+    Keys::new(EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap())
+        .with_blind_indexes(BlindIndexKeyring::new(BlindIndexKey::generate().unwrap(), []).unwrap())
 }
 
 fn customer(id: i64, workspace: WorkspaceId, email: &str) -> Customer {
@@ -117,34 +121,32 @@ fn an_absent_optional_field_is_stored_absent() {
 }
 
 #[test]
-fn a_moved_row_fails_to_open() {
+fn a_row_under_another_record_id_fails_to_open() {
     let keys = keys();
     let stored = customer(7, SALES, "ada@example.com").seal(&keys).unwrap();
-    let moved = [
-        (
-            "org",
-            StoredCustomer {
-                org: GLOBEX,
-                ..stored.clone()
-            },
-        ),
-        (
-            "workspace",
-            StoredCustomer {
-                workspace: SUPPORT,
-                ..stored.clone()
-            },
-        ),
-        ("record", StoredCustomer { id: 8, ..stored }),
-    ];
 
-    for (case, row) in moved {
-        assert_eq!(
-            Customer::open(row, &keys).unwrap_err(),
-            Error::AuthenticationFailed,
-            "{case}"
-        );
-    }
+    assert_eq!(
+        Customer::open(StoredCustomer { id: 8, ..stored }, &keys).unwrap_err(),
+        Error::AuthenticationFailed
+    );
+}
+
+#[test]
+fn plaintext_columns_are_not_authenticated() {
+    let keys = keys();
+    let stored = customer(7, SALES, "ada@example.com").seal(&keys).unwrap();
+
+    // Under shared keys, an edited org column opens: authorize on it, or keep a
+    // keyring per org.
+    let edited = Customer::open(
+        StoredCustomer {
+            org: GLOBEX,
+            ..stored
+        },
+        &keys,
+    )
+    .unwrap();
+    assert_eq!(edited.org, GLOBEX);
 }
 
 #[test]
@@ -169,10 +171,9 @@ fn a_value_copied_from_another_row_fails_to_open() {
 #[test]
 fn another_orgs_keys_do_not_open_a_row() {
     let stored = customer(7, SALES, "ada@example.com").seal(&keys()).unwrap();
-    let other = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
 
     assert!(matches!(
-        Customer::open(stored, &other).unwrap_err(),
+        Customer::open(stored, &other_keys()).unwrap_err(),
         Error::UnknownEncryptionKey(_)
     ));
 }
@@ -180,11 +181,11 @@ fn another_orgs_keys_do_not_open_a_row() {
 #[test]
 fn open_expecting_rejects_a_row_before_decrypting_it() {
     let stored = customer(7, SALES, "ada@example.com").seal(&keys()).unwrap();
-    // Keys that could not open it: the rejection comes first.
-    let other = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
 
+    // Keys that could not open it: the rejection comes first.
     assert_eq!(
-        Customer::open_expecting(stored.clone(), &other, |row| row.org == GLOBEX).unwrap_err(),
+        Customer::open_expecting(stored.clone(), &other_keys(), |row| row.org == GLOBEX)
+            .unwrap_err(),
         Error::UnexpectedRecord
     );
     assert_eq!(
@@ -224,10 +225,10 @@ fn rows(keys: &Keys, org: OrgId) -> Vec<StoredCustomer> {
 }
 
 #[test]
-fn an_index_across_workspaces_finds_matches_in_every_workspace_of_the_org() {
+fn a_lookup_opens_its_candidates_and_keeps_the_matches() {
     let keys = keys();
     let probes = Customer::EMAIL_INDEX
-        .probes("ada@example.com", &ACME, &keys)
+        .probes("ada@example.com", &keys)
         .unwrap();
     let candidates: Vec<_> = rows(&keys, ACME)
         .into_iter()
@@ -239,7 +240,7 @@ fn an_index_across_workspaces_finds_matches_in_every_workspace_of_the_org() {
     );
 
     let hits = Customer::EMAIL_INDEX
-        .open_matching("ada@example.com", &ACME, candidates, &keys)
+        .open_matching("ada@example.com", candidates, &keys)
         .unwrap();
 
     let found: Vec<_> = hits
@@ -250,72 +251,35 @@ fn an_index_across_workspaces_finds_matches_in_every_workspace_of_the_org() {
 }
 
 #[test]
-fn an_index_partitions_by_the_bound_values_it_does_not_span() {
+fn separate_index_keys_keep_orgs_lookups_apart() {
     let keys = keys();
     let ada = customer(7, SALES, "ada@example.com").seal(&keys).unwrap();
-    let probe = |org| {
-        Customer::EMAIL_INDEX
-            .probes("ada@example.com", &org, &keys)
-            .unwrap()
-    };
+    let probes = |keys: &Keys| Customer::NOTE_INDEX.probes("note 7", keys).unwrap();
 
-    assert_eq!(probe(ACME), std::slice::from_ref(&ada.email_index));
-    assert_ne!(probe(GLOBEX), [ada.email_index]);
+    assert_eq!(probes(&keys).first(), ada.note_index.as_ref());
+    assert!(!probes(&other_keys()).contains(ada.note_index.as_ref().unwrap()));
 }
 
 #[test]
-fn rows_outside_the_partition_are_refused_without_decrypting() {
-    let keys = keys();
-    let other = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
-
+fn a_candidate_that_fails_to_open_is_reported_not_dropped() {
     let hits = Customer::EMAIL_INDEX
-        .open_matching("ada@example.com", &ACME, rows(&keys, GLOBEX), &other)
+        .open_matching("ada@example.com", rows(&other_keys(), GLOBEX), &keys())
         .unwrap();
 
     assert_eq!(hits.len(), 5);
-    assert!(hits.iter().all(|hit| hit == &Err(Error::OutsidePartition)));
-}
-
-#[test]
-fn an_index_partitioned_by_two_bound_values_takes_a_partition_struct() {
-    let keys = keys();
-    let stored = customer(7, SALES, "ada@example.com").seal(&keys).unwrap();
-    let sales = CustomerNoteIndexPartition {
-        org: ACME,
-        workspace: SALES,
-    };
-
-    let probes = Customer::NOTE_INDEX
-        .probes("note 7", &sales, &keys)
-        .unwrap();
-    assert_eq!(Some(&probes[0]), stored.note_index.as_ref());
-    assert_eq!(
-        Customer::NOTE_INDEX
-            .open_matching("note 7", &sales, [stored.clone()], &keys)
-            .unwrap(),
-        [Ok(customer(7, SALES, "ada@example.com"))]
-    );
-
-    let support = CustomerNoteIndexPartition {
-        org: ACME,
-        workspace: SUPPORT,
-    };
-    assert_eq!(
-        Customer::NOTE_INDEX
-            .open_matching("note 7", &support, [stored], &keys)
-            .unwrap(),
-        [Err(Error::OutsidePartition)]
+    assert!(
+        hits.iter()
+            .all(|hit| matches!(hit, Err(Error::UnknownEncryptionKey(_))))
     );
 }
 
-/// A row bound to its org alone, without blind indexes, with a renamed seal and
-/// stored form.
+/// A row without blind indexes, with a renamed seal and stored form.
 #[derive(Debug, PartialEq, Record)]
 #[cryptbox(stored(name = NoteRow))]
 struct Note {
     #[cryptbox(record_id)]
     id: i64,
-    #[cryptbox(bound)]
+    #[cryptbox(plaintext)]
     org: OrgId,
     #[cryptbox(seal = "6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51", name = NoteBody)]
     body: String,
@@ -333,7 +297,7 @@ fn a_record_without_blind_indexes_takes_an_encryption_keyring() {
     let row: NoteRow = note.seal(&keys).unwrap();
     let body: &Sealed<NoteBody> = &row.body;
 
-    assert_eq!(body.open((&ACME, &1), &keys).unwrap(), "ship it");
+    assert_eq!(body.open(&1, &keys).unwrap(), "ship it");
     assert_eq!(Note::open(row, &keys).unwrap(), note);
 }
 
@@ -345,15 +309,14 @@ impl Seal for ManualNoteBody {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = (OrgId,);
     type Record = i64;
     type Indexes = ();
 }
 
 #[test]
-fn a_record_field_is_bound_to_its_seal_bound_values_and_record_id() {
+fn a_record_field_is_bound_to_its_seal_and_record_id() {
     let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
-    let body = Sealed::<ManualNoteBody>::seal(&"ship it".to_owned(), (&ACME, &1), &keys).unwrap();
+    let body = Sealed::<ManualNoteBody>::seal(&"ship it".to_owned(), &1, &keys).unwrap();
     let row = NoteRow {
         id: 1,
         org: ACME,
@@ -365,12 +328,11 @@ fn a_record_field_is_bound_to_its_seal_bound_values_and_record_id() {
 
 #[cfg(feature = "json")]
 mod serde_forms {
-    use cryptbox::{BoundId, EncryptionKey, EncryptionKeyring, Record};
+    use cryptbox::{EncryptionKey, EncryptionKeyring, Record};
     use serde::{Deserialize, Serialize};
 
     /// A tenant, carried in messages.
-    #[derive(BoundId, Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
-    #[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
     #[serde(transparent)]
     struct TenantKey(i64);
 
@@ -381,7 +343,7 @@ mod serde_forms {
         #[cryptbox(record_id)]
         #[cryptbox(stored(serde(rename = "eventId")))]
         id: i64,
-        #[cryptbox(bound)]
+        #[cryptbox(plaintext)]
         tenant: TenantKey,
         #[cryptbox(seal = "3a9d4e21-7b6c-4f58-9e0a-1c2b3d4e5f60")]
         detail: String,
@@ -407,12 +369,11 @@ mod serde_forms {
 
 #[cfg(feature = "sqlx-sqlite")]
 mod sqlite {
-    use cryptbox::{BoundId, EncryptionKey, EncryptionKeyring, Record};
+    use cryptbox::{EncryptionKey, EncryptionKeyring, Record};
     use sqlx::{Connection, sqlite::SqliteConnection};
 
     /// A tenant, stored as its integer.
-    #[derive(BoundId, Clone, Copy, Debug, PartialEq, sqlx::Type)]
-    #[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
+    #[derive(Clone, Copy, Debug, PartialEq, sqlx::Type)]
     #[sqlx(transparent)]
     struct TenantKey(i64);
 
@@ -422,7 +383,7 @@ mod sqlite {
     struct Customer {
         #[cryptbox(record_id)]
         id: i64,
-        #[cryptbox(bound)]
+        #[cryptbox(plaintext)]
         tenant: TenantKey,
         #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
         #[cryptbox(stored(sqlx(rename = "EMAIL_CIPHERTEXT")))]
@@ -478,25 +439,24 @@ impl Seal for UnboundEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
 
-/// A contact whose email is now bound to its org and record, and whose note
-/// moved from another seal ID.
+/// A contact whose email is now bound to its record, and whose note moved from
+/// another seal ID.
 #[derive(Debug, PartialEq, Record)]
 #[cryptbox(stored(derive(Clone)))]
 struct Contact {
     #[cryptbox(record_id)]
     id: i64,
-    #[cryptbox(bound)]
+    #[cryptbox(plaintext)]
     org: OrgId,
     #[cryptbox(seal = "9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24")]
     #[cryptbox(legacy(record = false))]
     email: String,
     #[cryptbox(seal = "0d7e3a95-4b1c-4e62-8f0a-9c5b2d7e1f38")]
-    #[cryptbox(legacy(seal = "4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95", bound(org)))]
+    #[cryptbox(legacy(seal = "4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95"))]
     note: String,
 }
 
@@ -508,14 +468,13 @@ impl Seal for OldNote {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = (OrgId,);
     type Record = i64;
     type Indexes = ();
 }
 
 fn legacy_contact(keys: &EncryptionKeyring) -> StoredContact {
     let email = Sealed::<UnboundEmail>::seal(&"ada@example.com".to_owned(), (), keys).unwrap();
-    let note = Sealed::<OldNote>::seal(&"VIP".to_owned(), (&ACME, &7), keys).unwrap();
+    let note = Sealed::<OldNote>::seal(&"VIP".to_owned(), &7, keys).unwrap();
 
     StoredContact {
         id: 7,
@@ -550,7 +509,7 @@ fn a_legacy_window_opens_rows_sealed_with_the_old_declaration() {
 fn a_legacy_window_still_authenticates_the_row() {
     let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
     let moved = StoredContact {
-        org: GLOBEX,
+        id: 8,
         ..legacy_contact(&keys)
     };
 
@@ -573,19 +532,18 @@ fn the_manifest_lists_open_legacy_windows() {
 mod sweep {
     use cryptbox::{
         EncryptionKey, EncryptionKeyring, Record,
-        migrate::{RowArgs, RowPlanner, RowState},
+        migrate::{RowPlanner, RowState},
     };
 
-    use super::{ACME, Contact, ContactEmail, ContactEmailLegacy, StoredContact, legacy_contact};
+    use super::{Contact, ContactEmail, ContactEmailLegacy, StoredContact, legacy_contact};
 
     #[test]
     fn a_planner_reseals_rows_of_a_legacy_seal() {
         let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
         let row = legacy_contact(&keys);
-        let planner = RowPlanner::<ContactEmail, StoredContact>::for_rows(&keys, |row| {
-            Ok(RowArgs::new(&row.org).with_record(row.id.into()))
-        })
-        .legacy_seal::<ContactEmailLegacy>(&keys);
+        let planner =
+            RowPlanner::<ContactEmail, StoredContact>::for_rows(&keys, |row| Ok(row.id.into()))
+                .legacy_seal::<ContactEmailLegacy>(&keys);
 
         let outcome = planner.plan_row(&row, row.email.as_bytes(), &[]).unwrap();
 
@@ -594,10 +552,7 @@ mod sweep {
             email: cryptbox::Sealed::from_bytes(outcome.write().unwrap().ciphertext()).unwrap(),
             ..row
         };
-        assert_eq!(
-            resealed.email.open((&ACME, &7), &keys).unwrap(),
-            "ada@example.com"
-        );
+        assert_eq!(resealed.email.open(&7, &keys).unwrap(), "ada@example.com");
         assert_eq!(
             Contact::open(resealed, &keys).unwrap().email,
             "ada@example.com"

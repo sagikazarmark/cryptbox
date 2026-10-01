@@ -11,9 +11,9 @@
 //! the automatic `SQLx` column `Plain<F>` reads the same keys through
 //! [`GlobalKeys`](crate::GlobalKeys).
 //!
-//! The process-wide keys serve only seals without bound values or a record: a
-//! value bound to a tenant or a record is sealed and opened explicitly, with
-//! keys the application chooses for that tenant.
+//! The process-wide keys serve only seals without a record: a record-bound value,
+//! or a tenant's value, is sealed and opened explicitly, with keys the
+//! application chooses for that tenant.
 //!
 //! [`install`] sets the keys once, from the binary's entry point. It never
 //! replaces installed keys, and nothing resets them. Before installation, the

@@ -2,10 +2,9 @@
 #![cfg(feature = "derive")]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, BoundId, BoundList, Codec,
-    CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, IndexId, IndexKeyId, IndexList,
-    Padding, PartId, PartKind, PartSpec, PartType, PartValue, RecordIdType, Seal, SealId, Sealed,
-    Utf8, index_id, index_key_id, part_id, seal_id,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
+    CodecErrorKind, EncryptionKey, EncryptionKeyring, IndexId, IndexKeyId, IndexList, Padding,
+    PartKind, RecordIdType, Seal, SealId, Sealed, Utf8, index_id, index_key_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -30,7 +29,6 @@ impl Seal for ManualUserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -242,7 +240,6 @@ struct ManualEmailLookup;
 
 impl BlindIndexSpec for ManualEmailLookup {
     type Seal = ManualUserEmail;
-    type Partition = ();
     const ID: IndexId = index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
     const BITS: u16 = 32;
     const NORMALIZER: &'static str = "text/1";
@@ -265,16 +262,14 @@ fn a_derived_blind_index_derives_the_same_index_as_its_manual_equivalent() {
     assert_eq!(EmailLookup::ID, ManualEmailLookup::ID);
     assert_eq!(EmailLookup::BITS, 32);
     assert_eq!(
-        EmailLookup::derive_with(&email, (), &keys)
-            .unwrap()
-            .as_bytes(),
-        ManualEmailLookup::derive_with(&email, (), &keys)
+        EmailLookup::derive_with(&email, &keys).unwrap().as_bytes(),
+        ManualEmailLookup::derive_with(&email, &keys)
             .unwrap()
             .as_bytes()
     );
     assert_eq!(
-        EmailLookup::probes_with("mark@example.com", (), &keys).unwrap()[0].as_bytes(),
-        ManualEmailLookup::probes_with("mark@example.com", (), &keys).unwrap()[0].as_bytes()
+        EmailLookup::probes_with("mark@example.com", &keys).unwrap()[0].as_bytes(),
+        ManualEmailLookup::probes_with("mark@example.com", &keys).unwrap()[0].as_bytes()
     );
     assert!(EmailLookup::verify_candidate("MARK@example.com", &email).unwrap());
 }
@@ -300,7 +295,6 @@ struct ManualStreetLookup;
 
 impl BlindIndexSpec for ManualStreetLookup {
     type Seal = BillingAddress;
-    type Partition = ();
     const ID: IndexId = index_id!("3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64");
     const BITS: u16 = 64;
     const NORMALIZER: &'static str = "street/1";
@@ -320,10 +314,10 @@ fn a_projected_blind_index_normalizes_part_of_the_value() {
     let keys = index_keys();
 
     assert_eq!(
-        StreetLookup::derive_with(&address(), (), &keys)
+        StreetLookup::derive_with(&address(), &keys)
             .unwrap()
             .as_bytes(),
-        ManualStreetLookup::derive_with(&address(), (), &keys)
+        ManualStreetLookup::derive_with(&address(), &keys)
             .unwrap()
             .as_bytes()
     );
@@ -386,50 +380,15 @@ fn a_derived_blind_index_names_its_normalizer() {
     assert_eq!(StreetLookup::NORMALIZER, ManualStreetLookup::NORMALIZER);
 }
 
-/// An org's ID, bound as bytes.
-#[derive(cryptbox::BoundId, Clone, Debug, PartialEq)]
-#[cryptbox(kind = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-struct OrgId(Vec<u8>);
-
-/// A project's ID.
-#[derive(cryptbox::BoundId, Clone, Copy, Debug, PartialEq)]
-#[cryptbox(kind = "5d9c2a47-1e6b-4f30-8a5c-3b7e0d9f2c61")]
-struct ProjectId(i64);
-
-/// A workspace's ID, bound as a UUID.
-#[derive(cryptbox::BoundId, Clone, Copy, Debug, PartialEq)]
-#[cryptbox(kind = "8f4a6c13-9d2e-4b57-a0c8-6e1f3a5d7b92")]
-struct WorkspaceId([u8; 16]);
-
-/// The manual equivalent of [`OrgId`].
-struct ManualOrgId(Vec<u8>);
-
-impl PartType for ManualOrgId {
-    const KIND: PartKind = PartKind::Bytes;
-
-    fn part_value(&self) -> PartValue<'_> {
-        PartValue::Bytes(&self.0)
-    }
-
-    fn from_part_value(value: PartValue<'_>) -> Result<Self, cryptbox::Error> {
-        Vec::<u8>::from_part_value(value).map(Self)
-    }
-}
-
-impl BoundId for ManualOrgId {
-    const KIND_ID: PartId = part_id!("2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37");
-}
-
 #[derive(Seal)]
 #[cryptbox(
     id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",
     value = String,
-    bound(OrgId, ProjectId),
     record = i64,
 )]
 struct ProjectNote;
 
-/// The manual equivalent of [`ProjectNote`], its bound types in another order.
+/// The manual equivalent of [`ProjectNote`].
 struct ManualProjectNote;
 
 impl Seal for ManualProjectNote {
@@ -437,17 +396,12 @@ impl Seal for ManualProjectNote {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = (ProjectId, ManualOrgId);
     type Record = i64;
     type Indexes = ();
 }
 
 #[test]
-fn a_derived_seal_declares_its_bound_types_and_record() {
-    assert_eq!(
-        <<ProjectNote as Seal>::Bound as BoundList>::PARTS,
-        [OrgId::PART, ProjectId::PART]
-    );
+fn a_derived_seal_declares_its_record() {
     assert_eq!(
         <<ProjectNote as Seal>::Record as RecordIdType>::RECORD,
         Some(PartKind::I64)
@@ -455,31 +409,20 @@ fn a_derived_seal_declares_its_bound_types_and_record() {
 }
 
 #[test]
-fn a_derived_bound_seal_opens_values_of_its_manual_equivalent() {
+fn a_derived_record_bound_seal_opens_values_of_its_manual_equivalent() {
     let keys = keyring();
-    let record = &9_i64;
 
-    let manual = Sealed::<ManualProjectNote>::seal(
-        &"ship it".to_owned(),
-        (&ProjectId(7), &ManualOrgId(b"acme".to_vec()), record),
-        &keys,
-    )
-    .unwrap();
+    let manual = Sealed::<ManualProjectNote>::seal(&"ship it".to_owned(), &9_i64, &keys).unwrap();
     let derived = Sealed::<ProjectNote>::from_bytes(manual.into_bytes()).unwrap();
 
-    assert_eq!(
-        derived
-            .open((&OrgId(b"acme".to_vec()), &ProjectId(7), record), &keys)
-            .unwrap(),
-        "ship it"
-    );
+    assert_eq!(derived.open(&9_i64, &keys).unwrap(), "ship it");
 }
 
 #[derive(Seal)]
 #[cryptbox(
     id = "4b8e2d6f-1a3c-4e57-b9d0-6f2a4c8e1b35",
     value = String,
-    bound(OrgId, ProjectId, WorkspaceId),
+    record = i64,
     indexes(ProjectEmailLookup),
 )]
 struct ProjectEmail;
@@ -488,7 +431,6 @@ struct ProjectEmail;
 #[cryptbox(
     id = "9c1e5a3d-7f2b-4d48-a6e0-3b5d9f1c7e24",
     seal = ProjectEmail,
-    partition(OrgId, ProjectId),
     bits = 32,
     query = str,
     normalize = normalize_text,
@@ -505,16 +447,11 @@ fn a_derived_seal_declares_its_blind_indexes() {
 }
 
 #[test]
-fn a_derived_blind_index_is_partitioned_by_its_partition() {
+fn a_derived_blind_index_ignores_the_record() {
     let keys = index_keys();
     let email = "Mark@Example.com".to_owned();
-    let prepare = |org: &[u8], workspace| {
-        let bound = (
-            OrgId(org.to_vec()),
-            ProjectId(7),
-            WorkspaceId([workspace; 16]),
-        );
-        Sealed::<ProjectEmail>::prepare(&email, (&bound.0, &bound.1, &bound.2), &keyring())
+    let prepare = |record: i64| {
+        Sealed::<ProjectEmail>::prepare(&email, &record, &keyring())
             .unwrap()
             .with_index_with::<ProjectEmailLookup>(&keys)
             .unwrap()
@@ -523,125 +460,22 @@ fn a_derived_blind_index_is_partitioned_by_its_partition() {
             .to_blind_index()
     };
 
-    let probes = ProjectEmailLookup::probes_with(
-        "mark@example.com",
-        (&OrgId(b"acme".to_vec()), &ProjectId(7)),
-        &keys,
-    )
-    .unwrap();
+    let probes = ProjectEmailLookup::probes_with("mark@example.com", &keys).unwrap();
 
-    assert_eq!(prepare(b"acme", 1), probes[0]);
-    assert_eq!(prepare(b"acme", 2), probes[0], "the workspace is spanned");
-    assert_ne!(prepare(b"globex", 1), probes[0]);
-}
-
-#[derive(Seal)]
-#[cryptbox(
-    id = "882016eb-21d9-42df-b559-82e4a82151f6",
-    value = String,
-    bound(OrgId, ProjectId),
-    indexes(ProjectEmailByOrg),
-)]
-struct OrgProjectEmail;
-
-/// Without `partition`, a derived blind index is partitioned by every bound
-/// value of its seal.
-#[derive(BlindIndexSpec)]
-#[cryptbox(
-    id = "ef3a8a68-92f2-4e45-bebf-c4f112c0d540",
-    seal = OrgProjectEmail,
-    bits = 32,
-    query = str,
-    normalize = normalize_text,
-    normalizer = "text/1",
-)]
-struct ProjectEmailByOrg;
-
-#[test]
-fn a_derived_blind_index_defaults_to_its_seals_bound_list() {
-    fn partition<Spec: BlindIndexSpec<Partition = (OrgId, ProjectId)>>() {}
-
-    partition::<ProjectEmailByOrg>();
+    assert_eq!(prepare(1), probes[0]);
+    assert_eq!(prepare(2), probes[0]);
 }
 
 #[cfg(feature = "uuid")]
-mod uuid_parts {
+mod uuid_records {
     use cryptbox::{PartType, PartValue, RecordId};
     use uuid::Uuid;
 
-    #[derive(cryptbox::BoundId)]
-    #[cryptbox(kind = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-    struct OrgId(Uuid);
-
     #[test]
-    fn a_uuid_bound_id_binds_its_sixteen_bytes() {
+    fn a_uuid_record_id_binds_its_sixteen_bytes() {
         let id = Uuid::from_u128(0x0192_3a4b_5c6d_7e8f_9a0b_1c2d_3e4f_5a6b);
 
-        assert!(
-            matches!(OrgId(id).part_value(), PartValue::Uuid(bytes) if bytes == *id.as_bytes())
-        );
+        assert!(matches!(id.part_value(), PartValue::Uuid(bytes) if bytes == *id.as_bytes()));
         assert_eq!(RecordId::from(id), RecordId::Uuid(*id.as_bytes()));
     }
-}
-
-/// Declares one kind but supplies another.
-#[derive(Clone, Hash, PartialEq, Eq)]
-struct Mislabeled(i64);
-
-impl PartType for Mislabeled {
-    const KIND: PartKind = PartKind::Uuid;
-
-    fn part_value(&self) -> PartValue<'_> {
-        PartValue::I64(self.0)
-    }
-
-    fn from_part_value(value: PartValue<'_>) -> Result<Self, cryptbox::Error> {
-        i64::from_part_value(value).map(Self)
-    }
-}
-
-/// A bound ID over [`Mislabeled`].
-#[derive(cryptbox::BoundId)]
-#[cryptbox(kind = "2b0e5f1a-7c3d-4e98-b6a2-0f4d8c1e9a37")]
-struct MislabeledId(Mislabeled);
-
-#[derive(Seal)]
-#[cryptbox(
-    id = "83824c94-7154-4594-97b2-eb04999e948b",
-    value = String,
-    bound(MislabeledId),
-)]
-struct MislabeledNote;
-
-#[test]
-fn a_part_value_of_another_kind_is_rejected() {
-    assert_eq!(
-        Sealed::<MislabeledNote>::seal(&"ada".to_owned(), &MislabeledId(Mislabeled(1)), &keyring()),
-        Err(cryptbox::Error::InvalidBinding)
-    );
-}
-
-/// A customer ID, bound as a UUID.
-#[derive(cryptbox::BoundId, Clone, Copy, Debug, PartialEq)]
-#[cryptbox(kind = "59881c28-3003-4047-847f-d7cc73b140e5")]
-struct CustomerId([u8; 16]);
-
-#[test]
-fn a_derived_bound_id_binds_as_its_field_under_its_kind() {
-    let customer = CustomerId([0x42; 16]);
-
-    assert_eq!(
-        CustomerId::KIND_ID,
-        part_id!("59881c28-3003-4047-847f-d7cc73b140e5")
-    );
-    assert_eq!(CustomerId::KIND, PartKind::Uuid);
-    assert!(matches!(customer.part_value(), PartValue::Uuid([0x42, ..])));
-    assert_eq!(
-        CustomerId::from_part_value(customer.part_value()),
-        Ok(customer)
-    );
-    assert_eq!(
-        <(CustomerId,)>::PARTS,
-        [PartSpec::new(CustomerId::KIND_ID, PartKind::Uuid)]
-    );
 }

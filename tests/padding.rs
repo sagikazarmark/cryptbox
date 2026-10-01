@@ -20,7 +20,6 @@ impl Seal for Unpadded {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -32,7 +31,6 @@ impl Seal for SharedSealPadded {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -44,7 +42,6 @@ impl Seal for FixedLength {
     const PADDING: Padding = Padding::length(16);
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -56,7 +53,6 @@ impl Seal for WiderBlockPadded {
     const PADDING: Padding = Padding::block(32);
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -68,7 +64,6 @@ impl Seal for BlockPadded {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -80,14 +75,13 @@ impl Seal for PolicyFixedLength {
     const PADDING: Padding = Padding::length(1_048_576);
     type Value = String;
     type Codec = Utf8;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
 
 // Padding/envelope arithmetic from docs/wire-format.md#size-semantics-and-enforcement.
 // The 1 MiB cases test size boundaries, not an enforced operational cap.
-fn assert_stored_sizes<P: Seal<Value = String, Bound = (), Record = ()>>(cases: &[(usize, usize)]) {
+fn assert_stored_sizes<P: Seal<Value = String, Record = ()>>(cases: &[(usize, usize)]) {
     let keys = keyring();
     for &(encoded_bytes, envelope_bytes) in cases {
         let input = "x".repeat(encoded_bytes);
@@ -160,7 +154,6 @@ impl Seal for RawUnpadded {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -172,7 +165,6 @@ impl Seal for RawPadded {
     const PADDING: Padding = Padding::block(16);
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Bound = ();
     type Record = ();
     type Indexes = ();
 }
@@ -216,7 +208,7 @@ fn a_sweep_converges_values_to_the_current_padding_policy() {
     assert_swept(&unpadded, false);
 }
 
-fn sweep<F: Seal<Bound = (), Record = ()>>(bytes: Vec<u8>) -> Sealed<F> {
+fn sweep<F: Seal<Record = ()>>(bytes: Vec<u8>) -> Sealed<F> {
     let keys = keyring();
     let ciphertext = Sealed::<F>::from_bytes(bytes).unwrap();
 
@@ -227,10 +219,7 @@ fn sweep<F: Seal<Bound = (), Record = ()>>(bytes: Vec<u8>) -> Sealed<F> {
     }
 }
 
-fn assert_swept<F: Seal<Value = String, Bound = (), Record = ()>>(
-    swept: &[Sealed<F>; 2],
-    padded: bool,
-) {
+fn assert_swept<F: Seal<Value = String, Record = ()>>(swept: &[Sealed<F>; 2], padded: bool) {
     let keys = keyring();
 
     for (ciphertext, value) in swept.iter().zip(["old", "new"]) {

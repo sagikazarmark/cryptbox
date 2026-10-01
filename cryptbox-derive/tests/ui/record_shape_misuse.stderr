@@ -1,41 +1,35 @@
 error: `MissingRecordId` needs a record ID: mark the field that holds it `#[cryptbox(record_id)]`
-  --> tests/ui/record_shape_misuse.rs:12:8
-   |
-12 | struct MissingRecordId {
-   |        ^^^^^^^^^^^^^^^
+ --> tests/ui/record_shape_misuse.rs:8:8
+  |
+8 | struct MissingRecordId {
+  |        ^^^^^^^^^^^^^^^
 
 error: a record has one record ID: mark only one field `#[cryptbox(record_id)]`
-  --> tests/ui/record_shape_misuse.rs:24:5
+  --> tests/ui/record_shape_misuse.rs:20:5
    |
-24 |     uuid: [u8; 16],
+20 |     uuid: [u8; 16],
    |     ^^^^
 
 error: `NothingSealed` has no sealed field: mark one `#[cryptbox(seal = "<uuid>")]`, or store it without `#[derive(Record)]`
-  --> tests/ui/record_shape_misuse.rs:30:8
+  --> tests/ui/record_shape_misuse.rs:26:8
    |
-30 | struct NothingSealed {
+26 | struct NothingSealed {
    |        ^^^^^^^^^^^^^
 
-error: `org` is bound into every sealed field, so it can't be optional
-  --> tests/ui/record_shape_misuse.rs:43:10
+error: `id` is bound into every sealed field, so it can't be optional
+  --> tests/ui/record_shape_misuse.rs:37:9
    |
-43 |     org: Option<OrgId>,
-   |          ^^^^^^
-
-error: `workspce` is not a bound value of `BadIndex`; `across` names the bound values the index spans: `org`
-  --> tests/ui/record_shape_misuse.rs:58:16
-   |
-58 |         across(workspce),
-   |                ^^^^^^^^
+37 |     id: Option<i64>,
+   |         ^^^^^^
 
 error: the stored form already has a field `id`: name the index column with `column = …`
-  --> tests/ui/record_shape_misuse.rs:62:18
+  --> tests/ui/record_shape_misuse.rs:53:18
    |
-62 |         column = id,
+53 |         column = id,
    |                  ^^
 
-error: `tenant` is not a bound value of `BadLegacy`; a legacy declaration binds some of the record's bound values
-  --> tests/ui/record_shape_misuse.rs:74:76
+error: unknown `legacy` key `bound`; expected `seal` or `record`
+  --> tests/ui/record_shape_misuse.rs:63:70
    |
-74 |     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30", legacy(bound(tenant)))]
-   |                                                                            ^^^^^^
+63 |     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30", legacy(bound(tenant)))]
+   |                                                                      ^^^^^

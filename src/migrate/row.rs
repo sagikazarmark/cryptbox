@@ -1,12 +1,12 @@
-use std::{fmt, marker::PhantomData};
+use std::fmt;
 
 use zeroize::Zeroizing;
 
 use crate::{
-    BindingDomain, BlindIndex, BlindIndexKeyring, BlindIndexSpec, BoundList, BoundValues, Codec,
-    EncryptionKeyring, Error, PartValue, RecordId, RecordIdType, Seal,
-    binding::{OwnedBinding, bound_values, declaration_fingerprint},
-    blind::{derive_value, projected_domain},
+    BindingDomain, BlindIndex, BlindIndexKeyring, BlindIndexSpec, Codec, EncryptionKeyring, Error,
+    PartValue, RecordId, RecordIdType, Seal,
+    binding::declaration_fingerprint,
+    blind::{derive_value, index_domain},
     bound, inspect_blind_index, inspect_ciphertext,
 };
 
@@ -98,52 +98,12 @@ impl RowOutcome {
     }
 }
 
-/// The binding arguments of one stored row, which a [`RowPlanner`]'s row
-/// closure builds from the row's columns.
-///
-/// It holds the row's bound values, of the seal's bound list `L`, and, for a
-/// seal that binds a [record](Seal::Record), its record ID. A record omitted for a seal
-/// that binds one, or passed to a seal that binds none while no
-/// [legacy-binding window](RowPlanner::legacy_binding) binds one either, fails
-/// planning with [`Error::InvalidBinding`].
-#[derive(Clone, Debug)]
-pub struct RowArgs<'r, L> {
-    bound: OwnedBinding,
-    record: Option<RecordId<'r>>,
-    list: PhantomData<fn() -> L>,
-}
-
-impl<'r, L: BoundList> RowArgs<'r, L> {
-    /// Creates the arguments of a row bound to the values `bound` without a
-    /// record. The values are copied, so they may be built from the row's
-    /// columns in place, such as `&TenantId::new(row.tenant.clone())?`.
-    pub fn new<'v>(bound: impl BoundValues<'v, L>) -> Self {
-        Self {
-            bound: OwnedBinding::new(&bound_values(bound)),
-            record: None,
-            list: PhantomData,
-        }
-    }
-
-    /// Binds the row's record ID too.
-    #[must_use]
-    pub fn with_record(self, record: RecordId<'r>) -> Self {
-        Self {
-            record: Some(record),
-            ..self
-        }
-    }
-}
-
-type RowArgsFn<'a, F, R> =
-    Box<dyn for<'r> Fn(&'r R) -> Result<RowArgs<'r, <F as Seal>::Bound>, Error> + 'a>;
+type RecordIdFn<'a, R> = Box<dyn for<'r> Fn(&'r R) -> Result<Option<RecordId<'r>>, Error> + 'a>;
 
 type IndexDeriver<F> =
     fn(&<F as Seal>::Value, &BindingDomain, &BlindIndexKeyring) -> Result<Vec<u8>, Error>;
 
-type IndexDomainFn = fn(&[PartValue<'_>]) -> Result<BindingDomain, Error>;
-
-type LegacyDomain = fn(&[PartValue<'_>], Option<PartValue<'_>>) -> Result<BindingDomain, Error>;
+type LegacyDomain = fn(Option<PartValue<'_>>) -> Result<BindingDomain, Error>;
 
 fn derive_index_bytes<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
@@ -157,8 +117,7 @@ struct IndexColumn<'a, F>
 where
     F: Seal,
 {
-    /// Projects the column's partition from a row's bound values and encodes it.
-    domain: IndexDomainFn,
+    domain: BindingDomain,
     deriver: IndexDeriver<F>,
     keys: &'a BlindIndexKeyring,
 }
@@ -176,8 +135,6 @@ struct LegacyDeclaration<'a> {
 /// The binding of one row under the planner's seal.
 struct RowBinding {
     domain: BindingDomain,
-    /// One index domain per registered index column, in order.
-    index_domains: Vec<BindingDomain>,
 }
 
 /// Plans the rewrite of one encrypted column and its blind-index columns.
@@ -195,12 +152,12 @@ struct RowBinding {
 ///
 /// # Bindings
 ///
-/// Each row is sealed under its own binding arguments, which a row closure
-/// builds from `R`, the row's columns ([`Self::for_rows`]). A planner seals
-/// with one keyring: when the application keeps values under separate keys,
-/// such as one keyring per org, run one sweep per keyring over the rows those
-/// keys protect. [`Self::new`] serves a seal without bound values or a record, whose
-/// rows need no columns.
+/// Each row of a seal that binds a [record](Seal::Record) is sealed under its
+/// record ID, which a closure reads from `R`, the row's columns
+/// ([`Self::for_rows`]). A planner seals with one keyring: when the application
+/// keeps values under separate keys, such as one keyring per org, run one sweep
+/// per keyring over the rows those keys protect. [`Self::new`] serves a seal
+/// without a record, whose rows need no columns.
 ///
 /// To change a seal's binding declaration, register the declaration it had before with
 /// [`Self::legacy_binding`]: rows whose header still names that declaration are
@@ -210,7 +167,7 @@ where
     F: Seal,
 {
     keys: &'a EncryptionKeyring,
-    row_args: RowArgsFn<'a, F, R>,
+    record_id: RecordIdFn<'a, R>,
     legacy: Option<&'a dyn LegacyFormat>,
     legacy_declarations: Vec<LegacyDeclaration<'a>>,
     indexes: Vec<IndexColumn<'a, F>>,
@@ -218,15 +175,15 @@ where
 
 impl<'a, F, R> RowPlanner<'a, F, R>
 where
-    F: Seal<Bound = (), Record = ()>,
+    F: Seal<Record = ()>,
 {
-    /// Creates a planner for a seal `F` without bound values or a record, and its
-    /// encryption keyring.
+    /// Creates a planner for a seal `F` without a record, and its encryption
+    /// keyring.
     ///
     /// Any other seal is a type error; use [`Self::for_rows`].
     #[must_use]
     pub fn new(keys: &'a EncryptionKeyring) -> Self {
-        Self::for_rows(keys, |_| Ok(RowArgs::new(())))
+        Self::with_record_id(keys, Box::new(|_| Ok(None)))
     }
 }
 
@@ -234,18 +191,23 @@ impl<'a, F, R> RowPlanner<'a, F, R>
 where
     F: Seal,
 {
-    /// Creates a planner for rows of seal `F` that `keys` protects.
+    /// Creates a planner for rows of seal `F` that `keys` protects, each bound
+    /// to the record ID `record_id` reads from its columns.
     ///
-    /// `row_args` builds each row's binding arguments from its columns. An
-    /// error from `row_args` is returned as it is, and stops a sweep or
-    /// verification pass.
+    /// Use it for a seal that binds a record, or one whose
+    /// [legacy-binding window](Self::legacy_binding) did. An error from
+    /// `record_id` is returned as it is, and stops a sweep or verification pass.
     pub fn for_rows(
         keys: &'a EncryptionKeyring,
-        row_args: impl for<'r> Fn(&'r R) -> Result<RowArgs<'r, F::Bound>, Error> + 'a,
+        record_id: impl for<'r> Fn(&'r R) -> Result<RecordId<'r>, Error> + 'a,
     ) -> Self {
+        Self::with_record_id(keys, Box::new(move |row| record_id(row).map(Some)))
+    }
+
+    fn with_record_id(keys: &'a EncryptionKeyring, record_id: RecordIdFn<'a, R>) -> Self {
         Self {
             keys,
-            row_args: Box::new(row_args),
+            record_id,
             legacy: None,
             legacy_declarations: Vec::new(),
             indexes: Vec::new(),
@@ -263,39 +225,25 @@ where
     }
 
     /// Opens a legacy-binding window: rows sealed with the older binding
-    /// declaration of bound list `Old` and record `OldRecord` are opened under it
-    /// with `keys` and resealed under the seal's current binding.
+    /// declaration of record `OldRecord` are opened under it with `keys` and
+    /// resealed under the seal's current binding.
     ///
-    /// `Old` is the bound list the seal had before, such as `()` or
-    /// `(TenantId,)`, and `OldRecord` its record, such as `()` or `i64`. `Old`
-    /// takes each value from the row's current bound values, by kind, and when
-    /// `OldRecord` is one, the row's record ID: rows moving out of a record
-    /// still pass it. `keys` is the keyring those rows were sealed with. The
-    /// window covers moving from no bound values to any, adding bound values,
-    /// and moving into or out of a record, but not removing a bound value or
-    /// changing its kind. A type of `Old` that the current bound list lacks, and
-    /// a record `OldRecord` binds that the row lacks, fail planning with
-    /// [`Error::InvalidBinding`].
+    /// `OldRecord` is the record the seal bound before, such as `()` or `i64`;
+    /// when it is one, the row's record ID is bound, so rows moving out of a
+    /// record still read it with [`Self::for_rows`]. `keys` is the keyring those
+    /// rows were sealed with. The window covers moving into or out of a record,
+    /// not changing the record ID's kind. A record `OldRecord` binds that the
+    /// row lacks fails planning with [`Error::InvalidBinding`].
     ///
     /// Such rows are classified as [`RowState::LegacyBinding`] by their header's
-    /// binding fingerprint, and every blind index is derived again under the
-    /// current binding. Close the window once a verification pass counts none.
+    /// binding fingerprint, and every blind index is derived again. Close the
+    /// window once a verification pass counts none.
     #[must_use]
-    pub fn legacy_binding<Old: BoundList, OldRecord: RecordIdType>(
-        mut self,
-        keys: &'a EncryptionKeyring,
-    ) -> Self {
+    pub fn legacy_binding<OldRecord: RecordIdType>(mut self, keys: &'a EncryptionKeyring) -> Self {
         self.legacy_declarations.push(LegacyDeclaration {
-            fingerprint: declaration_fingerprint::<Old, OldRecord>(),
+            fingerprint: declaration_fingerprint::<OldRecord>(),
             recorded: <OldRecord as RecordIdType>::RECORD.is_some(),
-            domain: |values, record| {
-                BindingDomain::projected::<Old, OldRecord>(
-                    F::ID.as_bytes(),
-                    <F::Bound as BoundList>::PARTS,
-                    values,
-                    record,
-                )
-            },
+            domain: |record| legacy_domain::<OldRecord>(F::ID.as_bytes(), record),
             keys,
         });
 
@@ -314,16 +262,9 @@ where
     #[must_use]
     pub fn legacy_seal<L: Seal<Value = F::Value>>(mut self, keys: &'a EncryptionKeyring) -> Self {
         self.legacy_declarations.push(LegacyDeclaration {
-            fingerprint: declaration_fingerprint::<L::Bound, L::Record>(),
+            fingerprint: declaration_fingerprint::<L::Record>(),
             recorded: <L::Record as RecordIdType>::RECORD.is_some(),
-            domain: |values, record| {
-                BindingDomain::projected::<L::Bound, L::Record>(
-                    L::ID.as_bytes(),
-                    <F::Bound as BoundList>::PARTS,
-                    values,
-                    record,
-                )
-            },
+            domain: |record| legacy_domain::<L::Record>(L::ID.as_bytes(), record),
             keys,
         });
 
@@ -353,7 +294,6 @@ where
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Bound = ();
     ///     type Record = ();
     ///     type Indexes = ();
     /// }
@@ -365,7 +305,6 @@ where
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Bound = ();
     ///     type Record = ();
     ///     type Indexes = ();
     /// }
@@ -374,7 +313,6 @@ where
     ///
     /// impl BlindIndexSpec for InviteEmailLookup {
     ///     type Seal = InviteEmail;
-    ///     type Partition = ();
     ///     const ID: IndexId = IndexId::from_bytes([3; 16]);
     ///     const BITS: u16 = 32;
     ///     const NORMALIZER: &'static str = "exact/1";
@@ -402,7 +340,7 @@ where
         Spec: BlindIndexSpec<Seal = F>,
     {
         self.indexes.push(IndexColumn {
-            domain: projected_domain::<Spec>,
+            domain: index_domain::<Spec>(),
             deriver: derive_index_bytes::<Spec>,
             keys,
         });
@@ -433,8 +371,8 @@ where
         indexes: &[&[u8]],
     ) -> Result<RowState, Error> {
         self.check_arity(indexes)?;
-        let args = (self.row_args)(row)?;
-        let binding = self.bind(&args)?;
+        let record = (self.record_id)(row)?;
+        let binding = self.bind(record)?;
 
         match inspect_ciphertext(ciphertext) {
             Ok(info)
@@ -483,14 +421,14 @@ where
         indexes: &[&[u8]],
     ) -> Result<RowOutcome, Error> {
         self.check_arity(indexes)?;
-        let args = (self.row_args)(row)?;
-        let binding = self.bind(&args)?;
+        let record = (self.record_id)(row)?;
+        let binding = self.bind(record)?;
 
         match inspect_ciphertext(ciphertext) {
             Ok(info) => {
                 if let Some(legacy) = self.legacy_declaration(&binding, info.context_fingerprint())
                 {
-                    return self.plan_legacy_binding_row(legacy, &args, &binding, ciphertext);
+                    return self.plan_legacy_binding_row(legacy, record, &binding, ciphertext);
                 }
             }
             Err(Error::NotCiphertext) => return self.plan_legacy_row(&binding, ciphertext),
@@ -524,10 +462,9 @@ where
             // from decrypted plaintext, never trusted index metadata.
             let value = F::Codec::decode(&plaintext)?;
             let mut replacements = Vec::with_capacity(self.indexes.len());
-            let columns = self.indexes.iter().zip(&binding.index_domains);
-            for (((column, domain), bytes), stale) in columns.zip(indexes).zip(&stale_columns) {
+            for ((column, bytes), stale) in self.indexes.iter().zip(indexes).zip(&stale_columns) {
                 replacements.push(if *stale {
-                    column.derive(&value, domain)?
+                    column.derive(&value)?
                 } else {
                     bytes.to_vec()
                 });
@@ -548,30 +485,20 @@ where
     }
 
     /// Encodes the row's binding.
-    fn bind(&self, args: &RowArgs<'_, F::Bound>) -> Result<RowBinding, Error> {
+    fn bind(&self, record: Option<RecordId<'_>>) -> Result<RowBinding, Error> {
         let recorded = <F::Record as RecordIdType>::RECORD.is_some();
         let legacy_recorded = self
             .legacy_declarations
             .iter()
             .any(|legacy| legacy.recorded);
-        if args.record.is_some() && !recorded && !legacy_recorded {
+        if record.is_some() && !recorded && !legacy_recorded {
             return Err(Error::InvalidBinding);
         }
 
-        let record = if recorded { args.record } else { None };
-        let domain = BindingDomain::bound::<F::Bound, F::Record>(
-            F::ID.as_bytes(),
-            &args.bound.values(),
-            record.map(RecordId::part_value),
-        )?;
-        Ok(RowBinding {
-            index_domains: self
-                .indexes
-                .iter()
-                .map(|column| (column.domain)(&args.bound.values()))
-                .collect::<Result<_, _>>()?,
-            domain,
-        })
+        let record = if recorded { record } else { None };
+        let domain =
+            BindingDomain::record::<F::Record>(F::ID.as_bytes(), record.map(RecordId::part_value))?;
+        Ok(RowBinding { domain })
     }
 
     /// Returns the registered legacy declaration an envelope's header names,
@@ -593,23 +520,23 @@ where
     fn plan_legacy_binding_row(
         &self,
         legacy: &LegacyDeclaration<'a>,
-        args: &RowArgs<'_, F::Bound>,
+        record: Option<RecordId<'_>>,
         binding: &RowBinding,
         ciphertext: &[u8],
     ) -> Result<RowOutcome, Error> {
-        let old = (legacy.domain)(&args.bound.values(), args.record.map(RecordId::part_value))?;
+        let old = (legacy.domain)(record.map(RecordId::part_value))?;
         let (plaintext, ciphertext) = bound::reseal(
             (&old, legacy.keys),
             (&binding.domain, self.keys),
             F::PADDING,
             ciphertext,
         )?;
-        // The index binding may have changed with the declaration, so every index
-        // is derived again.
+        // The seal ID may have changed with the declaration, and the index binding
+        // with it, so every index is derived again.
         let indexes = if self.indexes.is_empty() {
             Vec::new()
         } else {
-            self.derive_indexes(&F::Codec::decode(&plaintext)?, binding)?
+            self.derive_indexes(&F::Codec::decode(&plaintext)?)?
         };
 
         Ok(RowOutcome {
@@ -631,20 +558,15 @@ where
             state: RowState::Legacy,
             write: Some(RowWrite {
                 ciphertext,
-                indexes: self.derive_indexes(&value, binding)?,
+                indexes: self.derive_indexes(&value)?,
             }),
         })
     }
 
-    fn derive_indexes(
-        &self,
-        value: &F::Value,
-        binding: &RowBinding,
-    ) -> Result<Vec<Vec<u8>>, Error> {
+    fn derive_indexes(&self, value: &F::Value) -> Result<Vec<Vec<u8>>, Error> {
         self.indexes
             .iter()
-            .zip(&binding.index_domains)
-            .map(|(column, domain)| column.derive(value, domain))
+            .map(|column| column.derive(value))
             .collect()
     }
 
@@ -668,8 +590,8 @@ where
         Ok(inspect_blind_index(bytes)?.index_key_id() != self.keys.current().id())
     }
 
-    fn derive(&self, value: &F::Value, domain: &BindingDomain) -> Result<Vec<u8>, Error> {
-        (self.deriver)(value, domain, self.keys)
+    fn derive(&self, value: &F::Value) -> Result<Vec<u8>, Error> {
+        (self.deriver)(value, &self.domain, self.keys)
     }
 }
 
@@ -685,4 +607,19 @@ where
             .field("indexes", &self.indexes.len())
             .finish_non_exhaustive()
     }
+}
+
+/// Encodes the binding of seal `id` under the older declaration of record
+/// `OldRecord`, binding `record` when `OldRecord` is one.
+fn legacy_domain<OldRecord: RecordIdType>(
+    id: &[u8; 16],
+    record: Option<PartValue<'_>>,
+) -> Result<BindingDomain, Error> {
+    let record = if OldRecord::RECORD.is_some() {
+        record
+    } else {
+        None
+    };
+
+    BindingDomain::record::<OldRecord>(id, record)
 }

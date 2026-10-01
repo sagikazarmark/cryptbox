@@ -1,39 +1,33 @@
-use super::{PartKind, PartValue, TenantId};
-use crate::Error;
+use super::{PartKind, PartValue};
 
-/// A type a binding part can hold, with its fixed [`PartKind`].
+/// A type a record ID can have, with its fixed [`PartKind`].
 ///
-/// A [`BoundId`](super::BoundId) or a record ID binds its value through this
-/// trait, and reads it back with [`from_part_value`](Self::from_part_value).
-/// `#[derive(BoundId)]` implements it for a newtype over one of these types.
+/// A seal whose [`Record`](crate::Seal::Record) is this type binds each value
+/// to the record ID through this trait.
 ///
 /// | Type | Kind |
 /// | --- | --- |
 /// | `[u8; 16]` | [`PartKind::Uuid`] |
 /// | `uuid::Uuid`, with the `uuid` feature | [`PartKind::Uuid`] |
 /// | `i64` | [`PartKind::I64`] |
-/// | `Vec<u8>`, `Box<[u8]>`, [`TenantId`] | [`PartKind::Bytes`] |
+/// | `Vec<u8>`, `Box<[u8]>` | [`PartKind::Bytes`] |
 ///
 /// Implement it for an application's own ID types, such as a newtype over a
-/// UUID; `#[derive(BoundId)]` writes this impl. The kinds stay canonical
-/// whatever the type: there is no text kind, so encode text as bytes.
+/// UUID. The kinds stay canonical whatever the type: there is no text kind, so
+/// encode text as bytes.
 ///
 /// ```
-/// use cryptbox::{Error, PartKind, PartType, PartValue};
+/// use cryptbox::{PartKind, PartType, PartValue};
 ///
-/// /// An org ID, bound as a UUID part.
+/// /// A customer ID, bound as a UUID.
 /// #[derive(Clone, Copy, Hash, PartialEq, Eq)]
-/// struct OrgId([u8; 16]);
+/// struct CustomerId([u8; 16]);
 ///
-/// impl PartType for OrgId {
+/// impl PartType for CustomerId {
 ///     const KIND: PartKind = PartKind::Uuid;
 ///
 ///     fn part_value(&self) -> PartValue<'_> {
 ///         PartValue::Uuid(self.0)
-///     }
-///
-///     fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
-///         <[u8; 16]>::from_part_value(value).map(Self)
 ///     }
 /// }
 /// ```
@@ -41,9 +35,9 @@ use crate::Error;
 /// The kind and the bound bytes are persistent schema: an implementation must
 /// not change them for a type with stored data.
 #[diagnostic::on_unimplemented(
-    message = "`{Self}` is not a binding part type",
-    label = "a part holds a UUID, an `i64`, or bytes",
-    note = "use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `cryptbox::TenantId`, `uuid::Uuid` with the `uuid` feature, or implement `cryptbox::PartType`; encode text as bytes"
+    message = "`{Self}` is not a record ID type",
+    label = "a record ID is a UUID, an `i64`, or bytes",
+    note = "use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, `uuid::Uuid` with the `uuid` feature, or implement `cryptbox::PartType`; encode text as bytes"
 )]
 pub trait PartType {
     /// The kind of every value of this type.
@@ -52,19 +46,8 @@ pub trait PartType {
     /// Returns the value to bind, of kind [`KIND`](Self::KIND).
     ///
     /// A value of another kind fails every seal and open with
-    /// [`Error::InvalidBinding`].
+    /// [`Error::InvalidBinding`](crate::Error::InvalidBinding).
     fn part_value(&self) -> PartValue<'_>;
-
-    /// Reads a value back from the part value it binds: the inverse of
-    /// [`part_value`](Self::part_value).
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::InvalidBinding`] for a value of another kind, or one
-    /// the type cannot hold, such as an empty [`TenantId`].
-    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error>
-    where
-        Self: Sized;
 }
 
 impl PartType for [u8; 16] {
@@ -72,13 +55,6 @@ impl PartType for [u8; 16] {
 
     fn part_value(&self) -> PartValue<'_> {
         PartValue::Uuid(*self)
-    }
-
-    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
-        match value {
-            PartValue::Uuid(uuid) => Ok(uuid),
-            _ => Err(Error::InvalidBinding),
-        }
     }
 }
 
@@ -89,10 +65,6 @@ impl PartType for uuid::Uuid {
     fn part_value(&self) -> PartValue<'_> {
         PartValue::Uuid(*self.as_bytes())
     }
-
-    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
-        <[u8; 16]>::from_part_value(value).map(Self::from_bytes)
-    }
 }
 
 impl PartType for i64 {
@@ -100,13 +72,6 @@ impl PartType for i64 {
 
     fn part_value(&self) -> PartValue<'_> {
         PartValue::I64(*self)
-    }
-
-    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
-        match value {
-            PartValue::I64(value) => Ok(value),
-            _ => Err(Error::InvalidBinding),
-        }
     }
 }
 
@@ -116,13 +81,6 @@ impl PartType for Vec<u8> {
     fn part_value(&self) -> PartValue<'_> {
         PartValue::Bytes(self)
     }
-
-    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
-        match value {
-            PartValue::Bytes(bytes) => Ok(bytes.to_vec()),
-            _ => Err(Error::InvalidBinding),
-        }
-    }
 }
 
 impl PartType for Box<[u8]> {
@@ -130,21 +88,5 @@ impl PartType for Box<[u8]> {
 
     fn part_value(&self) -> PartValue<'_> {
         PartValue::Bytes(self)
-    }
-
-    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
-        Vec::from_part_value(value).map(Vec::into_boxed_slice)
-    }
-}
-
-impl PartType for TenantId {
-    const KIND: PartKind = PartKind::Bytes;
-
-    fn part_value(&self) -> PartValue<'_> {
-        PartValue::Bytes(self.as_bytes())
-    }
-
-    fn from_part_value(value: PartValue<'_>) -> Result<Self, Error> {
-        Vec::from_part_value(value).and_then(Self::new)
     }
 }

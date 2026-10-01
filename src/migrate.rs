@@ -16,11 +16,10 @@
 //! Obtain those assurances with separate decryption and index recomputation.
 //!
 //! The same sweep changes a seal's binding declaration. [`RowPlanner::for_rows`]
-//! builds each row's binding arguments from its columns, and
+//! reads each row's record ID from its columns, and
 //! [`RowPlanner::legacy_binding`] opens a legacy-binding window in which rows
 //! sealed with the older declaration are resealed. Until verification counts none of
-//! them, readers use [`probes_across`] and [`open_across`] to find and open
-//! values of either declaration.
+//! them, readers use [`open_across`] to open values of either declaration.
 //!
 //! Reads are permissive; writes never are. [`MaybeEncrypted`] implements no
 //! storage `Encode`, and its only forward path is the opened value, which
@@ -54,7 +53,7 @@ mod window;
 pub use legacy::{LegacyError, LegacyErrorKind, LegacyFormat};
 pub use read::MaybeEncrypted;
 pub use report::SweepReport;
-pub use row::{RowArgs, RowOutcome, RowPlanner, RowState, RowWrite};
+pub use row::{RowOutcome, RowPlanner, RowState, RowWrite};
 #[cfg(feature = "sqlx-postgres")]
 pub use sqlx_postgres::PostgresSweepStore;
 #[cfg(feature = "sqlx-sqlite")]
@@ -62,4 +61,4 @@ pub use sqlx_sqlite::SqliteSweepStore;
 pub use sweep::{BatchOutcome, Sweep, SweepError, SweepRow, SweepStore};
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 pub use table::SweepTable;
-pub use window::{open_across, probes_across};
+pub use window::open_across;
