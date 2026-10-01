@@ -4,7 +4,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     BindingDomain, BlindIndex, BlindIndexKeyring, BlindIndexSpec, Codec, EncryptionKeyring, Error,
-    PartValue, RecordId, RecordIdType, Seal,
+    OptionalRecordId, RecordId, Seal,
     binding::declaration_fingerprint,
     blind::{derive_value, index_domain},
     bound, inspect_blind_index, inspect_ciphertext,
@@ -103,7 +103,7 @@ type RecordIdFn<'a, R> = Box<dyn for<'r> Fn(&'r R) -> Result<Option<RecordId<'r>
 type IndexDeriver<F> =
     fn(&<F as Seal>::Value, &BindingDomain, &BlindIndexKeyring) -> Result<Vec<u8>, Error>;
 
-type LegacyDomain = fn(Option<PartValue<'_>>) -> Result<BindingDomain, Error>;
+type LegacyDomain = fn(Option<RecordId<'_>>) -> Result<BindingDomain, Error>;
 
 fn derive_index_bytes<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
@@ -239,10 +239,13 @@ where
     /// binding fingerprint, and every blind index is derived again. Close the
     /// window once a verification pass counts none.
     #[must_use]
-    pub fn legacy_binding<OldRecord: RecordIdType>(mut self, keys: &'a EncryptionKeyring) -> Self {
+    pub fn legacy_binding<OldRecord: OptionalRecordId>(
+        mut self,
+        keys: &'a EncryptionKeyring,
+    ) -> Self {
         self.legacy_declarations.push(LegacyDeclaration {
             fingerprint: declaration_fingerprint::<OldRecord>(),
-            recorded: <OldRecord as RecordIdType>::RECORD.is_some(),
+            recorded: <OldRecord as OptionalRecordId>::RECORD.is_some(),
             domain: |record| legacy_domain::<OldRecord>(F::ID.as_bytes(), record),
             keys,
         });
@@ -263,7 +266,7 @@ where
     pub fn legacy_seal<L: Seal<Value = F::Value>>(mut self, keys: &'a EncryptionKeyring) -> Self {
         self.legacy_declarations.push(LegacyDeclaration {
             fingerprint: declaration_fingerprint::<L::Record>(),
-            recorded: <L::Record as RecordIdType>::RECORD.is_some(),
+            recorded: <L::Record as OptionalRecordId>::RECORD.is_some(),
             domain: |record| legacy_domain::<L::Record>(L::ID.as_bytes(), record),
             keys,
         });
@@ -486,7 +489,7 @@ where
 
     /// Encodes the row's binding.
     fn bind(&self, record: Option<RecordId<'_>>) -> Result<RowBinding, Error> {
-        let recorded = <F::Record as RecordIdType>::RECORD.is_some();
+        let recorded = <F::Record as OptionalRecordId>::RECORD.is_some();
         let legacy_recorded = self
             .legacy_declarations
             .iter()
@@ -496,8 +499,7 @@ where
         }
 
         let record = if recorded { record } else { None };
-        let domain =
-            BindingDomain::record::<F::Record>(F::ID.as_bytes(), record.map(RecordId::part_value))?;
+        let domain = BindingDomain::record::<F::Record>(F::ID.as_bytes(), record)?;
         Ok(RowBinding { domain })
     }
 
@@ -524,7 +526,7 @@ where
         binding: &RowBinding,
         ciphertext: &[u8],
     ) -> Result<RowOutcome, Error> {
-        let old = (legacy.domain)(record.map(RecordId::part_value))?;
+        let old = (legacy.domain)(record)?;
         let (plaintext, ciphertext) = bound::reseal(
             (&old, legacy.keys),
             (&binding.domain, self.keys),
@@ -611,9 +613,9 @@ where
 
 /// Encodes the binding of seal `id` under the older declaration of record
 /// `OldRecord`, binding `record` when `OldRecord` is one.
-fn legacy_domain<OldRecord: RecordIdType>(
+fn legacy_domain<OldRecord: OptionalRecordId>(
     id: &[u8; 16],
-    record: Option<PartValue<'_>>,
+    record: Option<RecordId<'_>>,
 ) -> Result<BindingDomain, Error> {
     let record = if OldRecord::RECORD.is_some() {
         record

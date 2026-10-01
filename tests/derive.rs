@@ -4,7 +4,7 @@
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
     CodecErrorKind, EncryptionKey, EncryptionKeyring, IndexId, IndexKeyId, IndexList, Padding,
-    PartKind, RecordIdType, Seal, SealId, Sealed, Utf8, index_id, index_key_id, seal_id,
+    Seal, SealId, Sealed, Utf8, index_id, index_key_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -402,10 +402,9 @@ impl Seal for ManualProjectNote {
 
 #[test]
 fn a_derived_seal_declares_its_record() {
-    assert_eq!(
-        <<ProjectNote as Seal>::Record as RecordIdType>::RECORD,
-        Some(PartKind::I64)
-    );
+    fn record<F: Seal<Record = i64>>() {}
+
+    record::<ProjectNote>();
 }
 
 #[test]
@@ -468,14 +467,14 @@ fn a_derived_blind_index_ignores_the_record() {
 
 #[cfg(feature = "uuid")]
 mod uuid_records {
-    use cryptbox::{PartType, PartValue, RecordId};
+    use cryptbox::RecordId;
     use uuid::Uuid;
 
     #[test]
     fn a_uuid_record_id_binds_its_sixteen_bytes() {
         let id = Uuid::from_u128(0x0192_3a4b_5c6d_7e8f_9a0b_1c2d_3e4f_5a6b);
 
-        assert!(matches!(id.part_value(), PartValue::Uuid(bytes) if bytes == *id.as_bytes()));
-        assert_eq!(RecordId::from(id), RecordId::Uuid(*id.as_bytes()));
+        assert_eq!(RecordId::of(&id), RecordId::Uuid(*id.as_bytes()));
+        assert_eq!(RecordId::from(id), RecordId::of(&id));
     }
 }

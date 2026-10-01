@@ -1,18 +1,18 @@
 //! Public-boundary tests for sealing and opening values under their runtime binding.
 
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Error, Padding, PartKind, PartType, PartValue, Seal, SealId,
-    Sealed, Utf8, key_id,
+    EncryptionKey, EncryptionKeyring, Error, Padding, RecordIdType, Seal, SealId, Sealed, Utf8,
+    key_id,
 };
 
 /// A customer's ID, an application-owned record ID type.
 struct CustomerId([u8; 16]);
 
-impl PartType for CustomerId {
-    const KIND: PartKind = PartKind::Uuid;
+impl RecordIdType for CustomerId {
+    type Repr = [u8; 16];
 
-    fn part_value(&self) -> PartValue<'_> {
-        PartValue::Uuid(self.0)
+    fn repr(&self) -> &[u8; 16] {
+        &self.0
     }
 }
 

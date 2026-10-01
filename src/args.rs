@@ -1,7 +1,7 @@
 //! The typed layer's binding arguments: what a seal's callers pass, and the
 //! binding the typed layer resolves from them.
 
-use crate::{BindingDomain, Error, PartType, PartValue, Seal};
+use crate::{BindingDomain, Error, RecordId, RecordIdType, Seal, binding::Repr};
 
 /// The binding arguments of one sealing or opening call under seal `F`: `()`,
 /// or `&id` when [`Seal::Record`] is a record ID type.
@@ -84,34 +84,34 @@ pub trait Args<F: Seal>: sealed::Sealed<F> {}
 impl<F: Seal, T: sealed::Sealed<F>> Args<F> for T {}
 
 pub(crate) mod sealed {
-    use crate::{PartValue, Seal};
+    use crate::{RecordId, Seal};
 
     pub trait Sealed<F: Seal> {
         /// Passes the record's value, when the seal binds one, to `f`.
-        fn with_record<T>(self, f: impl FnOnce(Option<PartValue<'_>>) -> T) -> T;
+        fn with_record<T>(self, f: impl FnOnce(Option<RecordId<'_>>) -> T) -> T;
     }
 
     /// The argument form of record `R`.
     pub trait ArgsFor<R> {
-        fn with_record<T>(self, f: impl FnOnce(Option<PartValue<'_>>) -> T) -> T;
+        fn with_record<T>(self, f: impl FnOnce(Option<RecordId<'_>>) -> T) -> T;
     }
 }
 
 impl<F: Seal, A: sealed::ArgsFor<F::Record>> sealed::Sealed<F> for A {
-    fn with_record<T>(self, f: impl FnOnce(Option<PartValue<'_>>) -> T) -> T {
+    fn with_record<T>(self, f: impl FnOnce(Option<RecordId<'_>>) -> T) -> T {
         sealed::ArgsFor::with_record(self, f)
     }
 }
 
 impl sealed::ArgsFor<()> for () {
-    fn with_record<T>(self, f: impl FnOnce(Option<PartValue<'_>>) -> T) -> T {
+    fn with_record<T>(self, f: impl FnOnce(Option<RecordId<'_>>) -> T) -> T {
         f(None)
     }
 }
 
-impl<R: PartType + 'static> sealed::ArgsFor<R> for &R {
-    fn with_record<T>(self, f: impl FnOnce(Option<PartValue<'_>>) -> T) -> T {
-        f(Some(self.part_value()))
+impl<R: RecordIdType> sealed::ArgsFor<R> for &R {
+    fn with_record<T>(self, f: impl FnOnce(Option<RecordId<'_>>) -> T) -> T {
+        f(Some(self.repr().record_id()))
     }
 }
 

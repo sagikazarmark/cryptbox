@@ -1,5 +1,5 @@
 use crate::id::identifier;
-use crate::{Codec, IndexList, Padding, RecordIdType};
+use crate::{Codec, IndexList, OptionalRecordId, Padding};
 
 identifier!(SealId, "A stable seal identifier.");
 
@@ -105,8 +105,8 @@ pub trait Seal: 'static {
     type Codec: Codec<Self::Value>;
 
     /// The type of the ID of the record every value is stored in and bound to,
-    /// such as `i64`, or `()` for none: a [`RecordIdType`].
-    type Record: RecordIdType;
+    /// such as `i64`, or `()` for none: an [`OptionalRecordId`].
+    type Record: OptionalRecordId;
 
     /// The blind indexes declared over this seal, as a tuple of
     /// [`BlindIndexSpec`](crate::BlindIndexSpec)s, or `()` for none.

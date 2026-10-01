@@ -381,7 +381,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// expands to exactly this hand-written code. The real expansion spells
 /// `Result`, `Option`, `Clone`, `Sized`, and the codec as absolute paths, wraps
 /// each impl in `const _: () = { … };`, forwards docs, and checks, at compile
-/// time, that the record ID is a `PartType`:
+/// time, that the record ID is a `RecordIdType`:
 ///
 /// ```
 /// # use cryptbox::{

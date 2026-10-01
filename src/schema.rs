@@ -6,8 +6,8 @@ use std::{
 };
 
 use crate::{
-    BlindIndexSpec, Codec, IndexId, Padding, PartKind, Record, RecordIdType, Seal, SealId,
-    binding::declaration_fingerprint,
+    BlindIndexSpec, Codec, IndexId, OptionalRecordId, Padding, Record, Seal, SealId,
+    binding::{RecordKind, declaration_fingerprint},
 };
 
 /// Lists seals and blind indexes with their persistent schema.
@@ -97,7 +97,7 @@ struct SealEntry {
     id: SealId,
     codec: &'static str,
     padding: Padding,
-    record: Option<PartKind>,
+    record: Option<RecordKind>,
     fingerprint: [u8; 8],
 }
 
@@ -121,7 +121,7 @@ impl Manifest {
                 id: F::ID,
                 codec: <F::Codec as Codec<F::Value>>::ID,
                 padding: F::PADDING,
-                record: <F::Record as RecordIdType>::RECORD,
+                record: <F::Record as OptionalRecordId>::RECORD,
                 fingerprint: declaration_fingerprint::<F::Record>(),
             });
         }
@@ -288,11 +288,11 @@ impl fmt::Display for Manifest {
 }
 
 // Manifest spellings are snapshot text: keep them stable.
-const fn kind_name(kind: PartKind) -> &'static str {
+const fn kind_name(kind: RecordKind) -> &'static str {
     match kind {
-        PartKind::Uuid => "uuid",
-        PartKind::I64 => "i64",
-        PartKind::Bytes => "bytes",
+        RecordKind::Uuid => "uuid",
+        RecordKind::I64 => "i64",
+        RecordKind::Bytes => "bytes",
     }
 }
 

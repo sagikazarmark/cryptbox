@@ -430,6 +430,18 @@
   | `probes_across::<Old, S>(q, partition, keys, old_keys)` | `S::probes_with(q, keys)` and `S::probes_with(q, old_keys)` |
   | `TenantId::new("acme")?` | your own tenant ID, keying a map of keyrings |
 
+- **Breaking:** record ID types are one trait, `RecordIdType` (ADR-0011). An ID
+  newtype names the built-in type it binds as, `type Repr = [u8; 16]`, and
+  returns it from `repr`, so its kind and value can no longer disagree.
+  `PartType`, `PartKind`, and `PartValue` are removed; `RecordId::of` takes a
+  `RecordIdType`. The former `RecordIdType`, the bound of `Seal::Record`, is
+  `OptionalRecordId`: `()` or a `RecordIdType`. Stored bytes do not change.
+
+  | Before | Now |
+  | --- | --- |
+  | `impl PartType for CustomerId { const KIND: PartKind = PartKind::Uuid; fn part_value(&self) -> PartValue<'_> { PartValue::Uuid(self.0) } }` | `impl RecordIdType for CustomerId { type Repr = [u8; 16]; fn repr(&self) -> &[u8; 16] { &self.0 } }` |
+  | `F::Record: RecordIdType` | `F::Record: OptionalRecordId` |
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

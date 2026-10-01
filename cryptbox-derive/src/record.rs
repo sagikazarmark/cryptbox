@@ -655,7 +655,7 @@ impl<'a> Expansion<'a> {
         let ty = self.record_id.ty;
         let check = quote_spanned! {ty.span()=>
             const _: fn() = || {
-                fn check<T: #krate::PartType + ?::core::marker::Sized>() {}
+                fn check<T: #krate::RecordIdType>() {}
                 check::<#ty>();
             };
         };

@@ -104,7 +104,8 @@ before the first value is sealed:
   while sealed values exist.
 - **It is never encrypted**, because opening the row needs it first.
 - **Its kind is fixed**: a UUID, an `i64`, or bytes, the kind of its type
-  (`PartType`). Changing its type is a declaration change.
+  (`RecordIdType`). Changing its type is a declaration change. An ID newtype
+  implements `RecordIdType` by naming the built-in type it wraps.
 
 ## Blind indexes
 

@@ -1,5 +1,5 @@
 use crate::{
-    Args, BindingDomain, Codec, EncryptionKeys, Error, RecordIdType, Seal, Sealed, bound,
+    Args, BindingDomain, Codec, EncryptionKeys, Error, OptionalRecordId, Seal, Sealed, bound,
     inspect_ciphertext,
 };
 
@@ -29,7 +29,7 @@ pub fn open_across<OldRecord, F>(
     old_keys: &(impl EncryptionKeys + ?Sized),
 ) -> Result<F::Value, Error>
 where
-    OldRecord: RecordIdType,
+    OldRecord: OptionalRecordId,
     F: Seal,
 {
     let bytes = sealed.as_bytes();

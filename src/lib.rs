@@ -196,7 +196,7 @@ mod value;
 
 pub use args::Args;
 pub(crate) use binding::BindingDomain;
-pub use binding::{PartKind, PartType, PartValue, RecordId, RecordIdType};
+pub use binding::{OptionalRecordId, RecordId, RecordIdType};
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexId, IndexList,
     inspect_blind_index,

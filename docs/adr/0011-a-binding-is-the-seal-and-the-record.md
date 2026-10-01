@@ -4,6 +4,12 @@ status: accepted
 
 # A binding is the seal and the record
 
+> Amended when implemented. The record ID types are one public trait,
+> `RecordIdType`, whose implementations name the built-in type they bind as
+> (`type Repr`). The kind and value encoding are private, so `PartType`,
+> `PartKind`, and `PartValue` are removed, and `Seal::Record` is bounded by
+> `OptionalRecordId`: `()` or a `RecordIdType`. The bytes are unchanged.
+
 A sealed value is bound to its seal ID and, when it is a field of a record, to
 the record's ID. Nothing else: bound values, their ID types, and blind-index
 partitions are removed, so a binding can be added back later with fresh eyes, if
