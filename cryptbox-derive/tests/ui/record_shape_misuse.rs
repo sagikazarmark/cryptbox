@@ -55,13 +55,4 @@ struct BadIndex {
     email: String,
 }
 
-// A legacy declaration names its seal ID and whether it bound the record.
-#[derive(cryptbox::Record)]
-struct BadLegacy {
-    #[cryptbox(record_id)]
-    id: i64,
-    #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30", legacy(bound(tenant)))]
-    email: String,
-}
-
 fn main() {}

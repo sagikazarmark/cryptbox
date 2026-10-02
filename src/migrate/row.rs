@@ -5,7 +5,7 @@ use zeroize::Zeroizing;
 use crate::{
     BindingDomain, BlindIndex, BlindIndexKeyring, BlindIndexSpec, Codec, EncryptionKeyring, Error,
     Seal,
-    binding::{RecordKey, RecordValue, declaration_fingerprint},
+    binding::{RecordKey, RecordValue},
     blind::{derive_value, index_domain},
     bound, inspect_blind_index, inspect_ciphertext,
 };
@@ -29,11 +29,6 @@ pub enum RowState {
     /// The stored bytes are legacy data rather than a `CryptBox` envelope.
     #[doc(alias = "Plaintext")]
     Legacy,
-    /// The envelope's header names an older binding declaration registered with
-    /// [`RowPlanner::legacy_seal`].
-    ///
-    /// Only the unauthenticated binding fingerprint is compared.
-    LegacyBinding,
 }
 
 /// Replacement bytes for one row.
@@ -103,8 +98,6 @@ type RecordIdFn<'a, R> = Box<dyn for<'r> Fn(&'r R) -> Result<Option<RecordValue<
 type IndexDeriver<F> =
     fn(&<F as Seal>::Value, &BindingDomain, &BlindIndexKeyring) -> Result<Vec<u8>, Error>;
 
-type LegacyDomain = fn(Option<RecordValue<'_>>) -> Result<BindingDomain, Error>;
-
 fn derive_index_bytes<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
     domain: &BindingDomain,
@@ -120,21 +113,6 @@ where
     domain: BindingDomain,
     deriver: IndexDeriver<F>,
     keys: &'a BlindIndexKeyring,
-}
-
-/// An older binding declaration whose rows the planner reseals, and its keys.
-struct LegacyDeclaration<'a> {
-    /// The declaration's binding fingerprint.
-    fingerprint: [u8; 8],
-    /// Whether the declaration binds a record.
-    recorded: bool,
-    domain: LegacyDomain,
-    keys: &'a EncryptionKeyring,
-}
-
-/// The binding of one row under the planner's seal.
-struct RowBinding {
-    domain: BindingDomain,
 }
 
 /// Plans the rewrite of one encrypted column and its blind-index columns.
@@ -158,10 +136,6 @@ struct RowBinding {
 /// keys, such as one keyring per org, run one sweep per keyring over the rows
 /// those keys protect. [`Self::new`] serves a standalone seal, whose rows
 /// need no columns.
-///
-/// To change a record field's binding declaration, register the declaration it
-/// had before with [`Self::legacy_seal`]: rows whose header still names that
-/// declaration are opened under it and resealed under the current one.
 pub struct RowPlanner<'a, F, R = ()>
 where
     F: Seal,
@@ -169,7 +143,6 @@ where
     keys: &'a EncryptionKeyring,
     record_id: RecordIdFn<'a, R>,
     legacy: Option<&'a dyn LegacyFormat>,
-    legacy_declarations: Vec<LegacyDeclaration<'a>>,
     indexes: Vec<IndexColumn<'a, F>>,
 }
 
@@ -214,7 +187,6 @@ where
             keys,
             record_id,
             legacy: None,
-            legacy_declarations: Vec::new(),
             indexes: Vec::new(),
         }
     }
@@ -226,30 +198,6 @@ where
     #[must_use]
     pub fn with_legacy(mut self, legacy: &'a dyn LegacyFormat) -> Self {
         self.legacy = Some(legacy);
-        self
-    }
-
-    /// Opens a legacy-binding window for the declaration of seal `L`, the
-    /// legacy seal `#[derive(Record)]` declares for a field's `legacy(…)`: rows
-    /// sealed with it are opened under `L`'s seal ID and binding declaration
-    /// with `keys`, and resealed under the current seal.
-    ///
-    /// The window covers moving a value into its record and changing its seal
-    /// ID. `keys` is the keyring those rows were sealed with. Such rows are
-    /// classified as [`RowState::LegacyBinding`] by their header's binding
-    /// fingerprint, and every blind index is derived again. A declaration that
-    /// differs only in its seal ID shares the current fingerprint, so its rows
-    /// are not detected: they are classified as the current declaration's. Close
-    /// the window once a verification pass counts none.
-    #[must_use]
-    pub fn legacy_seal<L: Seal<Value = F::Value>>(mut self, keys: &'a EncryptionKeyring) -> Self {
-        self.legacy_declarations.push(LegacyDeclaration {
-            fingerprint: declaration_fingerprint::<L>(),
-            recorded: L::RECORD.is_some(),
-            domain: legacy_domain::<L>,
-            keys,
-        });
-
         self
     }
 
@@ -342,7 +290,7 @@ where
     /// # Errors
     ///
     /// Returns an error for malformed envelopes or blind indexes, an envelope
-    /// of an unregistered binding declaration, an index column arity mismatch,
+    /// of another binding declaration, an index column arity mismatch,
     /// a record ID of another kind, or unavailable keys.
     pub fn classify_row(
         &self,
@@ -352,22 +300,15 @@ where
     ) -> Result<RowState, Error> {
         self.check_arity(indexes)?;
         let record = (self.record_id)(row)?;
-        let binding = self.bind(record)?;
+        let domain = BindingDomain::of::<F>(record)?;
 
         match inspect_ciphertext(ciphertext) {
-            Ok(info)
-                if self
-                    .legacy_declaration(&binding, info.context_fingerprint())
-                    .is_some() =>
-            {
-                return Ok(RowState::LegacyBinding);
-            }
             Ok(_) => {}
             Err(Error::NotCiphertext) => return Ok(RowState::Legacy),
             Err(error) => return Err(error),
         }
 
-        if bound::needs_reseal(&binding.domain, F::PADDING, ciphertext, self.keys)? {
+        if bound::needs_reseal(&domain, F::PADDING, ciphertext, self.keys)? {
             return Ok(RowState::Stale);
         }
 
@@ -386,8 +327,7 @@ where
     /// index columns keep their bytes even when another component is
     /// rewritten. Re-encryption alone authenticates and checks padding but does
     /// not decode with the codec; stale-index derivation also decrypts and
-    /// decodes the value. A row of a legacy binding declaration is opened under that
-    /// declaration and every index is derived again.
+    /// decodes the value.
     ///
     /// # Errors
     ///
@@ -402,21 +342,15 @@ where
     ) -> Result<RowOutcome, Error> {
         self.check_arity(indexes)?;
         let record = (self.record_id)(row)?;
-        let binding = self.bind(record)?;
+        let domain = BindingDomain::of::<F>(record)?;
 
         match inspect_ciphertext(ciphertext) {
-            Ok(info) => {
-                if let Some(legacy) = self.legacy_declaration(&binding, info.context_fingerprint())
-                {
-                    return self.plan_legacy_binding_row(legacy, record, &binding, ciphertext);
-                }
-            }
-            Err(Error::NotCiphertext) => return self.plan_legacy_row(&binding, ciphertext),
+            Ok(_) => {}
+            Err(Error::NotCiphertext) => return self.plan_legacy_row(&domain, ciphertext),
             Err(error) => return Err(error),
         }
 
-        let envelope_is_stale =
-            bound::needs_reseal(&binding.domain, F::PADDING, ciphertext, self.keys)?;
+        let envelope_is_stale = bound::needs_reseal(&domain, F::PADDING, ciphertext, self.keys)?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
         for (column, bytes) in self.indexes.iter().zip(indexes) {
             stale_columns.push(column.is_stale(bytes)?);
@@ -427,12 +361,12 @@ where
             return Ok(RowOutcome::unchanged(RowState::Current));
         }
 
-        let current = (&binding.domain, self.keys);
+        let current = (&domain, self.keys);
         let (plaintext, ciphertext) = if envelope_is_stale {
             bound::reseal(current, current, F::PADDING, ciphertext)?
         } else {
             (
-                bound::open(&binding.domain, ciphertext, self.keys)?,
+                bound::open(&domain, ciphertext, self.keys)?,
                 ciphertext.to_vec(),
             )
         };
@@ -464,74 +398,11 @@ where
         })
     }
 
-    /// Encodes the row's binding.
-    fn bind(&self, record: Option<RecordValue<'_>>) -> Result<RowBinding, Error> {
-        let recorded = F::RECORD.is_some();
-        let legacy_recorded = self
-            .legacy_declarations
-            .iter()
-            .any(|legacy| legacy.recorded);
-        if record.is_some() && !recorded && !legacy_recorded {
-            return Err(Error::InvalidBinding);
-        }
-
-        let record = if recorded { record } else { None };
-        let domain = BindingDomain::of::<F>(record)?;
-        Ok(RowBinding { domain })
-    }
-
-    /// Returns the registered legacy declaration an envelope's header names,
-    /// unless it names the current declaration.
-    fn legacy_declaration(
-        &self,
-        binding: &RowBinding,
-        stored: [u8; 8],
-    ) -> Option<&LegacyDeclaration<'a>> {
-        if stored == binding.domain.fingerprint() {
-            return None;
-        }
-
-        self.legacy_declarations
-            .iter()
-            .find(|legacy| legacy.fingerprint == stored)
-    }
-
-    fn plan_legacy_binding_row(
-        &self,
-        legacy: &LegacyDeclaration<'a>,
-        record: Option<RecordValue<'_>>,
-        binding: &RowBinding,
-        ciphertext: &[u8],
-    ) -> Result<RowOutcome, Error> {
-        let old = (legacy.domain)(record)?;
-        let (plaintext, ciphertext) = bound::reseal(
-            (&old, legacy.keys),
-            (&binding.domain, self.keys),
-            F::PADDING,
-            ciphertext,
-        )?;
-        // The seal ID may have changed with the declaration, and the index binding
-        // with it, so every index is derived again.
-        let indexes = if self.indexes.is_empty() {
-            Vec::new()
-        } else {
-            self.derive_indexes(&F::Codec::decode(&plaintext)?)?
-        };
-
-        Ok(RowOutcome {
-            state: RowState::LegacyBinding,
-            write: Some(RowWrite {
-                ciphertext,
-                indexes,
-            }),
-        })
-    }
-
-    fn plan_legacy_row(&self, binding: &RowBinding, bytes: &[u8]) -> Result<RowOutcome, Error> {
+    fn plan_legacy_row(&self, domain: &BindingDomain, bytes: &[u8]) -> Result<RowOutcome, Error> {
         let plaintext = legacy::recover(bytes, self.legacy)?;
         let value = F::Codec::decode(&plaintext)?;
         let plaintext: Zeroizing<Vec<u8>> = F::Codec::encode(&value)?;
-        let ciphertext = bound::seal(&binding.domain, F::PADDING, &plaintext, self.keys)?;
+        let ciphertext = bound::seal(domain, F::PADDING, &plaintext, self.keys)?;
 
         Ok(RowOutcome {
             state: RowState::Legacy,
@@ -582,14 +453,7 @@ where
         formatter
             .debug_struct("RowPlanner")
             .field("legacy", &self.legacy.is_some())
-            .field("legacy_declarations", &self.legacy_declarations.len())
             .field("indexes", &self.indexes.len())
             .finish_non_exhaustive()
     }
-}
-
-/// Encodes the binding of the legacy seal `L`, binding `record` when `L` binds
-/// one.
-fn legacy_domain<L: Seal>(record: Option<RecordValue<'_>>) -> Result<BindingDomain, Error> {
-    BindingDomain::of::<L>(L::RECORD.and(record))
 }

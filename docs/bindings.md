@@ -184,18 +184,12 @@ reseals with the new ones:
 
 ## Change a binding declaration
 
-Binding a value into a record, or out of one, is a migration, not a deployment.
-On a record field, `legacy(…)` names the declaration it had before: its seal ID
-(by default the current one) and whether it bound the record ID (by default
-yes). Rows sealed with it keep opening, `Record::seal` writes the new
-declaration, and a [sweep](reencryption-sweep.md#binding-declaration-changes)
-reseals the rest. Rows of the old declaration are recognized by the fingerprint
-in their header. Close the window, by deleting `legacy(…)`, only after a
-complete verification pass counts no legacy-binding rows; the schema manifest
-lists open windows.
-
-Changing the record ID's kind is outside that window: those values must be
-resealed under an explicitly planned path of your own.
+A field's seal ID and its record ID's type are persistent schema. Changing
+either, or moving a standalone value into a record, makes existing values fail to
+open: under another seal ID with `Error::AuthenticationFailed`, and under
+another declaration with `Error::BindingMismatch`. CryptBox has
+no migration window for these changes yet; plan one of your own, such as reading
+old rows with the old declaration while a job reseals them.
 
 ## ID hygiene
 

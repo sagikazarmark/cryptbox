@@ -106,15 +106,6 @@ generated UUIDs, unique within a keyring and never shared across keyrings, so
 opening with the wrong keyring fails loudly.
 <!-- Agent guidance: “key source” (`EncryptionKeySource`, `BlindIndexKeySource`) is retired (ADR-0010), as “key provider”, `Router`, and “route” are (ADR-0006): choosing which keyring protects which values is application code. -->
 
-**Legacy-binding window**:
-The bounded period in which a seal's values may still be sealed with the
-binding declaration it had before a declaration change, such as moving into a
-record. Readers open both declarations, and a sweep reseals the old one,
-recognized by the binding fingerprint in each header. A record field names its
-old declaration with `legacy(…)`, and the schema manifest lists the open window.
-The window closes once a complete verification pass counts no such rows.
-<!-- Agent guidance: distinct from legacy data, which is not a CryptBox envelope at all (`RowState::Legacy`); a legacy-binding row is a valid envelope of an older declaration (`RowState::LegacyBinding`). -->
-
 **Migration-state verification**:
 Inspection of stored structure and generation convergence. It is distinct from
 authenticated readability and from stored-index consistency.
@@ -165,7 +156,7 @@ before the values are sealed: a `Uuid` or `[u8; 16]`, an `i64`, or bytes
 A reviewable listing of registered seals, blind indexes, and records with their
 persistent schema: seal ID, codec ID, padding, record kind, binding fingerprint,
 index ID, precision, normalizer name, and a record's seals, record ID, plaintext
-fields, and open legacy windows. It names IDs, never Rust types, so its output is
+fields. It names IDs, never Rust types, so its output is
 the same on every toolchain; a record's fields, which have no ID, are listed by
 name. Applications compare it with a committed snapshot in CI.
 <!-- Agent guidance: the codec ID and normalizer name are reported, never stored in ciphertext or indexes. Custody labels and the shred unit are retired with keys views (ADR-0010); `testing::assert_sealed_under` is how an application tests its choice of keys. -->

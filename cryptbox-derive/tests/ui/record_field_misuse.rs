@@ -58,7 +58,7 @@ struct NotSealed {
     id: i64,
     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
     email: String,
-    #[cryptbox(plaintext, codec = cryptbox::Json, legacy(record = false))]
+    #[cryptbox(plaintext, codec = cryptbox::Json)]
     #[cryptbox(blind_index(
         id = "ab78afa9-7aaa-499c-8239-037b7e136130",
         bits = 32,

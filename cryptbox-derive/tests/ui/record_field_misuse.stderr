@@ -31,14 +31,8 @@ error: `seal` must be a hyphenated UUID, such as "0b6f3c2a-8e41-4d57-a9c3-5e1f2d
 error: `codec` configures a field's seal; `handle` is not sealed
   --> tests/ui/record_field_misuse.rs:61:27
    |
-61 |     #[cryptbox(plaintext, codec = cryptbox::Json, legacy(record = false))]
+61 |     #[cryptbox(plaintext, codec = cryptbox::Json)]
    |                           ^^^^^
-
-error: `handle` is not sealed, so it has no legacy declaration
-  --> tests/ui/record_field_misuse.rs:61:51
-   |
-61 |     #[cryptbox(plaintext, codec = cryptbox::Json, legacy(record = false))]
-   |                                                   ^^^^^^
 
 error: `handle` is not sealed, so it has no blind index: seal it to index it
   --> tests/ui/record_field_misuse.rs:62:16

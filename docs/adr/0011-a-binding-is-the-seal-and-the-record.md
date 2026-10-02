@@ -10,8 +10,8 @@ status: accepted
 > record ID, through hidden functions. A record ID is a `Uuid` or `[u8; 16]`, an
 > `i64`, or bytes; ID newtypes can return with a later redesign. A record field's
 > seal is marked by a hidden `Seal::RECORD` const, and `Sealed::seal` with one
-> fails the build. The only legacy window is a field's `legacy(…)`, and readers
-> open both declarations with one keyring holding both keys. The bytes are
+> fails the build. Legacy-binding windows are removed: no data uses an older
+> declaration, and a window can return with the redesign. The bytes are
 > unchanged.
 
 A sealed value is bound to its seal ID and, when it is a field of a record, to

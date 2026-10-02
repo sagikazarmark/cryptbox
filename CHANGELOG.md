@@ -466,6 +466,15 @@
   | `legacy_binding::<()>(old_keys)` | `legacy(record = false)` on the field, and `legacy_seal::<CustomerEmailLegacy>(old_keys)` |
   | `open_across::<(), _>(&sealed, &id, &keys, &old_keys)` | `Record::open(stored, &keys)`, with the old key in `keys` |
 
+- **Breaking:** legacy-binding windows are removed (ADR-0011). No released data
+  uses a record or an older binding declaration, so the `legacy(…)` field key
+  and its generated `{Seal}Legacy` seals, `RowPlanner::legacy_seal`,
+  `RowState::LegacyBinding`, `SweepReport::legacy_binding`, `Record::LEGACY`,
+  and the manifest's `legacy:` line go. A value of another declaration fails
+  with `BindingMismatch`. Sweeps still rotate keys and padding, and still adopt
+  plaintext and a previous solution's ciphertext (`MaybeEncrypted`,
+  `LegacyFormat`, `RowPlanner::with_legacy`).
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

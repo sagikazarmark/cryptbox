@@ -26,8 +26,7 @@ use crate::{
 /// Each index lists its index ID, seal ID, bits, and normalizer name.
 ///
 /// Each record lists the seal IDs of its sealed fields, the field that holds
-/// its record ID, its plaintext fields, and the fields whose
-/// legacy declaration is still opened. A field stored as it is has no ID, so
+/// its record ID, and its plaintext fields. A field stored as it is has no ID, so
 /// the manifest names it, and a field that should have been sealed shows up in
 /// the snapshot.
 ///
@@ -76,7 +75,6 @@ struct RecordEntry {
     seals: &'static [SealId],
     record_id: &'static str,
     plaintext: &'static [&'static str],
-    legacy: &'static [&'static str],
 }
 
 #[derive(Debug)]
@@ -161,7 +159,6 @@ impl Manifest {
                 seals: R::SEALS,
                 record_id: R::RECORD_ID,
                 plaintext: R::PLAINTEXT,
-                legacy: R::LEGACY,
             });
         }
         self
@@ -267,10 +264,6 @@ impl fmt::Display for Manifest {
             match record.plaintext {
                 [] => writeln!(formatter, "  plaintext: none")?,
                 fields => writeln!(formatter, "  plaintext: {}", fields.join(", "))?,
-            }
-            // Listed only while a window is open, so closing one shows in the diff.
-            if !record.legacy.is_empty() {
-                writeln!(formatter, "  legacy: {}", record.legacy.join(", "))?;
             }
         }
 

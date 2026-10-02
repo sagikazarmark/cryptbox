@@ -27,9 +27,3 @@ error: the stored form already has a field `id`: name the index column with `col
    |
 53 |         column = id,
    |                  ^^
-
-error: unknown `legacy` key `bound`; expected `seal` or `record`
-  --> tests/ui/record_shape_misuse.rs:63:70
-   |
-63 |     #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30", legacy(bound(tenant)))]
-   |                                                                      ^^^^^

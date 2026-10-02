@@ -134,7 +134,7 @@ trusts that column once: migrate only over columns the application already
 trusts, and establish their provenance with the same evidence this guide
 requires for legacy bytes. The packaged stores load no columns, so a record
 field's seal needs an application-owned `SweepStore`. See
-[binding-declaration changes](reencryption-sweep.md#binding-declaration-changes) and
+[sweeping records](reencryption-sweep.md#records) and
 [record IDs](bindings.md#record-ids).
 
 The packaged planner repairs missing indexes on **legacy** bytes by deriving them,

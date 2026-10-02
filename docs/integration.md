@@ -68,7 +68,7 @@ Stored bytes do not describe this schema, so check it in tests:
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered seal
   (ID, codec ID, padding, the record ID's kind, and the binding fingerprint),
   index (ID, seal, bits, and normalizer), and record (its seals, record ID
-  field, plaintext fields, and open legacy windows by name, so a field that
+  field, and plaintext fields by name, so a field that
   should have been sealed shows up). Compare the `Display` output with a
   committed snapshot, and
   assert that `duplicates()` is empty. A snapshot diff needs review: for

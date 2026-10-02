@@ -6,8 +6,8 @@ Rewrite stored values in bounded, resumable batches.
 Rotation selects keys for future writes; a later sweep converges existing
 ciphertext and indexes. The same sweep rewrites ciphertext whose padding flag
 disagrees with the seal's current policy, so it also applies a padding change. The `migrate` feature supplies
-`RowPlanner`, `Sweep` and `SweepStore`, which also reseal values after a
-[binding-declaration change](#binding-declaration-changes); the
+`RowPlanner`, `Sweep` and `SweepStore`, which also sweep
+[records](#records); the
 [manual SQLite example](../examples/reencryption_sweep.rs) demonstrates the same
 concurrency rules without the driver.
 
@@ -141,45 +141,25 @@ without recomputation even when another component changes. Re-encryption alone
 authenticates and checks padding but does not decode through the seal's codec.
 These behaviors make the following separate audit necessary.
 
-## Binding-declaration changes
+## Records
 
-A record field's binding declaration (whether it binds the record ID, and its
-kind) is persistent schema, so changing it is a migration: an explicit
-legacy-binding window, a reseal sweep, and readers that open both declarations
-until the window closes ([ADR-0005](adr/0005-runtime-binding-is-the-core.md)).
-The changes a window covers are moving a standalone value into a record, and
-changing a field's seal ID.
-
-A planner seals with one keyring, so a sweep is **partitioned by the keys it
-uses**: with a keyring per org, configure one planner per org with
+A record field's seal binds each row's record ID, so its sweep reads the ID from
+the row. A planner seals with one keyring, so a sweep is **partitioned by the
+keys it uses**: with a keyring per org, configure one planner per org with
 `RowPlanner::for_rows(keys, |row| Ok(&row.id))`, and have the store select only
 that org's rows. The closure reads each row's record ID, a UUID, an `i64`, or
 bytes, from the columns the store loads into `SweepRow::columns`. Packaged
 stores load no columns, so a record field's seal needs an application-owned
 `SweepStore`.
 
-A record field names its old declaration with `legacy(…)`, and the derive
-declares it as a seal, such as `CustomerEmailLegacy`. Open the window with
-`RowPlanner::legacy_seal::<CustomerEmailLegacy>(old_keys)`, where `old_keys` is
-the keyring those rows were sealed with. Rows are classified by the binding
-fingerprint in their header: a row of the old declaration is opened under it
-with `old_keys`, resealed under the current binding, and every index derived
-again. Rows of any other declaration still fail with `Error::BindingMismatch`.
-A declaration that differs only in its seal ID shares the current fingerprint,
-so its rows are classified as current, and a record opens them by trying the
-legacy seal after the current one fails.
+A sweep rotates keys and padding; it does not change a binding declaration. A
+row of another declaration, such as a standalone value stored in a record's
+column, fails with `Error::BindingMismatch`. See
+[change a binding declaration](bindings.md#change-a-binding-declaration).
 
-While the window is open, `Record::open` opens both declarations of a field with
-`legacy(…)` by itself, with a keyring that holds the keys of both: the current
-key, and the old key as a previous one. Moving into a record keeps the
-[index binding](wire-format.md#index-binding), the seal ID alone, so when the
-old rows' indexes were derived with other keys, look up with the probes of both
-index keyrings. Close the window, and drop the old keys from the readers, only
-after a complete verification pass counts zero `legacy_binding` rows.
-
-To move a value to other keys under the same declaration, such as a tenant's
-data changing residency, open and seal the record again, or use
-`Sealed::reseal_across` for a standalone value.
+To move a value to other keys, such as a tenant's data changing residency, open
+and seal the record again, or use `Sealed::reseal_across` for a standalone
+value.
 
 ## Verification and retirement
 
@@ -195,8 +175,8 @@ from trusted application schema, not stored metadata.
    Library pagination observes loaded rows, not a shared snapshot. If writes
    continue, repeat complete passes until clean under your storage guarantees.
 2. **Verify migration state from the beginning.** `Sweep::verify` ignores rewrite
-   progress and performs a fresh read-only pass. Require zero legacy,
-   legacy-binding, stale and malformed rows. For `verify_batch`,
+   progress and performs a fresh read-only pass. Require zero legacy, stale
+   and malformed rows. For `verify_batch`,
    start with no cursor, merge every report using `SweepReport::merge`, and
    follow checkpoints to `None` before evaluating `is_terminal()`. That method
    checks counts, not completion: a clean partial,
