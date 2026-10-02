@@ -56,7 +56,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -64,8 +63,8 @@ fn main() -> Result<(), cryptbox::Error> {
     // Ephemeral demo keys: a new key and generation ID on every run.
     let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
     let email = "mark@example.com".to_owned();
-    let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
-    let opened = sealed.open((), &keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&email, &keys)?;
+    let opened = sealed.open(&keys)?;
     assert_eq!(opened, "mark@example.com");
     assert_eq!(email, "mark@example.com"); // Source retained.
     println!("Seal-bound round trip succeeded.");
@@ -88,12 +87,10 @@ Expect `Seal-bound round trip succeeded.` and exit status 0.
   plaintext `String`.
 - `UserEmail` is a seal. Its `ID` binds the sealed value to this seal; it stores
   a `String` value with the `Utf8` codec and no padding.
-- `()` is the binding argument: `Record = ()` binds the value to its seal ID
-  alone. A seal can bind a record, and then every call must pass its ID; see
-  [bind values to their seal and record](bindings.md).
 - `&keys` supplies keys explicitly, so these calls need no global installation.
-- A value without a record is bound to its seal alone, not a row or tenant, so it
-  does not stop substitution between rows of the same seal, or replay. `Padding::NONE` reveals encoded length.
+- The value is bound to its seal alone, not a row or tenant, so it does not stop
+  substitution between rows of the same seal, or replay; a record's fields are
+  bound to their row too, see [bind values to their seal and record](bindings.md). `Padding::NONE` reveals encoded length.
 
 See [how CryptBox works](concepts.md) for the complete picture.
 
@@ -118,20 +115,18 @@ In your own project, preserve the same key ID/material pairs and the seal's
 silently replaced. The [integration explanation](integration.md) covers these
 choices before you commit data to storage.
 
-## Then: bind values to a record, with a keyring per tenant
+## Then: a keyring per tenant
 
-`UserEmail` binds its values to a seal ID alone. When values must not move
-between rows, the seal binds a record and every call passes its ID; when they
-belong to separate tenants, orgs, or residencies, each tenant has its own
-keyring:
+When values belong to separate tenants, orgs, or residencies, each tenant has
+its own keyring:
 
 ```sh
 cargo run --locked --example tenant_field
 ```
 
-Expect `Record-bound round trip with a keyring per tenant succeeded.` Then read
-[bind values to their seal and record](bindings.md) for records and record
-IDs, and [choosing keyrings](choosing-keyrings.md) for whose keys protect them.
+Expect `Round trip with a keyring per tenant succeeded.` Then read
+[bind values to their seal and record](bindings.md) for records, which bind
+their fields to the row, and [choosing keyrings](choosing-keyrings.md) for whose keys protect them.
 
 ## Other directions
 

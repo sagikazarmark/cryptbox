@@ -100,7 +100,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
         let id: i64 = row.try_get("id")?;
         let value: MaybeEncrypted<UserEmail> = row.try_get("email_ciphertext")?;
         assert_eq!(value.is_legacy(), id <= 2);
-        let email = value.open((), &keys)?;
+        let email = value.open(&keys)?;
         assert!(email.ends_with("@example.com"));
     }
 
@@ -135,7 +135,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
             .await?;
         for row in rows {
             let ciphertext: Sealed<UserEmail> = row.try_get("email_ciphertext")?;
-            let candidate = ciphertext.open((), &keys)?;
+            let candidate = ciphertext.open(&keys)?;
             assert_eq!(candidate, "first@example.com");
             matched += 1;
         }
@@ -154,8 +154,8 @@ async fn insert_encrypted(
     index_keys: &BlindIndexKeyring,
 ) -> Result<(), Box<dyn Error>> {
     let value = email.to_owned();
-    let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)?
-        .with_index_with::<EmailLookup>(index_keys)?;
+    let prepared =
+        Sealed::<UserEmail>::prepare(&value, keys)?.with_index_with::<EmailLookup>(index_keys)?;
 
     sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
         .bind(prepared.sealed())

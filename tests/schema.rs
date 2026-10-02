@@ -1,8 +1,9 @@
 //! Public-boundary tests for the schema manifest and unique-ID checks.
 
+use cryptbox::__private::{RecordKey, RecordKind, seal_in_record};
 use cryptbox::{
     BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, IndexId, Padding, Raw, Seal,
-    SealId, Sealed, Utf8, index_id, inspect_ciphertext,
+    SealId, Utf8, index_id, inspect_ciphertext,
     schema::{Duplicate, Manifest},
     seal_id,
 };
@@ -15,7 +16,6 @@ impl Seal for Nickname {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -26,7 +26,6 @@ impl Seal for Avatar {
     const PADDING: Padding = Padding::block(64);
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -58,8 +57,9 @@ impl Seal for RowNote {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Record = i64;
     type Indexes = ();
+    // As `#[derive(Record)]` declares a record field's seal.
+    const RECORD: Option<RecordKind> = Some(<i64 as RecordKey>::KIND);
 }
 
 #[test]
@@ -80,7 +80,7 @@ seal 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
     // The fingerprint, computed with shasum from docs/wire-format.md#binding-fingerprint,
     // is the one a sealed value's header carries.
     let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
-    let sealed = Sealed::<RowNote>::seal(&"hi".to_owned(), &1_i64, &keys).unwrap();
+    let sealed = seal_in_record::<RowNote>(&"hi".to_owned(), &1_i64, &keys).unwrap();
     let header = inspect_ciphertext(sealed.as_bytes()).unwrap();
     assert!(snapshot.contains(&format!(
         "  binding: {}\n",
@@ -129,7 +129,6 @@ impl Seal for DisplayName {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -216,7 +215,6 @@ mod serde_codecs {
         const PADDING: Padding = Padding::length(256);
         type Value = Address;
         type Codec = cryptbox::Json;
-        type Record = ();
         type Indexes = ();
     }
 
@@ -244,7 +242,6 @@ seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
         const PADDING: Padding = Padding::NONE;
         type Value = Address;
         type Codec = cryptbox::Postcard;
-        type Record = ();
         type Indexes = ();
     }
 

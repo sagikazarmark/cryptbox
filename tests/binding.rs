@@ -1,62 +1,79 @@
-//! Public-boundary tests for record ID types.
+//! Public-boundary tests for what record fields are bound to.
+#![cfg(feature = "derive")]
 
-use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Error, Padding, Raw, RecordId, RecordIdType, Seal, SealId,
-    Sealed, seal_id,
-};
+use cryptbox::{EncryptionKey, EncryptionKeyring, Error, Record, Sealed};
 
-/// A row's ID, an application-owned newtype bound as the UUID it wraps.
-struct RowId([u8; 16]);
-
-impl RecordIdType for RowId {
-    type Repr = [u8; 16];
-
-    fn repr(&self) -> &[u8; 16] {
-        &self.0
-    }
+/// A note whose record ID is an `i64`.
+#[derive(Debug, PartialEq, Record)]
+struct NumberNote {
+    #[cryptbox(record_id)]
+    id: i64,
+    #[cryptbox(seal = "2ad30df3-8b86-47cf-9115-b0c78c14aae1")]
+    body: String,
 }
 
-macro_rules! note {
-    ($name:ident, $record:ty) => {
-        struct $name;
-
-        impl Seal for $name {
-            const ID: SealId = seal_id!("2ad30df3-8b86-47cf-9115-b0c78c14aae1");
-            const PADDING: Padding = Padding::NONE;
-            type Value = Vec<u8>;
-            type Codec = Raw;
-            type Record = $record;
-            type Indexes = ();
-        }
-    };
+/// The same seal ID, in a record whose ID is a UUID.
+#[derive(Debug, PartialEq, Record)]
+struct UuidNote {
+    #[cryptbox(record_id)]
+    id: [u8; 16],
+    #[cryptbox(seal = "2ad30df3-8b86-47cf-9115-b0c78c14aae1")]
+    body: String,
 }
 
-note!(RowNote, RowId);
-note!(UuidNote, [u8; 16]);
-note!(NumberNote, i64);
+/// The same seal ID, not a record's field.
+#[derive(cryptbox::Seal)]
+#[cryptbox(id = "2ad30df3-8b86-47cf-9115-b0c78c14aae1", value = String)]
+struct LooseNote;
 
 fn keys() -> EncryptionKeyring {
     EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap()
 }
 
-#[test]
-fn a_newtype_binds_as_the_type_it_wraps() {
-    let keys = keys();
-    let sealed = Sealed::<RowNote>::seal(&b"note".to_vec(), &RowId([7; 16]), &keys).unwrap();
-
-    let as_uuid = Sealed::<UuidNote>::from_bytes(sealed.into_bytes()).unwrap();
-    assert_eq!(as_uuid.open(&[7; 16], &keys).unwrap(), b"note");
-    assert_eq!(RecordId::of(&RowId([7; 16])), RecordId::Uuid([7; 16]));
+fn note(keys: &EncryptionKeyring) -> StoredNumberNote {
+    NumberNote {
+        id: 7,
+        body: "ship it".to_owned(),
+    }
+    .seal(keys)
+    .unwrap()
 }
 
 #[test]
 fn a_record_id_of_another_kind_is_another_declaration() {
     let keys = keys();
-    let sealed = Sealed::<NumberNote>::seal(&b"note".to_vec(), &7, &keys).unwrap();
+    let stored = note(&keys);
 
-    let as_uuid = Sealed::<UuidNote>::from_bytes(sealed.into_bytes()).unwrap();
+    let as_uuid = StoredUuidNote {
+        id: [7; 16],
+        body: Sealed::from_bytes(stored.body.into_bytes()).unwrap(),
+    };
     assert_eq!(
-        as_uuid.open(&[7; 16], &keys).unwrap_err(),
+        UuidNote::open(as_uuid, &keys).unwrap_err(),
+        Error::BindingMismatch
+    );
+}
+
+#[test]
+fn a_record_fields_value_does_not_open_outside_its_record() {
+    let keys = keys();
+    let stored = note(&keys);
+
+    let loose = Sealed::<LooseNote>::from_bytes(stored.body.into_bytes()).unwrap();
+    assert_eq!(loose.open(&keys).unwrap_err(), Error::BindingMismatch);
+}
+
+#[test]
+fn a_loose_value_does_not_open_as_a_record_field() {
+    let keys = keys();
+    let loose = Sealed::<LooseNote>::seal(&"ship it".to_owned(), &keys).unwrap();
+
+    let row = StoredNumberNote {
+        id: 7,
+        body: Sealed::from_bytes(loose.into_bytes()).unwrap(),
+    };
+    assert_eq!(
+        NumberNote::open(row, &keys).unwrap_err(),
         Error::BindingMismatch
     );
 }

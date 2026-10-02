@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha256};
 
-use super::{PartSpec, RecordId, RecordKind};
+use super::{PartSpec, RecordKind, RecordValue};
 use crate::Error;
 
 // A persistent domain separator, not a display string.
@@ -15,7 +15,7 @@ const FINGERPRINT_LABEL: &[u8] = b"cryptbox/binding-fingerprint/v1\0";
 /// names. See ../../docs/wire-format.md#binding.
 pub(super) fn encode<'v>(
     seal: &[u8; 16],
-    parts: impl IntoIterator<Item = (&'v PartSpec, &'v RecordId<'v>)>,
+    parts: impl IntoIterator<Item = (&'v PartSpec, &'v RecordValue<'v>)>,
 ) -> Result<Vec<u8>, Error> {
     let mut parts: Vec<_> = parts.into_iter().collect();
     parts.sort_by_key(|(spec, _)| spec.id);
@@ -58,15 +58,15 @@ pub(super) fn fingerprint(parts: &[PartSpec]) -> [u8; 8] {
 }
 
 // Kind-tagged and length-prefixed, so no two values of any kinds share bytes.
-fn encode_value(value: &RecordId<'_>, output: &mut Vec<u8>) -> Result<(), Error> {
+fn encode_value(value: &RecordValue<'_>, output: &mut Vec<u8>) -> Result<(), Error> {
     let i64_bytes;
     let bytes: &[u8] = match value {
-        RecordId::Uuid(uuid) => uuid,
-        RecordId::I64(value) => {
+        RecordValue::Uuid(uuid) => uuid,
+        RecordValue::I64(value) => {
             i64_bytes = value.to_be_bytes();
             &i64_bytes
         }
-        RecordId::Bytes(bytes) => bytes,
+        RecordValue::Bytes(bytes) => bytes,
     };
     let len = u32::try_from(bytes.len()).map_err(|_| Error::InvalidBinding)?;
 

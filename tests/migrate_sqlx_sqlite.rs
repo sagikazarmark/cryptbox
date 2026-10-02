@@ -29,7 +29,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -120,7 +119,7 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
             ("fourth@example.com", &keys, &index_keys),
         ] {
             let value = email.to_owned();
-            let prepared = Sealed::<UserEmail>::prepare(&value, (), keyring)
+            let prepared = Sealed::<UserEmail>::prepare(&value, keyring)
                 .unwrap()
                 .with_index_with::<EmailLookup>(index_keyring)
                 .unwrap();
@@ -143,7 +142,7 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
             assert_strict_decode(&row, id <= 2);
             let read: MaybeEncrypted<UserEmail> = row.try_get("email_ciphertext").unwrap();
             assert_eq!(read.is_legacy(), id <= 2);
-            read.open_legacy((), &keys, &TOY_LEGACY).unwrap();
+            read.open_legacy(&keys, &TOY_LEGACY).unwrap();
         }
 
         // Batch size one exercises pagination and per-batch checkpoints.
@@ -186,7 +185,7 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
             .unwrap();
         for row in rows {
             let ciphertext: Sealed<UserEmail> = row.try_get("email_ciphertext").unwrap();
-            assert!(!ciphertext.needs_reseal((), &keys).unwrap());
+            assert!(!ciphertext.needs_reseal(&keys).unwrap());
         }
     });
 }

@@ -69,8 +69,8 @@ Re-encryption protects recovered bytes going forward, not their historical origi
 Read as `cryptbox::migrate::MaybeEncrypted<F>` only where legacy values
 may still occur. `from_bytes` and SQLx `Decode` classify without accessing keys:
 
-- Valid envelopes are retained structurally; opening them authenticates under the
-  binding arguments passed and ignores the legacy handler.
+- Valid envelopes are retained structurally; opening them authenticates and
+  ignores the legacy handler.
 - Bytes without envelope magic are retained in a zeroizing buffer. `open`
   uses plaintext identity recovery; `open_legacy` invokes the handler before codec
   decoding. Codec errors are deferred until the open call.
@@ -126,14 +126,14 @@ plaintext-only data. Recovery decodes through the seal's codec, seals and
 derives every registered index. Stale CryptBox components are rewritten; current
 ones are retained under the [sweep rules](reencryption-sweep.md#sweep-loop).
 
-`RowPlanner::new` serves a seal without a record. A record-bound seal uses
-`RowPlanner::for_rows(keys, record_id)`; with a keyring per org, configure one
+`RowPlanner::new` serves a standalone seal. A record field's seal uses
+`RowPlanner::for_rows(keys, |row| Ok(&row.id))`; with a keyring per org, configure one
 planner per org, from the job's configuration, and have the store select only
 that org's rows. The record ID comes from the row's own columns, so a migration
 trusts that column once: migrate only over columns the application already
 trusts, and establish their provenance with the same evidence this guide
-requires for legacy bytes. The packaged stores load no columns, so a
-record-bound seal needs an application-owned `SweepStore`. See
+requires for legacy bytes. The packaged stores load no columns, so a record
+field's seal needs an application-owned `SweepStore`. See
 [binding-declaration changes](reencryption-sweep.md#binding-declaration-changes) and
 [record IDs](bindings.md#record-ids).
 

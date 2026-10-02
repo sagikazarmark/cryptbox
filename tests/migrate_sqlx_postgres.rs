@@ -24,7 +24,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -145,7 +144,7 @@ async fn insert(
     index_keys: &BlindIndexKeyring,
 ) {
     let value = email.to_owned();
-    let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)
+    let prepared = Sealed::<UserEmail>::prepare(&value, keys)
         .unwrap()
         .with_index_with::<EmailLookup>(index_keys)
         .unwrap();
@@ -177,7 +176,7 @@ async fn search(
             let id: i64 = row.get("id");
             candidates.push(id);
             let sealed: Sealed<UserEmail> = row.get("email_ciphertext");
-            let value = sealed.open((), keys).unwrap();
+            let value = sealed.open(keys).unwrap();
             if EmailLookup::verify_candidate(query, &value).unwrap() {
                 matches.push(id);
             }
@@ -215,17 +214,14 @@ async fn assert_readable_rows(
         } else {
             let ciphertext = strict.unwrap();
             if migrated {
-                assert!(!ciphertext.needs_reseal((), keys).unwrap());
+                assert!(!ciphertext.needs_reseal(keys).unwrap());
             }
             // Authentication is asserted separately from generation convergence.
-            assert_eq!(ciphertext.open((), keys).unwrap(), expected);
+            assert_eq!(ciphertext.open(keys).unwrap(), expected);
         }
         let permissive: MaybeEncrypted<UserEmail> = row.get("email_ciphertext");
         assert_eq!(permissive.is_legacy(), is_legacy);
-        assert_eq!(
-            permissive.open_legacy((), keys, &ToyLegacy).unwrap(),
-            expected,
-        );
+        assert_eq!(permissive.open_legacy(keys, &ToyLegacy).unwrap(), expected,);
     }
 }
 
@@ -364,7 +360,7 @@ fn postgres_guarded_updates_preserve_competing_ciphertext_and_index_writes() {
             let replacement = plan.write().unwrap();
 
             let other_value = "other@example.com".to_owned();
-            let prepared = Sealed::<UserEmail>::prepare(&other_value, (), &old_keys)
+            let prepared = Sealed::<UserEmail>::prepare(&other_value, &old_keys)
                 .unwrap()
                 .with_index_with::<EmailLookup>(&old_index_keys)
                 .unwrap();

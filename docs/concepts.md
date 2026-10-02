@@ -49,8 +49,8 @@ declares:
 - A **codec**, such as `Utf8`, to convert between the Rust value and bytes.
 - A **padding policy**, which can group different plaintext lengths into the same
   stored size. `Padding::NONE` preserves the encoded length.
-- A **binding**: whether each value is also bound to its **record**, the row it
-  is stored in. A seal without a record binds a value to its seal ID alone.
+- A **binding**: every value is bound to its seal ID, and a field of a
+  **record** to the record's ID too.
 
 A **record** stores its record ID as a column beside its sealed fields, and
 opening authenticates it; its other columns, such as an org, are plaintext the
@@ -74,17 +74,14 @@ seal can change form without a migration:
   payloads, such as responses and messages, and for types that are already
   newtypes.
 
-Sealing and opening bind the value at runtime to its seal ID, to the values of
-the seal's binding, and to its record when the seal binds one. The binding's
-**declaration** is persistent schema; its **values**, such as the tenant of the current
-request, are passed to each call and must come from an authorized source, never
-from the stored row. A `Record` is the one exception for its record ID, which it
-reads from the row: opening checks it for every seal that binds a record. A
-sealed email will not authenticate under a different seal or record, even if they
-share a root key, and not with another tenant's keyring. Seals that should read each other's values
-declare the same seal ID and binding. A seal without a record identifies a seal
-alone, not a row or tenant: copying its values between rows
-sealed with the same seal can still succeed.
+Sealing and opening bind the value at runtime to its seal ID. The fields of a
+`Record` are bound to the record ID too, which the record reads from the row:
+opening checks it, so a field copied to another row fails to open. A sealed
+email will not authenticate under a different seal, even if they share a root
+key, and does not open with another tenant's keyring. Seals that should read
+each other's values declare the same seal ID. A standalone seal identifies a
+seal alone, not a row or tenant: copying its values between rows sealed with the
+same seal can still succeed.
 
 A seal is different from an encryption **suite**. The seal describes
 application policy; the suite defines the complete cryptographic construction.
@@ -148,9 +145,9 @@ constraints or a guarantee that storage returns every matching row.
 
 SQLx adapters store sealed values in `BYTEA` or `BLOB` columns. You can seal
 explicitly and load a record's stored form or `Sealed` for later opening. A seal
-without a record or blind indexes can instead use `Plain<F>`, which seals and
-opens automatically at the SQLx boundary; a column decoder does not see the row,
-so values of record-bound seals are always sealed explicitly. Serde support serializes
+without blind indexes can instead use `Plain<F>`, which seals and opens
+automatically at the SQLx boundary; a column decoder does not see the row, so a
+record's fields are always sealed by the record. Serde support serializes
 sealed values and blind-index bytes; it does not serialize plaintext `Plain`
 values.
 

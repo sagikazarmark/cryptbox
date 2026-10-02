@@ -10,7 +10,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -18,8 +17,8 @@ fn main() -> Result<(), cryptbox::Error> {
     // Ephemeral demo keys: a new key and generation ID on every run.
     let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
     let email = "mark@example.com".to_owned();
-    let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
-    let opened = sealed.open((), &keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&email, &keys)?;
+    let opened = sealed.open(&keys)?;
     assert_eq!(opened, "mark@example.com");
     assert_eq!(email, "mark@example.com"); // Source retained.
     println!("Seal-bound round trip succeeded.");
@@ -38,7 +37,6 @@ mod tests {
         const PADDING: Padding = Padding::NONE;
         type Value = String;
         type Codec = Utf8;
-        type Record = ();
         type Indexes = ();
     }
 
@@ -50,10 +48,10 @@ mod tests {
     #[test]
     fn stored_email_cannot_be_read_as_another_seal() -> Result<(), cryptbox::Error> {
         let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-        let sealed = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), (), &keys)?;
+        let sealed = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), &keys)?;
         let substituted = Sealed::<BillingEmail>::from_bytes(sealed.as_bytes().to_vec())?;
         assert!(matches!(
-            substituted.open((), &keys),
+            substituted.open(&keys),
             Err(cryptbox::Error::AuthenticationFailed)
         ));
         Ok(())

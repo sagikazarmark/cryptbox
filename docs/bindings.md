@@ -19,8 +19,8 @@ A binding has two halves, and they change on different schedules:
 
 | Half | Where it is declared | When it changes |
 | --- | --- | --- |
-| **Declaration**: whether a record is bound, and its ID's kind | The seal's `Record`, or a record's `record_id` field | Only through a [declaration migration](#change-a-binding-declaration) |
-| **Values**: this record | The binding arguments of each call, or the row | Every call |
+| **Declaration**: whether a record is bound, and its ID's kind | A record's `record_id` field | Only through a [declaration migration](#change-a-binding-declaration) |
+| **Values**: this record | The row | Every call |
 
 One seal never seals with different declarations on different calls: that would
 give one value two valid encodings. The declaration is persistent schema exactly
@@ -104,8 +104,8 @@ before the first value is sealed:
   while sealed values exist.
 - **It is never encrypted**, because opening the row needs it first.
 - **Its kind is fixed**: a UUID, an `i64`, or bytes, the kind of its type
-  (`RecordIdType`). Changing its type is a declaration change. An ID newtype
-  implements `RecordIdType` by naming the built-in type it wraps.
+  (`[u8; 16]` or `uuid::Uuid`, `i64`, or `Vec<u8>`). Changing its type is a
+  declaration change. Store an ID newtype's inner value in the record.
 
 ## Blind indexes
 
@@ -136,32 +136,29 @@ visible across orgs: equal values then derive unrelated bytes.
 
 ## Standalone values
 
-A value that is not a row, such as a message or a cache entry, is sealed with a
-seal of its own, which names whether it binds a record:
+A value that is not a row's field, such as a cache entry or a token, is sealed
+with a seal of its own and bound to its seal ID alone:
 
 ```rust
 #[derive(cryptbox::Seal)]
-#[cryptbox(
-    id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-    value = String,
-    record = Uuid,
-)]
-pub struct InvoiceNote;
+#[cryptbox(id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13", value = String)]
+pub struct SessionNote;
 
-let sealed = Sealed::<InvoiceNote>::seal(&note, &invoice_id, &keys)?;
-let note = sealed.open(&invoice_id, &keys)?;
+let sealed = Sealed::<SessionNote>::seal(&note, &keys)?;
+let note = sealed.open(&keys)?;
 ```
 
-The binding arguments of a call are typed by the seal
-([`Args<F>`](https://docs.rs/cryptbox/latest/cryptbox/trait.Args.html)): `()`,
-or `&id` for a seal that binds a record. A missing or extra record is a type
-error rather than a failed read.
+It binds no record, so a standalone value copied to another place that stores
+the same seal still opens. When a value must stay with the thing it belongs to,
+make it a field of a record: a record's stored form also works as a message,
+with Serde's derives forwarded through `stored(…)`. A record field's seal is
+sealed and opened only by its record; `Sealed::seal` on it fails the build.
 
 The [tenant example](../examples/tenant_field.rs) is a complete program: a
-seal bound to a record, one `EncryptionKeyring` per tenant, and assertions that
-another record fails authentication while another tenant's keyring reports
-`UnknownEncryptionKey`. Run it from a checkout, and expect
-`Record-bound round trip with a keyring per tenant succeeded.`:
+seal, one `EncryptionKeyring` per tenant, and assertions that another tenant's
+keyring reports `UnknownEncryptionKey` and that a value moves to another tenant
+only by an explicit reseal. Run it from a checkout, and expect
+`Round trip with a keyring per tenant succeeded.`:
 
 ```sh
 cargo run --locked --example tenant_field

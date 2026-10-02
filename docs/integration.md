@@ -22,7 +22,7 @@ These choices form persistent schema just as database column types do:
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
 | Seal ID | Every value is bound to its seal ID; a different ID fails authentication. |
-| Binding declaration and record kind | Every value is bound to its record when the seal binds one, under the record ID's kind; a different declaration reports `BindingMismatch`. |
+| Binding declaration and record kind | A record's fields are bound to its record ID, under the ID's kind; a different declaration reports `BindingMismatch`. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
@@ -111,9 +111,9 @@ keys are needed and where plaintext becomes available:
 | Read as a stored form or `Sealed<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to open it: a record reads its record ID from the row. Useful when only some loaded values need plaintext. |
 | Automatic SQLx `Plain<F>` | The adapter seals on encode and opens on decode. It reads keys from its `ColumnKeys` type `K`: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Plain<F, K>`. |
 
-The automatic `Plain<F>` column serves only seals without a record or blind
+The automatic `Plain<F>` column serves only standalone seals without blind
 indexes: a column decoder does not see the row, and would not write index
-columns. Seal values of record-bound and indexed seals explicitly. Explicit operations
+columns. Seal records and values of indexed seals explicitly. Explicit operations
 are useful when dependencies and plaintext access should be visible at the call
 site. Automatic adapters are useful when
 encryption belongs consistently at the database boundary.

@@ -30,7 +30,6 @@ use crate::{Codec, EncryptionKeyring, Seal, Sealed};
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -96,7 +95,6 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -119,7 +117,6 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///
 /// let iban = Sealed::<Iban>::seal(
 ///     &"DE89370400440532013000".to_owned(),
-///     (),
 ///     keys.for_seal(Iban::ID),
 /// )?;
 ///

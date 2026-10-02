@@ -184,8 +184,7 @@ async fn put(
     let prepared = email
         .as_ref()
         .map(|email| {
-            Sealed::<UserEmail>::prepare(email, (), encryption)?
-                .with_index_with::<EmailLookup>(indexes)
+            Sealed::<UserEmail>::prepare(email, encryption)?.with_index_with::<EmailLookup>(indexes)
         })
         .transpose()?;
     let sealed = prepared.as_ref().map(|p| p.sealed());
@@ -224,7 +223,7 @@ async fn get(connection: &mut DbConnection, id: i64, keys: &EncryptionKeyring) -
     // Decode the stored envelope now; choose when to open it later.
     let stored: Option<SealedEmail> = row.try_get("email")?;
     match stored {
-        Some(sealed) => println!("{id}: {}", sealed.open((), keys)?),
+        Some(sealed) => println!("{id}: {}", sealed.open(keys)?),
         None => println!("{id}: NULL"),
     }
     Ok(())
@@ -261,7 +260,7 @@ async fn search(
     let mut rejected = 0;
     for row in rows {
         let sealed: SealedEmail = row.try_get("email")?;
-        let candidate = sealed.open((), encryption)?;
+        let candidate = sealed.open(encryption)?;
         if EmailLookup::verify_candidate(query, &candidate)? {
             matches.push(row.try_get("id")?);
         } else {

@@ -1,0 +1,5 @@
+error: list at least one blind index, or omit `indexes`
+ --> tests/ui/seal_indexes_misuse.rs:5:12
+  |
+5 |     indexes(),
+  |            ^^

@@ -1,8 +1,8 @@
 //! Strongly typed application-layer encryption for Rust values.
 //!
-//! [`Sealed<F>`] is a value sealed with seal `F`: encrypted and bound
-//! to the seal and, optionally, the record it is stored in. [`Sealed::open`] authenticates it under the same
-//! binding and returns the plaintext value. Use `CryptBox` when an application
+//! [`Sealed<F>`] is a value sealed with seal `F`: encrypted and bound to the
+//! seal, and, for a field of a [`Record`], to the record it is stored in.
+//! [`Sealed::open`] authenticates it and returns the plaintext value. Use `CryptBox` when an application
 //! owns encryption policy and key management but wants storage adapters to
 //! enforce ciphertext-at-rest.
 //!
@@ -14,12 +14,10 @@
 //! - [`Sealed<F>`] contains stored encrypted bytes. Parsing checks structure;
 //!   opening authenticates. Sealing borrows the source value.
 //! - [`Seal`] declares how values are sealed: its seal ID, value type, codec,
-//!   [`Padding`], whether values bind a record, and its blind indexes. A seal is a marker over a value type that several seals can share,
-//!   or its own value, such as a whole response.
-//! - [`Args<F>`](Args) are the binding arguments of one call: `()`, or `&id`
-//!   when the seal binds a record.
+//!   [`Padding`], and its blind indexes. A seal is a marker over a value type
+//!   that several seals can share, or its own value, such as a whole response.
 //! - [`Plain<F>`] and [`Secret<T>`] contain plaintext. `Plain` is the automatic
-//!   `SQLx` column, for seals without a record or blind indexes.
+//!   `SQLx` column, for seals without blind indexes.
 //! - A [`Codec`] encodes a seal's values. Only `String` and `Vec<u8>` and their
 //!   [`Secret`] wrappers have a default ([`Utf8`] and [`Raw`]); every other value
 //!   type names its codec.
@@ -49,8 +47,7 @@
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md",
 )]
 //!
-//! Every operation takes its binding arguments and keys explicitly, and never
-//! reads the global. For seals without a record,
+//! Every operation takes its keys explicitly, and never reads the global.
 //! [`Sealed::seal_global`] and [`Sealed::open_global`] read the keys installed
 //! with [`keys::install`] and fail with [`Error::KeysNotInstalled`] before
 //! installation. The automatic `SQLx` column `Plain<F, K>` reads its keys from
@@ -69,30 +66,28 @@
 #![doc = include_str!("../docs/snippets/first-field.md")]
 //!
 //! The seal names UTF-8 encoding and no padding, and binds values to its seal
-//! ID alone, so its binding arguments are `()`. `Sealed` contains
+//! ID. `Sealed` contains
 //! the encrypted envelope; `open` returns the plaintext value. `&keys` supplies
 //! the keyring explicitly: no global installation is needed. Before durable
 //! storage, settle the persistent schema below and load
 //! stable key material and generation IDs across restarts; see the
 //! [first-field tutorial]'s durable-key next step.
 //!
-//! For a seal without a record or blind indexes, [`Plain<F, K>`](Plain)
+//! For a seal without blind indexes, [`Plain<F, K>`](Plain)
 //! is the automatic `SQLx` column: it seals on encode and opens on decode with the
 //! keys of `K`, the keys [`keys::install`] made available by default, so ordinary
-//! database conversion needs no explicit call. Record-bound values are sealed
-//! explicitly, because a column decoder does not see the row.
+//! database conversion needs no explicit call. A record's fields are sealed by
+//! the record, because a column decoder does not see the row.
 //!
-//! ## Then bind values to their record, with a keyring per tenant
+//! ## Then keep tenants apart with a keyring per tenant
 //!
-//! When values must not move between rows, the seal binds a record and every
-//! call passes its ID. When tenants must be kept apart, each has its own
-//! keyring, so another tenant's keys cannot open its values and one tenant's
-//! data can be shredded on its own:
+//! When tenants must be kept apart, each has its own keyring, so another
+//! tenant's keys cannot open its values and one tenant's data can be shredded
+//! on its own:
 //!
 #![doc = include_str!("../docs/snippets/tenant-field.md")]
 //!
-//! The seal declares `Record = [u8; 16]`, so each call passes `&record`; a
-//! missing or extra record is a type error. The call takes the tenant's keyring: choosing which
+//! Each call takes the tenant's keyring: choosing which
 //! keyring protects which values is application code: sealing with the wrong one succeeds silently, while opening
 //! with it fails loudly. See the [binding guide], [choosing keyrings], and the
 //! [shredding runbook].
@@ -114,8 +109,8 @@
 //!
 //! # Persistent schema
 //!
-//! Codec compatibility, seal and index IDs, the binding declaration (whether the
-//! seal binds a record, and its kind), normalization, and index
+//! Codec compatibility, seal and index IDs, the binding declaration (whether a
+//! record field's seal binds the record ID, and its kind), normalization, and index
 //! precision are persistent schema. Stored bytes do not describe them, beyond a
 //! diagnostic fingerprint of the binding declaration; changing them requires a
 //! migration plan. Padding is not schema: the envelope records it.
@@ -139,8 +134,8 @@
 //! # Security boundaries
 //!
 //! Encryption protects selected stored values while keys remain separate. The
-//! binding rejects substitution across seals and binding values, and across
-//! records for a seal that binds one. It does not prevent replay of an older
+//! binding rejects substitution across seals, and across records for a
+//! record's fields; keys separate tenants. It does not prevent replay of an older
 //! value of the same record. Sizes and access patterns remain visible; blind
 //! indexes additionally leak equality/frequency. Verify every candidate against
 //! decrypted plaintext. A compromised application can expose keys and
@@ -165,7 +160,6 @@ pub struct ReadmeDoctests;
 #[doc = include_str!("../docs/first-field.md")]
 pub struct FirstFieldDoctests;
 
-mod args;
 mod binding;
 mod blind;
 mod bound;
@@ -194,9 +188,7 @@ mod sqlx_sqlite;
 pub mod testing;
 mod value;
 
-pub use args::Args;
 pub(crate) use binding::BindingDomain;
-pub use binding::{OptionalRecordId, RecordId, RecordIdType};
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexId, IndexList,
     inspect_blind_index,
@@ -231,7 +223,8 @@ pub mod __private {
     pub use uuid;
     pub use zeroize::Zeroizing;
 
+    pub use crate::binding::{RecordKey, RecordKind};
     pub use crate::codec::DefaultCodec;
-    pub use crate::record::open_legacy;
+    pub use crate::record::{open_in_record, open_legacy, seal_in_record};
     pub use crate::schema::{has_duplicate, writes_declared_indexes};
 }

@@ -15,20 +15,20 @@ fn main() -> Result<(), cryptbox::Error> {
     let old_key = EncryptionKey::new(OLD_KEY_ID, [0x11; 32]);
     let old_keys = EncryptionKeyring::new(old_key.clone(), [])?;
     let value = UserEmail("mark@example.com".to_owned());
-    let stored = Sealed::<UserEmail>::seal(&value, (), &old_keys)?;
+    let stored = Sealed::<UserEmail>::seal(&value, &old_keys)?;
 
     let current_key = EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]);
     let rotated_keys = EncryptionKeyring::new(current_key, [old_key])?;
 
-    assert!(stored.needs_reseal((), &rotated_keys)?);
+    assert!(stored.needs_reseal(&rotated_keys)?);
     assert_eq!(
-        stored.open((), &rotated_keys)?,
+        stored.open(&rotated_keys)?,
         UserEmail("mark@example.com".to_owned())
     );
 
-    let rewritten = stored.reseal((), &rotated_keys)?;
+    let rewritten = stored.reseal(&rotated_keys)?;
     assert_eq!(rewritten.key_id(), CURRENT_KEY_ID);
-    assert!(!rewritten.needs_reseal((), &rotated_keys)?);
+    assert!(!rewritten.needs_reseal(&rotated_keys)?);
 
     Ok(())
 }

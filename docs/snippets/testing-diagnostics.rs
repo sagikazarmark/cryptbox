@@ -9,7 +9,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -38,12 +37,12 @@ fn main() -> Result<(), Error> {
         [],
     )?;
     let email = "private-fixture@example.test".to_owned();
-    let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&email, &keys)?;
     let mut damaged = sealed.as_bytes().to_vec();
     // Corrupt the authentication tag while leaving a structurally valid envelope.
     *damaged.last_mut().ok_or(Error::Internal)? ^= 1;
     let damaged = Sealed::<UserEmail>::try_from(damaged)?;
-    let error = match damaged.open((), &keys) {
+    let error = match damaged.open(&keys) {
         Err(error) => error,
         Ok(_) => return Err(Error::Internal),
     };

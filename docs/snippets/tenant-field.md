@@ -10,7 +10,6 @@ impl Seal for CustomerEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = [u8; 16];
     type Indexes = ();
 }
 
@@ -24,14 +23,6 @@ impl TenantKeyrings {
         self.0.get(tenant).ok_or(Error::KeysUnavailable)
     }
 }
-
-// Client-generated UUIDv7 record IDs, chosen before the row is inserted.
-const ADA: [u8; 16] = [
-    0x01, 0x99, 0xa0, 0x5c, 0x7b, 0x3e, 0x74, 0x1d, 0x8f, 0x2a, 0x6c, 0x91, 0x0e, 0x45, 0xb8, 0x23,
-];
-const GRACE: [u8; 16] = [
-    0x01, 0x99, 0xa0, 0x5c, 0x9c, 0x40, 0x7a, 0xe2, 0xb1, 0xd6, 0x4f, 0x8a, 0x2e, 0x0b, 0x73, 0xc5,
-];
 
 fn main() -> Result<(), Error> {
     // Ephemeral demo keys: an independent keyring per tenant on every run.
@@ -47,25 +38,20 @@ fn main() -> Result<(), Error> {
     ]));
 
     let email = "ada@acme.example".to_owned();
-    let sealed = Sealed::<CustomerEmail>::seal(&email, &ADA, keys.of("acme")?)?;
-    assert_eq!(sealed.open(&ADA, keys.of("acme")?)?, email);
+    let sealed = Sealed::<CustomerEmail>::seal(&email, keys.of("acme")?)?;
+    assert_eq!(sealed.open(keys.of("acme")?)?, email);
 
-    // Another record is a different binding.
-    assert!(matches!(
-        sealed.open(&GRACE, keys.of("acme")?),
-        Err(Error::AuthenticationFailed)
-    ));
     // Another tenant's keyring does not hold the key this envelope names.
     assert!(matches!(
-        sealed.open(&ADA, keys.of("globex")?),
+        sealed.open(keys.of("globex")?),
         Err(Error::UnknownEncryptionKey(_))
     ));
 
-    // Moving the record to another tenant is an explicit reseal under its keys.
-    let moved = sealed.reseal_across(&ADA, keys.of("acme")?, &ADA, keys.of("globex")?)?;
-    assert_eq!(moved.open(&ADA, keys.of("globex")?)?, email);
+    // Moving the value to another tenant is an explicit reseal under its keys.
+    let moved = sealed.reseal_across(keys.of("acme")?, keys.of("globex")?)?;
+    assert_eq!(moved.open(keys.of("globex")?)?, email);
 
-    println!("Record-bound round trip with a keyring per tenant succeeded.");
+    println!("Round trip with a keyring per tenant succeeded.");
     Ok(())
 }
 ```

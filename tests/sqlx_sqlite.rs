@@ -38,7 +38,6 @@ impl Seal for TestSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -118,7 +117,7 @@ fn sqlite_encode_encrypts_plaintext_into_an_owned_blob() {
 #[test]
 fn sqlite_sealed_encoding_preserves_the_binary_envelope() {
     let keys = TestKeys::keys().unwrap();
-    let bytes = Sealed::<TestSeal>::seal(&"value".to_owned(), (), keys)
+    let bytes = Sealed::<TestSeal>::seal(&"value".to_owned(), keys)
         .unwrap()
         .into_bytes();
     let ciphertext = Sealed::<TestSeal>::from_bytes(bytes.clone()).unwrap();
@@ -158,7 +157,7 @@ fn sqlite_round_trips_sealed_values_and_opens_plain_columns() {
         assert_eq!(opened.expose_secret(), "mark@example.com");
         // The column used `TestKeys`; the global was never installed.
         assert_eq!(
-            sealed.open((), TestKeys::keys().unwrap()).unwrap(),
+            sealed.open(TestKeys::keys().unwrap()).unwrap(),
             "mark@example.com"
         );
         assert_eq!(keys::installed().unwrap_err(), Error::KeysNotInstalled);
@@ -175,9 +174,8 @@ fn sqlite_binds_an_explicitly_opened_value_through_its_own_column_keys() {
             .unwrap();
 
         let explicit = TestKeys::keys().unwrap();
-        let stored =
-            Sealed::<TestSeal>::seal(&"mark@example.com".to_owned(), (), explicit).unwrap();
-        let value = Plain::<TestSeal, TestKeys>::new(stored.open((), explicit).unwrap());
+        let stored = Sealed::<TestSeal>::seal(&"mark@example.com".to_owned(), explicit).unwrap();
+        let value = Plain::<TestSeal, TestKeys>::new(stored.open(explicit).unwrap());
 
         sqlx::query("INSERT INTO secrets (value) VALUES (?)")
             .bind(&value)

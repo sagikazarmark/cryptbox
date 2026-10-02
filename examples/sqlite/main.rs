@@ -95,7 +95,7 @@ async fn write(
     connection: &mut SqliteConnection,
     keys: &EncryptionKeyring,
 ) -> Result<(), Box<dyn Error>> {
-    let sealed = Sealed::<UserEmail>::seal(&DEMO_EMAIL.to_owned(), (), keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&DEMO_EMAIL.to_owned(), keys)?;
     let mut transaction = connection.begin().await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, email BLOB NOT NULL)")
         .execute(&mut *transaction)
@@ -118,7 +118,7 @@ async fn read(
         .fetch_one(connection)
         .await?;
     let sealed: Sealed<UserEmail> = row.try_get("email")?;
-    let opened = sealed.open((), keys)?;
+    let opened = sealed.open(keys)?;
 
     assert!(sealed.as_bytes().starts_with(b"CBX\0"));
     // Unlike assert_eq!, this cannot print plaintext on a failed assertion.

@@ -12,7 +12,6 @@ const KEYS: &[Key] = &[
     Key::Codec,
     Key::Transparent,
     Key::Padding,
-    Key::Record,
     Key::Indexes,
     Key::Crate,
 ];
@@ -55,10 +54,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         || quote!(#krate::Padding::NONE),
         |padding| padding.to_tokens(&krate),
     );
-    let record = attrs
-        .record
-        .take()
-        .map_or_else(|| quote!(()), |record| quote!(#record));
     let indexes = attrs.indexes.unwrap_or_default();
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
@@ -100,7 +95,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
-    let items = seal_items(&krate, &id, &padding, &value, &codec, &record, &indexes);
+    let items = seal_items(&krate, &id, &padding, &value, &codec, &indexes);
 
     Ok(quote! {
         const _: () = {
@@ -121,7 +116,6 @@ pub(crate) fn seal_items(
     padding: &TokenStream,
     value: &TokenStream,
     codec: &TokenStream,
-    record: &TokenStream,
     indexes: &[Type],
 ) -> TokenStream {
     quote! {
@@ -129,7 +123,6 @@ pub(crate) fn seal_items(
         const PADDING: #krate::Padding = #padding;
         type Value = #value;
         type Codec = #codec;
-        type Record = #record;
         type Indexes = (#(#indexes,)*);
     }
 }

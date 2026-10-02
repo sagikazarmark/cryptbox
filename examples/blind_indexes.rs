@@ -40,7 +40,7 @@ fn main() -> Result<(), cryptbox::Error> {
     let old_index_keys = BlindIndexKeyring::new(old_index_key.clone(), [])?;
 
     let value = "Mark@Example.com".to_owned();
-    let prepared = Sealed::<UserEmail>::prepare(&value, (), &encryption_keys)?
+    let prepared = Sealed::<UserEmail>::prepare(&value, &encryption_keys)?
         .with_index_with::<EmailLookup>(&old_index_keys)?;
     let stored = prepared.sealed().clone();
     let stored_index = prepared.index::<EmailLookup>()?.as_bytes().to_vec();
@@ -58,7 +58,7 @@ fn main() -> Result<(), cryptbox::Error> {
     assert!(is_candidate);
 
     // A blind-index hit is only a candidate: open it and compare normalized plaintext.
-    let candidate = stored.open((), &encryption_keys)?;
+    let candidate = stored.open(&encryption_keys)?;
     assert!(EmailLookup::verify_candidate(query, &candidate)?);
 
     Ok(())

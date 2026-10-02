@@ -17,7 +17,6 @@ impl Seal for EmailSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -61,7 +60,7 @@ fn encryption_keys() -> EncryptionKeyring {
 }
 
 fn sealed(keys: &EncryptionKeyring) -> Sealed<EmailSeal> {
-    Sealed::seal(&"mark@example.com".to_owned(), (), keys).unwrap()
+    Sealed::seal(&"mark@example.com".to_owned(), keys).unwrap()
 }
 
 /// The bytes of a JSON form: unpadded base64url text.
@@ -87,7 +86,7 @@ fn sealed_serde_round_trips_only_the_envelope_bytes() {
 
     let restored: Sealed<EmailSeal> = serde_json::from_str(&json).unwrap();
     assert_eq!(sealed, restored);
-    assert_eq!(restored.open((), &keys).unwrap(), "mark@example.com");
+    assert_eq!(restored.open(&keys).unwrap(), "mark@example.com");
 }
 
 #[test]

@@ -57,8 +57,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let email = "Mark@Example.com".to_owned();
     // The UserEmail seal binds the sealed value and index to its seal ID.
     // prepare borrows email: it does not remove plaintext from memory.
-    let prepared = Sealed::<UserEmail>::prepare(&email, (), &keys)?
-        .with_index_with::<EmailLookup>(&index_keys)?;
+    let prepared =
+        Sealed::<UserEmail>::prepare(&email, &keys)?.with_index_with::<EmailLookup>(&index_keys)?;
     let stored = StoredUser {
         email: prepared.sealed().clone(),
         email_lookup: BlindIndex::from_bytes(prepared.index::<EmailLookup>()?.as_bytes())?,
@@ -72,10 +72,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parsing/inspection uses no keys. These IDs remain unauthenticated metadata.
     let _envelope_info = inspect_ciphertext(restored.email.as_bytes())?;
     let _index_info = inspect_blind_index(restored.email_lookup.as_bytes())?;
-    assert!(!restored.email.needs_reseal((), &keys)?);
+    assert!(!restored.email.needs_reseal(&keys)?);
 
     // Opening authenticates, decrypts, unpads, and decodes with the chosen seal's codec.
-    let plaintext = restored.email.open((), &keys)?;
+    let plaintext = restored.email.open(&keys)?;
     assert_eq!(plaintext, "Mark@Example.com");
 
     // Separately check index consistency, here after convergence to the current key.
@@ -99,9 +99,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     *damaged.last_mut().ok_or("empty envelope")? ^= 1;
     let damaged_json = serde_json::to_vec(&damaged)?;
     let damaged: Sealed<UserEmail> = serde_json::from_slice(&damaged_json)?;
-    assert!(!damaged.needs_reseal((), &keys)?);
+    assert!(!damaged.needs_reseal(&keys)?);
     assert_eq!(
-        damaged.open((), &keys).unwrap_err(),
+        damaged.open(&keys).unwrap_err(),
         Error::AuthenticationFailed
     );
 

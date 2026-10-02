@@ -1,5 +1,5 @@
 use crate::id::identifier;
-use crate::{Codec, IndexList, OptionalRecordId, Padding};
+use crate::{Codec, IndexList, Padding, binding::RecordKind};
 
 identifier!(SealId, "A stable seal identifier.");
 
@@ -15,10 +15,10 @@ identifier!(SealId, "A stable seal identifier.");
 /// messages, or whole responses. A marker and a self-valued seal with the same
 /// ID and codec read each other's values.
 ///
-/// Every sealed value is bound at runtime to its seal ID and, when it binds a
-/// [record](Self::Record), to the ID of the record it is stored in. Opening it as
-/// another seal, or under another record, fails authentication. The binding
-/// arguments of each call are typed by the seal; see [`Args`](crate::Args).
+/// Every sealed value is bound at runtime to its seal ID: opening it as another
+/// seal fails authentication. The seals `#[derive(Record)]` declares for its
+/// sealed fields bind each value to its record ID too, and only the record seals
+/// and opens them; see [`Record`](crate::Record).
 /// Which keys protect a value is the caller's choice: with a keyring per
 /// tenant, another tenant's value fails to open.
 ///
@@ -53,7 +53,6 @@ identifier!(SealId, "A stable seal identifier.");
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = ();
 /// }
 /// ```
@@ -61,8 +60,7 @@ identifier!(SealId, "A stable seal identifier.");
 /// With the `derive` feature, `#[derive(Seal)]` writes this impl from
 /// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
 /// taking `String`'s built-in default codec, `Utf8`.
-/// Add `record = i64` or `indexes(EmailLookup)` to set [`Self::Record`] or
-/// [`Self::Indexes`]. On a type with
+/// Add `indexes(EmailLookup)` to set [`Self::Indexes`]. On a type with
 /// fields, the derive makes the type its own value: `codec = Json` encodes it
 /// whole, and `transparent` stores its single field.
 ///
@@ -104,10 +102,6 @@ pub trait Seal: 'static {
     /// defaults to [`Utf8`](crate::Utf8) or [`Raw`](crate::Raw).
     type Codec: Codec<Self::Value>;
 
-    /// The type of the ID of the record every value is stored in and bound to,
-    /// such as `i64`, or `()` for none: an [`OptionalRecordId`].
-    type Record: OptionalRecordId;
-
     /// The blind indexes declared over this seal, as a tuple of
     /// [`BlindIndexSpec`](crate::BlindIndexSpec)s, or `()` for none.
     ///
@@ -115,6 +109,12 @@ pub trait Seal: 'static {
     /// they would not write, such as the automatic column
     /// [`Plain`](crate::Plain). See [`IndexList`].
     type Indexes: IndexList<Self>;
+
+    /// The kind of the record ID a record field's seal binds its values to.
+    /// Not public API: `#[derive(Record)]` sets it for the seals of its sealed
+    /// fields, which only the record seals and opens.
+    #[doc(hidden)]
+    const RECORD: Option<RecordKind> = None;
 }
 
 /// Creates a [`SealId`](crate::SealId) from a UUID literal.

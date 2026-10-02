@@ -1,5 +1,0 @@
-error: `record` needs a value: `record = …`
- --> tests/ui/seal_bare_record.rs:5:5
-  |
-5 |     record,
-  |     ^^^^^^

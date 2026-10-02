@@ -18,7 +18,6 @@ impl Seal for EmailSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -29,7 +28,6 @@ impl Seal for PhoneSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -164,7 +162,7 @@ fn prepared_values_derive_the_sealed_value_and_indexes_from_one_source() {
     let index_keys = index_keys();
     let value = email("Mark@Example.com");
 
-    let prepared = Sealed::<EmailSeal>::prepare(&value, (), &encryption_keys)
+    let prepared = Sealed::<EmailSeal>::prepare(&value, &encryption_keys)
         .unwrap()
         .with_index_with::<EmailExact>(&index_keys)
         .unwrap();
@@ -222,7 +220,6 @@ impl Seal for PersonSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Person;
     type Codec = PersonCodec;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -433,7 +430,6 @@ impl Seal for TicketEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = i64;
     type Indexes = (TicketEmailExact,);
 }
 
@@ -460,25 +456,17 @@ fn ticket_keys() -> EncryptionKeyring {
 }
 
 #[test]
-fn prepared_indexes_ignore_the_record() {
+fn prepared_indexes_match_derived_ones() {
     let keys = ticket_keys();
     let index_keys = index_keys();
     let value = email("mark@example.com");
-    let prepare = |record: i64| {
-        let prepared = Sealed::<TicketEmail>::prepare(&value, &record, &keys)
-            .unwrap()
-            .with_index_with::<TicketEmailExact>(&index_keys)
-            .unwrap();
-        let index = prepared.index::<TicketEmailExact>().unwrap();
+    let prepared = Sealed::<TicketEmail>::prepare(&value, &keys)
+        .unwrap()
+        .with_index_with::<TicketEmailExact>(&index_keys)
+        .unwrap();
 
-        index.as_bytes().to_vec()
-    };
-
-    let first = prepare(1);
-
-    assert_eq!(first, prepare(2));
     assert_eq!(
-        first,
+        prepared.index::<TicketEmailExact>().unwrap().as_bytes(),
         TicketEmailExact::derive_with(&value, &index_keys)
             .unwrap()
             .into_bytes()

@@ -24,7 +24,6 @@ impl Seal for EmailSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -35,25 +34,21 @@ impl Seal for PaddedEmailSeal {
     const PADDING: Padding = Padding::block(16);
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
 // Raw seals carry opaque bytes through `Sealed`, as the byte-level API did.
-fn encrypt<F: Seal<Value = Vec<u8>, Record = ()>>(
-    plaintext: &[u8],
-    keys: &EncryptionKeyring,
-) -> Vec<u8> {
-    Sealed::<F>::seal(&plaintext.to_vec(), (), keys)
+fn encrypt<F: Seal<Value = Vec<u8>>>(plaintext: &[u8], keys: &EncryptionKeyring) -> Vec<u8> {
+    Sealed::<F>::seal(&plaintext.to_vec(), keys)
         .unwrap()
         .into_bytes()
 }
 
-fn decrypt<F: Seal<Value = Vec<u8>, Record = ()>>(
+fn decrypt<F: Seal<Value = Vec<u8>>>(
     ciphertext: &[u8],
     keys: &EncryptionKeyring,
 ) -> Result<Vec<u8>, Error> {
-    Sealed::<F>::from_bytes(ciphertext)?.open((), keys)
+    Sealed::<F>::from_bytes(ciphertext)?.open(keys)
 }
 
 struct PhoneSeal;
@@ -63,7 +58,6 @@ impl Seal for PhoneSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -177,7 +171,7 @@ fn a_changed_fingerprint_reports_binding_mismatch() {
     assert_eq!(
         Sealed::<EmailSeal>::from_bytes(ciphertext)
             .unwrap()
-            .needs_reseal((), &keys),
+            .needs_reseal(&keys),
         Err(Error::BindingMismatch)
     );
 }
@@ -239,11 +233,11 @@ fn rotation_preserves_reads_and_reencryption_uses_the_current_key() {
         b"rotate me"
     );
     let sealed = Sealed::<EmailSeal>::from_bytes(ciphertext).unwrap();
-    assert!(sealed.needs_reseal((), &rotated).unwrap());
+    assert!(sealed.needs_reseal(&rotated).unwrap());
 
-    let rewritten = sealed.reseal((), &rotated).unwrap();
+    let rewritten = sealed.reseal(&rotated).unwrap();
     assert_eq!(rewritten.key_id(), CURRENT_KEY_ID);
-    assert!(!rewritten.needs_reseal((), &rotated).unwrap());
+    assert!(!rewritten.needs_reseal(&rotated).unwrap());
 }
 
 struct TypedEmail;
@@ -253,7 +247,6 @@ impl Seal for TypedEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -261,14 +254,13 @@ impl Seal for TypedEmail {
 fn sealed_values_round_trip_through_the_seal_codec() {
     let keys = keyring(CURRENT_KEY_ID, 29);
 
-    let sealed: Sealed<TypedEmail> =
-        Sealed::seal(&"mark@example.com".to_owned(), (), &keys).unwrap();
+    let sealed: Sealed<TypedEmail> = Sealed::seal(&"mark@example.com".to_owned(), &keys).unwrap();
     assert_eq!(format!("{sealed:?}"), "Sealed([REDACTED])");
     assert_eq!(AsRef::<[u8]>::as_ref(&sealed), sealed.as_bytes());
 
     let sealed = Sealed::<TypedEmail>::try_from(sealed.into_bytes()).unwrap();
 
-    assert_eq!(sealed.open((), &keys).unwrap(), "mark@example.com");
+    assert_eq!(sealed.open(&keys).unwrap(), "mark@example.com");
 }
 
 #[test]

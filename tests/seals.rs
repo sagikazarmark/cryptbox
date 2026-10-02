@@ -56,7 +56,6 @@ impl Seal for HomeAddress {
     const PADDING: Padding = Padding::NONE;
     type Value = Address;
     type Codec = AddressCodec;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -68,7 +67,6 @@ impl Seal for BillingAddress {
     const PADDING: Padding = Padding::block(16);
     type Value = Address;
     type Codec = AddressCodec;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -83,11 +81,11 @@ fn address() -> Address {
 fn seals_over_one_value_type_round_trip() {
     let keys = keyring();
 
-    let home = Sealed::<HomeAddress>::seal(&address(), (), &keys).unwrap();
-    assert_eq!(home.open((), &keys).unwrap(), address());
+    let home = Sealed::<HomeAddress>::seal(&address(), &keys).unwrap();
+    assert_eq!(home.open(&keys).unwrap(), address());
 
-    let billing = Sealed::<BillingAddress>::seal(&address(), (), &keys).unwrap();
-    assert_eq!(billing.open((), &keys).unwrap(), address());
+    let billing = Sealed::<BillingAddress>::seal(&address(), &keys).unwrap();
+    assert_eq!(billing.open(&keys).unwrap(), address());
 }
 
 #[test]
@@ -98,18 +96,18 @@ fn seals_over_one_value_type_have_distinct_ids() {
 #[test]
 fn swapping_sealed_values_between_seals_over_one_value_type_fails_authentication() {
     let keys = keyring();
-    let home = Sealed::<HomeAddress>::seal(&address(), (), &keys).unwrap();
-    let billing = Sealed::<BillingAddress>::seal(&address(), (), &keys).unwrap();
+    let home = Sealed::<HomeAddress>::seal(&address(), &keys).unwrap();
+    let billing = Sealed::<BillingAddress>::seal(&address(), &keys).unwrap();
 
     let home_as_billing = Sealed::<BillingAddress>::from_bytes(home.into_bytes()).unwrap();
     let billing_as_home = Sealed::<HomeAddress>::from_bytes(billing.into_bytes()).unwrap();
 
     assert!(matches!(
-        home_as_billing.open((), &keys),
+        home_as_billing.open(&keys),
         Err(Error::AuthenticationFailed)
     ));
     assert!(matches!(
-        billing_as_home.open((), &keys),
+        billing_as_home.open(&keys),
         Err(Error::AuthenticationFailed)
     ));
 }
@@ -121,7 +119,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -132,7 +129,6 @@ impl Seal for SecretUserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = Secret<String>;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -143,7 +139,6 @@ impl Seal for ApiToken {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -154,7 +149,6 @@ impl Seal for SecretApiToken {
     const PADDING: Padding = Padding::NONE;
     type Value = Secret<Vec<u8>>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -162,23 +156,23 @@ impl Seal for SecretApiToken {
 fn secret_values_share_stored_bytes_with_their_plain_counterparts() {
     let keys = keyring();
 
-    let plain = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), (), &keys).unwrap();
+    let plain = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), &keys).unwrap();
     let read = Sealed::<SecretUserEmail>::from_bytes(plain.into_bytes()).unwrap();
     assert_eq!(
-        read.open((), &keys).unwrap().expose_secret(),
+        read.open(&keys).unwrap().expose_secret(),
         "mark@example.com"
     );
 
     let secret =
-        Sealed::<SecretUserEmail>::seal(&Secret::new("mark@example.com".to_owned()), (), &keys)
+        Sealed::<SecretUserEmail>::seal(&Secret::new("mark@example.com".to_owned()), &keys)
             .unwrap();
     let read = Sealed::<UserEmail>::from_bytes(secret.into_bytes()).unwrap();
-    assert_eq!(read.open((), &keys).unwrap(), "mark@example.com");
+    assert_eq!(read.open(&keys).unwrap(), "mark@example.com");
 
     let token = vec![0, 1, 2, 255];
-    let plain = Sealed::<ApiToken>::seal(&token, (), &keys).unwrap();
+    let plain = Sealed::<ApiToken>::seal(&token, &keys).unwrap();
     let read = Sealed::<SecretApiToken>::from_bytes(plain.into_bytes()).unwrap();
-    assert_eq!(read.open((), &keys).unwrap().expose_secret(), &token);
+    assert_eq!(read.open(&keys).unwrap().expose_secret(), &token);
 }
 
 #[test]

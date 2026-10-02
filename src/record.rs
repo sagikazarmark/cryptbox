@@ -1,9 +1,9 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    Args, BlindIndex, BlindIndexKeys, BlindIndexSpec, EncryptionKeys, Error, RecordKeys, Seal,
-    SealId, Sealed,
-    binding::declaration_fingerprint,
+    BindingDomain, BlindIndex, BlindIndexKeys, BlindIndexSpec, EncryptionKeys, Error, RecordKeys,
+    Seal, SealId, Sealed,
+    binding::{RecordKey, declaration_fingerprint},
     blind::{index_domain, probes_in},
     inspect_ciphertext,
 };
@@ -203,6 +203,43 @@ impl<R: Record, S: BlindIndexSpec> fmt::Debug for Index<R, S> {
     }
 }
 
+/// The binding of seal `F` in the record whose ID is `id`: its seal ID, and the
+/// record ID when `F` binds one.
+fn record_domain<F: Seal>(id: &impl RecordKey) -> Result<BindingDomain, Error> {
+    BindingDomain::of::<F>(F::RECORD.map(|_| id.record_value()))
+}
+
+/// Seals a record field's `value` under its seal `F` and the record ID `id`.
+/// Not public API: `#[derive(Record)]` calls it.
+///
+/// # Errors
+///
+/// Returns any error of sealing.
+#[doc(hidden)]
+pub fn seal_in_record<F: Seal>(
+    value: &F::Value,
+    id: &impl RecordKey,
+    keys: &(impl EncryptionKeys + ?Sized),
+) -> Result<Sealed<F>, Error> {
+    Sealed::seal_in(value, &record_domain::<F>(id)?, keys)
+}
+
+/// Opens a record field's value under its seal `F` and the record ID `id`. Not
+/// public API: `#[derive(Record)]` calls it.
+///
+/// # Errors
+///
+/// Returns any error of opening, such as [`Error::AuthenticationFailed`] for a
+/// value of another record.
+#[doc(hidden)]
+pub fn open_in_record<F: Seal>(
+    sealed: &Sealed<F>,
+    id: &impl RecordKey,
+    keys: &(impl EncryptionKeys + ?Sized),
+) -> Result<F::Value, Error> {
+    sealed.open_in(&record_domain::<F>(id)?, keys)
+}
+
 /// Opens a record field that may still be sealed with its legacy declaration,
 /// `L`: the declaration it had before, named by `legacy(…)`. Not public API:
 /// `#[derive(Record)]` calls it.
@@ -219,8 +256,7 @@ impl<R: Record, S: BlindIndexSpec> fmt::Debug for Index<R, S> {
 #[doc(hidden)]
 pub fn open_legacy<F, L>(
     sealed: &Sealed<F>,
-    args: impl Args<F>,
-    legacy: impl Args<L>,
+    id: &impl RecordKey,
     keys: &(impl EncryptionKeys + ?Sized),
 ) -> Result<F::Value, Error>
 where
@@ -228,11 +264,11 @@ where
     L: Seal<Value = F::Value>,
 {
     let stored = inspect_ciphertext(sealed.as_bytes())?.context_fingerprint();
-    let current = declaration_fingerprint::<F::Record>();
-    let old = declaration_fingerprint::<L::Record>();
+    let current = declaration_fingerprint::<F>();
+    let old = declaration_fingerprint::<L>();
 
     if stored == current {
-        match sealed.open(args, keys) {
+        match open_in_record(sealed, id, keys) {
             Err(Error::AuthenticationFailed) if old == current && L::ID != F::ID => {}
             opened => return opened,
         }
@@ -240,5 +276,9 @@ where
         return Err(Error::BindingMismatch);
     }
 
-    Sealed::<L>::from_bytes(sealed.as_bytes().to_vec())?.open(legacy, keys)
+    open_in_record(
+        &Sealed::<L>::from_bytes(sealed.as_bytes().to_vec())?,
+        id,
+        keys,
+    )
 }

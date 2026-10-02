@@ -1,0 +1,5 @@
+error: unknown `cryptbox` key `record`; expected one of `id`, `value`, `codec`, `transparent`, `padding`, `indexes`, `crate`
+ --> tests/ui/seal_record_retired.rs:5:5
+  |
+5 |     record = i64,
+  |     ^^^^^^

@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    BlindIndexSpec, Codec, IndexId, OptionalRecordId, Padding, Record, Seal, SealId,
+    BlindIndexSpec, Codec, IndexId, Padding, Record, Seal, SealId,
     binding::{RecordKind, declaration_fingerprint},
 };
 
@@ -49,7 +49,6 @@ use crate::{
 ///     const PADDING: Padding = Padding::block(16);
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = i64;
 ///     type Indexes = ();
 /// }
 ///
@@ -60,8 +59,8 @@ use crate::{
 /// seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
 ///   codec: utf8
 ///   padding: block(16)
-///   record: i64
-///   binding: 76081b730530f822
+///   record: no
+///   binding: 65640fc8333534b9
 /// ");
 /// ```
 #[derive(Debug, Default)]
@@ -121,8 +120,8 @@ impl Manifest {
                 id: F::ID,
                 codec: <F::Codec as Codec<F::Value>>::ID,
                 padding: F::PADDING,
-                record: <F::Record as OptionalRecordId>::RECORD,
-                fingerprint: declaration_fingerprint::<F::Record>(),
+                record: F::RECORD,
+                fingerprint: declaration_fingerprint::<F>(),
             });
         }
         self
@@ -314,7 +313,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -325,7 +323,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -342,7 +339,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// struct BillingAddress;
@@ -352,7 +348,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -370,7 +365,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// struct Exact;

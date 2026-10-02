@@ -8,7 +8,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -16,8 +15,8 @@ fn main() -> Result<(), cryptbox::Error> {
     // Ephemeral demo keys: a new key and generation ID on every run.
     let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
     let email = "mark@example.com".to_owned();
-    let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
-    let opened = sealed.open((), &keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&email, &keys)?;
+    let opened = sealed.open(&keys)?;
     assert_eq!(opened, "mark@example.com");
     assert_eq!(email, "mark@example.com"); // Source retained.
     println!("Seal-bound round trip succeeded.");

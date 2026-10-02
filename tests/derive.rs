@@ -29,7 +29,6 @@ impl Seal for ManualUserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -47,11 +46,10 @@ fn a_derived_seal_declares_its_id_value_and_default_codec_without_padding() {
 #[test]
 fn a_derived_seal_opens_values_of_its_manual_equivalent() {
     let keys = keyring();
-    let manual =
-        Sealed::<ManualUserEmail>::seal(&"mark@example.com".to_owned(), (), &keys).unwrap();
+    let manual = Sealed::<ManualUserEmail>::seal(&"mark@example.com".to_owned(), &keys).unwrap();
 
     let derived = Sealed::<UserEmail>::from_bytes(manual.into_bytes()).unwrap();
-    assert_eq!(derived.open((), &keys).unwrap(), "mark@example.com");
+    assert_eq!(derived.open(&keys).unwrap(), "mark@example.com");
 }
 
 /// [`UserEmail`] as its own value: the same ID, stored as its inner `String`.
@@ -74,13 +72,13 @@ fn a_transparent_seal_and_a_marker_read_each_other_s_values() {
     let keys = keyring();
     let email = SelfValuedEmail("mark@example.com".to_owned());
 
-    let marker = Sealed::<UserEmail>::seal(&email.0, (), &keys).unwrap();
+    let marker = Sealed::<UserEmail>::seal(&email.0, &keys).unwrap();
     let as_self_valued = Sealed::<SelfValuedEmail>::from_bytes(marker.into_bytes()).unwrap();
-    assert_eq!(as_self_valued.open((), &keys).unwrap(), email);
+    assert_eq!(as_self_valued.open(&keys).unwrap(), email);
 
-    let self_valued = Sealed::<SelfValuedEmail>::seal(&email, (), &keys).unwrap();
+    let self_valued = Sealed::<SelfValuedEmail>::seal(&email, &keys).unwrap();
     let as_marker = Sealed::<UserEmail>::from_bytes(self_valued.into_bytes()).unwrap();
-    assert_eq!(as_marker.open((), &keys).unwrap(), email.0);
+    assert_eq!(as_marker.open(&keys).unwrap(), email.0);
 }
 
 /// A transparent seal over a named field, with an explicit codec.
@@ -97,9 +95,9 @@ fn a_transparent_seal_stores_a_named_field_with_its_codec() {
         nickname: "ada".to_owned(),
     };
 
-    let sealed = Sealed::<Nickname>::seal(&nickname, (), &keys).unwrap();
+    let sealed = Sealed::<Nickname>::seal(&nickname, &keys).unwrap();
 
-    assert_eq!(sealed.open((), &keys).unwrap(), nickname);
+    assert_eq!(sealed.open(&keys).unwrap(), nickname);
     assert_eq!(
         <Nickname as Codec<Nickname>>::ID,
         <Utf8 as Codec<String>>::ID
@@ -131,9 +129,9 @@ mod self_valued_json {
             name: "Ada".to_owned(),
             email: "ada@example.com".to_owned(),
         };
-        let sealed = Sealed::<Profile>::seal(&profile, (), &keys).unwrap();
+        let sealed = Sealed::<Profile>::seal(&profile, &keys).unwrap();
 
-        assert_eq!(sealed.open((), &keys).unwrap(), profile);
+        assert_eq!(sealed.open(&keys).unwrap(), profile);
     }
 }
 
@@ -201,8 +199,8 @@ fn a_derived_seal_uses_its_named_codec_and_padding() {
     assert_codec::<BillingAddress, AddressCodec>();
 
     let keys = keyring();
-    let sealed = Sealed::<BillingAddress>::seal(&address(), (), &keys).unwrap();
-    assert_eq!(sealed.open((), &keys).unwrap(), address());
+    let sealed = Sealed::<BillingAddress>::seal(&address(), &keys).unwrap();
+    assert_eq!(sealed.open(&keys).unwrap(), address());
 }
 
 #[test]
@@ -382,46 +380,8 @@ fn a_derived_blind_index_names_its_normalizer() {
 
 #[derive(Seal)]
 #[cryptbox(
-    id = "7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c",
-    value = String,
-    record = i64,
-)]
-struct ProjectNote;
-
-/// The manual equivalent of [`ProjectNote`].
-struct ManualProjectNote;
-
-impl Seal for ManualProjectNote {
-    const ID: SealId = seal_id!("7a1c3e5f-2b4d-4f68-9a0c-1e3b5d7f9a2c");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
-    type Record = i64;
-    type Indexes = ();
-}
-
-#[test]
-fn a_derived_seal_declares_its_record() {
-    fn record<F: Seal<Record = i64>>() {}
-
-    record::<ProjectNote>();
-}
-
-#[test]
-fn a_derived_record_bound_seal_opens_values_of_its_manual_equivalent() {
-    let keys = keyring();
-
-    let manual = Sealed::<ManualProjectNote>::seal(&"ship it".to_owned(), &9_i64, &keys).unwrap();
-    let derived = Sealed::<ProjectNote>::from_bytes(manual.into_bytes()).unwrap();
-
-    assert_eq!(derived.open(&9_i64, &keys).unwrap(), "ship it");
-}
-
-#[derive(Seal)]
-#[cryptbox(
     id = "4b8e2d6f-1a3c-4e57-b9d0-6f2a4c8e1b35",
     value = String,
-    record = i64,
     indexes(ProjectEmailLookup),
 )]
 struct ProjectEmail;
@@ -446,11 +406,11 @@ fn a_derived_seal_declares_its_blind_indexes() {
 }
 
 #[test]
-fn a_derived_blind_index_ignores_the_record() {
+fn a_derived_blind_index_matches_its_probes() {
     let keys = index_keys();
     let email = "Mark@Example.com".to_owned();
-    let prepare = |record: i64| {
-        Sealed::<ProjectEmail>::prepare(&email, &record, &keyring())
+    let prepare = || {
+        Sealed::<ProjectEmail>::prepare(&email, &keyring())
             .unwrap()
             .with_index_with::<ProjectEmailLookup>(&keys)
             .unwrap()
@@ -461,20 +421,45 @@ fn a_derived_blind_index_ignores_the_record() {
 
     let probes = ProjectEmailLookup::probes_with("mark@example.com", &keys).unwrap();
 
-    assert_eq!(prepare(1), probes[0]);
-    assert_eq!(prepare(2), probes[0]);
+    assert_eq!(prepare(), probes[0]);
 }
 
 #[cfg(feature = "uuid")]
 mod uuid_records {
-    use cryptbox::RecordId;
+    use cryptbox::{Record, Sealed};
     use uuid::Uuid;
+
+    #[derive(Debug, PartialEq, Record)]
+    struct ByUuid {
+        #[cryptbox(record_id)]
+        id: Uuid,
+        #[cryptbox(seal = "6d1b3f5a-7c9e-4b2d-8f0a-1c3e5a7b9d2f")]
+        body: String,
+    }
+
+    #[derive(Debug, PartialEq, Record)]
+    struct ByBytes {
+        #[cryptbox(record_id)]
+        id: [u8; 16],
+        #[cryptbox(seal = "6d1b3f5a-7c9e-4b2d-8f0a-1c3e5a7b9d2f")]
+        body: String,
+    }
 
     #[test]
     fn a_uuid_record_id_binds_its_sixteen_bytes() {
+        let keys = super::keyring();
         let id = Uuid::from_u128(0x0192_3a4b_5c6d_7e8f_9a0b_1c2d_3e4f_5a6b);
+        let stored = ByUuid {
+            id,
+            body: "ship it".to_owned(),
+        }
+        .seal(&keys)
+        .unwrap();
 
-        assert_eq!(RecordId::of(&id), RecordId::Uuid(*id.as_bytes()));
-        assert_eq!(RecordId::from(id), RecordId::of(&id));
+        let as_bytes = StoredByBytes {
+            id: *id.as_bytes(),
+            body: Sealed::from_bytes(stored.body.into_bytes()).unwrap(),
+        };
+        assert_eq!(ByBytes::open(as_bytes, &keys).unwrap().body, "ship it");
     }
 }

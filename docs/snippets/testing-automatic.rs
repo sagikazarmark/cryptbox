@@ -16,7 +16,6 @@ impl Seal for Nickname {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -28,7 +27,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = (EmailLookup,);
 }
 
@@ -101,8 +99,8 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     // keys, and the implicit `with_index` resolves the installed blind-index keys
     // too. One statement maintains the sealed value and index pair atomically.
     let email = plaintext.to_owned();
-    let prepared = Sealed::<UserEmail>::prepare(&email, (), keys::installed()?)?
-        .with_index::<EmailLookup>()?;
+    let prepared =
+        Sealed::<UserEmail>::prepare(&email, keys::installed()?)?.with_index::<EmailLookup>()?;
     sqlx::query("UPDATE users SET email = ?, email_idx = ?")
         .bind(prepared.sealed())
         .bind(prepared.index::<EmailLookup>()?)

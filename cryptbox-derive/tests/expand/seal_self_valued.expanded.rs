@@ -12,7 +12,6 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = Self;
         type Codec = cryptbox::Json;
-        type Record = ();
         type Indexes = ();
     }
 };

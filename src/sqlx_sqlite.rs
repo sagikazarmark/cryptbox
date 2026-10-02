@@ -19,7 +19,7 @@ fn blob_compatible(ty: &SqliteTypeInfo) -> bool {
 
 impl<F, K> Type<Sqlite> for Plain<F, K>
 where
-    F: Seal<Record = (), Indexes = ()>,
+    F: Seal<Indexes = ()>,
     K: ColumnKeys,
 {
     fn type_info() -> SqliteTypeInfo {
@@ -63,7 +63,7 @@ impl<Spec> Type<Sqlite> for BlindIndexRef<'_, Spec> {
 
 impl<'q, F, K> Encode<'q, Sqlite> for Plain<F, K>
 where
-    F: Seal<Record = (), Indexes = ()>,
+    F: Seal<Indexes = ()>,
     K: ColumnKeys,
 {
     fn encode_by_ref(
@@ -134,7 +134,7 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
 
 impl<'row, F, K> Decode<'row, Sqlite> for Plain<F, K>
 where
-    F: Seal<Record = (), Indexes = ()>,
+    F: Seal<Indexes = ()>,
     K: ColumnKeys,
 {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {

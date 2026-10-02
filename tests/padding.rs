@@ -20,7 +20,6 @@ impl Seal for Unpadded {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -31,7 +30,6 @@ impl Seal for SharedSealPadded {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -42,7 +40,6 @@ impl Seal for FixedLength {
     const PADDING: Padding = Padding::length(16);
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -53,7 +50,6 @@ impl Seal for WiderBlockPadded {
     const PADDING: Padding = Padding::block(32);
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -64,7 +60,6 @@ impl Seal for BlockPadded {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -75,19 +70,18 @@ impl Seal for PolicyFixedLength {
     const PADDING: Padding = Padding::length(1_048_576);
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
 // Padding/envelope arithmetic from docs/wire-format.md#size-semantics-and-enforcement.
 // The 1 MiB cases test size boundaries, not an enforced operational cap.
-fn assert_stored_sizes<P: Seal<Value = String, Record = ()>>(cases: &[(usize, usize)]) {
+fn assert_stored_sizes<P: Seal<Value = String>>(cases: &[(usize, usize)]) {
     let keys = keyring();
     for &(encoded_bytes, envelope_bytes) in cases {
         let input = "x".repeat(encoded_bytes);
-        let sealed = Sealed::<P>::seal(&input, (), &keys).unwrap();
+        let sealed = Sealed::<P>::seal(&input, &keys).unwrap();
         assert_eq!(sealed.as_bytes().len(), envelope_bytes);
-        assert_eq!(sealed.open((), &keys).unwrap(), input);
+        assert_eq!(sealed.open(&keys).unwrap(), input);
     }
 }
 
@@ -112,7 +106,7 @@ fn documented_fixed_padding_sizes_reserve_room_for_the_marker() {
     assert_stored_sizes::<PolicyFixedLength>(&[(0, 1_048_647), (1_048_575, 1_048_647)]);
     let value = "x".repeat(1_048_576);
     assert!(matches!(
-        Sealed::<PolicyFixedLength>::seal(&value, (), &keyring()),
+        Sealed::<PolicyFixedLength>::seal(&value, &keyring()),
         Err(Error::PaddingOverflow)
     ));
 }
@@ -121,7 +115,7 @@ fn documented_fixed_padding_sizes_reserve_room_for_the_marker() {
 fn block_padded_values_round_trip_without_revealing_length_within_a_bucket() {
     let keys = keyring();
     let ciphertexts = (0..=15)
-        .map(|length| Sealed::<BlockPadded>::seal(&"x".repeat(length), (), &keys).unwrap())
+        .map(|length| Sealed::<BlockPadded>::seal(&"x".repeat(length), &keys).unwrap())
         .collect::<Vec<_>>();
 
     let ciphertext_lengths = ciphertexts
@@ -131,20 +125,19 @@ fn block_padded_values_round_trip_without_revealing_length_within_a_bucket() {
 
     assert!(ciphertext_lengths.windows(2).all(|pair| pair[0] == pair[1]));
     for (length, ciphertext) in ciphertexts.iter().enumerate() {
-        assert_eq!(ciphertext.open((), &keys).unwrap(), "x".repeat(length));
+        assert_eq!(ciphertext.open(&keys).unwrap(), "x".repeat(length));
     }
 }
 
 #[test]
 fn a_seal_that_enables_padding_reads_old_and_new_values() {
     let keys = keyring();
-    let old = Sealed::<Unpadded>::seal(&"written before padding".to_owned(), (), &keys).unwrap();
+    let old = Sealed::<Unpadded>::seal(&"written before padding".to_owned(), &keys).unwrap();
     let old = Sealed::<SharedSealPadded>::from_bytes(old.into_bytes()).unwrap();
-    let new =
-        Sealed::<SharedSealPadded>::seal(&"written with padding".to_owned(), (), &keys).unwrap();
+    let new = Sealed::<SharedSealPadded>::seal(&"written with padding".to_owned(), &keys).unwrap();
 
-    assert_eq!(old.open((), &keys).unwrap(), "written before padding");
-    assert_eq!(new.open((), &keys).unwrap(), "written with padding");
+    assert_eq!(old.open(&keys).unwrap(), "written before padding");
+    assert_eq!(new.open(&keys).unwrap(), "written with padding");
 }
 
 struct RawUnpadded;
@@ -154,7 +147,6 @@ impl Seal for RawUnpadded {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -165,7 +157,6 @@ impl Seal for RawPadded {
     const PADDING: Padding = Padding::block(16);
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -173,10 +164,10 @@ impl Seal for RawPadded {
 #[test]
 fn padded_values_read_after_disabling_padding_keep_no_padding_bytes() {
     let keys = keyring();
-    let padded = Sealed::<RawPadded>::seal(&b"value".to_vec(), (), &keys).unwrap();
+    let padded = Sealed::<RawPadded>::seal(&b"value".to_vec(), &keys).unwrap();
     let current = Sealed::<RawUnpadded>::from_bytes(padded.into_bytes()).unwrap();
 
-    assert_eq!(current.open((), &keys).unwrap(), b"value");
+    assert_eq!(current.open(&keys).unwrap(), b"value");
 }
 
 #[test]
@@ -184,18 +175,18 @@ fn unpadded_values_ending_in_marker_bytes_survive_enabling_padding() {
     let keys = keyring();
 
     for value in [b"value\x80".to_vec(), b"value\x80\x00".to_vec()] {
-        let unpadded = Sealed::<RawUnpadded>::seal(&value.clone(), (), &keys).unwrap();
+        let unpadded = Sealed::<RawUnpadded>::seal(&value.clone(), &keys).unwrap();
         let current = Sealed::<RawPadded>::from_bytes(unpadded.into_bytes()).unwrap();
 
-        assert_eq!(current.open((), &keys).unwrap(), value);
+        assert_eq!(current.open(&keys).unwrap(), value);
     }
 }
 
 #[test]
 fn a_sweep_converges_values_to_the_current_padding_policy() {
     let keys = keyring();
-    let old = Sealed::<Unpadded>::seal(&"old".to_owned(), (), &keys).unwrap();
-    let new = Sealed::<SharedSealPadded>::seal(&"new".to_owned(), (), &keys).unwrap();
+    let old = Sealed::<Unpadded>::seal(&"old".to_owned(), &keys).unwrap();
+    let new = Sealed::<SharedSealPadded>::seal(&"new".to_owned(), &keys).unwrap();
 
     let padded = [old.into_bytes(), new.as_bytes().to_vec()].map(sweep::<SharedSealPadded>);
     assert_eq!(
@@ -208,27 +199,27 @@ fn a_sweep_converges_values_to_the_current_padding_policy() {
     assert_swept(&unpadded, false);
 }
 
-fn sweep<F: Seal<Record = ()>>(bytes: Vec<u8>) -> Sealed<F> {
+fn sweep<F: Seal>(bytes: Vec<u8>) -> Sealed<F> {
     let keys = keyring();
     let ciphertext = Sealed::<F>::from_bytes(bytes).unwrap();
 
-    if ciphertext.needs_reseal((), &keys).unwrap() {
-        ciphertext.reseal((), &keys).unwrap()
+    if ciphertext.needs_reseal(&keys).unwrap() {
+        ciphertext.reseal(&keys).unwrap()
     } else {
         ciphertext
     }
 }
 
-fn assert_swept<F: Seal<Value = String, Record = ()>>(swept: &[Sealed<F>; 2], padded: bool) {
+fn assert_swept<F: Seal<Value = String>>(swept: &[Sealed<F>; 2], padded: bool) {
     let keys = keyring();
 
     for (ciphertext, value) in swept.iter().zip(["old", "new"]) {
-        assert!(!ciphertext.needs_reseal((), &keys).unwrap());
+        assert!(!ciphertext.needs_reseal(&keys).unwrap());
         assert_eq!(
             inspect_ciphertext(ciphertext.as_bytes()).unwrap().padded(),
             padded
         );
-        assert_eq!(ciphertext.open((), &keys).unwrap(), value);
+        assert_eq!(ciphertext.open(&keys).unwrap(), value);
     }
 }
 #[test]
@@ -237,7 +228,7 @@ fn fixed_length_padding_rejects_encoded_plaintext_that_does_not_fit() {
     let value = "x".repeat(16);
 
     assert!(matches!(
-        Sealed::<FixedLength>::seal(&value, (), &keys),
+        Sealed::<FixedLength>::seal(&value, &keys),
         Err(Error::PaddingOverflow)
     ));
 }
@@ -245,11 +236,11 @@ fn fixed_length_padding_rejects_encoded_plaintext_that_does_not_fit() {
 #[test]
 fn resealing_normalizes_plaintext_to_the_current_padding_parameters() {
     let keys = keyring();
-    let original = Sealed::<BlockPadded>::seal(&"short".to_owned(), (), &keys).unwrap();
+    let original = Sealed::<BlockPadded>::seal(&"short".to_owned(), &keys).unwrap();
     let current = Sealed::<WiderBlockPadded>::from_bytes(original.into_bytes()).unwrap();
 
-    let rewritten = current.reseal((), &keys).unwrap();
+    let rewritten = current.reseal(&keys).unwrap();
 
     assert_eq!(rewritten.as_bytes().len(), 71 + 32);
-    assert_eq!(rewritten.open((), &keys).unwrap(), "short");
+    assert_eq!(rewritten.open(&keys).unwrap(), "short");
 }

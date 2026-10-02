@@ -29,11 +29,9 @@ compromised storage. Trust the application, its key resolution, dependencies, an
 system: root keys must be cryptographically random, encryption and index roots
 independently generated, and each generation ID permanently paired with the same
 material. IDs are public metadata; generate them independently of key bytes.
-Seals supply persistent schema, including their binding declaration. Binding values and
-record IDs are only as trustworthy as their source: take them from verified claims
-or an authorized request, never from the stored row. The exception is a
-`Record`'s record ID, which is read from the row and checked by opening every
-seal bound to the record; a record whose seals bind none gets no check.
+Seals supply persistent schema, including their binding declaration. A
+`Record`'s record ID is read from the row and checked by opening every sealed
+field; its plaintext columns, such as a tenant, are not, so authorize on them.
 Secure OS randomness and a compatible target are required; see [platform constraints](features.md#platforms-and-tested-configurations).
 
 ## Threats and unsuitable uses
@@ -44,7 +42,7 @@ Secure OS randomness and a compatible target are required; see [platform constra
 | Modify stored ciphertext | Authenticated decryption rejects tampering. Parsing alone does not authenticate; malformed formats or unknown keys may fail earlier. |
 | Copy ciphertext to another seal | Authentication rejects a seal with a different seal ID. A different binding declaration reports `BindingMismatch`. |
 | Copy ciphertext to another tenant, org, or workspace | Only keys separate tenants: with a keyring per tenant, another tenant's keys fail with `UnknownEncryptionKey`. Under one shared keyring, a value moved within its row's record is still bound to that record, but a record's plaintext tenant column changed in place is not detected. |
-| Copy ciphertext between rows of the same seal | Authentication rejects another record of a seal that binds one. For a seal without a record, substitution among rows under the same keys can succeed. |
+| Copy ciphertext between rows of the same seal | Authentication rejects another record for a record's fields. For a standalone seal, substitution among rows under the same keys can succeed. |
 | Return a whole row in place of another | Every value in it opens, because each is bound to that row's own record ID. A `Record` opens as the record it is: when you asked for one record by ID, compare the opened ID with it. |
 | Restore an older authentic value | No replay, rollback, or freshness protection. |
 | Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency across every value of their seal under the same index keys, across records and tenants that share them. Access patterns remain visible. |
@@ -85,7 +83,7 @@ distinct from the independent security review status of the implementation.
 | --- | --- | --- |
 | Parse ciphertext or deserialize stored bytes | Supported structure and lengths | Authenticity or readability |
 | Inspect generations / complete sweep verification | Stored values name the intended generations | Authentication, decodability, or index consistency |
-| Open with the expected seal and binding values | Authentication under that seal and record, padding removal, and decoding for that value | Row identity for a seal without a record, freshness, or index consistency |
+| Open with the expected seal, or a record | Authentication under that seal, and the record for its fields, padding removal, and decoding for that value | Row identity for a standalone seal, freshness, or index consistency |
 | Verify a lookup candidate | Its normalized plaintext matches the query | Stored-index authenticity or completeness of query results |
 | Recompute a stored index under its recorded generation | Consistency with authenticated plaintext and the expected index policy at the configured precision | Absence of omitted rows or rollback |
 

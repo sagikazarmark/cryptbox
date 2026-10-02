@@ -531,7 +531,7 @@ impl SealItem<'_> {
         name: &Ident,
         doc: &str,
         id: &UuidLiteral,
-        record: &TokenStream,
+        record: Option<&TokenStream>,
         indexes: &TokenStream,
     ) -> TokenStream {
         let Self {
@@ -540,6 +540,12 @@ impl SealItem<'_> {
             codec,
             padding,
         } = self;
+        let record = record.map(|ty| {
+            quote! {
+                const RECORD: ::core::option::Option<#krate::__private::RecordKind> =
+                    ::core::option::Option::Some(<#ty as #krate::__private::RecordKey>::KIND);
+            }
+        });
 
         quote! {
             #[doc = #doc]
@@ -552,8 +558,8 @@ impl SealItem<'_> {
                     const PADDING: #krate::Padding = #padding;
                     type Value = #value;
                     type Codec = #codec;
-                    type Record = #record;
                     type Indexes = #indexes;
+                    #record
                 }
             };
         }
@@ -619,43 +625,27 @@ impl<'a> Expansion<'a> {
         keys: &Ident,
     ) -> TokenStream {
         let krate = &self.krate;
-        let from_stored = self.args(&quote!(#stored));
-        let Some(legacy) = &sealing.legacy else {
-            return quote!(#value.open(#from_stored, #keys)?);
-        };
+        let record_id = self.record_id.ident;
+        if sealing.legacy.is_none() {
+            return quote! {
+                #krate::__private::open_in_record::<#seal>(#value, &#stored.#record_id, #keys)?
+            };
+        }
 
         let name = legacy_name(seal);
-        let old = self.legacy_args(legacy, &quote!(#stored));
         quote! {
-            #krate::__private::open_legacy::<#seal, #name>(#value, #from_stored, #old, #keys)?
+            #krate::__private::open_legacy::<#seal, #name>(#value, &#stored.#record_id, #keys)?
         }
-    }
-
-    /// The binding arguments of a legacy declaration, read from `source`: the
-    /// record ID if it bound one, or `()`.
-    fn legacy_args(&self, legacy: &LegacyDecl, source: &TokenStream) -> TokenStream {
-        if legacy.record {
-            self.args(source)
-        } else {
-            quote!(())
-        }
-    }
-
-    /// The binding arguments of a sealed field: the record ID, read from
-    /// `source`.
-    fn args(&self, source: &TokenStream) -> TokenStream {
-        let record_id = self.record_id.ident;
-        quote!(&#source.#record_id)
     }
 
     fn tokens(&self) -> TokenStream {
         let krate = &self.krate;
-        // First, and spanned at the field: a record ID that is no part type is
+        // First, and spanned at the field: a record ID of another type is
         // reported there.
         let ty = self.record_id.ty;
         let check = quote_spanned! {ty.span()=>
             const _: fn() = || {
-                fn check<T: #krate::RecordIdType>() {}
+                fn check<T: #krate::__private::RecordKey>() {}
                 check::<#ty>();
             };
         };
@@ -713,7 +703,7 @@ impl<'a> Expansion<'a> {
                 field.ident
             ),
             &sealing.id,
-            &record_ty,
+            Some(&record_ty),
             &quote!((#(#specs,)*)),
         );
         let indexes = sealing
@@ -731,11 +721,7 @@ impl<'a> Expansion<'a> {
                     field.ident
                 ),
                 legacy.seal.as_ref().unwrap_or(&sealing.id),
-                &if legacy.record {
-                    record_ty.clone()
-                } else {
-                    quote!(())
-                },
+                legacy.record.then_some(&record_ty),
                 &quote!(()),
             )
         });
@@ -870,7 +856,6 @@ impl<'a> Expansion<'a> {
         let keys = Ident::new("keys", Span::mixed_site());
         let stored = Ident::new("stored", Span::mixed_site());
         let value = Ident::new("value", Span::mixed_site());
-        let from_self = self.args(&quote!(self));
 
         let mut seals = Vec::new();
         let mut opens = Vec::new();
@@ -890,10 +875,10 @@ impl<'a> Expansion<'a> {
             let seal = self.seal_name(field, sealing);
             let each =
                 |from: TokenStream, body: TokenStream| each_value(field, &from, &value, &body);
-            let sealed = each(
-                quote!(self),
-                quote!(#krate::Sealed::<#seal>::seal(#value, #from_self, #keys)?),
-            );
+            let sealed = each(quote!(self), {
+                let record_id = self.record_id.ident;
+                quote!(#krate::__private::seal_in_record::<#seal>(#value, &self.#record_id, #keys)?)
+            });
             let opened = each(
                 quote!(#stored),
                 self.open_value(sealing, &seal, &stored, &value, &keys),

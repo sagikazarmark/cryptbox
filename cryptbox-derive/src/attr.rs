@@ -21,13 +21,12 @@ pub(crate) enum Key {
     Normalize,
     Normalizer,
     Project,
-    Record,
     Indexes,
     Transparent,
 }
 
 impl Key {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 13] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -39,7 +38,6 @@ impl Key {
         Self::Normalize,
         Self::Normalizer,
         Self::Project,
-        Self::Record,
         Self::Indexes,
         Self::Transparent,
     ];
@@ -57,7 +55,6 @@ impl Key {
             Self::Normalize => "normalize",
             Self::Normalizer => "normalizer",
             Self::Project => "project",
-            Self::Record => "record",
             Self::Indexes => "indexes",
             Self::Transparent => "transparent",
         }
@@ -122,7 +119,6 @@ pub(crate) struct Attrs {
     pub(crate) normalize: Option<Path>,
     pub(crate) normalizer: Option<LitStr>,
     pub(crate) project: Option<Path>,
-    pub(crate) record: Option<Type>,
     pub(crate) indexes: Option<Vec<Type>>,
     pub(crate) transparent: Option<Span>,
     seen: Vec<Key>,
@@ -151,7 +147,6 @@ impl Attrs {
             normalize: None,
             normalizer: None,
             project: None,
-            record: None,
             indexes: None,
             transparent: None,
             seen: Vec::new(),
@@ -235,7 +230,6 @@ impl Attrs {
             Key::Normalize => self.normalize = Some(input.parse()?),
             Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
-            Key::Record => self.record = Some(input.parse()?),
             Key::Transparent | Key::Indexes => {
                 unreachable!("flags and lists have no `= value`")
             }

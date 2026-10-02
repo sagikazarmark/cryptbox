@@ -4,11 +4,15 @@ status: accepted
 
 # A binding is the seal and the record
 
-> Amended when implemented. The record ID types are one public trait,
-> `RecordIdType`, whose implementations name the built-in type they bind as
-> (`type Repr`). The kind and value encoding are private, so `PartType`,
-> `PartKind`, and `PartValue` are removed, and `Seal::Record` is bounded by
-> `OptionalRecordId`: `()` or a `RecordIdType`. The bytes are unchanged.
+> Amended when implemented. The binding is private to the library: standalone
+> seals bind their seal ID alone, so `Seal::Record`, `Args`, and the public
+> record ID types are removed, and only `#[derive(Record)]` binds a field to its
+> record ID, through hidden functions. A record ID is a `Uuid` or `[u8; 16]`, an
+> `i64`, or bytes; ID newtypes can return with a later redesign. A record field's
+> seal is marked by a hidden `Seal::RECORD` const, and `Sealed::seal` with one
+> fails the build. The only legacy window is a field's `legacy(…)`, and readers
+> open both declarations with one keyring holding both keys. The bytes are
+> unchanged.
 
 A sealed value is bound to its seal ID and, when it is a field of a record, to
 the record's ID. Nothing else: bound values, their ID types, and blind-index

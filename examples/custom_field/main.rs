@@ -54,7 +54,6 @@ impl Seal for Handle {
     const PADDING: Padding = Padding::NONE;
     type Value = Self;
     type Codec = HandleCodec;
-    type Record = ();
     type Indexes = (HandleEquality,);
 }
 
@@ -122,7 +121,7 @@ fn main() -> Result<(), cryptbox::Error> {
     let old_index_key = BlindIndexKey::generate()?; // Independent of encryption keys.
     let index_writer = BlindIndexKeyring::new(old_index_key.clone(), [])?;
     let value = Handle(Secret::new("Alice-7".to_owned()));
-    let prepared = Sealed::<Handle>::prepare(&value, (), &keys.keyring()?)?
+    let prepared = Sealed::<Handle>::prepare(&value, &keys.keyring()?)?
         .with_index_with::<HandleEquality>(&index_writer)?;
     let sealed = prepared.sealed().clone();
     let stored_index = prepared.index::<HandleEquality>()?.as_bytes().to_vec();
@@ -142,7 +141,7 @@ fn main() -> Result<(), cryptbox::Error> {
     assert_eq!(probes.len(), 2);
     assert!(probes.iter().any(|probe| probe.as_bytes() == stored_index));
     // An index hit is only a candidate: authenticate and compare normalized plaintext.
-    let opened = sealed.open((), &keys.keyring()?)?;
+    let opened = sealed.open(&keys.keyring()?)?;
     assert!(HandleEquality::verify_candidate(&query, &opened)?);
     assert_eq!(opened.0.expose_secret(), "Alice-7");
     assert_eq!(value.0.expose_secret(), "Alice-7");
@@ -181,7 +180,7 @@ mod tests {
         let unknown = EncryptionKey::generate()?.id();
         let writer = EncryptionKeyring::new(old.clone(), [])?;
         let value = Handle(Secret::new("Alice-7".to_owned()));
-        let sealed = Sealed::<Handle>::seal(&value, (), &writer)?;
+        let sealed = Sealed::<Handle>::seal(&value, &writer)?;
         let reader = CachedEncryptionKeys::new(Some(EncryptionKeyring::new(
             current.clone(),
             [old.clone()],
@@ -192,12 +191,12 @@ mod tests {
         assert_eq!(snapshot.get(current.id()).unwrap().id(), current.id());
         assert!(snapshot.get(unknown).is_none());
         assert_eq!(
-            sealed.open((), &reader.keyring()?)?.0.expose_secret(),
+            sealed.open(&reader.keyring()?)?.0.expose_secret(),
             "Alice-7"
         );
         let retired = CachedEncryptionKeys::new(Some(EncryptionKeyring::new(current, [])?));
         assert_eq!(
-            sealed.open((), &retired.keyring()?).unwrap_err(),
+            sealed.open(&retired.keyring()?).unwrap_err(),
             cryptbox::Error::UnknownEncryptionKey(old.id())
         );
         let unavailable = CachedEncryptionKeys::new(None);
@@ -205,7 +204,7 @@ mod tests {
         // A later refresh recovers without restarting.
         unavailable.refresh(EncryptionKeyring::new(old, [])?);
         assert_eq!(
-            sealed.open((), &unavailable.keyring()?)?.0.expose_secret(),
+            sealed.open(&unavailable.keyring()?)?.0.expose_secret(),
             "Alice-7"
         );
         Ok(())
@@ -229,7 +228,7 @@ mod tests {
         // Encoding failure is sanitized at the storage boundary too.
         let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
         assert_eq!(
-            Sealed::<Handle>::seal(&invalid, (), &keys).unwrap_err(),
+            Sealed::<Handle>::seal(&invalid, &keys).unwrap_err(),
             cryptbox::Error::CodecFailed(encode)
         );
         Ok(())
@@ -268,13 +267,12 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
             const PADDING: Padding = Padding::NONE;
             type Value = String;
             type Codec = cryptbox::Utf8;
-            type Record = ();
             type Indexes = ();
         }
 
         let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-        let sealed = Sealed::<PlainHandle>::seal(&"Alice-7".to_owned(), (), &keys)?;
-        let secret = Secret::new(sealed.open((), &keys)?);
+        let sealed = Sealed::<PlainHandle>::seal(&"Alice-7".to_owned(), &keys)?;
+        let secret = Secret::new(sealed.open(&keys)?);
         assert_eq!(secret.expose_secret(), "Alice-7");
         Ok(())
     }

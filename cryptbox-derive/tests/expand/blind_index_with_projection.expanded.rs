@@ -19,7 +19,6 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = Address;
         type Codec = AddressCodec;
-        type Record = ();
         type Indexes = ();
     }
 };

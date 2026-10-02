@@ -1,15 +1,14 @@
-use crate::Error;
+use crate::{Error, Seal};
 
 mod encoding;
 mod record_id;
 
-pub(crate) use record_id::Repr;
-pub use record_id::{OptionalRecordId, RecordIdType};
+pub use record_id::RecordKey;
 
-/// The binding fingerprint of a seal that binds record `R`, as the envelope
-/// header carries it.
-pub(crate) fn declaration_fingerprint<R: OptionalRecordId>() -> [u8; 8] {
-    BindingDeclaration::new(R::RECORD).fingerprint()
+/// The binding fingerprint of seal `F`'s declaration, as the envelope header
+/// carries it.
+pub(crate) fn declaration_fingerprint<F: Seal>() -> [u8; 8] {
+    BindingDeclaration::new(F::RECORD).fingerprint()
 }
 
 /// The canonical kind of a record ID. Not public API: kinds are persistent
@@ -24,14 +23,13 @@ pub enum RecordKind {
     Bytes,
 }
 
-/// The ID of the record a value is bound to, tagged with its kind.
+/// The value of a record ID, tagged with its kind. Not public API.
 ///
 /// The kind is part of the binding, so the same number as an `i64` and as bytes
-/// binds different records. A migration reads it from each row; see
-/// `migrate::RowPlanner::for_rows`.
+/// binds different records.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum RecordId<'a> {
-    /// A UUID, such as a client-generated version 7 UUID.
+pub enum RecordValue<'a> {
+    /// A 16-byte UUID.
     Uuid([u8; 16]),
     /// A signed 64-bit integer.
     I64(i64),
@@ -39,45 +37,13 @@ pub enum RecordId<'a> {
     Bytes(&'a [u8]),
 }
 
-impl<'a> RecordId<'a> {
-    /// Creates a record ID from opaque bytes.
-    #[must_use]
-    pub const fn from_bytes(bytes: &'a [u8]) -> Self {
-        Self::Bytes(bytes)
-    }
-
-    /// Creates a record ID from any [`RecordIdType`], such as an application's
-    /// own ID newtype, with that type's kind and value.
-    #[must_use]
-    pub fn of<T: RecordIdType>(id: &'a T) -> Self {
-        id.repr().record_id()
-    }
-
+impl RecordValue<'_> {
     pub(crate) const fn kind(&self) -> RecordKind {
         match self {
             Self::Uuid(_) => RecordKind::Uuid,
             Self::I64(_) => RecordKind::I64,
             Self::Bytes(_) => RecordKind::Bytes,
         }
-    }
-}
-
-impl From<[u8; 16]> for RecordId<'_> {
-    fn from(uuid: [u8; 16]) -> Self {
-        Self::Uuid(uuid)
-    }
-}
-
-#[cfg(feature = "uuid")]
-impl From<uuid::Uuid> for RecordId<'_> {
-    fn from(uuid: uuid::Uuid) -> Self {
-        Self::Uuid(*uuid.as_bytes())
-    }
-}
-
-impl From<i64> for RecordId<'_> {
-    fn from(value: i64) -> Self {
-        Self::I64(value)
     }
 }
 
@@ -142,7 +108,7 @@ impl BindingDomain {
     pub(crate) fn new(
         id: &[u8; 16],
         declaration: BindingDeclaration,
-        record: Option<RecordId<'_>>,
+        record: Option<RecordValue<'_>>,
     ) -> Result<Self, Error> {
         let record = match (declaration.record, record) {
             (Some(kind), Some(record)) if record.kind() == kind => {
@@ -158,13 +124,23 @@ impl BindingDomain {
         })
     }
 
-    /// Encodes the binding of seal `id`, which binds record `R`, with the
-    /// record's value if `R` is one.
-    pub(crate) fn record<R: OptionalRecordId>(
-        id: &[u8; 16],
-        record: Option<RecordId<'_>>,
-    ) -> Result<Self, Error> {
-        Self::new(id, BindingDeclaration::new(R::RECORD), record)
+    /// Encodes the binding of seal `F`, with its record's value if `F` binds one.
+    pub(crate) fn of<F: Seal>(record: Option<RecordValue<'_>>) -> Result<Self, Error> {
+        Self::new(F::ID.as_bytes(), BindingDeclaration::new(F::RECORD), record)
+    }
+
+    /// Encodes the binding of seal `F`, which binds no record: its seal ID
+    /// alone. A record field's seal fails the build here.
+    pub(crate) fn unbound<F: Seal>() -> Self {
+        const {
+            assert!(
+                F::RECORD.is_none(),
+                "a record field's seal is sealed and opened by its record: use `Record::seal` \
+                 and `Record::open`"
+            );
+        };
+
+        Self::of::<F>(None).expect("a binding without a record always encodes")
     }
 
     /// Encodes the blind-index domain of seal `id`: the seal ID alone, the
@@ -197,7 +173,7 @@ mod tests {
 
     fn domain(
         record: Option<RecordKind>,
-        value: Option<RecordId<'_>>,
+        value: Option<RecordValue<'_>>,
     ) -> Result<BindingDomain, Error> {
         BindingDomain::new(&SEAL, BindingDeclaration::new(record), value)
     }
@@ -222,7 +198,7 @@ mod tests {
 
     #[test]
     fn a_record_is_one_part_under_the_nil_id() {
-        let domain = domain(Some(RecordKind::I64), Some(RecordId::I64(1))).unwrap();
+        let domain = domain(Some(RecordKind::I64), Some(RecordValue::I64(1))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -241,7 +217,7 @@ mod tests {
 
     #[test]
     fn a_bytes_record_is_length_prefixed() {
-        let domain = domain(Some(RecordKind::Bytes), Some(RecordId::Bytes(b"row-7"))).unwrap();
+        let domain = domain(Some(RecordKind::Bytes), Some(RecordValue::Bytes(b"row-7"))).unwrap();
 
         assert_eq!(
             hex::encode(domain.as_bytes()),
@@ -260,9 +236,9 @@ mod tests {
     fn records_of_different_kinds_never_collide() {
         let bytes = domain(
             Some(RecordKind::Bytes),
-            Some(RecordId::Bytes(&7_i64.to_be_bytes())),
+            Some(RecordValue::Bytes(&7_i64.to_be_bytes())),
         );
-        let number = domain(Some(RecordKind::I64), Some(RecordId::I64(7)));
+        let number = domain(Some(RecordKind::I64), Some(RecordValue::I64(7)));
 
         assert_ne!(bytes.unwrap().as_bytes(), number.unwrap().as_bytes());
         // The record's kind is declared.
@@ -276,7 +252,7 @@ mod tests {
     fn an_empty_record_differs_from_no_record() {
         assert_ne!(
             domain(None, None).unwrap().as_bytes(),
-            domain(Some(RecordKind::Bytes), Some(RecordId::Bytes(b"")))
+            domain(Some(RecordKind::Bytes), Some(RecordValue::Bytes(b"")))
                 .unwrap()
                 .as_bytes(),
         );
@@ -284,7 +260,7 @@ mod tests {
 
     #[test]
     fn invalid_records_are_rejected() {
-        let uuid = RecordId::Uuid([0x33; 16]);
+        let uuid = RecordValue::Uuid([0x33; 16]);
         let cases = [
             ("missing record", domain(Some(RecordKind::Uuid), None)),
             (

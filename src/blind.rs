@@ -50,7 +50,6 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -89,7 +88,6 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// struct ZeroBits;
@@ -116,7 +114,6 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// struct TooManyBits;
@@ -316,7 +313,6 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = (InviteEmailLookup,);
 /// }
 ///
@@ -327,7 +323,6 @@ pub trait BlindIndexSpec: Sized + 'static {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = (InviteEmailLookup,);
 /// }
 ///

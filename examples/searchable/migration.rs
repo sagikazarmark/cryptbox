@@ -85,7 +85,7 @@ fn recover(
     } else {
         MaybeEncrypted::from_bytes(bytes)?
     };
-    let value = stored.open_legacy((), keys, legacy)?;
+    let value = stored.open_legacy(keys, legacy)?;
     validate_email(&value)?;
     Ok(value)
 }
@@ -141,7 +141,7 @@ async fn seed(
         (50, keys, indexes),
     ] {
         let value = "mixed@example.com".to_owned();
-        let prepared = Sealed::<UserEmail>::prepare(&value, (), encryption)?
+        let prepared = Sealed::<UserEmail>::prepare(&value, encryption)?
             .with_index_with::<EmailLookup>(index)?;
         let token = if id == 50 {
             &[]
@@ -241,7 +241,7 @@ async fn repair(
         &PreviousEncryption::load()?,
     )?;
     let prepared =
-        Sealed::<UserEmail>::prepare(&value, (), keys)?.with_index_with::<EmailLookup>(indexes)?;
+        Sealed::<UserEmail>::prepare(&value, keys)?.with_index_with::<EmailLookup>(indexes)?;
     let changed = sqlx::query("UPDATE users SET email = $1, email_lookup = $2 WHERE id = $3 AND email = $4 AND email_lookup = $5")
         .bind(prepared.sealed()).bind(prepared.index::<EmailLookup>()?.as_bytes())
         .bind(id).bind(bytes.as_slice()).bind(&old_index).execute(&mut *tx).await?.rows_affected();
@@ -348,7 +348,7 @@ pub(super) async fn command(
         ["migration-restore"] => {
             // Fixture-only trusted source. In production require investigated, approved data.
             let value = "mixed@example.com".to_owned();
-            let prepared = Sealed::<UserEmail>::prepare(&value, (), keys)?
+            let prepared = Sealed::<UserEmail>::prepare(&value, keys)?
                 .with_index_with::<EmailLookup>(indexes)?;
             let mut tx = db.begin().await?;
             // INSERT, not upsert: a concurrently recreated row must not be overwritten.

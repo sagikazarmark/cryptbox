@@ -2,7 +2,7 @@ use std::fmt;
 
 use zeroize::Zeroizing;
 
-use crate::{Args, Codec, EncryptionKeys, Error, Seal, Sealed};
+use crate::{Codec, EncryptionKeys, Error, Seal, Sealed};
 
 use super::{LegacyFormat, legacy};
 
@@ -57,7 +57,6 @@ use super::{LegacyFormat, legacy};
 ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
 ///     type Value = String;
 ///     type Codec = cryptbox::Utf8;
-///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -77,15 +76,15 @@ use super::{LegacyFormat, legacy};
 /// assert!(plaintext.is_legacy());
 /// assert_eq!(
 ///     plaintext
-///         .open_legacy((), &keys, &PreviousFormat)?,
+///         .open_legacy(&keys, &PreviousFormat)?,
 ///     "mark@example.com",
 /// );
 ///
 /// let foreign = MaybeEncrypted::<UserEmail>::from_bytes(
 ///     b"previous:other@example.com".to_vec(),
 /// )?;
-/// let value = foreign.open_legacy((), &keys, &PreviousFormat)?;
-/// let stored = Sealed::<UserEmail>::seal(&value, (), &keys)?;
+/// let value = foreign.open_legacy(&keys, &PreviousFormat)?;
+/// let stored = Sealed::<UserEmail>::seal(&value, &keys)?;
 /// let read = MaybeEncrypted::<UserEmail>::from_bytes(stored.into_bytes())?;
 /// assert!(!read.is_legacy());
 /// # Ok::<(), cryptbox::Error>(())
@@ -157,7 +156,6 @@ where
     ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
     ///     type Value = Vec<u8>;
     ///     type Codec = cryptbox::Raw;
-    ///     type Record = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -179,19 +177,14 @@ where
     /// Consumes the read and returns the plaintext value.
     ///
     /// Legacy bytes use identity recovery and decode through the seal's
-    /// codec; an envelope is opened under `args` with `keys`.
+    /// codec; an envelope is opened with `keys`.
     ///
     /// # Errors
     ///
-    /// Returns an error for invalid envelopes, invalid binding values, unknown
-    /// or unavailable keys, authentication failure, or codec failure.
-    pub fn open(
-        self,
-        args: impl Args<F>,
-        keys: &(impl EncryptionKeys + ?Sized),
-    ) -> Result<F::Value, Error> {
+    /// Returns an error for invalid envelopes, unknown or unavailable keys, authentication failure, or codec failure.
+    pub fn open(self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<F::Value, Error> {
         match self.state {
-            State::Sealed(sealed) => sealed.open(args, keys),
+            State::Sealed(sealed) => sealed.open(keys),
             State::Plaintext(value) => Ok(value),
             State::Legacy(bytes) => decode_legacy::<F>(&bytes, None),
         }
@@ -201,7 +194,7 @@ where
     /// decoding them through the seal's codec.
     ///
     /// Valid `CryptBox` envelopes ignore the legacy handler and are opened
-    /// under `args`.
+    /// with `keys`.
     ///
     /// # Errors
     ///
@@ -209,12 +202,11 @@ where
     /// envelope fails.
     pub fn open_legacy(
         self,
-        args: impl Args<F>,
         keys: &(impl EncryptionKeys + ?Sized),
         legacy: &dyn LegacyFormat,
     ) -> Result<F::Value, Error> {
         match self.state {
-            State::Sealed(sealed) => sealed.open(args, keys),
+            State::Sealed(sealed) => sealed.open(keys),
             State::Plaintext(value) => Ok(value),
             State::Legacy(bytes) => decode_legacy::<F>(&bytes, Some(legacy)),
         }
@@ -223,7 +215,7 @@ where
 
 impl<F> MaybeEncrypted<F>
 where
-    F: Seal<Record = ()>,
+    F: Seal,
 {
     /// Consumes the read and opens it with the [installed keys](crate::keys::installed).
     ///

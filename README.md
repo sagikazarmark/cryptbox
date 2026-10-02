@@ -48,7 +48,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -57,8 +56,8 @@ fn main() -> Result<(), cryptbox::Error> {
     let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
     let email = "mark@example.com".to_owned();
 
-    let sealed = Sealed::<UserEmail>::seal(&email, (), &keys)?;
-    let opened = sealed.open((), &keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&email, &keys)?;
+    let opened = sealed.open(&keys)?;
     assert_eq!(opened, "mark@example.com");
     Ok(())
 }
@@ -66,8 +65,7 @@ fn main() -> Result<(), cryptbox::Error> {
 
 `UserEmail` is a seal: its ID binds every value sealed with it to this seal, and
 it stores a `String` as UTF-8 without padding. `Sealed` holds the encrypted value;
-`open` returns the plaintext. `()` is the binding argument of a seal bound to its
-ID alone, and `&keys` supplies the keys. See
+`open` returns the plaintext, and `&keys` supplies the keys. See
 [how CryptBox works](docs/concepts.md).
 
 Next, [run the durable SQLite example](examples/sqlite/README.md), or read

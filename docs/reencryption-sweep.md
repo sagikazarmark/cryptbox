@@ -143,43 +143,43 @@ These behaviors make the following separate audit necessary.
 
 ## Binding-declaration changes
 
-A seal's binding declaration (whether it binds a record, and the record ID's
+A record field's binding declaration (whether it binds the record ID, and its
 kind) is persistent schema, so changing it is a migration: an explicit
 legacy-binding window, a reseal sweep, and readers that open both declarations
 until the window closes ([ADR-0005](adr/0005-runtime-binding-is-the-core.md)).
+The changes a window covers are moving a standalone value into a record, and
+changing a field's seal ID.
 
 A planner seals with one keyring, so a sweep is **partitioned by the keys it
 uses**: with a keyring per org, configure one planner per org with
-`RowPlanner::for_rows(keys, record_id)`, and have the store select only that
-org's rows. `record_id` reads each row's record ID from the columns the store
-loads into `SweepRow::columns`. Packaged stores load no columns, so a
-record-bound seal needs an application-owned `SweepStore`.
+`RowPlanner::for_rows(keys, |row| Ok(&row.id))`, and have the store select only
+that org's rows. The closure reads each row's record ID, a UUID, an `i64`, or
+bytes, from the columns the store loads into `SweepRow::columns`. Packaged
+stores load no columns, so a record field's seal needs an application-owned
+`SweepStore`.
 
-Open the window with `RowPlanner::legacy_binding::<OldRecord>(old_keys)`, where
-`OldRecord` is the record the seal bound before, such as `()` or `i64`; or, for
-a record field that names its old declaration with `legacy(…)`, with
-`RowPlanner::legacy_seal::<L>(old_keys)` and the legacy seal the derive declares,
-such as `CustomerEmailLegacy`, which also covers an old seal ID. When
-`OldRecord` is one, the row's record ID is bound, so a row moving out of a
-record still reads it with `for_rows`; `old_keys` is the keyring those rows were
-sealed with. The window covers moving into or out of a record, not changing the
-record ID's kind. Rows are classified by the binding fingerprint in their
-header: a row of the old declaration is opened under it with `old_keys`,
-resealed under the current binding, and every index derived again. Rows of any
-other declaration still fail with `Error::BindingMismatch`.
+A record field names its old declaration with `legacy(…)`, and the derive
+declares it as a seal, such as `CustomerEmailLegacy`. Open the window with
+`RowPlanner::legacy_seal::<CustomerEmailLegacy>(old_keys)`, where `old_keys` is
+the keyring those rows were sealed with. Rows are classified by the binding
+fingerprint in their header: a row of the old declaration is opened under it
+with `old_keys`, resealed under the current binding, and every index derived
+again. Rows of any other declaration still fail with `Error::BindingMismatch`.
+A declaration that differs only in its seal ID shares the current fingerprint,
+so its rows are classified as current, and a record opens them by trying the
+legacy seal after the current one fails.
 
-While the window is open, readers use `migrate::open_across::<OldRecord, _>` to
-open a candidate of either declaration; a record's `Record::open` opens both
-declarations of a field with `legacy(…)` by itself. Moving into or out of a
-record keeps the [index binding](wire-format.md#index-binding), the seal ID
-alone, so when the old rows' indexes were derived with other keys, look up with
-the probes of both index keyrings. Close the window, and drop the old keys from
-the readers, only after a complete verification pass counts zero
-`legacy_binding` rows.
+While the window is open, `Record::open` opens both declarations of a field with
+`legacy(…)` by itself, with a keyring that holds the keys of both: the current
+key, and the old key as a previous one. Moving into a record keeps the
+[index binding](wire-format.md#index-binding), the seal ID alone, so when the
+old rows' indexes were derived with other keys, look up with the probes of both
+index keyrings. Close the window, and drop the old keys from the readers, only
+after a complete verification pass counts zero `legacy_binding` rows.
 
-To move a value to another record or other keys under the same declaration,
-such as a tenant's data changing residency, open and seal the record again, or
-use `Sealed::reseal_across` for a standalone value.
+To move a value to other keys under the same declaration, such as a tenant's
+data changing residency, open and seal the record again, or use
+`Sealed::reseal_across` for a standalone value.
 
 ## Verification and retirement
 
@@ -204,7 +204,7 @@ from trusted application schema, not stored metadata.
    storage/configuration failures abort the pass. Classification can stop at a
    stale component before inspecting later columns; repair and verify again.
 3. **Authenticate and validate every value.** Read ciphertext and indexes together,
-   parse typed `Sealed`, and call `open` with the intended binding arguments and
+   parse typed `Sealed` or a record's stored form, and open it with the intended
    keyring. Authentication, padding, codec and key-availability failures all fail
    the audit. Validate decoded application constraints; account for every row.
 4. **Recompute every index.** Parse as `BlindIndex<ExpectedSpec>` and call

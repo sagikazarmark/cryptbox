@@ -90,7 +90,6 @@ where
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Record = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -101,7 +100,6 @@ where
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Record = ();
     ///     type Indexes = ();
     /// }
     ///
@@ -128,7 +126,7 @@ where
     ///     index_keys: &BlindIndexKeyring,
     /// ) -> Result<(), cryptbox::Error> {
     ///     let email = "mark@example.com".to_owned();
-    ///     Sealed::<UserEmail>::prepare(&email, (), keys)?
+    ///     Sealed::<UserEmail>::prepare(&email, keys)?
     ///         .with_index_with::<InviteEmailLookup>(index_keys)?;
     ///     Ok(())
     /// }

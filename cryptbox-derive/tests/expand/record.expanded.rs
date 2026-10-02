@@ -38,7 +38,7 @@ pub struct Customer {
     pub created_at: i64,
 }
 const _: fn() = || {
-    fn check<T: ::cryptbox::RecordIdType>() {}
+    fn check<T: ::cryptbox::__private::RecordKey>() {}
     check::<i64>();
 };
 ///The seal of `Customer::email`, which `#[derive(Record)]` declares.
@@ -52,8 +52,10 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Record = i64;
         type Indexes = (CustomerEmailIndex,);
+        const RECORD: ::core::option::Option<::cryptbox::__private::RecordKind> = ::core::option::Option::Some(
+            <i64 as ::cryptbox::__private::RecordKey>::KIND,
+        );
     }
 };
 ///The `email_index` blind index of `Customer::email`.
@@ -97,8 +99,10 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Record = i64;
         type Indexes = (CustomerNoteIndex,);
+        const RECORD: ::core::option::Option<::cryptbox::__private::RecordKind> = ::core::option::Option::Some(
+            <i64 as ::cryptbox::__private::RecordKey>::KIND,
+        );
     }
 };
 ///The `note_index` blind index of `Customer::note`.
@@ -142,7 +146,6 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Record = ();
         type Indexes = ();
     }
 };
@@ -212,7 +215,9 @@ const _: () = {
         {
             let email = {
                 let value = &self.email;
-                ::cryptbox::Sealed::<CustomerEmail>::seal(value, &self.id, keys)?
+                ::cryptbox::__private::seal_in_record::<
+                    CustomerEmail,
+                >(value, &self.id, keys)?
             };
             let email_index = {
                 let value = &self.email;
@@ -224,7 +229,9 @@ const _: () = {
             let note = match &self.note {
                 ::core::option::Option::Some(value) => {
                     ::core::option::Option::Some(
-                        ::cryptbox::Sealed::<CustomerNote>::seal(value, &self.id, keys)?,
+                        ::cryptbox::__private::seal_in_record::<
+                            CustomerNote,
+                        >(value, &self.id, keys)?,
                     )
                 }
                 ::core::option::Option::None => ::core::option::Option::None,
@@ -259,7 +266,9 @@ const _: () = {
         {
             let email = {
                 let value = &stored.email;
-                value.open(&stored.id, keys)?
+                ::cryptbox::__private::open_in_record::<
+                    CustomerEmail,
+                >(value, &stored.id, keys)?
             };
             let note = match &stored.note {
                 ::core::option::Option::Some(value) => {
@@ -267,7 +276,7 @@ const _: () = {
                         ::cryptbox::__private::open_legacy::<
                             CustomerNote,
                             CustomerNoteLegacy,
-                        >(value, &stored.id, (), keys)?,
+                        >(value, &stored.id, keys)?,
                     )
                 }
                 ::core::option::Option::None => ::core::option::Option::None,

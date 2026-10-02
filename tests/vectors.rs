@@ -17,10 +17,10 @@ fn keys() -> EncryptionKeyring {
     EncryptionKeyring::new(EncryptionKey::new(key_id, [0x11; 32]), []).unwrap()
 }
 
-fn read<F: Seal<Record = ()>>(vector: &str) -> Result<F::Value, Error> {
+fn read<F: Seal>(vector: &str) -> Result<F::Value, Error> {
     Sealed::<F>::from_bytes(hex::decode(vector).unwrap())
         .unwrap()
-        .open((), &keys())
+        .open(&keys())
 }
 
 struct VectorSeal;
@@ -30,7 +30,6 @@ impl Seal for VectorSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -41,7 +40,6 @@ impl Seal for PaddedVectorSeal {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 

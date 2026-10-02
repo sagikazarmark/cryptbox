@@ -14,7 +14,7 @@ use super::{RowPlanner, RowWrite, SweepReport};
 pub struct SweepRow<C, R = ()> {
     /// The row's unique, immutable cursor value.
     pub cursor: C,
-    /// The columns the planner builds the row's binding arguments from; see
+    /// The columns the planner reads the row's record ID from; see
     /// [`RowPlanner::for_rows`].
     pub columns: R,
     /// The encrypted column's bytes exactly as read.
@@ -61,7 +61,7 @@ pub trait SweepStore {
     /// The unique, immutable, indexed cursor rows are totally ordered by.
     type Cursor: Clone + Send + Sync;
     /// The columns each row carries for its binding, such as its record ID;
-    /// `()` for a seal without a record.
+    /// `()` for a standalone seal.
     type Columns: Send + Sync;
     /// The storage backend's error type.
     type Error: std::error::Error + Send + Sync + 'static;

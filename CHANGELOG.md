@@ -442,6 +442,30 @@
   | `impl PartType for CustomerId { const KIND: PartKind = PartKind::Uuid; fn part_value(&self) -> PartValue<'_> { PartValue::Uuid(self.0) } }` | `impl RecordIdType for CustomerId { type Repr = [u8; 16]; fn repr(&self) -> &[u8; 16] { &self.0 } }` |
   | `F::Record: RecordIdType` | `F::Record: OptionalRecordId` |
 
+- **Breaking:** the binding is private (ADR-0011). Standalone seals bind their
+  seal ID alone, and only a record binds its fields to its record ID.
+  `Seal::Record`, the `record = …` key of `#[derive(Seal)]`, `Args`,
+  `RecordIdType`, `OptionalRecordId`, and `RecordId` are removed. `Sealed::seal`,
+  `open`, `prepare`, `needs_reseal`, and `reseal` take the value and keys, and
+  `reseal_across(from_keys, to_keys)` moves a value to other keys; calling them
+  with a record field's seal fails the build. A record ID is a `Uuid` or
+  `[u8; 16]`, an `i64`, or bytes; an ID newtype stores its inner value in the
+  record. `RowPlanner::for_rows(keys, |row| Ok(&row.id))` reads each row's ID,
+  `legacy_seal` is the one legacy window, and `legacy_binding` and
+  `migrate::open_across` are removed: a record opens both declarations of a
+  field with `legacy(…)`, with a keyring that holds both keys. Stored bytes do
+  not change.
+
+  | Before | Now |
+  | --- | --- |
+  | `Sealed::seal(&v, (), &keys)`, `sealed.open((), &keys)` | `Sealed::seal(&v, &keys)`, `sealed.open(&keys)` |
+  | a seal with `record = i64`, `Sealed::seal(&v, &id, &keys)` | a field of a `#[derive(Record)]` with `#[cryptbox(record_id)] id: i64` |
+  | `reseal_across(&from, &from_keys, &to, &to_keys)` | `reseal_across(&from_keys, &to_keys)` |
+  | `impl RecordIdType for CustomerId` | store `CustomerId`'s inner `Uuid` as the record ID |
+  | `RowPlanner::for_rows(keys, \|row\| Ok(row.id.into()))` | `RowPlanner::for_rows(keys, \|row\| Ok(&row.id))` |
+  | `legacy_binding::<()>(old_keys)` | `legacy(record = false)` on the field, and `legacy_seal::<CustomerEmailLegacy>(old_keys)` |
+  | `open_across::<(), _>(&sealed, &id, &keys, &old_keys)` | `Record::open(stored, &keys)`, with the old key in `keys` |
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

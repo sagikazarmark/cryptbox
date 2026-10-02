@@ -2,6 +2,7 @@
 //! their seals and record ID.
 #![cfg(feature = "derive")]
 
+use cryptbox::__private::{RecordKey, RecordKind, seal_in_record};
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, Error,
     Keys, Padding, Record, Seal, SealId, Sealed, Utf8,
@@ -295,9 +296,8 @@ fn a_record_without_blind_indexes_takes_an_encryption_keyring() {
     };
 
     let row: NoteRow = note.seal(&keys).unwrap();
-    let body: &Sealed<NoteBody> = &row.body;
+    let _: &Sealed<NoteBody> = &row.body;
 
-    assert_eq!(body.open(&1, &keys).unwrap(), "ship it");
     assert_eq!(Note::open(row, &keys).unwrap(), note);
 }
 
@@ -309,14 +309,14 @@ impl Seal for ManualNoteBody {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = i64;
     type Indexes = ();
+    const RECORD: Option<RecordKind> = Some(<i64 as RecordKey>::KIND);
 }
 
 #[test]
 fn a_record_field_is_bound_to_its_seal_and_record_id() {
     let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
-    let body = Sealed::<ManualNoteBody>::seal(&"ship it".to_owned(), &1, &keys).unwrap();
+    let body = seal_in_record::<ManualNoteBody>(&"ship it".to_owned(), &1_i64, &keys).unwrap();
     let row = NoteRow {
         id: 1,
         org: ACME,
@@ -439,7 +439,6 @@ impl Seal for UnboundEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -460,21 +459,10 @@ struct Contact {
     note: String,
 }
 
-/// The seal `Contact::note` had before: another ID, the same binding.
-struct OldNote;
-
-impl Seal for OldNote {
-    const ID: SealId = cryptbox::seal_id!("4f8a2c6e-1b3d-4a57-9e0c-8d2f6b4a1c95");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
-    type Record = i64;
-    type Indexes = ();
-}
-
 fn legacy_contact(keys: &EncryptionKeyring) -> StoredContact {
-    let email = Sealed::<UnboundEmail>::seal(&"ada@example.com".to_owned(), (), keys).unwrap();
-    let note = Sealed::<OldNote>::seal(&"VIP".to_owned(), &7, keys).unwrap();
+    let email = Sealed::<UnboundEmail>::seal(&"ada@example.com".to_owned(), keys).unwrap();
+    // Sealed with the seal ID `Contact::note` had before.
+    let note = seal_in_record::<ContactNoteLegacy>(&"VIP".to_owned(), &7_i64, keys).unwrap();
 
     StoredContact {
         id: 7,
@@ -541,9 +529,8 @@ mod sweep {
     fn a_planner_reseals_rows_of_a_legacy_seal() {
         let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
         let row = legacy_contact(&keys);
-        let planner =
-            RowPlanner::<ContactEmail, StoredContact>::for_rows(&keys, |row| Ok(row.id.into()))
-                .legacy_seal::<ContactEmailLegacy>(&keys);
+        let planner = RowPlanner::<ContactEmail, StoredContact>::for_rows(&keys, |row| Ok(&row.id))
+            .legacy_seal::<ContactEmailLegacy>(&keys);
 
         let outcome = planner.plan_row(&row, row.email.as_bytes(), &[]).unwrap();
 
@@ -552,7 +539,10 @@ mod sweep {
             email: cryptbox::Sealed::from_bytes(outcome.write().unwrap().ciphertext()).unwrap(),
             ..row
         };
-        assert_eq!(resealed.email.open(&7, &keys).unwrap(), "ada@example.com");
+        assert_eq!(
+            cryptbox::__private::open_in_record(&resealed.email, &7_i64, &keys).unwrap(),
+            "ada@example.com"
+        );
         assert_eq!(
             Contact::open(resealed, &keys).unwrap().email,
             "ada@example.com"

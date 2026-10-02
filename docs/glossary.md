@@ -2,26 +2,19 @@
 
 **Binding**:
 The expected cryptographic domain of a value, independent of where its stored
-bytes are found. Every sealed value is bound at runtime to its seal ID and, when
-its seal binds a record, to the ID of the record it is stored in. The binding of
-a seal without a record identifies the seal alone, not a row or tenant. The
-binding's *declaration* (whether it binds a record, and the record ID's kind) is
-persistent schema, declared by the seal; its value comes from the row, for a
-record, or is supplied at each call as the seal's binding arguments (`Args`).
-Opening under another record fails authentication; opening under another
-declaration reports a binding mismatch. Tenants are kept apart by keys, not by
-the binding.
-<!-- Agent guidance: “binding” is the whole domain. “Bound value”, “bound ID type”, and “partition” are retired (ADR-0011), as “scope”, “part”, “view”, and “keys view” were (ADR-0010); do not reintroduce them. Avoid “context” for a binding: it names only the envelope's input (see Context), and a user-authored context was rejected in ADR-0005. -->
-
-**Binding arguments**:
-The binding value of one sealing or opening call of a standalone value, typed by
-the seal (`Args<F>`): `()`, or `&id` for a seal that binds a record. A record ID
-of another type, or a missing or extra record, is a type error. A record passes
-its own record ID.
+bytes are found. Every sealed value is bound at runtime to its seal ID and, for a
+field of a record, to the ID of the record it is stored in, which the record
+reads from the row. A standalone seal's binding identifies the seal alone, not a
+row or tenant. The binding's *declaration* (whether it binds a record ID, and its
+kind) is persistent schema. Opening under another record fails authentication;
+opening under another declaration reports a binding mismatch. The binding is
+private to the library: no call takes binding arguments. Tenants are kept apart
+by keys, not by the binding.
+<!-- Agent guidance: “binding” is the whole domain; “binding arguments” (`Args`) are retired (ADR-0011). “Bound value”, “bound ID type”, and “partition” are retired (ADR-0011), as “scope”, “part”, “view”, and “keys view” were (ADR-0010); do not reintroduce them. Avoid “context” for a binding: it names only the envelope's input (see Context), and a user-authored context was rejected in ADR-0005. -->
 
 **Binding fingerprint**:
 A public 8-byte summary of a binding's declaration: truncated SHA-256 over
-whether it binds a record and the record ID's kind, never its value. Every
+whether it binds a record ID and its kind, never its value. Every
 envelope header stores the fingerprint of the binding it was sealed under, and
 opening compares it with the reader's before any key lookup, reporting a binding
 mismatch. Equal fingerprints do not imply equal bindings, and security never
@@ -95,7 +88,7 @@ and obscure equality more, without eliminating index leakage.
 
 **Installed keys**:
 The process-wide keys set once with `keys::install` and never replaced. They
-serve only seals without a record. The global conveniences (`seal_global()`,
+serve only standalone seals. The global conveniences (`seal_global()`,
 `open_global()`, `with_index()`, `probes()`) and the automatic column read them
 and fail with `KeysNotInstalled` before installation; every other operation
 takes keys explicitly.
@@ -135,8 +128,8 @@ the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 **Plain value**:
 A plaintext value of a seal held by the automatic SQLx column (`Plain<F, K>`),
 which seals it on encode and opens it on decode. A column decoder does not see
-the row, so it serves only seals without a record or blind indexes.
-<!-- Agent guidance: `Plain` is the only plaintext-typed column; values of record-bound or indexed seals are sealed explicitly. `Encrypted<F>` is the retired name of the plaintext carrier; do not reintroduce it. -->
+the row, so it serves only standalone seals without blind indexes.
+<!-- Agent guidance: `Plain` is the only plaintext-typed column; a record's fields and values of indexed seals are sealed explicitly. `Encrypted<F>` is the retired name of the plaintext carrier; do not reintroduce it. -->
 
 **Prepared storage**:
 A sealed value and optional blind indexes derived from the same source value, ready
@@ -161,14 +154,12 @@ from the row and authenticates it. Plaintext fields, such as an org, are not
 authenticated: the application authorizes on them. `#[derive(Record)]`
 generates the stored form, a seal per sealed field, and an index handle per
 blind index. The schema manifest lists a record's plaintext fields by name.
-<!-- Agent guidance: a “record” is the whole row, and its “fields” are the struct's members. `Recorded<S, Id>` is retired: a seal binds a record by naming its record ID's type, `Seal::Record`. Avoid “entity” or “model” for a record. -->
+<!-- Agent guidance: a “record” is the whole row, and its “fields” are the struct's members. `Recorded<S, Id>` and `Seal::Record` are retired: only a record binds its fields to its ID. Avoid “entity” or “model” for a record. -->
 
 **Record ID**:
-The ID of the row a record-bound value is stored in, generated by the client
-before the value is sealed: a UUID, an `i64`, or bytes. Its type implements
-`RecordIdType`, naming the built-in type it binds as, and its kind is part of the
-binding declaration. `RecordId` is the value of one, read from a row in a
-migration.
+The ID of the row a record's fields are stored in, generated by the client
+before the values are sealed: a `Uuid` or `[u8; 16]`, an `i64`, or bytes
+(`Vec<u8>`, `Box<[u8]>`). Its kind is part of the binding declaration.
 
 **Schema manifest**:
 A reviewable listing of registered seals, blind indexes, and records with their
@@ -181,13 +172,13 @@ name. Applications compare it with a committed snapshot in CI.
 
 **Seal**:
 A type that declares how its values are sealed (`Seal`): its seal ID, value
-type, codec, padding, whether it binds a record, and its blind indexes. A value
+type, codec, padding, and blind indexes. A value
 sealed with one seal does not open as another. A seal is either a marker over a
 separate value type, so one value type can back several seals, such as a home
 and a billing address, each with its own seal ID; or its own value (a
 self-valued seal), such as `struct UserEmail(String)`. Seals serve any sealed
 value: a database column, a message, or a whole response. A record declares a
-seal for each of its sealed fields.
+seal for each of its sealed fields, which only the record seals and opens.
 <!-- Agent guidance: “field” is the retired name for a seal (ADR-0007) and now means only a member of a struct or record; “profile” is older still. Do not reintroduce either. Avoid “column”, “key”, or “cipher suite” as synonyms: a seal is independent of database names. -->
 
 **Seal ID**:
@@ -208,6 +199,11 @@ can be shredded on its own is decided by how the application keeps root keys:
 with a keyring per org, one org. Values that share keys, such as the workspaces
 of an org, are never shredded on their own.
 <!-- Agent guidance: “shred unit” was the manifest's report of a keys view (ADR-0009); keys views are retired, so say what the application's keyrings allow. -->
+
+**Standalone seal**:
+A seal declared with `#[derive(Seal)]` or by hand, bound to its seal ID alone,
+as opposed to the seal of a record's field. `Sealed::seal` and `open` serve
+standalone seals; a record's field is sealed and opened by its record.
 
 **Stored form**:
 The form of a record as it is stored (`Record::Stored`, `Stored{Record}` by

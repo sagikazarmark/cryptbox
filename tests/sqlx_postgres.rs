@@ -38,7 +38,6 @@ impl Seal for TestSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -123,7 +122,7 @@ fn sqlx_encode_encrypts_plaintext_into_an_owned_argument_buffer() {
 #[test]
 fn sealed_encoding_preserves_the_binary_envelope() {
     let keys = TestKeys::keys().unwrap();
-    let bytes = Sealed::<TestSeal>::seal(&"value".to_owned(), (), keys)
+    let bytes = Sealed::<TestSeal>::seal(&"value".to_owned(), keys)
         .unwrap()
         .into_bytes();
     let ciphertext = Sealed::<TestSeal>::from_bytes(bytes.clone()).unwrap();
@@ -177,7 +176,7 @@ fn postgres_round_trips_sealed_values_and_opens_plain_columns() {
         assert_eq!(opened.expose_secret(), "mark@example.com");
         // The column used `TestKeys`; the global was never installed.
         assert_eq!(
-            sealed.open((), TestKeys::keys().unwrap()).unwrap(),
+            sealed.open(TestKeys::keys().unwrap()).unwrap(),
             "mark@example.com"
         );
         assert_eq!(keys::installed().unwrap_err(), Error::KeysNotInstalled);

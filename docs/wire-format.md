@@ -81,9 +81,9 @@ authentication because the reader has no construction with which to verify it.
 A binding identifies the expected cryptographic domain of a value. Every value is
 bound to a stable `SealId`, so an email seal's ciphertext is not accepted under
 a different seal, even when both use the same root key. A seal declares its
-binding **declaration**: whether it binds a record, and the record ID's kind.
-The declaration is persistent schema. The **value**, a record ID, is supplied
-at each call or read from the row. See
+binding **declaration**: whether it binds a record ID, and its kind. Only the
+seals a record declares for its fields bind one. The declaration is persistent
+schema. The **value**, a record ID, is read from the row by the record. See
 [ADR-0005](adr/0005-runtime-binding-is-the-core.md),
 [ADR-0008](adr/0008-records-declare-their-fields-seals.md), and
 [ADR-0011](adr/0011-a-binding-is-the-seal-and-the-record.md).
@@ -147,7 +147,7 @@ are fixed permanently:
 | Declaration | Fingerprint |
 | --- | --- |
 | No record, the empty declaration | `65640fc8333534b9` |
-| An `i64` record (`Record = i64`) | `76081b730530f822` |
+| An `i64` record ID, such as `#[cryptbox(record_id)] id: i64` | `76081b730530f822` |
 
 For seal `12345678-1234-4234-8234-1234567890ab` and the `i64` record `7`, the
 binding is:

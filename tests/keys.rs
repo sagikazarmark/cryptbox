@@ -21,7 +21,6 @@ impl Seal for Email {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -32,7 +31,6 @@ impl Seal for Iban {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Record = ();
     type Indexes = ();
 }
 
@@ -64,10 +62,10 @@ fn index_keyring(id: IndexKeyId, byte: u8) -> BlindIndexKeyring {
 
 #[test]
 fn opening_with_a_keyring_without_the_envelopes_key_fails() {
-    let sealed = Sealed::<Email>::seal(&b"ada".to_vec(), (), &keyring(GENERAL_KEY_ID, 1)).unwrap();
+    let sealed = Sealed::<Email>::seal(&b"ada".to_vec(), &keyring(GENERAL_KEY_ID, 1)).unwrap();
 
     assert_eq!(
-        sealed.open((), &keyring(PAYMENTS_KEY_ID, 2)),
+        sealed.open(&keyring(PAYMENTS_KEY_ID, 2)),
         Err(Error::UnknownEncryptionKey(GENERAL_KEY_ID))
     );
 }
@@ -77,19 +75,15 @@ fn a_keyring_opens_values_sealed_with_its_previous_keys() {
     let previous = EncryptionKey::new(PREVIOUS_KEY_ID, [3; 32]);
     let sealed = Sealed::<Email>::seal(
         &b"ada".to_vec(),
-        (),
         &EncryptionKeyring::new(previous.clone(), []).unwrap(),
     )
     .unwrap();
     let rotated =
         EncryptionKeyring::new(EncryptionKey::new(GENERAL_KEY_ID, [1; 32]), [previous]).unwrap();
 
-    assert_eq!(sealed.open((), &rotated).unwrap(), b"ada");
-    assert!(sealed.needs_reseal((), &rotated).unwrap());
-    assert_eq!(
-        sealed.reseal((), &rotated).unwrap().key_id(),
-        GENERAL_KEY_ID
-    );
+    assert_eq!(sealed.open(&rotated).unwrap(), b"ada");
+    assert!(sealed.needs_reseal(&rotated).unwrap());
+    assert_eq!(sealed.reseal(&rotated).unwrap().key_id(), GENERAL_KEY_ID);
 }
 
 #[test]
@@ -159,12 +153,8 @@ fn a_keyring_test_accepts_values_sealed_under_the_expected_keyring() {
     };
     let rotated = EncryptionKeyring::new(payments.current().clone(), [previous]).unwrap();
 
-    let iban = Sealed::<Iban>::seal(
-        &b"DE89370400440532013000".to_vec(),
-        (),
-        keys.for_seal(Iban::ID),
-    )
-    .unwrap();
+    let iban =
+        Sealed::<Iban>::seal(&b"DE89370400440532013000".to_vec(), keys.for_seal(Iban::ID)).unwrap();
 
     assert_sealed_under::<Iban>(&iban, &keys.payments);
     // A previous key of the keyring still counts.
@@ -182,8 +172,7 @@ fn a_keyring_test_fails_for_a_value_sealed_under_another_keyring() {
         general: keyring(GENERAL_KEY_ID, 1),
         payments: keyring(PAYMENTS_KEY_ID, 2),
     };
-    let iban =
-        Sealed::<Iban>::seal(&b"DE89370400440532013000".to_vec(), (), &keys.general).unwrap();
+    let iban = Sealed::<Iban>::seal(&b"DE89370400440532013000".to_vec(), &keys.general).unwrap();
 
     assert_sealed_under::<Iban>(&iban, &keys.payments);
 }
@@ -197,7 +186,7 @@ fn keys_without_a_blind_index_keyring_reject_index_operations() {
         Error::BlindIndexKeysNotConfigured
     );
     assert_eq!(
-        Sealed::<Email>::prepare(&b"ada".to_vec(), (), &keys)
+        Sealed::<Email>::prepare(&b"ada".to_vec(), &keys)
             .unwrap()
             .with_index_with::<EmailLookup>(&keys)
             .unwrap_err(),
@@ -211,7 +200,7 @@ fn keys_serve_both_roles() {
         .with_blind_indexes(index_keyring(GENERAL_INDEX_KEY_ID, 3));
     let value = b"ada@example.com".to_vec();
 
-    let prepared = Sealed::<Email>::prepare(&value, (), &keys)
+    let prepared = Sealed::<Email>::prepare(&value, &keys)
         .unwrap()
         .with_index_with::<EmailLookup>(&keys)
         .unwrap();

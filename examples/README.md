@@ -9,7 +9,7 @@ Run commands from the repository root unless an example's README says otherwise.
 | Example | What it demonstrates | Run |
 | --- | --- | --- |
 | [First seal](first_field.rs) | A seal, local key, encryption, and decryption | `cargo run --locked --example first_field` |
-| [Tenant seal](tenant_field.rs) | A record-bound seal with one keyring per tenant | `cargo run --locked --example tenant_field` |
+| [Tenant seal](tenant_field.rs) | A seal with one keyring per tenant | `cargo run --locked --example tenant_field` |
 | [Records](records/README.md) | Record-bound rows with a keyring per org, a search within an org, SQLx, and a JSON message | `cargo run --locked --example records --features derive,json,sqlx-sqlite,uuid` |
 | [SQLite](sqlite/README.md) | Durable encrypted storage and a separate-process read | Follow the README to provision a key, then run `sqlx_sqlite` |
 | [Searchable storage](searchable/README.md) | Atomic ciphertext/index writes and verified lookup with SQLite or PostgreSQL | Follow the README for key and database setup |

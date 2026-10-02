@@ -113,7 +113,7 @@ buffers and does not include their contents in errors.
 
 The example seals with a local encryption keyring, binds the
 `Sealed<UserEmail>` into a `BLOB`, and reads it back with
-`row.try_get("email")`. SQLx decoding checks structure; `open((), keys)`
+`row.try_get("email")`. SQLx decoding checks structure; `open(keys)`
 authenticates and decodes, returning the bare `String`. Sealing borrows the
 original plaintext, and no global keys are installed: `keys` supplies the
 key explicitly.

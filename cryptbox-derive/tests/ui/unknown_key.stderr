@@ -1,4 +1,4 @@
-error: unknown `cryptbox` key `bits`; expected one of `id`, `value`, `codec`, `transparent`, `padding`, `record`, `indexes`, `crate`
+error: unknown `cryptbox` key `bits`; expected one of `id`, `value`, `codec`, `transparent`, `padding`, `indexes`, `crate`
  --> tests/ui/unknown_key.rs:2:73
   |
 2 | #[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String, bits = 32)]

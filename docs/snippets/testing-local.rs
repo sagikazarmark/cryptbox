@@ -14,7 +14,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Record = ();
     type Indexes = (EmailLookup,);
 }
 
@@ -71,11 +70,11 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
         [],
     )?;
     let value = plaintext.to_owned();
-    let sealed = Sealed::<UserEmail>::seal(&value, (), &keys)?;
-    assert_eq!(sealed.open((), &keys)?, plaintext);
+    let sealed = Sealed::<UserEmail>::seal(&value, &keys)?;
+    assert_eq!(sealed.open(&keys)?, plaintext);
 
-    let prepared = Sealed::<UserEmail>::prepare(&value, (), &keys)?
-        .with_index_with::<EmailLookup>(&indexes)?;
+    let prepared =
+        Sealed::<UserEmail>::prepare(&value, &keys)?.with_index_with::<EmailLookup>(&indexes)?;
     let probes = EmailLookup::probes_with(plaintext, &indexes)?;
     let stored_index = prepared.index::<EmailLookup>()?;
     assert!(
@@ -83,7 +82,7 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
             .iter()
             .any(|probe| probe.as_bytes() == stored_index.as_bytes())
     );
-    let candidate = prepared.sealed().open((), &keys)?;
+    let candidate = prepared.sealed().open(&keys)?;
     assert!(EmailLookup::verify_candidate(plaintext, &candidate,)?);
     assert!(!EmailLookup::verify_candidate(
         "not-the-query@example.test",

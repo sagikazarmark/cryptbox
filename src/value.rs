@@ -1,16 +1,16 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    Args, BindingDomain, Codec, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal,
-    args::domain, bound, envelope::validated_key_id, keys,
+    BindingDomain, Codec, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal, bound,
+    envelope::validated_key_id, keys,
 };
 
 /// A value sealed with seal `F`: an encrypted envelope bound to the seal and,
-/// when the seal binds one, its record.
+/// for a record field, its record.
 ///
 /// This is what applications store. [`Self::seal`] encodes, pads, and encrypts a
-/// value; [`Self::open`] authenticates and decrypts it under the same
-/// [binding arguments](Args), and returns the bare [`Seal::Value`]. Plaintext
+/// value; [`Self::open`] authenticates and decrypts it, and returns the bare
+/// [`Seal::Value`]. Plaintext
 /// hygiene comes from the value type, such as [`Secret`](crate::Secret).
 ///
 /// Construction from bytes validates only the envelope structure. Authenticity
@@ -34,14 +34,13 @@ use crate::{
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
 /// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
 ///
-/// let sealed = Sealed::<UserEmail>::seal(&"user@example.com".into(), (), &keys)?;
-/// assert_eq!(sealed.open((), &keys)?, "user@example.com");
+/// let sealed = Sealed::<UserEmail>::seal(&"user@example.com".into(), &keys)?;
+/// assert_eq!(sealed.open(&keys)?, "user@example.com");
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
 pub struct Sealed<F: Seal> {
@@ -91,18 +90,36 @@ impl<F: Seal> Sealed<F> {
         validated_key_id(&self.bytes)
     }
 
-    /// Encodes and encrypts `value`, binding it to `args`.
+    /// Encodes and encrypts `value`, bound to the seal.
+    ///
+    /// A record field's seal is sealed by its record, with
+    /// [`Record::seal`](crate::Record::seal); calling this with one fails the
+    /// build.
+    ///
+    /// ```compile_fail,E0080
+    /// # use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8};
+    /// # use cryptbox::__private::{RecordKey, RecordKind};
+    /// # struct CustomerEmail;
+    /// # impl Seal for CustomerEmail {
+    /// #     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
+    /// #     const PADDING: Padding = Padding::NONE;
+    /// #     type Value = String;
+    /// #     type Codec = Utf8;
+    /// #     type Indexes = ();
+    /// #     const RECORD: Option<RecordKind> = Some(<i64 as RecordKey>::KIND);
+    /// # }
+    /// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+    /// // `CustomerEmail` is the seal of a record's field.
+    /// let sealed = Sealed::<CustomerEmail>::seal(&"ada@example.com".into(), &keys)?;
+    /// # Ok::<(), cryptbox::Error>(())
+    /// ```
     ///
     /// # Errors
     ///
-    /// Returns an error when the record ID is invalid, or when encoding,
-    /// padding, key lookup, randomness, or encryption fails.
-    pub fn seal(
-        value: &F::Value,
-        args: impl Args<F>,
-        keys: &(impl EncryptionKeys + ?Sized),
-    ) -> Result<Self, Error> {
-        Self::seal_in(value, &domain(args)?, keys)
+    /// Returns an error when encoding, padding, key lookup, randomness, or
+    /// encryption fails.
+    pub fn seal(value: &F::Value, keys: &(impl EncryptionKeys + ?Sized)) -> Result<Self, Error> {
+        Self::seal_in(value, &BindingDomain::unbound::<F>(), keys)
     }
 
     pub(crate) fn seal_in(
@@ -116,28 +133,31 @@ impl<F: Seal> Sealed<F> {
         Ok(Self::from_validated_bytes(sealed))
     }
 
-    /// Authenticates, decrypts, and decodes this value under `args`.
+    /// Authenticates, decrypts, and decodes this value.
     ///
-    /// Success establishes authenticity under the supplied key, the seal `F`,
-    /// and the record in `args`, valid padding, and
-    /// successful decoding with the seal's codec. Apply application-level
-    /// validation separately. This does not establish freshness or consistency
-    /// with a separately stored blind index.
+    /// Success establishes authenticity under the supplied key and the seal `F`,
+    /// valid padding, and successful decoding with the seal's codec. Apply
+    /// application-level validation separately. This does not establish
+    /// freshness or consistency with a separately stored blind index. A record
+    /// field's value is opened by its record, with
+    /// [`Record::open`](crate::Record::open).
     ///
     /// # Errors
     ///
-    /// Returns [`Error::AuthenticationFailed`] for another seal, another
-    /// record, or modified bytes, and
-    /// [`Error::BindingMismatch`] for a value sealed with another binding declaration.
-    /// Also returns an error for an invalid record ID, unknown keys,
-    /// unavailable keys, invalid padding, or codec failure.
-    pub fn open(
+    /// Returns [`Error::AuthenticationFailed`] for another seal or modified
+    /// bytes, and [`Error::BindingMismatch`] for a value sealed with another
+    /// binding declaration, such as a record field's. Also returns an error for
+    /// unknown keys, unavailable keys, invalid padding, or codec failure.
+    pub fn open(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<F::Value, Error> {
+        self.open_in(&BindingDomain::unbound::<F>(), keys)
+    }
+
+    pub(crate) fn open_in(
         &self,
-        args: impl Args<F>,
+        domain: &BindingDomain,
         keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<F::Value, Error> {
-        let target = domain(args)?;
-        let plaintext = bound::open(&target, &self.bytes, keys.encryption_keyring())?;
+        let plaintext = bound::open(domain, &self.bytes, keys.encryption_keyring())?;
 
         Ok(F::Codec::decode(&plaintext)?)
     }
@@ -153,12 +173,9 @@ impl<F: Seal> Sealed<F> {
     /// Returns any error of [`Self::seal`].
     pub fn prepare<'a>(
         value: &'a F::Value,
-        args: impl Args<F>,
         keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Prepared<'a, F>, Error> {
-        let target = domain(args)?;
-
-        Ok(Prepared::new(value, Self::seal_in(value, &target, keys)?))
+        Ok(Prepared::new(value, Self::seal(value, keys)?))
     }
 
     /// Reports whether this envelope differs from what `F` currently writes.
@@ -178,18 +195,18 @@ impl<F: Seal> Sealed<F> {
     /// # Errors
     ///
     /// Returns [`Error::BindingMismatch`] for a value sealed with another binding
-    /// declaration, or an error for an invalid record ID or unavailable keys.
-    pub fn needs_reseal(
-        &self,
-        args: impl Args<F>,
-        keys: &(impl EncryptionKeys + ?Sized),
-    ) -> Result<bool, Error> {
-        let target = domain(args)?;
-        bound::needs_reseal(&target, F::PADDING, &self.bytes, keys.encryption_keyring())
+    /// declaration, or an error for unavailable keys.
+    pub fn needs_reseal(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<bool, Error> {
+        bound::needs_reseal(
+            &BindingDomain::unbound::<F>(),
+            F::PADDING,
+            &self.bytes,
+            keys.encryption_keyring(),
+        )
     }
 
-    /// Opens and reseals this value as `F` currently writes it, under the same
-    /// binding and keys.
+    /// Opens and reseals this value as `F` currently writes it, with the same
+    /// keys.
     ///
     /// The rewrite uses the current suite, key, and [`Seal::PADDING`],
     /// so a sweep can enable or disable padding. This authenticates the value
@@ -200,45 +217,29 @@ impl<F: Seal> Sealed<F> {
     /// # Errors
     ///
     /// Returns any opening, padding, or encryption error.
-    pub fn reseal(
-        &self,
-        args: impl Args<F>,
-        keys: &(impl EncryptionKeys + ?Sized),
-    ) -> Result<Self, Error> {
-        let target = domain(args)?;
-        let keyring = keys.encryption_keyring();
-        let (_, sealed) = bound::reseal(
-            (&target, keyring),
-            (&target, keyring),
-            F::PADDING,
-            &self.bytes,
-        )?;
-
-        Ok(Self::from_validated_bytes(sealed))
+    pub fn reseal(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<Self, Error> {
+        self.reseal_across(keys, keys)
     }
 
-    /// Opens this value under `from` and reseals it under `to`.
+    /// Opens this value with `from_keys` and reseals it with `to_keys`.
     ///
-    /// Use this to move a value to another record or other keys, such as a
-    /// tenant's data moving to another residency's keyring.
-    /// Like [`Self::reseal`], it authenticates and checks padding without
-    /// decoding the value.
+    /// Use this to move a value to other keys, such as a tenant's data moving
+    /// to another residency's keyring. Like [`Self::reseal`], it authenticates
+    /// and checks padding without decoding the value.
     ///
     /// # Errors
     ///
-    /// Returns any opening error under `from`, or padding or encryption error
-    /// under `to`.
+    /// Returns any opening error with `from_keys`, or padding or encryption
+    /// error with `to_keys`.
     pub fn reseal_across(
         &self,
-        from: impl Args<F>,
         from_keys: &(impl EncryptionKeys + ?Sized),
-        to: impl Args<F>,
         to_keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
-        let (from, to) = (domain(from)?, domain(to)?);
+        let domain = BindingDomain::unbound::<F>();
         let (_, sealed) = bound::reseal(
-            (&from, from_keys.encryption_keyring()),
-            (&to, to_keys.encryption_keyring()),
+            (&domain, from_keys.encryption_keyring()),
+            (&domain, to_keys.encryption_keyring()),
             F::PADDING,
             &self.bytes,
         )?;
@@ -247,30 +248,30 @@ impl<F: Seal> Sealed<F> {
     }
 }
 
-impl<F: Seal<Record = ()>> Sealed<F> {
+impl<F: Seal> Sealed<F> {
     /// Seals `value` with the [installed keys](keys::installed).
     ///
-    /// This is exactly `Self::seal(value, (), keys::installed()?)`. The
-    /// process-wide keys serve only seals without a record.
+    /// This is exactly `Self::seal(value, keys::installed()?)`. The
+    /// process-wide keys serve only standalone seals.
     ///
     /// # Errors
     ///
     /// Returns [`Error::KeysNotInstalled`] before installation, or any error of
     /// [`Self::seal`].
     pub fn seal_global(value: &F::Value) -> Result<Self, Error> {
-        Self::seal(value, (), keys::installed()?)
+        Self::seal(value, keys::installed()?)
     }
 
     /// Opens this value with the [installed keys](keys::installed).
     ///
-    /// This is exactly `self.open((), keys::installed()?)`.
+    /// This is exactly `self.open(keys::installed()?)`.
     ///
     /// # Errors
     ///
     /// Returns [`Error::KeysNotInstalled`] before installation, or any error of
     /// [`Self::open`].
     pub fn open_global(&self) -> Result<F::Value, Error> {
-        self.open((), keys::installed()?)
+        self.open(keys::installed()?)
     }
 }
 
@@ -319,9 +320,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// encode and opens on decode.
 ///
 /// A column decoder does not see the row, so `Plain` serves only seals without
-/// a record or blind indexes: its constructors and column impls require
-/// `F::Record = ()` and `F::Indexes = ()`, and a seal that binds a record fails
-/// the build.
+/// blind indexes, `F::Indexes = ()`, and a record field's seal fails the build.
 /// Use [`Sealed`] explicitly for every other seal.
 ///
 /// `K` names the column's keys. The default, [`GlobalKeys`], reads the keys
@@ -343,7 +342,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = ();
 /// }
 ///
@@ -351,26 +349,7 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// assert_eq!(email.expose_secret(), "user@example.com");
 /// ```
 ///
-/// A record-bound seal is rejected:
-///
-/// ```compile_fail,E0271
-/// use cryptbox::{Seal, SealId, Padding, Plain, Utf8};
-///
-/// struct CustomerEmail;
-///
-/// impl Seal for CustomerEmail {
-///     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
-///     const PADDING: Padding = Padding::NONE;
-///     type Value = String;
-///     type Codec = Utf8;
-///     type Record = i64;
-///     type Indexes = ();
-/// }
-///
-/// let email = Plain::<CustomerEmail>::new("user@example.com");
-/// ```
-///
-/// So is a seal with blind indexes, which the column would not write:
+/// A seal with blind indexes is rejected, which the column would not write:
 ///
 /// ```compile_fail,E0271
 /// use cryptbox::{
@@ -385,7 +364,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Record = ();
 ///     type Indexes = (EmailLookup,);
 /// }
 ///
@@ -410,24 +388,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// let email = Plain::<UserEmail>::new("user@example.com");
 /// ```
 ///
-/// And a seal that binds a record is a type error:
-///
-/// ```compile_fail,E0599
-/// # use cryptbox::{Padding, Plain, Seal, SealId, Utf8};
-/// struct RowNote;
-///
-/// impl Seal for RowNote {
-///     const ID: SealId = cryptbox::seal_id!("9e2d4b71-3c8a-4f05-b6e1-7a0c5d3f8b24");
-///     const PADDING: Padding = Padding::NONE;
-///     type Value = String;
-///     type Codec = Utf8;
-///     type Record = i64;
-///     type Indexes = ();
-/// }
-///
-/// let note = Plain::<RowNote>::new("note");
-/// ```
-///
 /// Plaintext comparison must also be explicit:
 ///
 /// ```compile_fail,E0369
@@ -438,7 +398,6 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Record = ();
 /// #     type Indexes = ();
 /// # }
 /// let left = Plain::<UserEmail>::new("secret");
@@ -457,7 +416,7 @@ pub struct Plain<F: Seal, K = GlobalKeys> {
 
 impl<F, K> Plain<F, K>
 where
-    F: Seal<Record = (), Indexes = ()>,
+    F: Seal<Indexes = ()>,
 {
     /// Wraps a plaintext value.
     ///
@@ -499,15 +458,15 @@ where
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 impl<F, K> Plain<F, K>
 where
-    F: Seal<Record = (), Indexes = ()>,
+    F: Seal<Indexes = ()>,
     K: crate::ColumnKeys,
 {
     pub(crate) fn seal_for_column(&self) -> Result<Sealed<F>, Error> {
-        Sealed::seal(&self.value, (), K::keys()?)
+        Sealed::seal(&self.value, K::keys()?)
     }
 
     pub(crate) fn open_column(bytes: Vec<u8>) -> Result<Self, Error> {
-        let value = Sealed::<F>::from_bytes(bytes)?.open((), K::keys()?)?;
+        let value = Sealed::<F>::from_bytes(bytes)?.open(K::keys()?)?;
 
         Ok(Self::from_value(value))
     }
