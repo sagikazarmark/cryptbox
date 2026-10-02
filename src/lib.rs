@@ -223,6 +223,6 @@ pub mod __private {
 
     pub use crate::codec::DefaultCodec;
     pub use crate::record::{open_in_record, seal_in_record};
-    pub use crate::schema::{has_duplicate, writes_declared_indexes};
+    pub use crate::schema::has_duplicate;
     pub use crate::seal_context::{RecordKey, RecordKind};
 }

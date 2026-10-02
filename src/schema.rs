@@ -425,46 +425,6 @@ pub const fn has_duplicate(ids: &[[u8; 16]]) -> bool {
     false
 }
 
-/// Reports whether `written` holds exactly the index IDs of `declared`, each
-/// once and in any order, at compile time.
-///
-/// `#[derive(Record)]` checks each field's written indexes against its seal's
-/// [`Seal::Indexes`](crate::Seal::Indexes) with it.
-#[doc(hidden)]
-#[must_use]
-pub const fn writes_declared_indexes(
-    declared: &[crate::IndexId],
-    written: &[crate::IndexId],
-) -> bool {
-    if written.len() != declared.len() {
-        return false;
-    }
-
-    let mut index = 0;
-    while index < written.len() {
-        if !contains(declared, &written[index])
-            || contains(written.split_at(index).0, &written[index])
-        {
-            return false;
-        }
-        index += 1;
-    }
-
-    true
-}
-
-const fn contains(ids: &[crate::IndexId], id: &crate::IndexId) -> bool {
-    let mut index = 0;
-    while index < ids.len() {
-        if equal(ids[index].as_bytes(), id.as_bytes()) {
-            return true;
-        }
-        index += 1;
-    }
-
-    false
-}
-
 const fn equal(left: &[u8; 16], right: &[u8; 16]) -> bool {
     let mut index = 0;
     while index < 16 {
