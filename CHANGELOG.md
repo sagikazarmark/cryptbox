@@ -475,6 +475,13 @@
   plaintext and a previous solution's ciphertext (`MaybeEncrypted`,
   `LegacyFormat`, `RowPlanner::with_legacy`).
 
+- **Breaking:** "binding" is retired above the envelope; a seal builds the
+  envelope's context (ADR-0011). `Error::BindingMismatch` is
+  `Error::ContextMismatch`, `Error::InvalidBinding` is removed, and the schema
+  manifest's `binding:` line is `context:`. `RowPlanner::for_rows` with a
+  standalone seal, or with a record ID of another type than the field's, fails
+  the build instead of planning. Stored bytes do not change.
+
 - Add the opt-in `derive` feature with `#[derive(Field)]`,
   `#[derive(BlindIndexSpec)]`, and `#[derive(Plaintext)]` from the new
   `cryptbox-derive` crate (ADR-0001). Each expands to exactly the manual impls

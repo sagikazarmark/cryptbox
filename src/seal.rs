@@ -1,10 +1,10 @@
 use crate::id::identifier;
-use crate::{Codec, IndexList, Padding, binding::RecordKind};
+use crate::{Codec, IndexList, Padding, seal_context::RecordKind};
 
 identifier!(SealId, "A stable seal identifier.");
 
 /// Declares how values are sealed: their identity, value type, codec,
-/// padding, binding, and blind indexes.
+/// padding, and blind indexes.
 ///
 /// A seal is either a marker over a separate value type or its own value
 /// (`type Value = Self`). A value type (`String`, `Address`, `Secret<String>`)
@@ -27,13 +27,13 @@ identifier!(SealId, "A stable seal identifier.");
 /// existing values fail authentication. Declaring the same ID on several types
 /// deliberately makes them the same seal.
 ///
-/// The value type, codec representation, seal ID, and binding declaration define
+/// The value type, codec representation, and seal ID define
 /// persistent schema. The envelope does not store a codec identifier, so
 /// incompatible changes require an explicit data migration. Padding is write
 /// policy instead: the envelope records whether a value is padded. See
 /// [`crate::schema`] and [`crate::testing`] for CI checks of the codec and IDs;
-/// an envelope written with another binding declaration reports
-/// [`Error::BindingMismatch`](crate::Error::BindingMismatch) when opened.
+/// a record field's value read as a standalone seal's reports
+/// [`Error::ContextMismatch`](crate::Error::ContextMismatch) when opened.
 ///
 /// For blind indexes, the seal domain-separates derivation; it does not
 /// authenticate the stored index representation. Compare decrypted candidate

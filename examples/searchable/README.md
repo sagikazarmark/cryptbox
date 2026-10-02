@@ -96,7 +96,7 @@ TLS trust policy (for example `sslmode=verify-full` with the appropriate CA).
 Both schemas store complete ciphertext envelopes and index tokens in `BYTEA`/`BLOB`
 columns. The lookup index is **non-unique**. A check constraint pairs `NULL` email
 with `NULL` lookup; it does not establish cryptographic consistency. Preserve
-seal/index IDs, codec, binding, normalization and precision as
+seal/index IDs, codec, normalization and precision as
 [persistent schema](../../docs/integration.md#persistent-schema).
 
 This example supports nullable fields. The packaged maintenance rehearsal linked
@@ -282,7 +282,7 @@ rows or authenticate index metadata; see
 [what each check establishes](../../docs/security.md#what-each-check-establishes).
 
 Blind indexes reveal equality/frequency and cannot enforce uniqueness. `Padding::NONE`
-reveals encoded length; the binding does not prevent substitution between rows of one seal, or replay.
+reveals encoded length; a standalone seal does not prevent substitution between rows of one seal, or replay.
 
 ## Use it in your application
 

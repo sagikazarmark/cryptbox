@@ -85,7 +85,7 @@ impl CiphertextInfo {
     /// The envelope stores it unchanged, and opening compares it with the
     /// fingerprint of the context the reader expects before any key lookup. It
     /// names the kind of context, never its values, so equal fingerprints do not
-    /// imply equal bindings.
+    /// imply equal contexts.
     #[must_use]
     pub const fn context_fingerprint(self) -> [u8; 8] {
         self.context_fingerprint

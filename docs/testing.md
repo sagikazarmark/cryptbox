@@ -7,7 +7,7 @@ keys. [Documentation](README.md).
 
 Give each test its own encryption and blind-index keyrings. Explicit
 `Sealed::seal`, `open` and `Sealed::prepare` calls take their keys and never read
-the installed keys; seal binding still applies.
+the installed keys; the seal context still applies.
 
 For runnable tests, create a library with `cargo new --lib testing-local-consumer`,
 use [testing-local.toml](snippets/testing-local.toml) as `Cargo.toml`, and copy

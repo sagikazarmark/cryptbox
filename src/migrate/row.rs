@@ -3,17 +3,16 @@ use std::fmt;
 use zeroize::Zeroizing;
 
 use crate::{
-    BindingDomain, BlindIndex, BlindIndexKeyring, BlindIndexSpec, Codec, EncryptionKeyring, Error,
-    Seal,
-    binding::{RecordKey, RecordValue},
-    blind::{derive_value, index_domain},
+    BlindIndex, BlindIndexKeyring, BlindIndexSpec, Codec, EncryptionKeyring, Error, Seal,
+    blind::{derive_value, index_context},
     bound, inspect_blind_index, inspect_ciphertext,
+    seal_context::{RecordKey, RecordValue, SealContext, binds},
 };
 
 use super::{LegacyFormat, legacy};
 
 /// The classification of one stored row against the current key generations
-/// and binding declaration.
+/// and seal context.
 ///
 /// Malformed rows are not a state: classification returns an error for them.
 /// Classification inspects unauthenticated structure and generation metadata,
@@ -96,21 +95,21 @@ impl RowOutcome {
 type RecordIdFn<'a, R> = Box<dyn for<'r> Fn(&'r R) -> Result<Option<RecordValue<'r>>, Error> + 'a>;
 
 type IndexDeriver<F> =
-    fn(&<F as Seal>::Value, &BindingDomain, &BlindIndexKeyring) -> Result<Vec<u8>, Error>;
+    fn(&<F as Seal>::Value, &SealContext, &BlindIndexKeyring) -> Result<Vec<u8>, Error>;
 
 fn derive_index_bytes<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
-    domain: &BindingDomain,
+    context: &SealContext,
     keys: &BlindIndexKeyring,
 ) -> Result<Vec<u8>, Error> {
-    derive_value::<Spec>(value, domain, keys).map(BlindIndex::into_bytes)
+    derive_value::<Spec>(value, context, keys).map(BlindIndex::into_bytes)
 }
 
 struct IndexColumn<'a, F>
 where
     F: Seal,
 {
-    domain: BindingDomain,
+    context: SealContext,
     deriver: IndexDeriver<F>,
     keys: &'a BlindIndexKeyring,
 }
@@ -128,7 +127,7 @@ where
 /// index bytes are retained without checking consistency. Use a separate
 /// authenticated-read and index-recomputation pass when those checks are required.
 ///
-/// # Bindings
+/// # Records
 ///
 /// Each row of a record field's seal is sealed under its record ID, which a
 /// closure reads from `R`, the row's columns ([`Self::for_rows`]). A planner
@@ -170,12 +169,20 @@ where
     /// to the record ID `record_id` reads from its columns: a reference to a
     /// UUID, an `i64`, or bytes, such as `|row| Ok(&row.id)`.
     ///
-    /// Use it for a record field's seal. An error from `record_id` is returned
-    /// as it is, and stops a sweep or verification pass.
+    /// Use it for a record field's seal; a standalone seal, or an ID of
+    /// another type than the field's, fails the build. An error from
+    /// `record_id` is returned as it is, and stops a sweep or verification pass.
     pub fn for_rows<K: RecordKey>(
         keys: &'a EncryptionKeyring,
         record_id: impl for<'r> Fn(&'r R) -> Result<&'r K, Error> + 'a,
     ) -> Self {
+        const {
+            assert!(
+                binds::<K>(F::RECORD),
+                "the record ID is not of the type this record field's seal binds"
+            );
+        };
+
         Self::with_record_id(
             keys,
             Box::new(move |row| record_id(row).map(|id| Some(id.record_value()))),
@@ -268,7 +275,7 @@ where
         Spec: BlindIndexSpec<Seal = F>,
     {
         self.indexes.push(IndexColumn {
-            domain: index_domain::<Spec>(),
+            context: index_context::<Spec>(),
             deriver: derive_index_bytes::<Spec>,
             keys,
         });
@@ -280,7 +287,7 @@ where
     ///
     /// `row` holds the columns the row's record ID is read from.
     /// Checks the row's structure, and compares unauthenticated
-    /// binding fingerprints and generation IDs. It does not decrypt, decode,
+    /// context fingerprints and generation IDs. It does not decrypt, decode,
     /// recover legacy data, or recompute indexes. Index parsing
     /// checks the stored format, not agreement with the registered specification's
     /// precision or logical ID. Classification may stop at the first legacy or
@@ -290,8 +297,8 @@ where
     /// # Errors
     ///
     /// Returns an error for malformed envelopes or blind indexes, an envelope
-    /// of another binding declaration, an index column arity mismatch,
-    /// a record ID of another kind, or unavailable keys.
+    /// of another kind of context, an index column arity mismatch, or
+    /// unavailable keys.
     pub fn classify_row(
         &self,
         row: &R,
@@ -300,7 +307,7 @@ where
     ) -> Result<RowState, Error> {
         self.check_arity(indexes)?;
         let record = (self.record_id)(row)?;
-        let domain = BindingDomain::of::<F>(record)?;
+        let context = SealContext::new(&F::ID, record)?;
 
         match inspect_ciphertext(ciphertext) {
             Ok(_) => {}
@@ -308,7 +315,7 @@ where
             Err(error) => return Err(error),
         }
 
-        if bound::needs_reseal(&domain, F::PADDING, ciphertext, self.keys)? {
+        if bound::needs_reseal(&context, F::PADDING, ciphertext, self.keys)? {
             return Ok(RowState::Stale);
         }
 
@@ -342,15 +349,15 @@ where
     ) -> Result<RowOutcome, Error> {
         self.check_arity(indexes)?;
         let record = (self.record_id)(row)?;
-        let domain = BindingDomain::of::<F>(record)?;
+        let context = SealContext::new(&F::ID, record)?;
 
         match inspect_ciphertext(ciphertext) {
             Ok(_) => {}
-            Err(Error::NotCiphertext) => return self.plan_legacy_row(&domain, ciphertext),
+            Err(Error::NotCiphertext) => return self.plan_legacy_row(&context, ciphertext),
             Err(error) => return Err(error),
         }
 
-        let envelope_is_stale = bound::needs_reseal(&domain, F::PADDING, ciphertext, self.keys)?;
+        let envelope_is_stale = bound::needs_reseal(&context, F::PADDING, ciphertext, self.keys)?;
         let mut stale_columns = Vec::with_capacity(self.indexes.len());
         for (column, bytes) in self.indexes.iter().zip(indexes) {
             stale_columns.push(column.is_stale(bytes)?);
@@ -361,12 +368,12 @@ where
             return Ok(RowOutcome::unchanged(RowState::Current));
         }
 
-        let current = (&domain, self.keys);
+        let current = (&context, self.keys);
         let (plaintext, ciphertext) = if envelope_is_stale {
             bound::reseal(current, current, F::PADDING, ciphertext)?
         } else {
             (
-                bound::open(&domain, ciphertext, self.keys)?,
+                bound::open(&context, ciphertext, self.keys)?,
                 ciphertext.to_vec(),
             )
         };
@@ -398,11 +405,11 @@ where
         })
     }
 
-    fn plan_legacy_row(&self, domain: &BindingDomain, bytes: &[u8]) -> Result<RowOutcome, Error> {
+    fn plan_legacy_row(&self, context: &SealContext, bytes: &[u8]) -> Result<RowOutcome, Error> {
         let plaintext = legacy::recover(bytes, self.legacy)?;
         let value = F::Codec::decode(&plaintext)?;
         let plaintext: Zeroizing<Vec<u8>> = F::Codec::encode(&value)?;
-        let ciphertext = bound::seal(domain, F::PADDING, &plaintext, self.keys)?;
+        let ciphertext = bound::seal(context, F::PADDING, &plaintext, self.keys)?;
 
         Ok(RowOutcome {
             state: RowState::Legacy,
@@ -441,7 +448,7 @@ where
     }
 
     fn derive(&self, value: &F::Value) -> Result<Vec<u8>, Error> {
-        (self.deriver)(value, &self.domain, self.keys)
+        (self.deriver)(value, &self.context, self.keys)
     }
 }
 

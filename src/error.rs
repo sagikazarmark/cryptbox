@@ -88,15 +88,14 @@ pub enum Error {
     /// Ciphertext authentication failed.
     #[error("ciphertext authentication failed")]
     AuthenticationFailed,
-    /// The envelope was sealed with a different binding declaration than the
-    /// reader's seal declares.
+    /// The envelope was sealed under a different kind of context than the
+    /// reader's, such as a record field's value read as a standalone seal's.
     ///
-    /// Reported from the envelope's binding fingerprint before any key lookup or
-    /// authentication, so the value was likely written before a binding
-    /// migration, or read as the wrong seal. Different binding values under
-    /// the same declaration report [`Error::AuthenticationFailed`].
-    #[error("ciphertext binding declaration does not match the seal")]
-    BindingMismatch,
+    /// Reported from the envelope's context fingerprint before any key lookup or
+    /// authentication. Another seal ID or record ID under the same kind of
+    /// context reports [`Error::AuthenticationFailed`].
+    #[error("ciphertext context does not match the seal")]
+    ContextMismatch,
     /// Encoding or decoding the typed value failed.
     #[error("codec failed: {0}")]
     CodecFailed(#[from] CodecError),
@@ -146,11 +145,6 @@ pub enum Error {
     /// Padding is checked only after successful authenticated decryption.
     #[error("plaintext padding is invalid")]
     InvalidPadding,
-    /// A binding's declared parts or supplied values are invalid.
-    ///
-    /// For example, part IDs repeat, or a value's kind differs from its part's.
-    #[error("binding is invalid")]
-    InvalidBinding,
     /// A blind-index representation or bit count is invalid.
     #[error("blind index is invalid")]
     InvalidBlindIndex,

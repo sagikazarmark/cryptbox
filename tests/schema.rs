@@ -40,12 +40,12 @@ seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   codec: utf8
   padding: none
   record: no
-  binding: 65640fc8333534b9
+  context: 65640fc8333534b9
 seal 9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e
   codec: raw
   padding: block(64)
   record: no
-  binding: 65640fc8333534b9
+  context: 65640fc8333534b9
 "
     );
 }
@@ -73,17 +73,17 @@ seal 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
   codec: utf8
   padding: block(16)
   record: i64
-  binding: 76081b730530f822
+  context: 76081b730530f822
 "
     );
 
-    // The fingerprint, computed with shasum from docs/wire-format.md#binding-fingerprint,
+    // The fingerprint, computed with shasum from docs/wire-format.md#context-fingerprint,
     // is the one a sealed value's header carries.
     let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
     let sealed = seal_in_record::<RowNote>(&"hi".to_owned(), &1_i64, &keys).unwrap();
     let header = inspect_ciphertext(sealed.as_bytes()).unwrap();
     assert!(snapshot.contains(&format!(
-        "  binding: {}\n",
+        "  context: {}\n",
         hex::encode(header.context_fingerprint())
     )));
 }
@@ -228,7 +228,7 @@ seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
   codec: json/1
   padding: length(256)
   record: no
-  binding: 65640fc8333534b9
+  context: 65640fc8333534b9
 "
         );
     }
@@ -255,7 +255,7 @@ seal 7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13
   codec: postcard/1
   padding: none
   record: no
-  binding: 65640fc8333534b9
+  context: 65640fc8333534b9
 "
         );
     }

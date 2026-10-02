@@ -146,7 +146,7 @@ fn unscoped_envelopes_carry_the_empty_declaration_fingerprint() {
     let keys = keyring(CURRENT_KEY_ID, 9);
     let ciphertext = encrypt::<EmailSeal>(b"field only", &keys);
 
-    // docs/wire-format.md#binding-fingerprint
+    // docs/wire-format.md#context-fingerprint
     assert_eq!(
         hex::encode(
             inspect_ciphertext(&ciphertext)
@@ -165,14 +165,14 @@ fn a_changed_fingerprint_reports_binding_mismatch() {
 
     assert_eq!(
         decrypt::<EmailSeal>(&ciphertext, &keys),
-        Err(Error::BindingMismatch)
+        Err(Error::ContextMismatch)
     );
     // `from_bytes` checks structure only, so the changed header still parses.
     assert_eq!(
         Sealed::<EmailSeal>::from_bytes(ciphertext)
             .unwrap()
             .needs_reseal(&keys),
-        Err(Error::BindingMismatch)
+        Err(Error::ContextMismatch)
     );
 }
 

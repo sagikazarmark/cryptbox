@@ -5,7 +5,7 @@ every value sealed under them becomes unreadable, wherever a copy of those bytes
 is. It is a procedure over your own key custody, storage inventory, and caches;
 CryptBox supplies keys that are passed in, so each tenant's values can be sealed
 under that tenant's keys, and nothing else.
-[Documentation](README.md) · [Bindings](bindings.md) · [Choosing keyrings](choosing-keyrings.md).
+[Documentation](README.md) · [Records](records.md) · [Choosing keyrings](choosing-keyrings.md).
 
 ## What shredding does and does not do
 
@@ -79,8 +79,7 @@ Treat a tenant whose custody map is undocumented or untested as not shreddable.
    | Log lines, traces, and error payloads with plaintext | Follow your log retention; treat as a separate disposal |
 
    Key resolution is keyed by what the application keeps keys for, such as an
-   `OrgId`, so caches and admin tooling can address one tenant by it without a
-   whole binding.
+   `OrgId`, so caches and admin tooling can address one tenant by it.
 
 4. **Account for the plaintext around the sealed values.** Shredding removes no
    plaintext. Delete or redact, per the inventory: tenant identifiers and queue or
@@ -134,7 +133,7 @@ Backups are the reason shredding is worth doing and the reason it needs care:
 
 ## What to read next
 
-- [Bindings](bindings.md): what values are bound to, apart from their keys.
+- [Records](records.md): what values are bound to, apart from their keys.
 - [Choosing keyrings](choosing-keyrings.md): the custody map this runbook
   depends on.
 - [Key lifecycle and recovery](key-rotation.md#retirement-and-recovery): online

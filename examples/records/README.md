@@ -3,7 +3,7 @@
 Seal whole rows whose sealed fields are bound to their seal and record ID, keep
 orgs apart with a keyring per org, store the rows in SQLite with SQLx, search an
 email index across an org's workspaces, and carry a record as a JSON message.
-[Examples](../README.md) · [Documentation](../../docs/README.md) · [Bindings](../../docs/bindings.md).
+[Examples](../README.md) · [Documentation](../../docs/README.md) · [Records](../../docs/records.md).
 
 ## Run the example
 
@@ -37,7 +37,7 @@ keys, see [the SQLite example](../sqlite/README.md).
   `CustomerCreatedEvent`, derives Serde. JSON carries the sealed address as
   base64url text, and its `eventId` rename is forwarded with `stored(…)`.
 
-See [bindings](../../docs/bindings.md) for what values are bound to and how
+See [records](../../docs/records.md) for what values are bound to and how
 tenants are kept apart, and
 [integration design](../../docs/integration.md#records-orms-and-serde) for other
 ORMs.

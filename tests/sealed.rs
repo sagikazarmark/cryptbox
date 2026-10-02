@@ -47,7 +47,7 @@ fn values_carry_the_empty_declaration_fingerprint() {
     let sealed = Sealed::<CustomerEmail>::seal(&email(), &keys).unwrap();
 
     let info = cryptbox::inspect_ciphertext(sealed.as_bytes()).unwrap();
-    // docs/wire-format.md#binding-fingerprint
+    // docs/wire-format.md#context-fingerprint
     assert_eq!(hex::encode(info.context_fingerprint()), "65640fc8333534b9");
 }
 

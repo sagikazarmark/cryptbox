@@ -145,7 +145,7 @@ secret versions and migration quarantine, including copies held by other teams.
 
 A recovery manifest ties backup identity, capture time and consistency boundary
 to stable key IDs and compatible binary/configuration revisions. Retain seal/index
-IDs, binding, codec, padding, normalization and precision. Keep secret material
+IDs, record ID types, codec, padding, normalization and precision. Keep secret material
 under separate controlled custody, not inside the manifest or database backup.
 Root bytes alone are insufficient to restore application behavior.
 

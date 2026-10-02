@@ -61,13 +61,13 @@ so that a reader can reconstruct exactly the same operation as the writer.
 `1` is CryptBox's identifier for the construction defined below. It combines:
 
 - **HKDF-SHA-256** derives a 32-byte operational key from the root key, separating
-  its use by format, suite, key generation, and binding. The root key is not used
+  its use by format, suite, key generation, and context. The root key is not used
   directly to encrypt values.
 - **XChaCha20-Poly1305** encrypts the plaintext and produces a full 16-byte
   authentication tag. Each encryption uses a fresh 24-byte OS-random nonce, stored
   alongside the ciphertext so decryption can reproduce the operation.
 - **Authenticated metadata** ties the encrypted bytes to the exact envelope
-  prefix and expected binding. This additional authenticated data (**AAD**) is
+  prefix and expected context. This additional authenticated data (**AAD**) is
   covered by the tag without itself being encrypted.
 
 This is authenticated encryption with associated data (**AEAD**): decryption
@@ -76,44 +76,41 @@ suite CryptBox writes or reads. Suites are built into the library; applications
 cannot register their own combinations. An unknown suite ID is rejected before
 authentication because the reader has no construction with which to verify it.
 
-### Binding
+### Context
 
-A binding identifies the expected cryptographic domain of a value. Every value is
-bound to a stable `SealId`, so an email seal's ciphertext is not accepted under
-a different seal, even when both use the same root key. A seal declares its
-binding **declaration**: whether it binds a record ID, and its kind. Only the
-seals a record declares for its fields bind one. The declaration is persistent
-schema. The **value**, a record ID, is read from the row by the record. See
+An envelope binds its value to a **context**: bytes that key derivation and the
+AAD both take, which are never stored, and an 8-byte **context fingerprint**
+that the header stores. The envelope interprets neither, so a reader always
+supplies the context it expects. A sealed value's context is its
+[seal context](#seal-context).
+
+### Seal context
+
+A seal builds its values' context from its stable `SealId`, so an email seal's
+ciphertext is not accepted under a different seal, even when both use the same
+root key. The seals a record declares for its fields add the record ID, so a
+field's value is not accepted in another row. See
 [ADR-0005](adr/0005-runtime-binding-is-the-core.md),
 [ADR-0008](adr/0008-records-declare-their-fields-seals.md), and
 [ADR-0011](adr/0011-a-binding-is-the-seal-and-the-record.md).
 
-Every binding uses one layout, a seal ID and a list of parts:
-
 ```text
-binding = seal_id[16] || count[2] || part*
+seal_context = seal_id[16] || count[2] || record?
 
-part    = part_id[16] || kind[1] || len[4] || value[len]
+record       = nil[16] || kind[1] || len[4] || value[len]
 ```
 
-- `count` is the number of parts, as an unsigned 16-bit integer.
-- A record is a part under the nil part ID. Its kind is the record ID's kind.
-  CryptBox writes no other part: `count` is `0000` without a record and `0001`
-  with one. Parts are sorted by part ID in ascending byte order, and any other
-  part ID is unique and never the nil UUID, so a later declaration can add parts
-  without a new layout.
-- `len` is an unsigned 32-bit byte count. Every value is length-prefixed.
-- There is no leading tag or type byte: the binding starts with the seal ID.
+- `count` is `0000` for a standalone seal and `0001` for a record field's seal,
+  as an unsigned 16-bit integer.
+- The record ID follows under the nil UUID. `len` is an unsigned 32-bit byte
+  count, so every value is length-prefixed.
+- There is no leading tag or type byte: the context starts with the seal ID.
 
-The **empty declaration** has no parts and no record. Its binding is the seal ID
-followed by `0000`, which identifies a seal alone, not a particular row or
-tenant.
+The seal supplies the expected context; it is not stored in the envelope. This
+makes the application decide where a value belongs, rather than allowing stored
+bytes to select their own context.
 
-The seal supplies the expected binding; it is not stored in the envelope.
-This makes the application decide where a value belongs, rather than allowing
-stored bytes to select their own binding.
-
-Value kinds are fixed and canonical. There is no text kind:
+Record ID kinds are fixed and canonical. There is no text kind:
 
 | Kind | Code | Value bytes |
 | --- | --- | --- |
@@ -121,36 +118,32 @@ Value kinds are fixed and canonical. There is no text kind:
 | i64 | `02` | 8 bytes, big-endian two's complement |
 | bytes | `03` | raw bytes, as given |
 
-Every record value carries its kind code, so the same bytes under different
-kinds, such as an `i64` and its 8 big-endian bytes, never collide.
+Every record ID carries its kind code, so the same bytes under different kinds,
+such as an `i64` and its 8 big-endian bytes, never collide.
 
-#### Binding fingerprint
+#### Context fingerprint
 
-Every binding has a 64-bit **binding fingerprint**, and every envelope's header
-carries it. It covers the part IDs and kinds, never values, because the header
-is stored in plaintext:
+The context fingerprint names the kind of context, never its values, because
+the header is stored in plaintext:
 
 ```text
 fingerprint label: "cryptbox/binding-fingerprint/v1\0"
 
 fingerprint = SHA-256(fingerprint_label
                       || count[2]
-                      || (part_id[16] || kind[1] || role[1])*)[0..8]
+                      || (nil[16] || kind[1] || 03)?)[0..8]
 ```
 
-Parts are sorted by part ID as in the binding. Every part's role byte is `03`.
-Codes `01`, the retired keys view, and `02`, the retired `index` role, are no
-longer written. The record's kind is part of the declaration, so a value read
-with a record ID of another kind reports `BindingMismatch`. These fingerprints
-are fixed permanently:
+The label keeps its original name: stored headers carry fingerprints computed
+with it. These fingerprints are fixed permanently:
 
-| Declaration | Fingerprint |
+| Context | Fingerprint |
 | --- | --- |
-| No record, the empty declaration | `65640fc8333534b9` |
-| An `i64` record ID, such as `#[cryptbox(record_id)] id: i64` | `76081b730530f822` |
+| A standalone seal | `65640fc8333534b9` |
+| A record field's seal with an `i64` record ID | `76081b730530f822` |
 
 For seal `12345678-1234-4234-8234-1234567890ab` and the `i64` record `7`, the
-binding is:
+context is:
 
 ```text
 123456781234423482341234567890ab00010000000000000000000000000000000002000000080000000000000007
@@ -158,32 +151,22 @@ binding is:
 
 #### Reader rules
 
-The fingerprint is diagnostic only. The reader always takes the expected declaration
+The fingerprint is diagnostic only. The reader always takes the expected context
 from its own seal, never from the envelope:
 
 1. After structural parsing, and before any key lookup or AEAD work, compare the
-   envelope's fingerprint with the fingerprint of the reader's declaration. A
-   reader without a record expects the empty declaration's fingerprint. Any
-   difference reports `BindingMismatch`.
-2. Otherwise, decrypt with the binding built from the reader's declaration and the
-   caller's record ID. Another record under a matching declaration fails
-   authentication.
+   envelope's fingerprint with the fingerprint of the reader's context. Any
+   difference reports `ContextMismatch`, such as a record field's value read as
+   a standalone seal's.
+2. Otherwise, decrypt with the reader's context. Another seal ID or record ID
+   under a matching fingerprint fails authentication.
 
 The fingerprint is part of the authenticated prefix. Changing it to match
-another declaration that has the same binding bytes still fails authentication.
+another kind of context still fails authentication.
 
 Codec identity and version are also absent: the application schema must supply
 them to interpret the plaintext after authentication. Whether the payload is
 padded is recorded in the envelope flags; padding parameters are not.
-
-### Context
-
-An envelope binds its value to a **context**: bytes that key derivation and the
-AAD both take, which are never stored, and an 8-byte **context fingerprint**
-that the header stores. The envelope interprets neither, so a reader always
-supplies the context it expects. For a sealed value, the context bytes are its
-[binding](#binding)'s encoding and the context fingerprint is its
-[binding fingerprint](#binding-fingerprint).
 
 ### Envelope
 
@@ -272,7 +255,7 @@ conventions and context above, with `format_version = 02` and
    truncation, or additional delimiters are applied.
 
 For decryption, structurally validate the envelope, compare its context fingerprint
-with the expected one (for a binding, under the [reader rules](#reader-rules)), resolve only its exact `KeyId`,
+with the expected one (for a seal context, under the [reader rules](#reader-rules)), resolve only its exact `KeyId`,
 reconstruct the key and AAD with the **expected** context, and verify
 the tag before returning any plaintext. Only after authentication is padding
 removed, when the authenticated flag is set, and the value decoded; the reader's
@@ -391,15 +374,15 @@ independently as described under the record vector below.
 ### Provisional record vector
 
 This vector uses the root key, `KeyId`, `SealId`, plaintext, and nonce above,
-unpadded, with a [binding](#binding) of the `i64` record `7`, whose binding
-fingerprint is `76081b730530f822`:
+unpadded, with the [seal context](#seal-context) of the `i64` record `7`, whose
+context fingerprint is `76081b730530f822`:
 
 ```text
 context:  123456781234423482341234567890ab00010000000000000000000000000000000002000000080000000000000007
 envelope: 434258000201001111111122224333844455555555555576081b730530f822000102030405060708090a0b0c0d0e0f1011121314151617c899d84358bcff6b35f9bb49eea2c2e906efc22bcad85fd463c7217135fe97
 ```
 
-The fingerprints, bindings, and all three envelopes above were computed
+The fingerprints, contexts, and all three envelopes above were computed
 independently of the implementation from the recipes above, with a separate
 HKDF, HChaCha20, and ChaCha20-Poly1305 construction. They have not yet been
 cross-checked against a third-party implementation.
@@ -439,7 +422,7 @@ bits in the final byte are zero and noncanonical stored values are rejected.
 The logical `IndexId` distinguishes indexes, such as two differently normalized
 projections of the same seal. It is separate from `IndexKeyId`: one identifies
 the index's meaning, the other its key generation. `IndexId` and normalization
-come from the application schema, and the index binding from each call; none
+come from the application schema, and the index context from the seal; none
 of them is stored in the index.
 
 Exact domain labels include the terminating NUL byte:
@@ -452,26 +435,26 @@ HKDF salt:      "cryptbox/hkdf-sha256/v1\0"
 
 ```text
 header = format_version || index_key_id || bits_be
-context = header || binding || index_id
+context = header || seal_context || index_id
 key_info = key_info_label || context
 mac_input = MAC_label || context || normalized_length_be_u64 || normalized_bytes
 ```
 
-### Index binding
+### Index context
 
-A blind index is derived under its **index binding**: the seal ID alone, as the
-empty [binding](#binding), `seal_id || 0000`. The record is left out, because a
-query cannot know the row, so every value of one seal shares the index binding,
+A blind index is derived under its **index context**: the seal ID alone, as a
+standalone [seal context](#seal-context), `seal_id || 0000`. The record is left
+out, because a query cannot know the row, so every value of one seal shares it,
 and equal values derive equal indexes under the same key. Separate blind-index
 roots, such as one per tenant, derive unrelated indexes.
 
 ### Blind-index recipe
 
 Inputs are an independent 32-byte blind-index root (never an encryption root),
-its immutable `IndexKeyId`, the expected [index binding](#index-binding),
+its immutable `IndexKeyId`, the expected [index context](#index-context),
 logical `IndexId`, retained bit count, and normalized bytes. `IndexKeyId`,
 `IndexId`, and any `SealId` are encoded using the UUID convention above, and
-`binding` is the encoded index binding. The version is one byte `02`; `bits_be`
+`seal_context` is the encoded index context. The version is one byte `02`; `bits_be`
 is a two-byte unsigned big-endian count in `1..=256`.
 
 1. Run the application's deterministic normalizer for this logical index.
@@ -496,7 +479,7 @@ is a two-byte unsigned big-endian count in `1..=256`.
 
 Structural parsing rejects unsupported versions, precision outside `1..=256`,
 incorrect total length (including trailing bytes), or nonzero unused low bits.
-Format `1` indexes were derived under an earlier binding encoding, so they are
+Format `1` indexes were derived under an earlier context encoding, so they are
 rejected as unsupported rather than silently matching nothing; derive them
 again.
 A typed `BlindIndex<Spec>` additionally requires the stored precision to equal
@@ -513,7 +496,7 @@ root key:     2222222222222222222222222222222222222222222222222222222222222222
 IndexKeyId:   aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
 IndexId:      abcdefab-cdef-4def-8def-abcdefabcdef
 SealId:      12345678-1234-4234-8234-1234567890ab
-binding:      123456781234423482341234567890ab0000
+context:      123456781234423482341234567890ab0000
 bits:         13
 normalized:   6e6f726d616c697a6564406578616d706c652e636f6d ("normalized@example.com")
 stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000de800

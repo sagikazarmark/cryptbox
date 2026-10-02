@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::{
     BlindIndexKeys, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed,
-    blind::{derive_value, index_domain},
+    blind::{derive_value, index_context},
     keys,
 };
 
@@ -147,7 +147,7 @@ where
             return Err(Error::DuplicatePreparedIndex(Spec::ID));
         }
 
-        let index = derive_value::<Spec>(self.source, &index_domain::<Spec>(), keys)?;
+        let index = derive_value::<Spec>(self.source, &index_context::<Spec>(), keys)?;
         self.indexes.push(PreparedIndex {
             id: Spec::ID,
             bytes: index.into_bytes(),

@@ -1,10 +1,10 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    BindingDomain, BlindIndex, BlindIndexKeys, BlindIndexSpec, EncryptionKeys, Error, RecordKeys,
-    Seal, SealId, Sealed,
-    binding::RecordKey,
-    blind::{index_domain, probes_in},
+    BlindIndex, BlindIndexKeys, BlindIndexSpec, EncryptionKeys, Error, RecordKeys, Seal, SealId,
+    Sealed,
+    blind::{index_context, probes_in},
+    seal_context::{RecordKey, SealContext},
 };
 
 /// A row whose sealed fields are bound to their seals and to its record ID,
@@ -134,7 +134,7 @@ impl<R: Record, S: BlindIndexSpec> Index<R, S> {
         query: &S::Query,
         keys: &(impl BlindIndexKeys + ?Sized),
     ) -> Result<Vec<BlindIndex<S>>, Error> {
-        probes_in::<S>(query, &index_domain::<S>(), keys)
+        probes_in::<S>(query, &index_context::<S>(), keys)
     }
 
     /// Opens the candidate rows of a lookup and keeps the matches, with one
@@ -195,12 +195,6 @@ impl<R: Record, S: BlindIndexSpec> fmt::Debug for Index<R, S> {
     }
 }
 
-/// The binding of seal `F` in the record whose ID is `id`: its seal ID, and the
-/// record ID when `F` binds one.
-fn record_domain<F: Seal>(id: &impl RecordKey) -> Result<BindingDomain, Error> {
-    BindingDomain::of::<F>(F::RECORD.map(|_| id.record_value()))
-}
-
 /// Seals a record field's `value` under its seal `F` and the record ID `id`.
 /// Not public API: `#[derive(Record)]` calls it.
 ///
@@ -213,7 +207,7 @@ pub fn seal_in_record<F: Seal>(
     id: &impl RecordKey,
     keys: &(impl EncryptionKeys + ?Sized),
 ) -> Result<Sealed<F>, Error> {
-    Sealed::seal_in(value, &record_domain::<F>(id)?, keys)
+    Sealed::seal_in(value, &SealContext::in_record::<F, _>(id)?, keys)
 }
 
 /// Opens a record field's value under its seal `F` and the record ID `id`. Not
@@ -229,5 +223,5 @@ pub fn open_in_record<F: Seal>(
     id: &impl RecordKey,
     keys: &(impl EncryptionKeys + ?Sized),
 ) -> Result<F::Value, Error> {
-    sealed.open_in(&record_domain::<F>(id)?, keys)
+    sealed.open_in(&SealContext::in_record::<F, _>(id)?, keys)
 }

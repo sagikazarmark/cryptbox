@@ -90,7 +90,7 @@ Expect `Seal-bound round trip succeeded.` and exit status 0.
 - `&keys` supplies keys explicitly, so these calls need no global installation.
 - The value is bound to its seal alone, not a row or tenant, so it does not stop
   substitution between rows of the same seal, or replay; a record's fields are
-  bound to their row too, see [bind values to their seal and record](bindings.md). `Padding::NONE` reveals encoded length.
+  bound to their row too, see [records](records.md). `Padding::NONE` reveals encoded length.
 
 See [how CryptBox works](concepts.md) for the complete picture.
 
@@ -101,8 +101,8 @@ from these pages:
 uuidgen
 ```
 
-See [ID hygiene](bindings.md#id-hygiene) for the rules that apply to every seal,
-index, and binding part ID.
+See [ID hygiene](records.md#id-hygiene) for the rules that apply to every seal
+and index ID.
 
 ## Next: use durable storage
 
@@ -125,7 +125,7 @@ cargo run --locked --example tenant_field
 ```
 
 Expect `Round trip with a keyring per tenant succeeded.` Then read
-[bind values to their seal and record](bindings.md) for records, which bind
+[records](records.md) for records, which bind
 their fields to the row, and [choosing keyrings](choosing-keyrings.md) for whose keys protect them.
 
 ## Other directions

@@ -60,7 +60,7 @@ impl<C: fmt::Debug, R> fmt::Debug for SweepRow<C, R> {
 pub trait SweepStore {
     /// The unique, immutable, indexed cursor rows are totally ordered by.
     type Cursor: Clone + Send + Sync;
-    /// The columns each row carries for its binding, such as its record ID;
+    /// The columns each row carries for its context, such as its record ID;
     /// `()` for a standalone seal.
     type Columns: Send + Sync;
     /// The storage backend's error type.
@@ -410,7 +410,7 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::UnknownEncryptionKey(_)
         | Error::UnknownBlindIndexKey(_)
         | Error::AuthenticationFailed
-        | Error::BindingMismatch
+        | Error::ContextMismatch
         | Error::CodecFailed(_)
         | Error::BlindIndexNormalizationFailed
         | Error::MessageTooLong
@@ -426,7 +426,6 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::DuplicateBlindIndexKey(_)
         | Error::RandomnessUnavailable
         | Error::InvalidKeyEncoding
-        | Error::InvalidBinding
         | Error::Internal
         | Error::DuplicatePreparedIndex(_)
         | Error::BlindIndexNotPrepared(_)

@@ -4,8 +4,8 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
-    BindingDomain, BlindIndexError, BlindIndexKey, BlindIndexKeys, Error, IndexKeyId, Seal,
-    id::identifier, keys,
+    BlindIndexError, BlindIndexKey, BlindIndexKeys, Error, IndexKeyId, Seal, id::identifier, keys,
+    seal_context::SealContext,
 };
 
 mod format;
@@ -30,7 +30,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// An index is derived under its seal ID alone, never a record, since a query
 /// cannot know it: equal values of one seal derive equal indexes under the same
 /// keys. Separate blind-index keys, such as a keyring per tenant, derive
-/// unrelated indexes for equal values. See the [index binding].
+/// unrelated indexes for equal values. See the [index context].
 ///
 /// `BITS` must be between 1 and 256. The logical [`IndexId`] is part of key
 /// derivation but is not stored in the index bytes. Changing the ID,
@@ -154,12 +154,12 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// the provided derivation, probe, and verification methods.
 ///
 /// See the [custom-field example] and [ownership reference].
-/// Padding is a closed set of policies; a custom normalizer does not add row binding.
+/// Padding is a closed set of policies; a custom normalizer does not bind an index to a row.
 ///
 #[doc = concat!(
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
-    "[index binding]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#index-binding",
+    "[index context]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#index-context",
 )]
 pub trait BlindIndexSpec: Sized + 'static {
     /// The seal whose values this index projects.
@@ -211,7 +211,7 @@ pub trait BlindIndexSpec: Sized + 'static {
         value: &<Self::Seal as Seal>::Value,
         keys: &(impl BlindIndexKeys + ?Sized),
     ) -> Result<BlindIndex<Self>, Error> {
-        derive_value::<Self>(value, &index_domain::<Self>(), keys)
+        derive_value::<Self>(value, &index_context::<Self>(), keys)
     }
 
     /// Derives one candidate probe for every currently readable index
@@ -232,7 +232,7 @@ pub trait BlindIndexSpec: Sized + 'static {
         query: &Self::Query,
         keys: &(impl BlindIndexKeys + ?Sized),
     ) -> Result<Vec<BlindIndex<Self>>, Error> {
-        probes_in::<Self>(query, &index_domain::<Self>(), keys)
+        probes_in::<Self>(query, &index_context::<Self>(), keys)
     }
 
     /// Derives probes with the [installed keys](keys::installed).
@@ -532,40 +532,40 @@ impl<Spec> fmt::Debug for BlindIndexRef<'_, Spec> {
     }
 }
 
-/// Derives the current stored index of `Spec` in `domain`, an index domain of
+/// Derives the current stored index of `Spec` in `context`, the index context of
 /// `Spec`'s seal.
 pub(crate) fn derive_value<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
-    domain: &BindingDomain,
+    context: &SealContext,
     keys: &(impl BlindIndexKeys + ?Sized),
 ) -> Result<BlindIndex<Spec>, Error> {
     let key = keys.blind_index_keyring()?.current().clone();
 
-    derive_value_with_key::<Spec>(value, domain, &key)
+    derive_value_with_key::<Spec>(value, context, &key)
 }
 
 fn derive_value_with_key<Spec: BlindIndexSpec>(
     value: &<Spec::Seal as Seal>::Value,
-    domain: &BindingDomain,
+    context: &SealContext,
     key: &BlindIndexKey,
 ) -> Result<BlindIndex<Spec>, Error> {
     let normalized = Spec::normalize_value(value)?;
 
-    derive_normalized::<Spec>(&normalized, domain, key)
+    derive_normalized::<Spec>(&normalized, context, key)
 }
 
-/// Derives one probe of `Spec` in `domain`, an index domain of `Spec`'s seal,
+/// Derives one probe of `Spec` in `context`, the index context of `Spec`'s seal,
 /// for every readable index generation.
 pub(crate) fn probes_in<Spec: BlindIndexSpec>(
     query: &Spec::Query,
-    domain: &BindingDomain,
+    context: &SealContext,
     keys: &(impl BlindIndexKeys + ?Sized),
 ) -> Result<Vec<BlindIndex<Spec>>, Error> {
     let normalized = Spec::normalize_query(query)?;
 
     keys.blind_index_keyring()?
         .readable()
-        .map(|key| derive_normalized::<Spec>(&normalized, domain, key))
+        .map(|key| derive_normalized::<Spec>(&normalized, context, key))
         .collect()
 }
 
@@ -574,22 +574,22 @@ fn check_consistency<Spec: BlindIndexSpec>(
     stored: &BlindIndex<Spec>,
     keys: &(impl BlindIndexKeys + ?Sized),
 ) -> Result<bool, Error> {
-    let domain = index_domain::<Spec>();
+    let context = index_context::<Spec>();
     let id = stored.index_key_id();
     let key = keys
         .blind_index_keyring()?
         .get(id)
         .cloned()
         .ok_or(Error::UnknownBlindIndexKey(id))?;
-    let derived = derive_value_with_key::<Spec>(value, &domain, &key)?;
+    let derived = derive_value_with_key::<Spec>(value, &context, &key)?;
 
     // Both representations carry Spec::BITS, so their lengths always agree.
     Ok(derived.as_bytes().ct_eq(stored.as_bytes()).into())
 }
 
 // Blind indexes are domain-separated by their seal, never by a record.
-pub(crate) fn index_domain<Spec: BlindIndexSpec>() -> BindingDomain {
-    BindingDomain::index(<Spec::Seal as Seal>::ID.as_bytes())
+pub(crate) fn index_context<Spec: BlindIndexSpec>() -> SealContext {
+    SealContext::seal_id(&<Spec::Seal as Seal>::ID)
 }
 
 fn compare_normalized<Spec: BlindIndexSpec>(
@@ -608,11 +608,11 @@ fn compare_normalized<Spec: BlindIndexSpec>(
 
 fn derive_normalized<Spec: BlindIndexSpec>(
     normalized: &[u8],
-    domain: &BindingDomain,
+    context: &SealContext,
     key: &BlindIndexKey,
 ) -> Result<BlindIndex<Spec>, Error> {
     assert_valid_bits::<Spec>();
-    let stored = derive_index(normalized, domain.as_bytes(), Spec::ID, Spec::BITS, key)?;
+    let stored = derive_index(normalized, context.as_bytes(), Spec::ID, Spec::BITS, key)?;
 
     Ok(BlindIndex::from_validated_bytes(stored))
 }

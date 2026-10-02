@@ -1,49 +1,42 @@
-// The bound layer: envelope operations under a resolved binding, with a keyring
-// the typed layer chose for it.
-//
-// The envelope sees only binding bytes, a fingerprint, and a keyring. This
-// layer turns a `BindingDomain` into the envelope's context, so `Sealed` and the
-// migration planner share one path for each operation.
+// The bound layer: envelope operations under a seal's context, with a keyring
+// the typed layer chose for it, so `Sealed`, records, and the migration planner
+// share one path for each operation.
 
 use zeroize::Zeroizing;
 
-use crate::envelope::{self, Context};
-use crate::{BindingDomain, EncryptionKeyring, Error, Padding};
+use crate::envelope;
+use crate::{EncryptionKeyring, Error, Padding, seal_context::SealContext};
 
-fn envelope_context(domain: &BindingDomain) -> Context<'_> {
-    Context::new(domain.as_bytes(), domain.fingerprint())
-}
-
-/// Pads and seals `plaintext` under `domain` with the current key of `keyring`.
+/// Pads and seals `plaintext` under `context` with the current key of `keyring`.
 pub(crate) fn seal(
-    domain: &BindingDomain,
+    context: &SealContext,
     padding: Padding,
     plaintext: &[u8],
     keyring: &EncryptionKeyring,
 ) -> Result<Vec<u8>, Error> {
-    envelope::seal(envelope_context(domain), padding, plaintext, keyring)
+    envelope::seal(context.envelope(), padding, plaintext, keyring)
 }
 
-/// Authenticates and decrypts `ciphertext` under `domain`, removing recorded padding.
+/// Authenticates and decrypts `ciphertext` under `context`, removing recorded padding.
 pub(crate) fn open(
-    domain: &BindingDomain,
+    context: &SealContext,
     ciphertext: &[u8],
     keyring: &EncryptionKeyring,
 ) -> Result<Zeroizing<Vec<u8>>, Error> {
-    let checked = envelope::check(envelope_context(domain), ciphertext)?;
+    let checked = envelope::check(context.envelope(), ciphertext)?;
 
     checked.open(keyring)
 }
 
-/// Reports whether `ciphertext` differs from what `domain` and `padding`
+/// Reports whether `ciphertext` differs from what `context` and `padding`
 /// currently write, without decrypting it.
 pub(crate) fn needs_reseal(
-    domain: &BindingDomain,
+    context: &SealContext,
     padding: Padding,
     ciphertext: &[u8],
     keyring: &EncryptionKeyring,
 ) -> Result<bool, Error> {
-    let checked = envelope::check(envelope_context(domain), ciphertext)?;
+    let checked = envelope::check(context.envelope(), ciphertext)?;
 
     Ok(checked.needs_reseal(padding, keyring))
 }
@@ -53,8 +46,8 @@ pub(crate) fn needs_reseal(
 ///
 /// This is the one place where plaintext passes from an open to a seal.
 pub(crate) fn reseal(
-    (from, from_keyring): (&BindingDomain, &EncryptionKeyring),
-    (to, to_keyring): (&BindingDomain, &EncryptionKeyring),
+    (from, from_keyring): (&SealContext, &EncryptionKeyring),
+    (to, to_keyring): (&SealContext, &EncryptionKeyring),
     padding: Padding,
     ciphertext: &[u8],
 ) -> Result<(Zeroizing<Vec<u8>>, Vec<u8>), Error> {

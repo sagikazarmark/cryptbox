@@ -34,7 +34,7 @@ error[E0277]: `String` is not a record ID type
   = help: the trait `cryptbox::__private::RecordKey` is not implemented for `String`
   = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid` with the `uuid` feature
 help: the following other types implement trait `cryptbox::__private::RecordKey`
- --> $WORKSPACE/src/binding/record_id.rs
+ --> $WORKSPACE/src/seal_context.rs
   |
   | impl RecordKey for [u8; 16] {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
@@ -66,7 +66,7 @@ error[E0277]: `String` is not a record ID type
   = help: the trait `cryptbox::__private::RecordKey` is not implemented for `String`
   = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid` with the `uuid` feature
 help: the following other types implement trait `cryptbox::__private::RecordKey`
- --> $WORKSPACE/src/binding/record_id.rs
+ --> $WORKSPACE/src/seal_context.rs
   |
   | impl RecordKey for [u8; 16] {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
@@ -89,7 +89,7 @@ error[E0277]: `String` is not a record ID type
   = help: the trait `cryptbox::__private::RecordKey` is not implemented for `String`
   = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid` with the `uuid` feature
 help: the following other types implement trait `cryptbox::__private::RecordKey`
- --> $WORKSPACE/src/binding/record_id.rs
+ --> $WORKSPACE/src/seal_context.rs
   |
   | impl RecordKey for [u8; 16] {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
@@ -121,7 +121,7 @@ error[E0277]: `String` is not a record ID type
   = help: the trait `cryptbox::__private::RecordKey` is not implemented for `String`
   = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid` with the `uuid` feature
 help: the following other types implement trait `cryptbox::__private::RecordKey`
- --> $WORKSPACE/src/binding/record_id.rs
+ --> $WORKSPACE/src/seal_context.rs
   |
   | impl RecordKey for [u8; 16] {
   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`

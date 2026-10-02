@@ -18,7 +18,7 @@ const ENVELOPE_AAD_LABEL: &[u8] = b"cryptbox/envelope-aad/v1\0";
 /// Key derivation and the AAD both take the bytes, which are never stored; the
 /// header stores the fingerprint, and opening compares it before any key
 /// lookup. The envelope interprets neither: the layer above encodes them, and
-/// for a sealed value they are its binding's encoding and fingerprint.
+/// for a sealed value they are its seal context's encoding and fingerprint.
 ///
 /// The header is stored in plaintext, so the fingerprint must name only what
 /// kind of context this is, never the values in its bytes.

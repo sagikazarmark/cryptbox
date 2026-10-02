@@ -1,4 +1,4 @@
-//! Public-boundary tests for what record fields are bound to.
+//! Public-boundary tests for the context record fields and standalone seals are sealed under.
 #![cfg(feature = "derive")]
 
 use cryptbox::{EncryptionKey, EncryptionKeyring, Error, Record, Sealed};
@@ -50,7 +50,7 @@ fn a_record_id_of_another_kind_is_another_declaration() {
     };
     assert_eq!(
         UuidNote::open(as_uuid, &keys).unwrap_err(),
-        Error::BindingMismatch
+        Error::ContextMismatch
     );
 }
 
@@ -60,7 +60,7 @@ fn a_record_fields_value_does_not_open_outside_its_record() {
     let stored = note(&keys);
 
     let loose = Sealed::<LooseNote>::from_bytes(stored.body.into_bytes()).unwrap();
-    assert_eq!(loose.open(&keys).unwrap_err(), Error::BindingMismatch);
+    assert_eq!(loose.open(&keys).unwrap_err(), Error::ContextMismatch);
 }
 
 #[test]
@@ -74,6 +74,6 @@ fn a_loose_value_does_not_open_as_a_record_field() {
     };
     assert_eq!(
         NumberNote::open(row, &keys).unwrap_err(),
-        Error::BindingMismatch
+        Error::ContextMismatch
     );
 }

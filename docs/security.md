@@ -29,7 +29,7 @@ compromised storage. Trust the application, its key resolution, dependencies, an
 system: root keys must be cryptographically random, encryption and index roots
 independently generated, and each generation ID permanently paired with the same
 material. IDs are public metadata; generate them independently of key bytes.
-Seals supply persistent schema, including their binding declaration. A
+Seals supply persistent schema, including a record field's record ID type. A
 `Record`'s record ID is read from the row and checked by opening every sealed
 field; its plaintext columns, such as a tenant, are not, so authorize on them.
 Secure OS randomness and a compatible target are required; see [platform constraints](features.md#platforms-and-tested-configurations).
@@ -40,7 +40,7 @@ Secure OS randomness and a compatible target are required; see [platform constra
 | --- | --- |
 | Read dumps, snapshots, backups, or detached volumes | Selected values remain confidential under the assumptions above. Other columns, IDs, and metadata remain visible. |
 | Modify stored ciphertext | Authenticated decryption rejects tampering. Parsing alone does not authenticate; malformed formats or unknown keys may fail earlier. |
-| Copy ciphertext to another seal | Authentication rejects a seal with a different seal ID. A different binding declaration reports `BindingMismatch`. |
+| Copy ciphertext to another seal | Authentication rejects a seal with a different seal ID. A record field's value read as a standalone seal's reports `ContextMismatch`. |
 | Copy ciphertext to another tenant, org, or workspace | Only keys separate tenants: with a keyring per tenant, another tenant's keys fail with `UnknownEncryptionKey`. Under one shared keyring, a value moved within its row's record is still bound to that record, but a record's plaintext tenant column changed in place is not detected. |
 | Copy ciphertext between rows of the same seal | Authentication rejects another record for a record's fields. For a standalone seal, substitution among rows under the same keys can succeed. |
 | Return a whole row in place of another | Every value in it opens, because each is bound to that row's own record ID. A `Record` opens as the record it is: when you asked for one record by ID, compare the opened ID with it. |
@@ -94,7 +94,7 @@ retiring keys or closing a migration.
 
 ## Why these constructions
 
-HKDF-SHA-256 separates operational keys by version, suite, generation, and binding.
+HKDF-SHA-256 separates operational keys by version, suite, generation, and context.
 XChaCha20-Poly1305 uses fresh OS-random 192-bit nonces, avoiding coordinated counters
 across processes. It is **not nonce-misuse-resistant**: repeating a complete nonce
 under one operational key is unsafe. Its specification is an expired IETF draft,

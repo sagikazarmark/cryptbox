@@ -68,7 +68,7 @@ pub(crate) fn check<'a>(
 ) -> Result<CheckedEnvelope<'a>, Error> {
     let (suite, parsed) = parse_supported(ciphertext)?;
     if parsed.info.context_fingerprint() != context.fingerprint() {
-        return Err(Error::BindingMismatch);
+        return Err(Error::ContextMismatch);
     }
 
     Ok(CheckedEnvelope {
@@ -161,7 +161,7 @@ mod tests {
     }
 
     // The envelope does not interpret the context: the vectors take its bytes
-    // and fingerprint as given. The binding module pins how they are encoded.
+    // and fingerprint as given. The seal context module pins how they are encoded.
     fn context(bytes: &[u8], fingerprint: [u8; 8]) -> Context<'_> {
         Context::new(bytes, fingerprint)
     }
@@ -200,7 +200,7 @@ mod tests {
 
     // docs/wire-format.md#provisional-record-vector
     const UNBOUND_CONTEXT: &str = "123456781234423482341234567890ab0000";
-    // The empty declaration's fingerprint, which a binding without a record carries.
+    // The fingerprint of a context without a record ID.
     const UNBOUND_FINGERPRINT: &str = "65640fc8333534b9";
     const RECORD_CONTEXT: &str = "123456781234423482341234567890ab00010000000000000000000000000000000002000000080000000000000007";
     const RECORD_FINGERPRINT: &str = "76081b730530f822";
@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn a_different_fingerprint_reports_binding_mismatch_before_any_key() {
+    fn a_different_fingerprint_reports_context_mismatch_before_any_key() {
         let unbound_bytes = hex::decode(UNBOUND_CONTEXT).unwrap();
         let record_bytes = hex::decode(RECORD_CONTEXT).unwrap();
         let unbound = context(&unbound_bytes, fingerprint(UNBOUND_FINGERPRINT));
@@ -302,7 +302,7 @@ mod tests {
         ] {
             assert_eq!(
                 check(reader, envelope).err(),
-                Some(Error::BindingMismatch),
+                Some(Error::ContextMismatch),
                 "{case}"
             );
         }

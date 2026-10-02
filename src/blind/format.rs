@@ -1,6 +1,6 @@
 use crate::{Error, IndexKeyId};
 
-// Format 2 frames the single binding layout; format 1 indexes are rejected, not
+// Format 2 frames the single context layout; format 1 indexes are rejected, not
 // silently unmatched. See ../../docs/wire-format.md#blind-index-format-2.
 const INDEX_FORMAT_VERSION: u8 = 2;
 const MAX_INDEX_BITS: usize = 256;

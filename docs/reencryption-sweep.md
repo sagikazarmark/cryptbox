@@ -152,10 +152,10 @@ bytes, from the columns the store loads into `SweepRow::columns`. Packaged
 stores load no columns, so a record field's seal needs an application-owned
 `SweepStore`.
 
-A sweep rotates keys and padding; it does not change a binding declaration. A
-row of another declaration, such as a standalone value stored in a record's
-column, fails with `Error::BindingMismatch`. See
-[change a binding declaration](bindings.md#change-a-binding-declaration).
+A sweep rotates keys and padding; it does not change a seal's context. A row
+under another kind of context, such as a standalone value stored in a record's
+column, fails with `Error::ContextMismatch`. See
+[change a field's seal or record ID](records.md#change-a-fields-seal-or-record-id).
 
 To move a value to other keys, such as a tenant's data changing residency, open
 and seal the record again, or use `Sealed::reseal_across` for a standalone
@@ -165,7 +165,7 @@ value.
 
 This is the canonical whole-store audit procedure. The
 [assurance reference](security.md#what-each-check-establishes) explains what each
-check establishes. Fix the intended seal ID, binding declaration, value type,
+check establishes. Fix the intended seal ID, record ID type, value type,
 codec, index specifications, normalization, precision and allowed generations
 from trusted application schema, not stored metadata.
 

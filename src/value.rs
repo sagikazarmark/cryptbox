@@ -1,8 +1,8 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    BindingDomain, Codec, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal, bound,
-    envelope::validated_key_id, keys,
+    Codec, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal, bound,
+    envelope::validated_key_id, keys, seal_context::SealContext,
 };
 
 /// A value sealed with seal `F`: an encrypted envelope bound to the seal and,
@@ -54,7 +54,7 @@ impl<F: Seal> Sealed<F> {
     /// # Errors
     ///
     /// Returns an error when the bytes are not a supported, structurally valid
-    /// `CryptBox` envelope. Authentication, binding, and codec compatibility are
+    /// `CryptBox` envelope. Authentication, context, and codec compatibility are
     /// deferred until the value is opened.
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
         let bytes = bytes.into();
@@ -119,16 +119,16 @@ impl<F: Seal> Sealed<F> {
     /// Returns an error when encoding, padding, key lookup, randomness, or
     /// encryption fails.
     pub fn seal(value: &F::Value, keys: &(impl EncryptionKeys + ?Sized)) -> Result<Self, Error> {
-        Self::seal_in(value, &BindingDomain::unbound::<F>(), keys)
+        Self::seal_in(value, &SealContext::standalone::<F>(), keys)
     }
 
     pub(crate) fn seal_in(
         value: &F::Value,
-        domain: &BindingDomain,
+        context: &SealContext,
         keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
         let plaintext = F::Codec::encode(value)?;
-        let sealed = bound::seal(domain, F::PADDING, &plaintext, keys.encryption_keyring())?;
+        let sealed = bound::seal(context, F::PADDING, &plaintext, keys.encryption_keyring())?;
 
         Ok(Self::from_validated_bytes(sealed))
     }
@@ -145,19 +145,19 @@ impl<F: Seal> Sealed<F> {
     /// # Errors
     ///
     /// Returns [`Error::AuthenticationFailed`] for another seal or modified
-    /// bytes, and [`Error::BindingMismatch`] for a value sealed with another
-    /// binding declaration, such as a record field's. Also returns an error for
+    /// bytes, and [`Error::ContextMismatch`] for a value sealed under another
+    /// kind of context, such as a record field's. Also returns an error for
     /// unknown keys, unavailable keys, invalid padding, or codec failure.
     pub fn open(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<F::Value, Error> {
-        self.open_in(&BindingDomain::unbound::<F>(), keys)
+        self.open_in(&SealContext::standalone::<F>(), keys)
     }
 
     pub(crate) fn open_in(
         &self,
-        domain: &BindingDomain,
+        context: &SealContext,
         keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<F::Value, Error> {
-        let plaintext = bound::open(domain, &self.bytes, keys.encryption_keyring())?;
+        let plaintext = bound::open(context, &self.bytes, keys.encryption_keyring())?;
 
         Ok(F::Codec::decode(&plaintext)?)
     }
@@ -194,11 +194,11 @@ impl<F: Seal> Sealed<F> {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BindingMismatch`] for a value sealed with another binding
-    /// declaration, or an error for unavailable keys.
+    /// Returns [`Error::ContextMismatch`] for a value sealed under another
+    /// kind of context, or an error for unavailable keys.
     pub fn needs_reseal(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<bool, Error> {
         bound::needs_reseal(
-            &BindingDomain::unbound::<F>(),
+            &SealContext::standalone::<F>(),
             F::PADDING,
             &self.bytes,
             keys.encryption_keyring(),
@@ -236,10 +236,10 @@ impl<F: Seal> Sealed<F> {
         from_keys: &(impl EncryptionKeys + ?Sized),
         to_keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
-        let domain = BindingDomain::unbound::<F>();
+        let context = SealContext::standalone::<F>();
         let (_, sealed) = bound::reseal(
-            (&domain, from_keys.encryption_keyring()),
-            (&domain, to_keys.encryption_keyring()),
+            (&context, from_keys.encryption_keyring()),
+            (&context, to_keys.encryption_keyring()),
             F::PADDING,
             &self.bytes,
         )?;

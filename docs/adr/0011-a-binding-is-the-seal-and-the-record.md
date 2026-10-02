@@ -11,8 +11,10 @@ status: accepted
 > `i64`, or bytes; ID newtypes can return with a later redesign. A record field's
 > seal is marked by a hidden `Seal::RECORD` const, and `Sealed::seal` with one
 > fails the build. Legacy-binding windows are removed: no data uses an older
-> declaration, and a window can return with the redesign. The bytes are
-> unchanged.
+> declaration, and a window can return with the redesign. Above the envelope,
+> "binding" is retired: a seal builds the envelope's context from its seal ID
+> and, for a record's field, the record ID, and a mismatch is a
+> `ContextMismatch`. The bytes are unchanged.
 
 A sealed value is bound to its seal ID and, when it is a field of a record, to
 the record's ID. Nothing else: bound values, their ID types, and blind-index

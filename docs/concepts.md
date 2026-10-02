@@ -49,13 +49,13 @@ declares:
 - A **codec**, such as `Utf8`, to convert between the Rust value and bytes.
 - A **padding policy**, which can group different plaintext lengths into the same
   stored size. `Padding::NONE` preserves the encoded length.
-- A **binding**: every value is bound to its seal ID, and a field of a
-  **record** to the record's ID too.
+- A **context**: every value is sealed under its seal ID, and a field of a
+  **record** under the record's ID too.
 
 A **record** stores its record ID as a column beside its sealed fields, and
 opening authenticates it; its other columns, such as an org, are plaintext the
 application authorizes on. Tenants are kept apart by keys: a keyring per tenant.
-[Bind values to their seal and record](bindings.md) covers both.
+[Records](records.md) covers both.
 
 The value type is your application's own type: it says how it encodes, never
 where it is stored. Only `String`, `Vec<u8>`, and their `Secret` wrappers have a
@@ -162,7 +162,7 @@ seal that declares blind indexes, because it would not maintain their columns.
   [store it durably in SQLite](../examples/sqlite/README.md).
 - **Apply it:** [integration design and trade-offs](integration.md) explains
   persistent schema, storage boundaries, keys, and search.
-- **Bind it:** [bind values to their seal and record](bindings.md) binds
+- **Bind it:** [records](records.md) binds
   values to their record and keeps tenants apart, and
   [choosing keyrings](choosing-keyrings.md) decides whose keys protect it.
 - **Assess it:** [security and threat model](security.md) covers protections,

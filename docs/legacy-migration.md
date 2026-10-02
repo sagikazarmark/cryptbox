@@ -135,7 +135,7 @@ trusts, and establish their provenance with the same evidence this guide
 requires for legacy bytes. The packaged stores load no columns, so a record
 field's seal needs an application-owned `SweepStore`. See
 [sweeping records](reencryption-sweep.md#records) and
-[record IDs](bindings.md#record-ids).
+[record IDs](records.md#record-ids).
 
 The packaged planner repairs missing indexes on **legacy** bytes by deriving them,
 but rejects empty/malformed indexes on existing CryptBox ciphertext. It also

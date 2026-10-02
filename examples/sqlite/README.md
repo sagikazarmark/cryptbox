@@ -118,8 +118,8 @@ authenticates and decodes, returning the bare `String`. Sealing borrows the
 original plaintext, and no global keys are installed: `keys` supplies the
 key explicitly.
 
-A binding without a record identifies a seal alone, not a row or tenant. Preserve the
-seal ID, codec compatibility, and binding choices with your stored data; see
+A standalone seal identifies a seal alone, not a row or tenant. Preserve the
+seal ID and codec compatibility with your stored data; see
 [persistent schema](../../docs/integration.md#persistent-schema).
 
 You now have durable encryption-only storage. If you also need equality lookup,

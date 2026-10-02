@@ -183,22 +183,7 @@ fn a_standalone_value_in_a_record_column_is_a_binding_mismatch() {
         planner
             .classify_row(&row, &ciphertext, &[&index])
             .unwrap_err(),
-        Error::BindingMismatch
-    );
-}
-
-#[test]
-fn a_record_id_for_a_standalone_seal_is_invalid() {
-    let keys = rotated_keys();
-    let row = row(7);
-    let ciphertext = Sealed::<UnboundEmail>::seal(&"ada@example.com".into(), &keys)
-        .unwrap()
-        .into_bytes();
-    let planner = RowPlanner::<UnboundEmail, Columns>::for_rows(&keys, record_id);
-
-    assert_eq!(
-        planner.classify_row(&row, &ciphertext, &[]).unwrap_err(),
-        Error::InvalidBinding
+        Error::ContextMismatch
     );
 }
 

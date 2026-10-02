@@ -5,13 +5,13 @@ which values is application code. That decision is not
 cryptographically checked when values are written: this page lists the mistakes
 the library cannot detect, the rules that make them loud instead of silent, and
 how to test the choice.
-[Documentation](README.md) · [Bindings](bindings.md) · [Shredding](shredding.md).
+[Documentation](README.md) · [Records](records.md) · [Shredding](shredding.md).
 
 ## What the library guarantees, and what it does not
 
 | Property | Who establishes it |
 | --- | --- |
-| Ciphertext cannot move across seals or records | The library: the binding is in the AAD and the key derivation |
+| Ciphertext cannot move across seals or records | The library: the seal context is in the AAD and the key derivation |
 | Opening with the wrong keyring fails loudly | The library, **provided** key IDs follow the [rules below](#key-id-rules) |
 | Values of one tenant are sealed under that tenant's keyring | Your code: an unchecked decision at write time |
 | A seal's values are sealed under the custody it requires | Your code: never checked |
@@ -159,7 +159,7 @@ plaintext, and copies outside the inventory are unaffected by any of it. See
 
 ## What to read next
 
-- [Bindings](bindings.md): what values are bound to, and where they come from.
+- [Records](records.md): what values are bound to, and where they come from.
 - [Shredding a tenant](shredding.md): the runbook and its prerequisites.
 - [Key lifecycle](key-rotation.md): staging, promotion, rollback, retirement.
 - [Custom-field example](../examples/custom_field/README.md#implementor-obligations):

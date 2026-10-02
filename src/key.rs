@@ -34,7 +34,7 @@ pub enum KeyError {
 /// Blind-index operations fail with [`Error::BlindIndexKeysNotConfigured`](crate::Error::BlindIndexKeysNotConfigured) when
 /// `blind_indexes` is `None`.
 ///
-/// `Keys` serves every seal and binding alike. To keep seals or tenants under
+/// `Keys` serves every seal and record alike. To keep seals or tenants under
 /// separate keys, pass each its own `Keys`; see [choosing keyrings].
 ///
 #[doc = concat!(

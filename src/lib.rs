@@ -89,12 +89,12 @@
 //!
 //! Each call takes the tenant's keyring: choosing which
 //! keyring protects which values is application code: sealing with the wrong one succeeds silently, while opening
-//! with it fails loudly. See the [binding guide], [choosing keyrings], and the
+//! with it fails loudly. See the [records guide], [choosing keyrings], and the
 //! [shredding runbook].
 //!
 #![doc = concat!(
     "[first-field tutorial]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/first-field.md\n",
-    "[binding guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/bindings.md\n",
+    "[records guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/records.md\n",
     "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md\n",
     "[shredding runbook]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/shredding.md",
 )]
@@ -109,10 +109,9 @@
 //!
 //! # Persistent schema
 //!
-//! Codec compatibility, seal and index IDs, the binding declaration (whether a
-//! record field's seal binds the record ID, and its kind), normalization, and index
-//! precision are persistent schema. Stored bytes do not describe them, beyond a
-//! diagnostic fingerprint of the binding declaration; changing them requires a
+//! Codec compatibility, seal and index IDs, a record ID's type, normalization,
+//! and index precision are persistent schema. Stored bytes do not describe them,
+//! beyond a diagnostic fingerprint of the kind of context a value is sealed under; changing them requires a
 //! migration plan. Padding is not schema: the envelope records it.
 //! Guard them in CI with [`testing::assert_encoding`] fixtures, a
 //! [`schema::Manifest`] snapshot, and [`assert_unique_ids!`]; see [schema rules].
@@ -134,7 +133,7 @@
 //! # Security boundaries
 //!
 //! Encryption protects selected stored values while keys remain separate. The
-//! binding rejects substitution across seals, and across records for a
+//! seal context rejects substitution across seals, and across records for a
 //! record's fields; keys separate tenants. It does not prevent replay of an older
 //! value of the same record. Sizes and access patterns remain visible; blind
 //! indexes additionally leak equality/frequency. Verify every candidate against
@@ -160,7 +159,6 @@ pub struct ReadmeDoctests;
 #[doc = include_str!("../docs/first-field.md")]
 pub struct FirstFieldDoctests;
 
-mod binding;
 mod blind;
 mod bound;
 mod codec;
@@ -178,6 +176,7 @@ mod prepare;
 mod record;
 pub mod schema;
 mod seal;
+mod seal_context;
 mod secret;
 #[cfg(feature = "serde")]
 mod serde_impl;
@@ -188,7 +187,6 @@ mod sqlx_sqlite;
 pub mod testing;
 mod value;
 
-pub(crate) use binding::BindingDomain;
 pub use blind::{
     BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexId, IndexList,
     inspect_blind_index,
@@ -223,8 +221,8 @@ pub mod __private {
     pub use uuid;
     pub use zeroize::Zeroizing;
 
-    pub use crate::binding::{RecordKey, RecordKind};
     pub use crate::codec::DefaultCodec;
     pub use crate::record::{open_in_record, seal_in_record};
     pub use crate::schema::{has_duplicate, writes_declared_indexes};
+    pub use crate::seal_context::{RecordKey, RecordKind};
 }

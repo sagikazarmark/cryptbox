@@ -10,8 +10,8 @@ This page explains those choices and their consequences. It builds on
 
 Encrypted storage is not entirely self-describing. An envelope identifies its
 format, suite, encryption-key generation, and whether its payload is padded, but
-the application supplies the expected seal ID, binding, and codec. An
-envelope also carries a fingerprint of its binding declaration, which only names a
+the application supplies the expected seal ID, record ID, and codec. An
+envelope also carries a fingerprint of its context, which only names a
 mismatch. A blind index
 additionally depends on a logical index ID and normalization rule that are not
 stored with it.
@@ -22,7 +22,7 @@ These choices form persistent schema just as database column types do:
 | --- | --- |
 | Value type and codec | Authenticated bytes still need to decode into the intended application value. A different codec can decode existing bytes into a wrong value without an error. |
 | Seal ID | Every value is bound to its seal ID; a different ID fails authentication. |
-| Binding declaration and record kind | A record's fields are bound to its record ID, under the ID's kind; a different declaration reports `BindingMismatch`. |
+| Record ID type | A record's fields are sealed under its record ID, with the ID's kind; a value of another kind of context reports `ContextMismatch`. |
 | Index ID and normalization | Writers, queries, and candidate comparisons must agree on the meaning of equality. |
 | Index precision | Stored indexes and probes must use the same retained bit count. |
 
@@ -66,13 +66,13 @@ Stored bytes do not describe this schema, so check it in tests:
   derives and attributes. A failure means stored values would change; plan a
   migration or revert.
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered seal
-  (ID, codec ID, padding, the record ID's kind, and the binding fingerprint),
+  (ID, codec ID, padding, the record ID's kind, and the context fingerprint),
   index (ID, seal, bits, and normalizer), and record (its seals, record ID
   field, and plaintext fields by name, so a field that
   should have been sealed shows up). Compare the `Display` output with a
   committed snapshot, and
   assert that `duplicates()` is empty. A snapshot diff needs review: for
-  example, a codec ID, normalizer, or binding change needs a migration.
+  example, a codec ID, normalizer, or record ID change needs a migration.
 - **Unique IDs.** `cryptbox::assert_unique_ids!(HomeAddress, BillingAddress)`
   fails compilation when listed seals share a seal ID, and
   `assert_unique_ids!(indexes: EmailLookup, EmailDomain)` does the same for
@@ -240,12 +240,12 @@ sealing of one column would not maintain another column, so `Plain<F>` rejects a
 seal that declares blind indexes.
 
 A blind index is domain-separated by its seal ID, its
-[index binding](wire-format.md#index-binding), and its keys. The record does not
+[index context](wire-format.md#index-context), and its keys. The record does not
 participate, because a query cannot know it, so equal values of one seal share
 index bytes under the same keys: in two orgs that share a blind-index keyring,
 equal emails derive equal indexes. Give each org its own blind-index keyring when
 that equality must stay within the org, and select candidates within what the
-caller may read; see [bindings](bindings.md#blind-indexes).
+caller may read; see [records](records.md#blind-indexes).
 
 Search availability also depends on retaining all readable index-key generations.
 An application can decrypt a row successfully yet omit it from lookup if the
@@ -268,13 +268,13 @@ and buffer.
 Seals, value types, codecs, normalizers, and record ID types are extensible;
 padding policies are a closed set of built-in const policies. A codec or
 normalizer cannot add record authentication: that comes from the seal's
-[binding](bindings.md). The
+[context](records.md). The
 [custom-field example](../examples/custom_field/README.md)
 shows a zeroizing value, codec, normalizer, and refreshed keys working together.
 
 ## From design to a working application
 
-- [Bindings](bindings.md) covers records, record IDs, blind indexes, and
+- [Records](records.md) covers records, record IDs, blind indexes, and
   keeping tenants apart.
 - [Choosing keyrings](choosing-keyrings.md) covers custody, key-ID rules, and
   testing which keyring protects which seal.

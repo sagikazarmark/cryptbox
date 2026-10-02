@@ -1,32 +1,18 @@
-# Bind values to their seal and record
+# Records
 
-A binding is the cryptographic domain of a value: the seal it is sealed with,
-and, for a field of a record, the record's ID. A value opens only under the same
-binding, so it cannot be moved to another seal, field, or row. Tenants, orgs,
-and workspaces are kept apart by keys, not by the binding. This page explains
-what a value is bound to, where its record ID comes from, and how blind indexes
-and tenants fit in.
+Every sealed value is sealed under a context: its seal ID, and, for a field of a
+record, the record's ID. A value opens only under the same context, so a
+standalone value cannot be moved to another seal, and a record's field cannot be
+moved to another seal, field, or row. Tenants, orgs, and workspaces are kept
+apart by keys, not by the context. This page explains records, where their
+record IDs come from, and how blind indexes and tenants fit in.
 [Documentation](README.md) · [Choosing keyrings](choosing-keyrings.md).
 
-Start from [seal your first value](first-field.md), whose seal binds values to
-its seal ID alone. Bind values to their record when a value copied between rows
-must fail to open, and give each tenant its own keyring when tenants must not be
-able to read each other's values: see [choosing keyrings](choosing-keyrings.md).
-
-## Declarations are schema, values are arguments
-
-A binding has two halves, and they change on different schedules:
-
-| Half | Where it is declared | When it changes |
-| --- | --- | --- |
-| **Declaration**: whether a record is bound, and its ID's kind | A record's `record_id` field | Only through a [declaration migration](#change-a-binding-declaration) |
-| **Values**: this record | The row | Every call |
-
-One seal never seals with different declarations on different calls: that would
-give one value two valid encodings. The declaration is persistent schema exactly
-as a seal ID or codec is, and every envelope carries a fingerprint of it, so a
-reader that expects another declaration reports `Error::BindingMismatch` instead
-of an authentication failure.
+Start from [seal your first value](first-field.md), whose standalone seal binds
+values to its seal ID alone. Make values fields of a record when a value copied
+between rows must fail to open, and give each tenant its own keyring when tenants
+must not be able to read each other's values: see
+[choosing keyrings](choosing-keyrings.md).
 
 ## Records bind their sealed fields to their ID
 
@@ -84,11 +70,11 @@ let customer = Customer::open_expecting(stored, &keys, |row| row.org == org)?;
 ```
 
 `open_expecting` reports `Error::UnexpectedRecord` for a row it rejects. Keys
-add the check the binding does not: with a keyring per org, another org's row
+add the check the context does not: with a keyring per org, another org's row
 fails to open with `UnknownEncryptionKey`, and so does a row whose org column
 was edited to name another org, since the application then picks that org's
 keys. Under one shared keyring, an edited org column goes unnoticed. Storage can
-also return a whole authentic row in place of another, which no binding
+also return a whole authentic row in place of another, which no context
 prevents: when you asked for one record, check its ID, as `open_expecting` does.
 
 ## Record IDs
@@ -166,7 +152,7 @@ cargo run --locked --example tenant_field
 
 ## Move a record between orgs
 
-The binding does not name the org, so moving a row to another org that shares
+The context does not name the org, so moving a row to another org that shares
 its keys is a column update. With a keyring per org, the ciphertext is under the
 old org's keys: open the record and seal it again with the new org's keys, or,
 for a standalone value, `Sealed::reseal_across` opens with the old keys and
@@ -182,12 +168,12 @@ reseals with the new ones:
 - **Nothing rewrites values in place by itself.** Reads never reseal, and a
   bounded [sweep](reencryption-sweep.md) is the tool for a whole population.
 
-## Change a binding declaration
+## Change a field's seal or record ID
 
 A field's seal ID and its record ID's type are persistent schema. Changing
 either, or moving a standalone value into a record, makes existing values fail to
 open: under another seal ID with `Error::AuthenticationFailed`, and under
-another declaration with `Error::BindingMismatch`. CryptBox has
+another declaration with `Error::ContextMismatch`. CryptBox has
 no migration window for these changes yet; plan one of your own, such as reading
 old rows with the old declaration while a job reseals them.
 
@@ -222,6 +208,6 @@ Key IDs follow separate rules, in [choosing keyrings](choosing-keyrings.md).
   does not remove.
 - [Integration design](integration.md): persistent schema, storage boundaries,
   search, and ORMs.
-- [Wire format](wire-format.md#binding): the exact binding bytes and the
-  binding fingerprint.
-- [Glossary](glossary.md): binding, record, stored form, index handle.
+- [Wire format](wire-format.md#seal-context): the exact context bytes and the
+  context fingerprint.
+- [Glossary](glossary.md): context, record, stored form, index handle.

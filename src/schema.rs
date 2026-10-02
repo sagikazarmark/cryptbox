@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     BlindIndexSpec, Codec, IndexId, Padding, Record, Seal, SealId,
-    binding::{RecordKind, declaration_fingerprint},
+    seal_context::{self, RecordKind},
 };
 
 /// Lists seals and blind indexes with their persistent schema.
@@ -21,7 +21,7 @@ use crate::{
 ///
 /// - its seal ID, codec ID, and padding;
 /// - `record`: the kind of the record ID it is bound to, or `no`;
-/// - `binding`: the [binding fingerprint](crate::CiphertextInfo::context_fingerprint).
+/// - `context`: the [context fingerprint](crate::CiphertextInfo::context_fingerprint).
 ///
 /// Each index lists its index ID, seal ID, bits, and normalizer name.
 ///
@@ -59,7 +59,7 @@ use crate::{
 ///   codec: utf8
 ///   padding: block(16)
 ///   record: no
-///   binding: 65640fc8333534b9
+///   context: 65640fc8333534b9
 /// ");
 /// ```
 #[derive(Debug, Default)]
@@ -119,7 +119,7 @@ impl Manifest {
                 codec: <F::Codec as Codec<F::Value>>::ID,
                 padding: F::PADDING,
                 record: F::RECORD,
-                fingerprint: declaration_fingerprint::<F>(),
+                fingerprint: seal_context::fingerprint(F::RECORD),
             });
         }
         self
@@ -242,7 +242,7 @@ impl fmt::Display for Manifest {
                 "  record: {}",
                 seal.record.map_or("no", kind_name)
             )?;
-            writeln!(formatter, "  binding: {}", hex::encode(seal.fingerprint))?;
+            writeln!(formatter, "  context: {}", hex::encode(seal.fingerprint))?;
         }
 
         for index in &self.indexes {
