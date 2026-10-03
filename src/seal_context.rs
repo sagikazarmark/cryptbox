@@ -70,7 +70,7 @@ impl RecordValue<'_> {
     label = "a record ID is a UUID, an `i64`, or bytes",
     note = "use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid` with the `uuid` feature"
 )]
-pub trait RecordKey: 'static {
+pub trait RecordKey: sealed::Sealed + 'static {
     #[doc(hidden)]
     const KIND: RecordKind;
 
@@ -122,6 +122,13 @@ impl RecordKey for Box<[u8]> {
 mod sealed {
     pub trait Sealed {}
 }
+
+impl sealed::Sealed for [u8; 16] {}
+#[cfg(feature = "uuid")]
+impl sealed::Sealed for uuid::Uuid {}
+impl sealed::Sealed for i64 {}
+impl sealed::Sealed for Vec<u8> {}
+impl sealed::Sealed for Box<[u8]> {}
 
 /// The context a sealed value is sealed under besides its seal ID: `()` for a
 /// standalone value, or a [`Context`], such as [`InRecord`].
