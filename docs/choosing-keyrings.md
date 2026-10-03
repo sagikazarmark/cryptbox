@@ -113,7 +113,7 @@ Blind-index keyrings follow the same rules, with independently generated roots;
 `Keys` pairs an encryption keyring with one.
 
 For the automatic SQLx column, the keys are a type: `Plain<F, K>` reads its keys
-from `K`, the installed keys by default. It serves only standalone seals without
+from `K`, the installed keys by default. It serves only standalone values without
 blind indexes, because a column decoder does not see the row. A record's fields
 are sealed by the record. See
 [keyrings](integration.md#keyrings) for the process-wide forms and how to

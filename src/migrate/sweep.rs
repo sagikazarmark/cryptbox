@@ -61,7 +61,7 @@ pub trait SweepStore {
     /// The unique, immutable, indexed cursor rows are totally ordered by.
     type Cursor: Clone + Send + Sync;
     /// The columns each row carries for its context, such as its record ID;
-    /// `()` for a standalone seal.
+    /// `()` for standalone values.
     type Columns: Send + Sync;
     /// The storage backend's error type.
     type Error: std::error::Error + Send + Sync + 'static;

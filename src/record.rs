@@ -1,10 +1,9 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    BlindIndex, BlindIndexKeys, BlindIndexSpec, EncryptionKeys, Error, RecordKeys, Seal, SealId,
-    Sealed,
+    BlindIndex, BlindIndexKeys, BlindIndexSpec, Context, EncryptionKeys, Error, RecordKeys, Seal,
+    SealId,
     blind::{index_context, probes_in},
-    seal_context::{RecordKey, SealContext},
 };
 
 /// A row whose sealed fields are bound to their seals and to its record ID,
@@ -12,8 +11,8 @@ use crate::{
 ///
 /// A record pairs a plaintext struct with its stored form, [`Self::Stored`]:
 /// the record ID and plaintext fields as they are, each sealed
-/// field as its [`Sealed`](crate::Sealed) value, and a
-/// [`BlindIndex`] column per blind index. [`Self::seal`] encrypts every sealed
+/// field as its [`Sealed`](crate::Sealed) value in the record's context,
+/// [`Self::Context`], and a [`BlindIndex`] column per blind index. [`Self::seal`] encrypts every sealed
 /// field and derives its indexes; [`Self::open`] authenticates and opens them.
 ///
 /// The record ID is read from the stored row and authenticated by opening: a
@@ -30,6 +29,14 @@ pub trait Record: Sized {
     /// The stored form: the record ID and plaintext fields as they are, the
     /// sealed fields, and a column per blind index.
     type Stored;
+
+    /// The context its sealed fields are sealed in: the record ID, as
+    /// [`InRecord<Id>`](crate::InRecord) for a record ID of type `Id`.
+    ///
+    /// Each sealed field is stored as `Sealed<F, Self::Context>`, sealed with
+    /// [`Sealed::seal_in`](crate::Sealed::seal_in) and opened with
+    /// [`Sealed::open_in`](crate::Sealed::open_in) under the record ID.
+    type Context: Context;
 
     /// The seal ID of each sealed field, in field order.
     ///
@@ -193,35 +200,4 @@ impl<R: Record, S: BlindIndexSpec> fmt::Debug for Index<R, S> {
             .field("id", &S::ID)
             .finish_non_exhaustive()
     }
-}
-
-/// Seals a record field's `value` under its seal `F` and the record ID `id`.
-/// Not public API: `#[derive(Record)]` calls it.
-///
-/// # Errors
-///
-/// Returns any error of sealing.
-#[doc(hidden)]
-pub fn seal_in_record<F: Seal>(
-    value: &F::Value,
-    id: &impl RecordKey,
-    keys: &(impl EncryptionKeys + ?Sized),
-) -> Result<Sealed<F>, Error> {
-    Sealed::seal_in(value, &SealContext::in_record::<F, _>(id)?, keys)
-}
-
-/// Opens a record field's value under its seal `F` and the record ID `id`. Not
-/// public API: `#[derive(Record)]` calls it.
-///
-/// # Errors
-///
-/// Returns any error of opening, such as [`Error::AuthenticationFailed`] for a
-/// value of another record.
-#[doc(hidden)]
-pub fn open_in_record<F: Seal>(
-    sealed: &Sealed<F>,
-    id: &impl RecordKey,
-    keys: &(impl EncryptionKeys + ?Sized),
-) -> Result<F::Value, Error> {
-    sealed.open_in(&SealContext::in_record::<F, _>(id)?, keys)
 }

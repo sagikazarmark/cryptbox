@@ -126,7 +126,7 @@ plaintext-only data. Recovery decodes through the seal's codec, seals and
 derives every registered index. Stale CryptBox components are rewritten; current
 ones are retained under the [sweep rules](reencryption-sweep.md#sweep-loop).
 
-`RowPlanner::new` serves a standalone seal. A record field's seal uses
+`RowPlanner::new` serves standalone values. A record field's seal uses
 `RowPlanner::for_rows(keys, |row| Ok(&row.id))`; with a keyring per org, configure one
 planner per org, from the job's configuration, and have the store select only
 that org's rows. The record ID comes from the row's own columns, so a migration

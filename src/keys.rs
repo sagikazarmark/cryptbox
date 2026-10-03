@@ -11,7 +11,7 @@
 //! the automatic `SQLx` column `Plain<F>` reads the same keys through
 //! [`GlobalKeys`](crate::GlobalKeys).
 //!
-//! The process-wide keys serve only standalone seals: a record, or a tenant's
+//! The process-wide keys serve only standalone values: a record, or a tenant's
 //! value, is sealed and opened explicitly, with keys the
 //! application chooses for that tenant.
 //!

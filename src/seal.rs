@@ -1,5 +1,5 @@
 use crate::id::identifier;
-use crate::{Codec, IndexList, Padding, seal_context::RecordKind};
+use crate::{Codec, IndexList, Padding};
 
 identifier!(SealId, "A stable seal identifier.");
 
@@ -16,9 +16,10 @@ identifier!(SealId, "A stable seal identifier.");
 /// ID and codec read each other's values.
 ///
 /// Every sealed value is bound at runtime to its seal ID: opening it as another
-/// seal fails authentication. The seals `#[derive(Record)]` declares for its
-/// sealed fields bind each value to its record ID too, and only the record seals
-/// and opens them; see [`Record`](crate::Record).
+/// seal fails authentication. A seal knows nothing of where its values are
+/// stored: a value sealed in a [`Context`](crate::Context), such as a record's
+/// field in [`InRecord`](crate::InRecord), is bound to the context's value too;
+/// see [`Sealed`](crate::Sealed) and [`Record`](crate::Record).
 /// Which keys protect a value is the caller's choice: with a keyring per
 /// tenant, another tenant's value fails to open.
 ///
@@ -32,7 +33,7 @@ identifier!(SealId, "A stable seal identifier.");
 /// incompatible changes require an explicit data migration. Padding is write
 /// policy instead: the envelope records whether a value is padded. See
 /// [`crate::schema`] and [`crate::testing`] for CI checks of the codec and IDs;
-/// a record field's value read as a standalone seal's reports
+/// a record field's value read as a standalone value reports
 /// [`Error::ContextMismatch`](crate::Error::ContextMismatch) when opened.
 ///
 /// For blind indexes, the seal domain-separates derivation; it does not
@@ -109,12 +110,6 @@ pub trait Seal: 'static {
     /// they would not write, such as the automatic column
     /// [`Plain`](crate::Plain). See [`IndexList`].
     type Indexes: IndexList<Self>;
-
-    /// The kind of the record ID a record field's seal binds its values to.
-    /// Not public API: `#[derive(Record)]` sets it for the seals of its sealed
-    /// fields, which only the record seals and opens.
-    #[doc(hidden)]
-    const RECORD: Option<RecordKind> = None;
 }
 
 /// Creates a [`SealId`](crate::SealId) from a UUID literal.

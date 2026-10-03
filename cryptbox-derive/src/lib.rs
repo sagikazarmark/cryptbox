@@ -330,7 +330,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// `crate = "path"` names the path to `cryptbox`.
 ///
 /// The stored form has the record's fields in order, each sealed field as its
-/// `Sealed<Seal>`, and each blind index in a `BlindIndex<Spec>` column after its
+/// `Sealed<Seal, InRecord<Id>>`, sealed under the record ID of type `Id`, and each blind index in a `BlindIndex<Spec>` column after its
 /// field. `Record::seal` clones the record ID and plaintext fields, so they
 /// implement `Clone`.
 ///
@@ -363,15 +363,14 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// `Result`, `Option`, `Clone`, `Sized`, and the codec as absolute paths, wraps
 /// each impl in `const _: () = { … };`, forwards docs, and checks, at compile
 /// time, that the record ID is a UUID, an `i64`, or bytes. The seals it declares
-/// bind the record ID through hidden items, so only the record seals and opens
-/// their values:
+/// know nothing of the record: the record seals and opens their values in its
+/// context, [`InRecord`](cryptbox::InRecord), under its record ID:
 ///
 /// ```
 /// # use cryptbox::{
-/// #     BlindIndex, BlindIndexError, BlindIndexSpec, EncryptionKeys, Error, Index, IndexId,
-/// #     Padding, Record, RecordKeys, Seal, SealId, Sealed, Utf8,
+/// #     BlindIndex, BlindIndexError, BlindIndexSpec, EncryptionKeys, Error, InRecord, Index,
+/// #     IndexId, Padding, Record, RecordKeys, Seal, SealId, Sealed, Utf8,
 /// # };
-/// # use cryptbox::__private::{RecordKey, RecordKind, open_in_record, seal_in_record};
 /// # use zeroize::Zeroizing;
 /// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 /// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
@@ -391,7 +390,6 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///     type Value = String;
 ///     type Codec = Utf8;
 ///     type Indexes = (CustomerEmailIndex,);
-///     const RECORD: Option<RecordKind> = Some(<i64 as RecordKey>::KIND);
 /// }
 ///
 /// /// The `email_index` blind index of `Customer::email`.
@@ -417,7 +415,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// pub struct StoredCustomer {
 ///     pub id: i64,
 ///     pub org: i64,
-///     pub email: Sealed<CustomerEmail>,
+///     pub email: Sealed<CustomerEmail, InRecord<i64>>,
 ///     /// The `email_index` blind index of `email`.
 ///     pub email_index: BlindIndex<CustomerEmailIndex>,
 ///     pub created_at: i64,
@@ -425,6 +423,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///
 /// impl Record for Customer {
 ///     type Stored = StoredCustomer;
+///     type Context = InRecord<i64>;
 ///
 ///     const SEALS: &'static [SealId] = &[<CustomerEmail as Seal>::ID];
 ///     const RECORD_ID: &'static str = "id";
@@ -434,7 +433,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///     where
 ///         K: RecordKeys + ?Sized,
 ///     {
-///         let email = seal_in_record::<CustomerEmail>(&self.email, &self.id, keys)?;
+///         let email = Sealed::<CustomerEmail, InRecord<i64>>::seal_in(&self.email, &self.id, keys)?;
 ///         let email_index =
 ///             CustomerEmailIndex::derive_with(&self.email, keys.record_blind_index_keyring()?)?;
 ///
@@ -451,7 +450,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///     where
 ///         K: EncryptionKeys + ?Sized,
 ///     {
-///         let email = open_in_record::<CustomerEmail>(&stored.email, &stored.id, keys)?;
+///         let email = Sealed::open_in(&stored.email, &stored.id, keys)?;
 ///
 ///         Ok(Self {
 ///             id: stored.id,

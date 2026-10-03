@@ -5,7 +5,10 @@
 use zeroize::Zeroizing;
 
 use crate::envelope;
-use crate::{EncryptionKeyring, Error, Padding, seal_context::SealContext};
+use crate::{
+    ContextKind, EncryptionKeyring, Error, Padding,
+    seal_context::{self, SealContext},
+};
 
 /// Pads and seals `plaintext` under `context` with the current key of `keyring`.
 pub(crate) fn seal(
@@ -30,6 +33,7 @@ pub(crate) fn open(
 
 /// Reports whether `ciphertext` differs from what `context` and `padding`
 /// currently write, without decrypting it.
+#[cfg(feature = "migrate")]
 pub(crate) fn needs_reseal(
     context: &SealContext,
     padding: Padding,
@@ -37,6 +41,22 @@ pub(crate) fn needs_reseal(
     keyring: &EncryptionKeyring,
 ) -> Result<bool, Error> {
     let checked = envelope::check(context.envelope(), ciphertext)?;
+
+    Ok(checked.needs_reseal(padding, keyring))
+}
+
+/// Reports whether `ciphertext`, sealed in a context of kind `C`, differs from
+/// what `padding` currently writes, without decrypting it or knowing the
+/// context's value.
+pub(crate) fn needs_reseal_kind<C: ContextKind>(
+    padding: Padding,
+    ciphertext: &[u8],
+    keyring: &EncryptionKeyring,
+) -> Result<bool, Error> {
+    // Checking compares only the fingerprint, which covers a context's kind and
+    // never its value, so no context bytes are needed: nothing is decrypted.
+    let context = envelope::Context::new(&[], seal_context::fingerprint(C::RECORD));
+    let checked = envelope::check(context, ciphertext)?;
 
     Ok(checked.needs_reseal(padding, keyring))
 }

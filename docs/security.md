@@ -40,9 +40,9 @@ Secure OS randomness and a compatible target are required; see [platform constra
 | --- | --- |
 | Read dumps, snapshots, backups, or detached volumes | Selected values remain confidential under the assumptions above. Other columns, IDs, and metadata remain visible. |
 | Modify stored ciphertext | Authenticated decryption rejects tampering. Parsing alone does not authenticate; malformed formats or unknown keys may fail earlier. |
-| Copy ciphertext to another seal | Authentication rejects a seal with a different seal ID. A record field's value read as a standalone seal's reports `ContextMismatch`. |
+| Copy ciphertext to another seal | Authentication rejects a seal with a different seal ID. A record field's value read as a standalone value reports `ContextMismatch`. |
 | Copy ciphertext to another tenant, org, or workspace | Only keys separate tenants: with a keyring per tenant, another tenant's keys fail with `UnknownEncryptionKey`. Under one shared keyring, a value moved within its row's record is still bound to that record, but a record's plaintext tenant column changed in place is not detected. |
-| Copy ciphertext between rows of the same seal | Authentication rejects another record for a record's fields. For a standalone seal, substitution among rows under the same keys can succeed. |
+| Copy ciphertext between rows of the same seal | Authentication rejects another record for a record's fields. For a standalone value, substitution among rows under the same keys can succeed. |
 | Return a whole row in place of another | Every value in it opens, because each is bound to that row's own record ID. A `Record` opens as the record it is: when you asked for one record by ID, compare the opened ID with it. |
 | Restore an older authentic value | No replay, rollback, or freshness protection. |
 | Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket or fixed target. Blind indexes leak equality/frequency across every value of their seal under the same index keys, across records and tenants that share them. Access patterns remain visible. |
@@ -83,7 +83,7 @@ distinct from the independent security review status of the implementation.
 | --- | --- | --- |
 | Parse ciphertext or deserialize stored bytes | Supported structure and lengths | Authenticity or readability |
 | Inspect generations / complete sweep verification | Stored values name the intended generations | Authentication, decodability, or index consistency |
-| Open with the expected seal, or a record | Authentication under that seal, and the record for its fields, padding removal, and decoding for that value | Row identity for a standalone seal, freshness, or index consistency |
+| Open with the expected seal, or a record | Authentication under that seal, and the record for its fields, padding removal, and decoding for that value | Row identity for a standalone value, freshness, or index consistency |
 | Verify a lookup candidate | Its normalized plaintext matches the query | Stored-index authenticity or completeness of query results |
 | Recompute a stored index under its recorded generation | Consistency with authenticated plaintext and the expected index policy at the configured precision | Absence of omitted rows or rollback |
 

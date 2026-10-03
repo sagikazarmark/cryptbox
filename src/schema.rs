@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    BlindIndexSpec, Codec, IndexId, Padding, Record, Seal, SealId,
+    BlindIndexSpec, Codec, ContextKind, IndexId, Padding, Record, Seal, SealId,
     seal_context::{self, RecordKind},
 };
 
@@ -17,16 +17,16 @@ use crate::{
 /// snapshot in a test. A change to persistent schema then shows up as a
 /// snapshot diff for review. Assert that [`Self::duplicates`] is empty as well.
 ///
-/// Each seal lists:
-///
-/// - its seal ID, codec ID, and padding;
-/// - `record`: the kind of the record ID it is bound to, or `no`;
-/// - `context`: the [context fingerprint](crate::CiphertextInfo::context_fingerprint).
+/// Each seal lists its seal ID, codec ID, and padding, and the
+/// [context fingerprint](crate::CiphertextInfo::context_fingerprint) of each
+/// context [`Self::sealed`] registers it in: a seal knows nothing of where its
+/// values are stored, so the manifest lists what the application registers.
 ///
 /// Each index lists its index ID, seal ID, bits, and normalizer name.
 ///
 /// Each record lists the seal IDs of its sealed fields, the field that holds
-/// its record ID, and its plaintext fields. A field stored as it is has no ID, so
+/// its record ID, the record ID's kind, its context fingerprint, and its
+/// plaintext fields. A field stored as it is has no ID, so
 /// the manifest names it, and a field that should have been sealed shows up in
 /// the snapshot.
 ///
@@ -51,14 +51,14 @@ use crate::{
 ///     type Indexes = ();
 /// }
 ///
-/// let manifest = Manifest::new().seal::<Nickname>();
+/// // Nicknames are stored as standalone values, `Sealed<Nickname>`.
+/// let manifest = Manifest::new().sealed::<Nickname, ()>();
 ///
 /// assert!(manifest.duplicates().is_empty());
 /// assert_eq!(manifest.to_string(), "\
 /// seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
 ///   codec: utf8
 ///   padding: block(16)
-///   record: no
 ///   context: 65640fc8333534b9
 /// ");
 /// ```
@@ -67,6 +67,8 @@ pub struct Manifest {
     seals: Vec<SealEntry>,
     indexes: Vec<IndexEntry>,
     records: Vec<RecordEntry>,
+    // Every context a seal ID is registered in, by `sealed` or by a record.
+    contexts: Vec<(SealId, Option<RecordKind>)>,
 }
 
 #[derive(Debug)]
@@ -74,6 +76,7 @@ struct RecordEntry {
     marker: TypeId,
     seals: &'static [SealId],
     record_id: &'static str,
+    record: Option<RecordKind>,
     plaintext: &'static [&'static str],
 }
 
@@ -94,8 +97,8 @@ struct SealEntry {
     id: SealId,
     codec: &'static str,
     padding: Padding,
-    record: Option<RecordKind>,
-    fingerprint: [u8; 8],
+    // The contexts `sealed` registers it in, in registration order.
+    contexts: Vec<Option<RecordKind>>,
 }
 
 impl Manifest {
@@ -105,24 +108,52 @@ impl Manifest {
         Self::default()
     }
 
-    /// Registers seal `F`.
+    /// Registers seal `F`: its seal ID, codec, and padding.
     ///
-    /// Registering it again changes nothing.
+    /// Registering it again changes nothing. Register the context its values
+    /// are stored in with [`Self::sealed`], or with [`Self::record`] for a
+    /// record's.
     #[must_use]
     pub fn seal<F: Seal>(mut self) -> Self {
-        let marker = TypeId::of::<F>();
-        if self.seals.iter().all(|seal| seal.marker != marker) {
-            self.seals.push(SealEntry {
-                marker,
-                name: type_name::<F>(),
-                id: F::ID,
-                codec: <F::Codec as Codec<F::Value>>::ID,
-                padding: F::PADDING,
-                record: F::RECORD,
-                fingerprint: seal_context::fingerprint(F::RECORD),
-            });
-        }
+        self.seal_entry::<F>();
         self
+    }
+
+    /// Registers seal `F` and the context `C` its values are stored in, as
+    /// [`Sealed<F, C>`](crate::Sealed): `()` for standalone values.
+    ///
+    /// The seal lists the context's fingerprint, and [`Self::duplicates`]
+    /// reports a seal registered in several kinds of context, such as a record
+    /// field's seal also stored standalone. Registering it again changes
+    /// nothing.
+    #[must_use]
+    pub fn sealed<F: Seal, C: ContextKind>(mut self) -> Self {
+        let seal = self.seal_entry::<F>();
+        if !seal.contexts.contains(&C::RECORD) {
+            seal.contexts.push(C::RECORD);
+        }
+        self.contexts.push((F::ID, C::RECORD));
+        self
+    }
+
+    fn seal_entry<F: Seal>(&mut self) -> &mut SealEntry {
+        let marker = TypeId::of::<F>();
+        let position =
+            if let Some(position) = self.seals.iter().position(|seal| seal.marker == marker) {
+                position
+            } else {
+                self.seals.push(SealEntry {
+                    marker,
+                    name: type_name::<F>(),
+                    id: F::ID,
+                    codec: <F::Codec as Codec<F::Value>>::ID,
+                    padding: F::PADDING,
+                    contexts: Vec::new(),
+                });
+                self.seals.len() - 1
+            };
+
+        &mut self.seals[position]
     }
 
     /// Registers blind index `I`.
@@ -145,40 +176,81 @@ impl Manifest {
         self
     }
 
-    /// Registers record `R`: its sealed fields' seal IDs, and the names of its
-    /// record ID and plaintext fields.
+    /// Registers record `R`: its sealed fields' seal IDs, the name of its record
+    /// ID field, its context, and the names of its plaintext fields.
     ///
-    /// Register its seals separately with [`Self::seal`]. Registering it again
-    /// changes nothing.
+    /// Its seals are registered in its context, [`Record::Context`]; register
+    /// the seals themselves with [`Self::seal`]. Registering it again changes
+    /// nothing.
     #[must_use]
     pub fn record<R: Record + 'static>(mut self) -> Self {
         let marker = TypeId::of::<R>();
         if self.records.iter().all(|record| record.marker != marker) {
+            let record = <R::Context as ContextKind>::RECORD;
             self.records.push(RecordEntry {
                 marker,
                 seals: R::SEALS,
                 record_id: R::RECORD_ID,
+                record,
                 plaintext: R::PLAINTEXT,
             });
+            self.contexts
+                .extend(R::SEALS.iter().map(|seal| (*seal, record)));
         }
         self
     }
 
-    /// Returns every seal or index ID that more than one registered marker declares.
+    /// Returns every seal or index ID that more than one registered marker
+    /// declares, and every seal ID registered in more than one kind of context.
     ///
     /// Markers that share a seal ID are one seal and can read each
     /// other's ciphertext. That is occasionally deliberate, but usually a copied
     /// ID, so assert that this is empty in a test. Each duplicate names the
     /// markers by [`std::any::type_name`] to help find the copy; the manifest's
     /// own output lists only the ID.
+    ///
+    /// A seal stored in several kinds of context, such as a record field's seal
+    /// also stored standalone, has values that open only in the context they
+    /// were sealed in, and that share its blind indexes. That is usually a
+    /// mistake.
     #[must_use]
     pub fn duplicates(&self) -> Vec<Duplicate> {
         let seals = shared_ids(self.seals.iter().map(|seal| (seal.id, seal.name)))
             .map(|(id, markers)| Duplicate::Seal { id, markers });
         let indexes = shared_ids(self.indexes.iter().map(|index| (index.id, index.name)))
             .map(|(id, markers)| Duplicate::Index { id, markers });
+        let contexts = self
+            .shared_contexts()
+            .map(|(id, contexts)| Duplicate::Context {
+                id,
+                contexts: contexts
+                    .into_iter()
+                    .map(seal_context::fingerprint)
+                    .collect(),
+            });
 
-        seals.chain(indexes).collect()
+        seals.chain(indexes).chain(contexts).collect()
+    }
+
+    /// Groups the kinds of context of each seal ID, in order of first
+    /// appearance, keeping only seal IDs in more than one.
+    fn shared_contexts(&self) -> impl Iterator<Item = (SealId, Vec<Option<RecordKind>>)> {
+        let mut groups: Vec<(SealId, Vec<Option<RecordKind>>)> = Vec::new();
+
+        for (id, context) in &self.contexts {
+            match groups.iter_mut().find(|(group, _)| group == id) {
+                Some((_, contexts)) => {
+                    if !contexts.contains(context) {
+                        contexts.push(*context);
+                    }
+                }
+                None => groups.push((*id, vec![*context])),
+            }
+        }
+
+        groups
+            .into_iter()
+            .filter(|(_, contexts)| contexts.len() > 1)
     }
 }
 
@@ -200,6 +272,13 @@ pub enum Duplicate {
         /// The markers' type names, in registration order.
         markers: Vec<&'static str>,
     },
+    /// One seal ID is registered in several kinds of context.
+    Context {
+        /// The seal ID.
+        id: SealId,
+        /// The contexts' fingerprints, in registration order.
+        contexts: Vec<[u8; 8]>,
+    },
 }
 
 impl fmt::Display for Duplicate {
@@ -210,6 +289,14 @@ impl fmt::Display for Duplicate {
             }
             Self::Index { id, markers } => {
                 write!(formatter, "duplicate index ID {id}: {}", markers.join(", "))
+            }
+            Self::Context { id, contexts } => {
+                let contexts: Vec<String> = contexts.iter().map(hex::encode).collect();
+                write!(
+                    formatter,
+                    "seal ID {id} in several contexts: {}",
+                    contexts.join(", ")
+                )
             }
         }
     }
@@ -237,12 +324,13 @@ impl fmt::Display for Manifest {
             writeln!(formatter, "seal {}", seal.id)?;
             writeln!(formatter, "  codec: {}", seal.codec)?;
             writeln!(formatter, "  padding: {}", seal.padding)?;
-            writeln!(
-                formatter,
-                "  record: {}",
-                seal.record.map_or("no", kind_name)
-            )?;
-            writeln!(formatter, "  context: {}", hex::encode(seal.fingerprint))?;
+            for context in &seal.contexts {
+                writeln!(
+                    formatter,
+                    "  context: {}",
+                    hex::encode(seal_context::fingerprint(*context))
+                )?;
+            }
         }
 
         for index in &self.indexes {
@@ -261,6 +349,16 @@ impl fmt::Display for Manifest {
             }
             writeln!(formatter)?;
             writeln!(formatter, "  record id: {}", record.record_id)?;
+            writeln!(
+                formatter,
+                "  record kind: {}",
+                record.record.map_or("none", kind_name)
+            )?;
+            writeln!(
+                formatter,
+                "  context: {}",
+                hex::encode(seal_context::fingerprint(record.record))
+            )?;
             match record.plaintext {
                 [] => writeln!(formatter, "  plaintext: none")?,
                 fields => writeln!(formatter, "  plaintext: {}", fields.join(", "))?,
@@ -272,6 +370,9 @@ impl fmt::Display for Manifest {
             match duplicate {
                 Duplicate::Seal { id, .. } => writeln!(formatter, "duplicate seal ID {id}")?,
                 Duplicate::Index { id, .. } => writeln!(formatter, "duplicate index ID {id}")?,
+                Duplicate::Context { id, .. } => {
+                    writeln!(formatter, "seal ID {id} in several contexts")?;
+                }
             }
         }
 

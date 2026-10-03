@@ -1,9 +1,8 @@
 //! Public-boundary tests for the schema manifest and unique-ID checks.
 
-use cryptbox::__private::{RecordKey, RecordKind, seal_in_record};
 use cryptbox::{
-    BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, IndexId, Padding, Raw, Seal,
-    SealId, Utf8, index_id, inspect_ciphertext,
+    BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, InRecord, IndexId, Padding,
+    Raw, Seal, SealId, Sealed, Utf8, index_id, inspect_ciphertext,
     schema::{Duplicate, Manifest},
     seal_id,
 };
@@ -31,7 +30,12 @@ impl Seal for Avatar {
 
 #[test]
 fn manifest_lists_each_seal() {
-    let manifest = Manifest::new().seal::<Nickname>().seal::<Avatar>();
+    // A seal lists the contexts it is registered in: standalone for `Nickname`,
+    // none for `Avatar`.
+    let manifest = Manifest::new()
+        .sealed::<Nickname, ()>()
+        .seal::<Avatar>()
+        .seal::<Nickname>();
 
     assert_eq!(
         manifest.to_string(),
@@ -39,13 +43,10 @@ fn manifest_lists_each_seal() {
 seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   codec: utf8
   padding: none
-  record: no
   context: 65640fc8333534b9
 seal 9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e
   codec: raw
   padding: block(64)
-  record: no
-  context: 65640fc8333534b9
 "
     );
 }
@@ -58,13 +59,14 @@ impl Seal for RowNote {
     type Value = String;
     type Codec = Utf8;
     type Indexes = ();
-    // As `#[derive(Record)]` declares a record field's seal.
-    const RECORD: Option<RecordKind> = Some(<i64 as RecordKey>::KIND);
 }
 
 #[test]
-fn manifest_shows_the_record_kind() {
-    let snapshot = Manifest::new().seal::<RowNote>().to_string();
+fn manifest_shows_the_context_a_seal_is_stored_in() {
+    // As a record with an `i64` record ID stores it.
+    let snapshot = Manifest::new()
+        .sealed::<RowNote, InRecord<i64>>()
+        .to_string();
 
     assert_eq!(
         snapshot,
@@ -72,7 +74,6 @@ fn manifest_shows_the_record_kind() {
 seal 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
   codec: utf8
   padding: block(16)
-  record: i64
   context: 76081b730530f822
 "
     );
@@ -80,7 +81,7 @@ seal 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
     // The fingerprint, computed with shasum from docs/wire-format.md#context-fingerprint,
     // is the one a sealed value's header carries.
     let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
-    let sealed = seal_in_record::<RowNote>(&"hi".to_owned(), &1_i64, &keys).unwrap();
+    let sealed = Sealed::<RowNote, InRecord<i64>>::seal_in(&"hi".to_owned(), &1, &keys).unwrap();
     let header = inspect_ciphertext(sealed.as_bytes()).unwrap();
     assert!(snapshot.contains(&format!(
         "  context: {}\n",
@@ -192,6 +193,36 @@ fn manifest_reports_duplicate_index_ids() {
     );
 }
 
+#[test]
+fn manifest_reports_a_seal_in_several_contexts() {
+    let manifest = Manifest::new()
+        .sealed::<RowNote, InRecord<i64>>()
+        .sealed::<RowNote, ()>()
+        .sealed::<RowNote, InRecord<i64>>();
+
+    assert_eq!(
+        manifest.duplicates(),
+        [Duplicate::Context {
+            id: RowNote::ID,
+            contexts: vec![
+                hex::decode("76081b730530f822").unwrap().try_into().unwrap(),
+                hex::decode("65640fc8333534b9").unwrap().try_into().unwrap(),
+            ],
+        }]
+    );
+    assert!(manifest.to_string().ends_with(
+        "  context: 65640fc8333534b9\n\
+         seal ID 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51 in several contexts\n"
+    ));
+    assert!(
+        Manifest::new()
+            .sealed::<RowNote, InRecord<i64>>()
+            .sealed::<RowNote, InRecord<i64>>()
+            .duplicates()
+            .is_empty()
+    );
+}
+
 // Distinct IDs pass the compile-time check; its doctests show duplicates failing.
 cryptbox::assert_unique_ids!(Nickname, Avatar);
 cryptbox::assert_unique_ids!(indexes: NicknameLookup);
@@ -227,8 +258,6 @@ mod serde_codecs {
 seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
   codec: json/1
   padding: length(256)
-  record: no
-  context: 65640fc8333534b9
 "
         );
     }
@@ -254,8 +283,6 @@ seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
 seal 7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13
   codec: postcard/1
   padding: none
-  record: no
-  context: 65640fc8333534b9
 "
         );
     }
@@ -292,6 +319,8 @@ mod records {
 record
   seals: dd965aff-c187-49ed-86fe-b75e63fd228d, c173ce33-731d-4051-b1d7-e5dd549c5371
   record id: id
+  record kind: i64
+  context: 76081b730530f822
   plaintext: tenant, created_at, type
 "
         );
@@ -315,8 +344,20 @@ record
             Manifest::new()
                 .record::<Note>()
                 .to_string()
-                .ends_with("  record id: id\n  plaintext: none\n")
+                .ends_with("  context: 76081b730530f822\n  plaintext: none\n")
         );
+    }
+
+    #[test]
+    fn a_record_field_s_seal_also_stored_standalone_is_reported() {
+        let manifest = Manifest::new()
+            .record::<Customer>()
+            .sealed::<CustomerEmail, ()>();
+
+        assert!(matches!(
+            manifest.duplicates().as_slice(),
+            [cryptbox::schema::Duplicate::Context { id, .. }] if *id == CustomerEmail::ID
+        ));
     }
 
     #[test]

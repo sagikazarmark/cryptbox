@@ -31,7 +31,7 @@ where
     }
 }
 
-impl<F: Seal> Type<Sqlite> for Sealed<F> {
+impl<F: Seal, C> Type<Sqlite> for Sealed<F, C> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -81,7 +81,7 @@ where
     }
 }
 
-impl<'q, F: Seal> Encode<'q, Sqlite> for Sealed<F> {
+impl<'q, F: Seal, C> Encode<'q, Sqlite> for Sealed<F, C> {
     fn encode_by_ref(
         &self,
         buffer: &mut Vec<SqliteArgumentValue<'q>>,
@@ -143,7 +143,7 @@ where
     }
 }
 
-impl<'row, F: Seal> Decode<'row, Sqlite> for Sealed<F> {
+impl<'row, F: Seal, C> Decode<'row, Sqlite> for Sealed<F, C> {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
 

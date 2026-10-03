@@ -66,12 +66,14 @@ Stored bytes do not describe this schema, so check it in tests:
   derives and attributes. A failure means stored values would change; plan a
   migration or revert.
 - **Schema manifest.** `cryptbox::schema::Manifest` lists each registered seal
-  (ID, codec ID, padding, the record ID's kind, and the context fingerprint),
+  (ID, codec ID, padding, and the context fingerprint of each context
+  `sealed::<F, C>()` registers it in, such as `()` for standalone values),
   index (ID, seal, bits, and normalizer), and record (its seals, record ID
-  field, and plaintext fields by name, so a field that
-  should have been sealed shows up). Compare the `Display` output with a
-  committed snapshot, and
-  assert that `duplicates()` is empty. A snapshot diff needs review: for
+  field, the record ID's kind, its context fingerprint, and plaintext fields by
+  name, so a field that should have been sealed shows up). Compare the
+  `Display` output with a committed snapshot, and
+  assert that `duplicates()` is empty: it also reports a seal registered in
+  several kinds of context, such as a record field's seal stored standalone. A snapshot diff needs review: for
   example, a codec ID, normalizer, or record ID change needs a migration.
 - **Unique IDs.** `cryptbox::assert_unique_ids!(HomeAddress, BillingAddress)`
   fails compilation when listed seals share a seal ID, and
@@ -111,7 +113,7 @@ keys are needed and where plaintext becomes available:
 | Read as a stored form or `Sealed<F>` | SQLx decoding or Serde deserialization checks structure without keys. The application chooses when to open it: a record reads its record ID from the row. Useful when only some loaded values need plaintext. |
 | Automatic SQLx `Plain<F>` | The adapter seals on encode and opens on decode. It reads keys from its `ColumnKeys` type `K`: the installed keys by default, so ordinary database conversion needs `keys::install`, or an application-owned static named as `Plain<F, K>`. |
 
-The automatic `Plain<F>` column serves only standalone seals without blind
+The automatic `Plain<F>` column serves only standalone values without blind
 indexes: a column decoder does not see the row, and would not write index
 columns. Seal records and values of indexed seals explicitly. Explicit operations
 are useful when dependencies and plaintext access should be visible at the call
@@ -145,7 +147,7 @@ attributes to it, at the record or at a field:
 The stored form's field order follows the record's, each index column after its
 field, so a positional format, such as `Postcard`, makes it persistent schema:
 append fields rather than reordering them. An `Option<T>` sealed field stores
-`Option<Sealed<F>>` and an optional index column. The
+`Option<Sealed<F, InRecord<Id>>>` and an optional index column. The
 [records example](../examples/records/README.md) runs SQLx and serde messages.
 
 ## Keyrings

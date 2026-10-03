@@ -49,8 +49,11 @@ declares:
 - A **codec**, such as `Utf8`, to convert between the Rust value and bytes.
 - A **padding policy**, which can group different plaintext lengths into the same
   stored size. `Padding::NONE` preserves the encoded length.
-- A **context**: every value is sealed under its seal ID, and a field of a
-  **record** under the record's ID too.
+
+A seal does not declare where its values are stored. Every value is sealed under
+a **context**: its seal ID, and, for a field of a **record**, the record's ID
+too. The record is a context layered over the seal: its fields are
+`Sealed<F, InRecord<Id>>`, where a standalone value is `Sealed<F>`.
 
 A **record** stores its record ID as a column beside its sealed fields, and
 opening authenticates it; its other columns, such as an org, are plaintext the
@@ -79,9 +82,9 @@ Sealing and opening bind the value at runtime to its seal ID. The fields of a
 opening checks it, so a field copied to another row fails to open. A sealed
 email will not authenticate under a different seal, even if they share a root
 key, and does not open with another tenant's keyring. Seals that should read
-each other's values declare the same seal ID. A standalone seal identifies a
-seal alone, not a row or tenant: copying its values between rows sealed with the
-same seal can still succeed.
+each other's values declare the same seal ID. A standalone value identifies a
+seal alone, not a row or tenant: copying it between rows sealed with the same
+seal can still succeed.
 
 A seal is different from an encryption **suite**. The seal describes
 application policy; the suite defines the complete cryptographic construction.

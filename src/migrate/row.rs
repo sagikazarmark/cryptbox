@@ -6,7 +6,7 @@ use crate::{
     BlindIndex, BlindIndexKeyring, BlindIndexSpec, Codec, EncryptionKeyring, Error, Seal,
     blind::{derive_value, index_context},
     bound, inspect_blind_index, inspect_ciphertext,
-    seal_context::{RecordKey, RecordValue, SealContext, binds},
+    seal_context::{RecordKey, RecordValue, SealContext},
 };
 
 use super::{LegacyFormat, legacy};
@@ -133,7 +133,7 @@ where
 /// closure reads from `R`, the row's columns ([`Self::for_rows`]). A planner
 /// seals with one keyring: when the application keeps values under separate
 /// keys, such as one keyring per org, run one sweep per keyring over the rows
-/// those keys protect. [`Self::new`] serves a standalone seal, whose rows
+/// those keys protect. [`Self::new`] serves standalone values, whose rows
 /// need no columns.
 pub struct RowPlanner<'a, F, R = ()>
 where
@@ -149,19 +149,14 @@ impl<'a, F, R> RowPlanner<'a, F, R>
 where
     F: Seal,
 {
-    /// Creates a planner for a seal `F` without a record, and its encryption
-    /// keyring.
+    /// Creates a planner for standalone values of seal `F`, as
+    /// [`Sealed<F>`](crate::Sealed) holds them, and their encryption keyring.
     ///
-    /// A record field's seal fails the build; use [`Self::for_rows`].
+    /// A record field's values are sealed under each row's record ID: use
+    /// [`Self::for_rows`]. A standalone planner reports them as
+    /// [`Error::ContextMismatch`].
     #[must_use]
     pub fn new(keys: &'a EncryptionKeyring) -> Self {
-        const {
-            assert!(
-                F::RECORD.is_none(),
-                "a record field's seal binds each row's record ID: use `RowPlanner::for_rows`"
-            );
-        };
-
         Self::with_record_id(keys, Box::new(|_| Ok(None)))
     }
 
@@ -169,20 +164,15 @@ where
     /// to the record ID `record_id` reads from its columns: a reference to a
     /// UUID, an `i64`, or bytes, such as `|row| Ok(&row.id)`.
     ///
-    /// Use it for a record field's seal; a standalone seal, or an ID of
-    /// another type than the field's, fails the build. An error from
-    /// `record_id` is returned as it is, and stops a sweep or verification pass.
+    /// Use it for a record field's values, as
+    /// [`Sealed<F, InRecord<K>>`](crate::InRecord) holds them; the record ID's
+    /// type `K` must be the field's, or every row reports
+    /// [`Error::ContextMismatch`]. An error from `record_id` is returned as it
+    /// is, and stops a sweep or verification pass.
     pub fn for_rows<K: RecordKey>(
         keys: &'a EncryptionKeyring,
         record_id: impl for<'r> Fn(&'r R) -> Result<&'r K, Error> + 'a,
     ) -> Self {
-        const {
-            assert!(
-                binds::<K>(F::RECORD),
-                "the record ID is not of the type this record field's seal binds"
-            );
-        };
-
         Self::with_record_id(
             keys,
             Box::new(move |row| record_id(row).map(|id| Some(id.record_value()))),

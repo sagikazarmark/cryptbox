@@ -17,7 +17,7 @@ trait DeserializeFromBytes: Sized {
     fn deserialize_from_bytes(bytes: Vec<u8>) -> Result<Self, Error>;
 }
 
-impl<F: Seal> DeserializeFromBytes for Sealed<F> {
+impl<F: Seal, C> DeserializeFromBytes for Sealed<F, C> {
     const EXPECTING: &'static str =
         "a structurally valid CryptBox envelope, as bytes or unpadded base64url";
 
@@ -117,13 +117,13 @@ impl<'de, Value: DeserializeFromBytes> Visitor<'de> for BytesVisitor<Value> {
     }
 }
 
-impl<F: Seal> Serialize for Sealed<F> {
+impl<F: Seal, C> Serialize for Sealed<F, C> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serialize_bytes(self.as_bytes(), serializer)
     }
 }
 
-impl<'de, F: Seal> Deserialize<'de> for Sealed<F> {
+impl<'de, F: Seal, C> Deserialize<'de> for Sealed<F, C> {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserialize_bytes(deserializer)
     }

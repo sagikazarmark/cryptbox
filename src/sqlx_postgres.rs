@@ -57,7 +57,7 @@ where
     }
 }
 
-impl<F: Seal> Type<Postgres> for Sealed<F> {
+impl<F: Seal, C> Type<Postgres> for Sealed<F, C> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -67,7 +67,7 @@ impl<F: Seal> Type<Postgres> for Sealed<F> {
     }
 }
 
-impl<F: Seal> Encode<'_, Postgres> for Sealed<F> {
+impl<F: Seal, C> Encode<'_, Postgres> for Sealed<F, C> {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         buffer.extend_from_slice(self.as_bytes());
 
@@ -79,7 +79,7 @@ impl<F: Seal> Encode<'_, Postgres> for Sealed<F> {
     }
 }
 
-impl<'row, F: Seal> Decode<'row, Postgres> for Sealed<F> {
+impl<'row, F: Seal, C> Decode<'row, Postgres> for Sealed<F, C> {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
 

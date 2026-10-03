@@ -86,27 +86,32 @@ supplies the context it expects. A sealed value's context is its
 
 ### Seal context
 
-A seal builds its values' context from its stable `SealId`, so an email seal's
+A value's context starts with its seal's stable `SealId`, so an email seal's
 ciphertext is not accepted under a different seal, even when both use the same
-root key. The seals a record declares for its fields add the record ID, so a
-field's value is not accepted in another row. See
+root key. A `Context`, the second parameter of
+`Sealed<F, C>`, adds parts after it: a record's field, `InRecord<K>`, adds the
+record ID, so a field's value is not accepted in another row. See
 [ADR-0005](adr/0005-runtime-binding-is-the-core.md),
-[ADR-0008](adr/0008-records-declare-their-fields-seals.md), and
-[ADR-0011](adr/0011-a-binding-is-the-seal-and-the-record.md).
+[ADR-0008](adr/0008-records-declare-their-fields-seals.md),
+[ADR-0011](adr/0011-a-binding-is-the-seal-and-the-record.md), and
+[ADR-0012](adr/0012-a-record-is-a-context-layer-over-a-seal.md).
 
 ```text
-seal_context = seal_id[16] || count[2] || record?
+seal_context = seal_id[16] || count[2] || part*
 
-record       = nil[16] || kind[1] || len[4] || value[len]
+part         = slot[16] || kind[1] || len[4] || value[len]
 ```
 
-- `count` is `0000` for a standalone seal and `0001` for a record field's seal,
-  as an unsigned 16-bit integer.
-- The record ID follows under the nil UUID. `len` is an unsigned 32-bit byte
-  count, so every value is length-prefixed.
+- `count` is the number of parts, as an unsigned 16-bit integer: `0000` for a
+  standalone value, `Sealed<F>`, and `0001` for a record's field.
+- Each part names its slot, a UUID the library allocates, and the kind of its
+  value. The record ID is the only part today, in the nil slot. `len` is an
+  unsigned 32-bit byte count, so every value is length-prefixed.
 - There is no leading tag or type byte: the context starts with the seal ID.
 
-The seal supplies the expected context; it is not stored in the envelope. This
+The reader supplies the expected context, from the type of the sealed value and,
+for a record's field, the record ID the row stores; it is not stored in the
+envelope. This
 makes the application decide where a value belongs, rather than allowing stored
 bytes to select their own context.
 
@@ -131,7 +136,7 @@ fingerprint label: "cryptbox/binding-fingerprint/v1\0"
 
 fingerprint = SHA-256(fingerprint_label
                       || count[2]
-                      || (nil[16] || kind[1] || 03)?)[0..8]
+                      || (slot[16] || kind[1] || 03)*)[0..8]
 ```
 
 The label keeps its original name: stored headers carry fingerprints computed
@@ -139,8 +144,8 @@ with it. These fingerprints are fixed permanently:
 
 | Context | Fingerprint |
 | --- | --- |
-| A standalone seal | `65640fc8333534b9` |
-| A record field's seal with an `i64` record ID | `76081b730530f822` |
+| A standalone value | `65640fc8333534b9` |
+| A record's field with an `i64` record ID | `76081b730530f822` |
 
 For seal `12345678-1234-4234-8234-1234567890ab` and the `i64` record `7`, the
 context is:
@@ -152,12 +157,12 @@ context is:
 #### Reader rules
 
 The fingerprint is diagnostic only. The reader always takes the expected context
-from its own seal, never from the envelope:
+from its own seal and context, never from the envelope:
 
 1. After structural parsing, and before any key lookup or AEAD work, compare the
    envelope's fingerprint with the fingerprint of the reader's context. Any
    difference reports `ContextMismatch`, such as a record field's value read as
-   a standalone seal's.
+   a standalone value.
 2. Otherwise, decrypt with the reader's context. Another seal ID or record ID
    under a matching fingerprint fails authentication.
 

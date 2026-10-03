@@ -8,7 +8,7 @@ apart by keys, not by the context. This page explains records, where their
 record IDs come from, and how blind indexes and tenants fit in.
 [Documentation](README.md) · [Choosing keyrings](choosing-keyrings.md).
 
-Start from [seal your first value](first-field.md), whose standalone seal binds
+Start from [seal your first value](first-field.md), whose standalone values are bound
 values to its seal ID alone. Make values fields of a record when a value copied
 between rows must fail to open, and give each tenant its own keyring when tenants
 must not be able to read each other's values: see
@@ -46,10 +46,20 @@ pub struct Customer {
 
 Every sealed field is bound to its own seal and to the record ID. The derive
 generates the stored form, `StoredCustomer`, with each sealed field as its
-`Sealed<CustomerEmail>` and a `BlindIndex` column per index, and a seal for each
-sealed field, named after the record and the field. `customer.seal(&keys)` seals
+`Sealed<CustomerEmail, InRecord<Uuid>>` and a `BlindIndex` column per index, and
+a seal for each sealed field, named after the record and the field. `customer.seal(&keys)` seals
 the whole row, and `Customer::open(stored, &keys)` opens it, with the keys of
 the org the row belongs to.
+
+A seal knows nothing of the record: the record is a context its seals' values
+are sealed in, `InRecord<Uuid>`, the second parameter of `Sealed`. The derive
+seals each field with `Sealed::seal_in` under the record ID, and opens it with
+`Sealed::open_in` under the ID the row stores. Call `open_in` yourself to read
+one field of a stored row:
+
+```rust
+let email = stored.email.open_in(&stored.id, &keys)?;
+```
 
 ## Plaintext columns are authorized, not authenticated
 
@@ -137,8 +147,14 @@ let note = sealed.open(&keys)?;
 It binds no record, so a standalone value copied to another place that stores
 the same seal still opens. When a value must stay with the thing it belongs to,
 make it a field of a record: a record's stored form also works as a message,
-with Serde's derives forwarded through `stored(…)`. A record field's seal is
-sealed and opened only by its record; `Sealed::seal` on it fails the build.
+with Serde's derives forwarded through `stored(…)`.
+
+A seal knows nothing of where its values are stored, so `Sealed::seal` also
+accepts a record field's seal. Its value is then standalone, `Sealed<F>`, and
+fails to open as the record's with `Error::ContextMismatch`. Register each
+context in the [schema manifest](testing.md) with `Manifest::sealed` and
+`Manifest::record`: its `duplicates` reports a seal stored in several kinds of
+context.
 
 The [tenant example](../examples/tenant_field.rs) is a complete program: a
 seal, one `EncryptionKeyring` per tenant, and assertions that another tenant's

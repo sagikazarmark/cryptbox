@@ -1,12 +1,14 @@
-//! The envelope context a seal's values are sealed under: the seal ID and, for
-//! a field of a record, the record ID.
+//! The envelope context a seal's values are sealed under: the seal ID and, in a
+//! [`Context`] such as a record, its parts.
 //!
 //! The envelope mixes these bytes into key derivation and the AAD, and stores
 //! their fingerprint in its header; see ../docs/wire-format.md#seal-context.
 
+use std::{fmt, marker::PhantomData};
+
 use sha2::{Digest, Sha256};
 
-use crate::{Error, Seal, SealId, envelope::Context};
+use crate::{Error, Seal, SealId, envelope::Context as EnvelopeContext};
 
 // A persistent domain separator, not a display string: stored headers carry
 // fingerprints computed with it.
@@ -117,11 +119,70 @@ impl RecordKey for Box<[u8]> {
     }
 }
 
-/// Whether `K` is the record ID type a seal with `record` binds.
-pub(crate) const fn binds<K: RecordKey>(record: Option<RecordKind>) -> bool {
-    match record {
-        Some(kind) => kind as u8 == K::KIND as u8,
-        None => false,
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// The context a sealed value is sealed under besides its seal ID: `()` for a
+/// standalone value, or a [`Context`], such as [`InRecord`].
+///
+/// It is the second parameter of [`Sealed`](crate::Sealed). Only the library
+/// implements it: the library writes every context's bytes.
+pub trait ContextKind: sealed::Sealed + 'static {
+    /// The kind of the record ID this context holds. Not public API.
+    #[doc(hidden)]
+    const RECORD: Option<RecordKind>;
+}
+
+impl sealed::Sealed for () {}
+
+impl ContextKind for () {
+    const RECORD: Option<RecordKind> = None;
+}
+
+/// A context that adds parts after the seal ID, such as a record's ID
+/// ([`InRecord`]).
+///
+/// A value sealed in a context is sealed and opened with the context's value,
+/// with [`Sealed::seal_in`](crate::Sealed::seal_in) and
+/// [`Sealed::open_in`](crate::Sealed::open_in), and fails to open in another
+/// context or with another value. Only the library implements it, and `()`,
+/// the standalone context, never does: every context adds at least one part.
+pub trait Context: ContextKind {
+    /// The value a sealed value is bound to in this context, such as the record ID.
+    type Value: ?Sized;
+
+    /// The record ID in `value`. Not public API.
+    #[doc(hidden)]
+    fn record_value(value: &Self::Value) -> RecordValue<'_>;
+}
+
+/// The context of a record's sealed field: its seal ID and the record ID, of
+/// type `K`.
+///
+/// `#[derive(Record)]` stores each sealed field as `Sealed<F, InRecord<K>>`,
+/// seals it under the record's ID, and opens it under the ID the row stores,
+/// so a value copied to another row or field fails to open. `K` is a record ID
+/// type: a `Uuid` or `[u8; 16]`, an `i64`, or bytes.
+pub struct InRecord<K>(PhantomData<fn() -> K>);
+
+impl<K: RecordKey> sealed::Sealed for InRecord<K> {}
+
+impl<K: RecordKey> ContextKind for InRecord<K> {
+    const RECORD: Option<RecordKind> = Some(K::KIND);
+}
+
+impl<K: RecordKey> Context for InRecord<K> {
+    type Value = K;
+
+    fn record_value(value: &K) -> RecordValue<'_> {
+        value.record_value()
+    }
+}
+
+impl<K> fmt::Debug for InRecord<K> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("InRecord")
     }
 }
 
@@ -185,38 +246,20 @@ impl SealContext {
         })
     }
 
-    /// The context of seal `id` alone, as a standalone seal's values and every
+    /// The context of seal `id` alone, as a standalone values and every
     /// blind index use it.
     pub(crate) fn seal_id(id: &SealId) -> Self {
         Self::new(id, None).expect("a context without a record always fits")
     }
 
-    /// The context of standalone seal `F`. A record field's seal fails the
-    /// build here.
+    /// The context of a standalone value of seal `F`.
     pub(crate) fn standalone<F: Seal>() -> Self {
-        const {
-            assert!(
-                F::RECORD.is_none(),
-                "a record field's seal is sealed and opened by its record: use `Record::seal` \
-                 and `Record::open`"
-            );
-        };
-
         Self::seal_id(&F::ID)
     }
 
-    /// The context of record field seal `F` in the record whose ID is `id`. A
-    /// standalone seal, or an ID of another type than `F` binds, fails the build
-    /// here.
-    pub(crate) fn in_record<F: Seal, K: RecordKey>(id: &K) -> Result<Self, Error> {
-        const {
-            assert!(
-                binds::<K>(F::RECORD),
-                "the record ID is not of the type this record field's seal binds"
-            );
-        };
-
-        Self::new(&F::ID, Some(id.record_value()))
+    /// The context of a value of seal `F` in context `C`, whose value is `value`.
+    pub(crate) fn of<F: Seal, C: Context>(value: &C::Value) -> Result<Self, Error> {
+        Self::new(&F::ID, Some(C::record_value(value)))
     }
 
     pub(crate) fn as_bytes(&self) -> &[u8] {
@@ -224,8 +267,8 @@ impl SealContext {
     }
 
     /// The envelope's view of this context.
-    pub(crate) fn envelope(&self) -> Context<'_> {
-        Context::new(&self.bytes, self.fingerprint)
+    pub(crate) fn envelope(&self) -> EnvelopeContext<'_> {
+        EnvelopeContext::new(&self.bytes, self.fingerprint)
     }
 }
 
@@ -312,9 +355,30 @@ mod tests {
     }
 
     #[test]
-    fn a_seal_binds_only_its_own_record_id_type() {
-        assert!(binds::<i64>(Some(RecordKind::I64)));
-        assert!(!binds::<i64>(Some(RecordKind::Uuid)));
-        assert!(!binds::<i64>(None));
+    fn a_record_context_is_the_seal_id_and_the_record_id() {
+        struct Email;
+
+        impl Seal for Email {
+            const ID: SealId = SEAL;
+            const PADDING: crate::Padding = crate::Padding::NONE;
+            type Value = String;
+            type Codec = crate::Utf8;
+            type Indexes = ();
+        }
+
+        let context = SealContext::of::<Email, InRecord<i64>>(&1).unwrap();
+        let expected = SealContext::new(&SEAL, Some(RecordValue::I64(1))).unwrap();
+
+        // The bytes and fingerprint pinned by `a_record_id_follows_the_seal_id`.
+        assert_eq!(context.bytes, expected.bytes);
+        assert_eq!(context.fingerprint, hex_array("76081b730530f822"));
+        assert_eq!(
+            fingerprint(<InRecord<i64> as ContextKind>::RECORD),
+            context.fingerprint
+        );
+        assert_eq!(
+            fingerprint(<() as ContextKind>::RECORD),
+            SealContext::standalone::<Email>().fingerprint
+        );
     }
 }

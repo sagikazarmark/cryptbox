@@ -1,7 +1,7 @@
 //! Test helpers that pin persistent schema to committed fixtures and check
 //! which keyring protects a value.
 
-use crate::{Codec, EncryptionKeyring, Seal, Sealed};
+use crate::{Codec, ContextKind, EncryptionKeyring, Seal, Sealed};
 
 /// Asserts that seal `F` encodes `value` as exactly the hex bytes in `expected`,
 /// and decodes those bytes back to a value that encodes identically.
@@ -129,7 +129,10 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 /// Panics when `keyring` does not hold the key that `sealed` names. The message
 /// includes the seal ID and the key ID, never the value.
 #[track_caller]
-pub fn assert_sealed_under<F: Seal>(sealed: &Sealed<F>, keyring: &EncryptionKeyring) {
+pub fn assert_sealed_under<F: Seal>(
+    sealed: &Sealed<F, impl ContextKind>,
+    keyring: &EncryptionKeyring,
+) {
     let key = sealed.key_id();
     assert!(
         keyring.get(key).is_some(),

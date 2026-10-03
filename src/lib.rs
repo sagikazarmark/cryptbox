@@ -1,7 +1,8 @@
 //! Strongly typed application-layer encryption for Rust values.
 //!
 //! [`Sealed<F>`] is a value sealed with seal `F`: encrypted and bound to the
-//! seal, and, for a field of a [`Record`], to the record it is stored in.
+//! seal, and, in a [`Context`] such as a [`Record`]'s field, to the record it is
+//! stored in.
 //! [`Sealed::open`] authenticates it and returns the plaintext value. Use `CryptBox` when an application
 //! owns encryption policy and key management but wants storage adapters to
 //! enforce ciphertext-at-rest.
@@ -212,6 +213,7 @@ pub use padding::Padding;
 pub use prepare::Prepared;
 pub use record::{Index, Record};
 pub use seal::{Seal, SealId};
+pub use seal_context::{Context, ContextKind, InRecord};
 pub use secret::Secret;
 pub use value::{Plain, Sealed};
 
@@ -222,7 +224,6 @@ pub mod __private {
     pub use zeroize::Zeroizing;
 
     pub use crate::codec::DefaultCodec;
-    pub use crate::record::{open_in_record, seal_in_record};
     pub use crate::schema::has_duplicate;
-    pub use crate::seal_context::{RecordKey, RecordKind};
+    pub use crate::seal_context::{RecordKey, RecordKind, RecordValue};
 }

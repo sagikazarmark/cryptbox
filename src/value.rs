@@ -1,24 +1,32 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    Codec, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal, bound,
+    Codec, Context, ContextKind, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal, bound,
     envelope::validated_key_id, keys, seal_context::SealContext,
 };
 
-/// A value sealed with seal `F`: an encrypted envelope bound to the seal and,
-/// for a record field, its record.
+/// A value sealed with seal `F` in context `C`: an encrypted envelope bound to
+/// the seal and, in a [`Context`], to the context's value.
 ///
 /// This is what applications store. [`Self::seal`] encodes, pads, and encrypts a
 /// value; [`Self::open`] authenticates and decrypts it, and returns the bare
 /// [`Seal::Value`]. Plaintext
 /// hygiene comes from the value type, such as [`Secret`](crate::Secret).
 ///
+/// `C` is the context besides the seal ID: `()`, the default, for a standalone
+/// value, or a [`Context`], such as [`InRecord`](crate::InRecord) for a record's
+/// field. A value in a context is sealed with [`Self::seal_in`] and opened with
+/// [`Self::open_in`], which take the context's value, such as the record ID;
+/// `#[derive(Record)]` calls them for its sealed fields. A value fails to open in
+/// another context, with [`Error::ContextMismatch`], or with another value.
+///
 /// Construction from bytes validates only the envelope structure. Authenticity
-/// is established by opening. `F` is not encoded in the envelope, so the type
-/// parameter expresses caller intent rather than proving that stored bytes were
-/// sealed with that seal. With the `serde` feature, this type serializes only
-/// the binary envelope; deserialization performs the same structural checks as
-/// [`Self::from_bytes`], uses no keys, and leaves the bytes unauthenticated.
+/// is established by opening. Neither `F` nor `C` is encoded in the envelope, so
+/// the type parameters express caller intent rather than proving that stored
+/// bytes were sealed with that seal. With the `serde` feature, this type
+/// serializes only the binary envelope; deserialization performs the same
+/// structural checks as [`Self::from_bytes`], uses no keys, and leaves the bytes
+/// unauthenticated.
 ///
 /// # Examples
 ///
@@ -43,12 +51,12 @@ use crate::{
 /// assert_eq!(sealed.open(&keys)?, "user@example.com");
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
-pub struct Sealed<F: Seal> {
+pub struct Sealed<F: Seal, C = ()> {
     bytes: Vec<u8>,
-    marker: PhantomData<fn() -> F>,
+    marker: PhantomData<fn() -> (F, C)>,
 }
 
-impl<F: Seal> Sealed<F> {
+impl<F: Seal, C> Sealed<F, C> {
     /// Validates and wraps a binary `CryptBox` envelope.
     ///
     /// # Errors
@@ -90,39 +98,7 @@ impl<F: Seal> Sealed<F> {
         validated_key_id(&self.bytes)
     }
 
-    /// Encodes and encrypts `value`, bound to the seal.
-    ///
-    /// A record field's seal is sealed by its record, with
-    /// [`Record::seal`](crate::Record::seal); calling this with one fails the
-    /// build.
-    ///
-    /// ```compile_fail,E0080
-    /// # use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8};
-    /// # use cryptbox::__private::{RecordKey, RecordKind};
-    /// # struct CustomerEmail;
-    /// # impl Seal for CustomerEmail {
-    /// #     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
-    /// #     const PADDING: Padding = Padding::NONE;
-    /// #     type Value = String;
-    /// #     type Codec = Utf8;
-    /// #     type Indexes = ();
-    /// #     const RECORD: Option<RecordKind> = Some(<i64 as RecordKey>::KIND);
-    /// # }
-    /// # let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-    /// // `CustomerEmail` is the seal of a record's field.
-    /// let sealed = Sealed::<CustomerEmail>::seal(&"ada@example.com".into(), &keys)?;
-    /// # Ok::<(), cryptbox::Error>(())
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when encoding, padding, key lookup, randomness, or
-    /// encryption fails.
-    pub fn seal(value: &F::Value, keys: &(impl EncryptionKeys + ?Sized)) -> Result<Self, Error> {
-        Self::seal_in(value, &SealContext::standalone::<F>(), keys)
-    }
-
-    pub(crate) fn seal_in(
+    fn seal_under(
         value: &F::Value,
         context: &SealContext,
         keys: &(impl EncryptionKeys + ?Sized),
@@ -133,26 +109,7 @@ impl<F: Seal> Sealed<F> {
         Ok(Self::from_validated_bytes(sealed))
     }
 
-    /// Authenticates, decrypts, and decodes this value.
-    ///
-    /// Success establishes authenticity under the supplied key and the seal `F`,
-    /// valid padding, and successful decoding with the seal's codec. Apply
-    /// application-level validation separately. This does not establish
-    /// freshness or consistency with a separately stored blind index. A record
-    /// field's value is opened by its record, with
-    /// [`Record::open`](crate::Record::open).
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::AuthenticationFailed`] for another seal or modified
-    /// bytes, and [`Error::ContextMismatch`] for a value sealed under another
-    /// kind of context, such as a record field's. Also returns an error for
-    /// unknown keys, unavailable keys, invalid padding, or codec failure.
-    pub fn open(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<F::Value, Error> {
-        self.open_in(&SealContext::standalone::<F>(), keys)
-    }
-
-    pub(crate) fn open_in(
+    fn open_under(
         &self,
         context: &SealContext,
         keys: &(impl EncryptionKeys + ?Sized),
@@ -160,6 +117,83 @@ impl<F: Seal> Sealed<F> {
         let plaintext = bound::open(context, &self.bytes, keys.encryption_keyring())?;
 
         Ok(F::Codec::decode(&plaintext)?)
+    }
+
+    fn reseal_under(
+        &self,
+        context: &SealContext,
+        from_keys: &(impl EncryptionKeys + ?Sized),
+        to_keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<Self, Error> {
+        let (_, sealed) = bound::reseal(
+            (context, from_keys.encryption_keyring()),
+            (context, to_keys.encryption_keyring()),
+            F::PADDING,
+            &self.bytes,
+        )?;
+
+        Ok(Self::from_validated_bytes(sealed))
+    }
+}
+
+impl<F: Seal, C: ContextKind> Sealed<F, C> {
+    /// Reports whether this envelope differs from what `F` currently writes.
+    ///
+    /// That is a non-current suite or key, or a padding flag that disagrees
+    /// with [`Seal::PADDING`]. It needs no context value: it compares the
+    /// context's kind, never its value.
+    ///
+    /// Envelope metadata is unauthenticated until the value is opened. A `false`
+    /// result does not establish authenticated readability or codec validity.
+    /// See the complete [key-rotation example] and [maintenance sweep example].
+    ///
+    #[doc = concat!(
+        "[key-rotation example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/key_rotation.rs\n",
+        "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs",
+    )]
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::ContextMismatch`] for a value sealed under another
+    /// kind of context, or an error for unavailable keys.
+    pub fn needs_reseal(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<bool, Error> {
+        bound::needs_reseal_kind::<C>(F::PADDING, &self.bytes, keys.encryption_keyring())
+    }
+}
+
+impl<F: Seal> Sealed<F> {
+    /// Encodes and encrypts `value`, bound to the seal.
+    ///
+    /// The value is standalone: it opens with [`Self::open`], and not in a
+    /// [`Context`]. A record field's value is sealed by its record, with
+    /// [`Record::seal`](crate::Record::seal), or with [`Self::seal_in`]; sealed
+    /// here, it fails to open as the record's.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when encoding, padding, key lookup, randomness, or
+    /// encryption fails.
+    pub fn seal(value: &F::Value, keys: &(impl EncryptionKeys + ?Sized)) -> Result<Self, Error> {
+        Self::seal_under(value, &SealContext::standalone::<F>(), keys)
+    }
+
+    /// Authenticates, decrypts, and decodes this value.
+    ///
+    /// Success establishes authenticity under the supplied key and the seal `F`,
+    /// valid padding, and successful decoding with the seal's codec. Apply
+    /// application-level validation separately. This does not establish
+    /// freshness or consistency with a separately stored blind index. A record
+    /// field's value is opened by its record, with
+    /// [`Record::open`](crate::Record::open), or with [`Self::open_in`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::AuthenticationFailed`] for another seal or modified
+    /// bytes, and [`Error::ContextMismatch`] for a value sealed in a
+    /// [`Context`], such as a record field's. Also returns an error for unknown
+    /// keys, unavailable keys, invalid padding, or codec failure.
+    pub fn open(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<F::Value, Error> {
+        self.open_under(&SealContext::standalone::<F>(), keys)
     }
 
     /// Seals `value` into a prepared storage representation that blind indexes
@@ -176,33 +210,6 @@ impl<F: Seal> Sealed<F> {
         keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Prepared<'a, F>, Error> {
         Ok(Prepared::new(value, Self::seal(value, keys)?))
-    }
-
-    /// Reports whether this envelope differs from what `F` currently writes.
-    ///
-    /// That is a non-current suite or key, or a padding flag that disagrees
-    /// with [`Seal::PADDING`].
-    ///
-    /// Envelope metadata is unauthenticated until the value is opened. A `false`
-    /// result does not establish authenticated readability or codec validity.
-    /// See the complete [key-rotation example] and [maintenance sweep example].
-    ///
-    #[doc = concat!(
-        "[key-rotation example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/key_rotation.rs\n",
-        "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs",
-    )]
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::ContextMismatch`] for a value sealed under another
-    /// kind of context, or an error for unavailable keys.
-    pub fn needs_reseal(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<bool, Error> {
-        bound::needs_reseal(
-            &SealContext::standalone::<F>(),
-            F::PADDING,
-            &self.bytes,
-            keys.encryption_keyring(),
-        )
     }
 
     /// Opens and reseals this value as `F` currently writes it, with the same
@@ -236,23 +243,13 @@ impl<F: Seal> Sealed<F> {
         from_keys: &(impl EncryptionKeys + ?Sized),
         to_keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
-        let context = SealContext::standalone::<F>();
-        let (_, sealed) = bound::reseal(
-            (&context, from_keys.encryption_keyring()),
-            (&context, to_keys.encryption_keyring()),
-            F::PADDING,
-            &self.bytes,
-        )?;
-
-        Ok(Self::from_validated_bytes(sealed))
+        self.reseal_under(&SealContext::standalone::<F>(), from_keys, to_keys)
     }
-}
 
-impl<F: Seal> Sealed<F> {
     /// Seals `value` with the [installed keys](keys::installed).
     ///
     /// This is exactly `Self::seal(value, keys::installed()?)`. The
-    /// process-wide keys serve only standalone seals.
+    /// process-wide keys serve only standalone values.
     ///
     /// # Errors
     ///
@@ -275,7 +272,121 @@ impl<F: Seal> Sealed<F> {
     }
 }
 
-impl<F: Seal> TryFrom<Vec<u8>> for Sealed<F> {
+impl<F: Seal, C: Context> Sealed<F, C> {
+    /// Encodes and encrypts `value`, bound to the seal and to `context`, the
+    /// value of context `C`, such as a record ID.
+    ///
+    /// `#[derive(Record)]` seals its fields with this, under the record's ID:
+    /// prefer [`Record::seal`](crate::Record::seal) for a whole record.
+    ///
+    /// ```
+    /// use cryptbox::{
+    ///     EncryptionKey, EncryptionKeyring, Error, InRecord, Padding, Seal, SealId, Sealed, Utf8,
+    /// };
+    ///
+    /// struct CustomerEmail;
+    ///
+    /// impl Seal for CustomerEmail {
+    ///     const ID: SealId = cryptbox::seal_id!("6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13");
+    ///     const PADDING: Padding = Padding::NONE;
+    ///     type Value = String;
+    ///     type Codec = Utf8;
+    ///     type Indexes = ();
+    /// }
+    ///
+    /// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+    /// let email = "ada@example.com".to_owned();
+    ///
+    /// // The field of the record whose ID is 7.
+    /// let sealed = Sealed::<CustomerEmail, InRecord<i64>>::seal_in(&email, &7, &keys)?;
+    ///
+    /// assert_eq!(sealed.open_in(&7, &keys)?, email);
+    /// assert!(matches!(sealed.open_in(&8, &keys), Err(Error::AuthenticationFailed)));
+    /// # Ok::<(), cryptbox::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when encoding, padding, key lookup, randomness, or
+    /// encryption fails, or for a bytes record ID longer than `u32::MAX` bytes.
+    pub fn seal_in(
+        value: &F::Value,
+        context: &C::Value,
+        keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<Self, Error> {
+        Self::seal_under(value, &SealContext::of::<F, C>(context)?, keys)
+    }
+
+    /// Authenticates, decrypts, and decodes this value under `context`, the
+    /// value of context `C`, such as the record ID the row stores.
+    ///
+    /// Read `context` from where the value is stored, never from the request
+    /// that asks for it: opening proves the value was sealed with it, not that
+    /// the caller may read it. [`Record::open`](crate::Record::open) opens a
+    /// whole record.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::AuthenticationFailed`] for another seal, another
+    /// context value, or modified bytes, and [`Error::ContextMismatch`] for a
+    /// value sealed in another kind of context, such as a standalone value.
+    /// Also returns any error of [`Sealed::open`].
+    pub fn open_in(
+        &self,
+        context: &C::Value,
+        keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<F::Value, Error> {
+        self.open_under(&SealContext::of::<F, C>(context)?, keys)
+    }
+
+    /// Seals `value` in `context` into a prepared storage representation that
+    /// blind indexes can be added to.
+    ///
+    /// Indexes are derived under their seal alone, as for [`Sealed::prepare`].
+    ///
+    /// # Errors
+    ///
+    /// Returns any error of [`Self::seal_in`].
+    pub fn prepare_in<'a>(
+        value: &'a F::Value,
+        context: &C::Value,
+        keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<Prepared<'a, F, C>, Error> {
+        Ok(Prepared::new(value, Self::seal_in(value, context, keys)?))
+    }
+
+    /// Opens and reseals this value in `context` as `F` currently writes it,
+    /// with the same keys, as [`Sealed::reseal`] does.
+    ///
+    /// # Errors
+    ///
+    /// Returns any opening, padding, or encryption error.
+    pub fn reseal_in(
+        &self,
+        context: &C::Value,
+        keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<Self, Error> {
+        self.reseal_across_in(context, keys, keys)
+    }
+
+    /// Opens this value in `context` with `from_keys` and reseals it with
+    /// `to_keys`, as [`Sealed::reseal_across`] does.
+    ///
+    /// # Errors
+    ///
+    /// Returns any opening error with `from_keys`, or padding or encryption
+    /// error with `to_keys`.
+    pub fn reseal_across_in(
+        &self,
+        context: &C::Value,
+        from_keys: &(impl EncryptionKeys + ?Sized),
+        to_keys: &(impl EncryptionKeys + ?Sized),
+    ) -> Result<Self, Error> {
+        self.reseal_under(&SealContext::of::<F, C>(context)?, from_keys, to_keys)
+    }
+}
+
+impl<F: Seal, C> TryFrom<Vec<u8>> for Sealed<F, C> {
     type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
@@ -284,33 +395,33 @@ impl<F: Seal> TryFrom<Vec<u8>> for Sealed<F> {
 }
 
 // Stores the envelope through `Vec<u8>`, as an ORM's `serialize_as` does.
-impl<F: Seal> From<Sealed<F>> for Vec<u8> {
-    fn from(sealed: Sealed<F>) -> Self {
+impl<F: Seal, C> From<Sealed<F, C>> for Vec<u8> {
+    fn from(sealed: Sealed<F, C>) -> Self {
         sealed.into_bytes()
     }
 }
 
-impl<F: Seal> AsRef<[u8]> for Sealed<F> {
+impl<F: Seal, C> AsRef<[u8]> for Sealed<F, C> {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
     }
 }
 
-impl<F: Seal> Clone for Sealed<F> {
+impl<F: Seal, C> Clone for Sealed<F, C> {
     fn clone(&self) -> Self {
         Self::from_validated_bytes(self.bytes.clone())
     }
 }
 
-impl<F: Seal> PartialEq for Sealed<F> {
+impl<F: Seal, C> PartialEq for Sealed<F, C> {
     fn eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
 
-impl<F: Seal> Eq for Sealed<F> {}
+impl<F: Seal, C> Eq for Sealed<F, C> {}
 
-impl<F: Seal> fmt::Debug for Sealed<F> {
+impl<F: Seal, C> fmt::Debug for Sealed<F, C> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Sealed([REDACTED])")
     }
@@ -319,9 +430,10 @@ impl<F: Seal> fmt::Debug for Sealed<F> {
 /// A plaintext value of seal `F` that an automatic `SQLx` column seals on
 /// encode and opens on decode.
 ///
-/// A column decoder does not see the row, so `Plain` serves only seals without
-/// blind indexes, `F::Indexes = ()`, and a record field's seal fails the build.
-/// Use [`Sealed`] explicitly for every other seal.
+/// A column decoder does not see the row, so `Plain` serves only standalone
+/// values of seals without blind indexes, `F::Indexes = ()`: it seals and opens
+/// them as [`Sealed<F>`]. Use [`Sealed`] explicitly for every other seal, and
+/// for a value in a [`Context`], such as a record's field.
 ///
 /// `K` names the column's keys. The default, [`GlobalKeys`], reads the keys
 /// installed with [`keys::install`]; name another

@@ -89,7 +89,7 @@ pub enum Error {
     #[error("ciphertext authentication failed")]
     AuthenticationFailed,
     /// The envelope was sealed under a different kind of context than the
-    /// reader's, such as a record field's value read as a standalone seal's.
+    /// reader's, such as a record field's value read as a standalone value.
     ///
     /// Reported from the envelope's context fingerprint before any key lookup or
     /// authentication. Another seal ID or record ID under the same kind of

@@ -240,7 +240,9 @@ mod tests {
 
         assert_encoding::<Handle>(&Handle(Secret::new("Alice-7".to_owned())), "416c6963652d37");
 
-        let manifest = Manifest::new().seal::<Handle>().index::<HandleEquality>();
+        let manifest = Manifest::new()
+            .sealed::<Handle, ()>()
+            .index::<HandleEquality>();
         assert!(manifest.duplicates().is_empty());
         assert_eq!(
             manifest.to_string(),
@@ -248,7 +250,6 @@ mod tests {
 seal dcaa3c69-1767-49a1-8476-36555eaf54bf
   codec: handle/1
   padding: none
-  record: no
   context: 65640fc8333534b9
 index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
   seal: dcaa3c69-1767-49a1-8476-36555eaf54bf

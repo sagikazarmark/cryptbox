@@ -19,19 +19,23 @@ struct PreparedIndex {
 /// Dropping preparation releases its borrow, not the source plaintext. The
 /// application owns persistence and atomicity. See the [ownership reference].
 ///
+/// `C` is the context of the sealed value, as for [`Sealed`]: `()` from
+/// [`Sealed::prepare`], or a [`Context`](crate::Context) from
+/// [`Sealed::prepare_in`]. Indexes are derived under their seal alone either way.
+///
 #[doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
 )]
-pub struct Prepared<'a, F>
+pub struct Prepared<'a, F, C = ()>
 where
     F: Seal,
 {
     source: &'a F::Value,
-    sealed: Sealed<F>,
+    sealed: Sealed<F, C>,
     indexes: Vec<PreparedIndex>,
 }
 
-impl<F> fmt::Debug for Prepared<'_, F>
+impl<F, C> fmt::Debug for Prepared<'_, F, C>
 where
     F: Seal,
 {
@@ -45,11 +49,11 @@ where
     }
 }
 
-impl<'a, F> Prepared<'a, F>
+impl<'a, F, C> Prepared<'a, F, C>
 where
     F: Seal,
 {
-    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F>) -> Self {
+    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F, C>) -> Self {
         Self {
             source,
             sealed,
@@ -59,7 +63,7 @@ where
 
     /// Returns the sealed storage value.
     #[must_use]
-    pub const fn sealed(&self) -> &Sealed<F> {
+    pub const fn sealed(&self) -> &Sealed<F, C> {
         &self.sealed
     }
 
@@ -67,7 +71,7 @@ where
     ///
     /// Copy its indexes out with [`Self::index`] first.
     #[must_use]
-    pub fn into_sealed(self) -> Sealed<F> {
+    pub fn into_sealed(self) -> Sealed<F, C> {
         self.sealed
     }
 

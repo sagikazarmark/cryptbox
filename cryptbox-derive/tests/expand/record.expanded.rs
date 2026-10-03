@@ -52,9 +52,6 @@ const _: () = {
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Indexes = (CustomerEmailIndex,);
-        const RECORD: ::core::option::Option<::cryptbox::__private::RecordKind> = ::core::option::Option::Some(
-            <i64 as ::cryptbox::__private::RecordKey>::KIND,
-        );
     }
 };
 ///The `email_index` blind index of `Customer::email`.
@@ -99,9 +96,6 @@ const _: () = {
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
         type Indexes = (CustomerNoteIndex,);
-        const RECORD: ::core::option::Option<::cryptbox::__private::RecordKind> = ::core::option::Option::Some(
-            <i64 as ::cryptbox::__private::RecordKey>::KIND,
-        );
     }
 };
 ///The `note_index` blind index of `Customer::note`.
@@ -142,10 +136,12 @@ pub struct StoredCustomer {
     pub org: [u8; 16],
     /// The primary contact address.
     #[sqlx(rename = "email_ciphertext")]
-    pub email: ::cryptbox::Sealed<CustomerEmail>,
+    pub email: ::cryptbox::Sealed<CustomerEmail, ::cryptbox::InRecord<i64>>,
     ///The `email_index` blind index of `email`.
     pub email_index: ::cryptbox::BlindIndex<CustomerEmailIndex>,
-    note: ::core::option::Option<::cryptbox::Sealed<CustomerNote>>,
+    note: ::core::option::Option<
+        ::cryptbox::Sealed<CustomerNote, ::cryptbox::InRecord<i64>>,
+    >,
     ///The `note_index` blind index of `note`.
     note_index: ::core::option::Option<::cryptbox::BlindIndex<CustomerNoteIndex>>,
     pub created_at: i64,
@@ -184,6 +180,7 @@ const _: () = {
     #[automatically_derived]
     impl ::cryptbox::Record for Customer {
         type Stored = StoredCustomer;
+        type Context = ::cryptbox::InRecord<i64>;
         const SEALS: &'static [::cryptbox::SealId] = &[
             <CustomerEmail as ::cryptbox::Seal>::ID,
             <CustomerNote as ::cryptbox::Seal>::ID,
@@ -199,9 +196,10 @@ const _: () = {
         {
             let email = {
                 let value = &self.email;
-                ::cryptbox::__private::seal_in_record::<
+                ::cryptbox::Sealed::<
                     CustomerEmail,
-                >(value, &self.id, keys)?
+                    ::cryptbox::InRecord<i64>,
+                >::seal_in(value, &self.id, keys)?
             };
             let email_index = {
                 let value = &self.email;
@@ -213,9 +211,10 @@ const _: () = {
             let note = match &self.note {
                 ::core::option::Option::Some(value) => {
                     ::core::option::Option::Some(
-                        ::cryptbox::__private::seal_in_record::<
+                        ::cryptbox::Sealed::<
                             CustomerNote,
-                        >(value, &self.id, keys)?,
+                            ::cryptbox::InRecord<i64>,
+                        >::seal_in(value, &self.id, keys)?,
                     )
                 }
                 ::core::option::Option::None => ::core::option::Option::None,
@@ -250,16 +249,12 @@ const _: () = {
         {
             let email = {
                 let value = &stored.email;
-                ::cryptbox::__private::open_in_record::<
-                    CustomerEmail,
-                >(value, &stored.id, keys)?
+                ::cryptbox::Sealed::open_in(value, &stored.id, keys)?
             };
             let note = match &stored.note {
                 ::core::option::Option::Some(value) => {
                     ::core::option::Option::Some(
-                        ::cryptbox::__private::open_in_record::<
-                            CustomerNote,
-                        >(value, &stored.id, keys)?,
+                        ::cryptbox::Sealed::open_in(value, &stored.id, keys)?,
                     )
                 }
                 ::core::option::Option::None => ::core::option::Option::None,

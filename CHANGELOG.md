@@ -5,7 +5,7 @@
 This release replaces profiles with seals and adds records. Values and blind
 indexes stored by 0.5.0 are deliberately not readable: the envelope and the
 blind index both move to format 2. Decisions are recorded in ADR-0001 to
-ADR-0011.
+ADR-0012.
 
 ### Seals
 
@@ -35,6 +35,13 @@ ADR-0011.
   take the keys to use; `seal_global` and `open_global` use the installed keys.
   A value is bound to its seal ID: opened as another seal, it fails
   authentication.
+- `Sealed<F, C = ()>` names the context a value is sealed in besides its seal ID
+  (ADR-0012): `()` for a standalone value, or a `Context`, such as
+  `InRecord<K>` for a record's field. `Sealed::seal_in(&value, &context, &keys)`,
+  `open_in`, `prepare_in`, `reseal_in`, and `reseal_across_in` take the context's
+  value, such as the record ID; `needs_reseal` serves every context. A seal
+  knows nothing of where its values are stored. `Prepared` takes the same
+  parameter.
 - **Breaking:** the byte-level `encrypt`, `decrypt`, `reencrypt`, and
   `needs_reencryption` are removed; seal opaque bytes with a `Vec<u8>` seal.
   `is_ciphertext`, `inspect_ciphertext`, and `CiphertextInfo` stay, and
@@ -58,11 +65,12 @@ ADR-0011.
   `Index` handle per blind index, such as `Customer::EMAIL_INDEX`, whose
   `probes` and `open_matching` run a lookup. `stored(…)` renames the stored form
   and forwards attributes to it, such as `derive(sqlx::FromRow)` or Serde's.
-  `Option<T>` fields are stored as `Option<Sealed<F>>`.
+  Sealed fields are stored as `Sealed<F, InRecord<Id>>` and `Option<T>` fields
+  as `Option<Sealed<F, InRecord<Id>>>`; `Record::Context` names the context.
 - `Record::seal(&keys)` and `Record::open(stored, &keys)` seal and open a row,
   and `Record::open_expecting` checks a row before decrypting it, reporting
   `Error::UnexpectedRecord`. A field's value copied to another row or field
-  fails to open, and a record field's value read as a standalone seal's reports
+  fails to open, and a record field's value read as a standalone value reports
   `Error::ContextMismatch`. Plaintext columns, such as a tenant, are not
   authenticated: tenants are kept apart by keys.
 
@@ -115,7 +123,8 @@ ADR-0011.
   bytes to a committed fixture; `schema::Manifest`, which lists seals, blind
   indexes, and records with their IDs, codec IDs, padding, record ID kinds,
   context fingerprints, normalizers, and plaintext fields, for snapshot tests,
-  and reports duplicate IDs; `assert_unique_ids!`, which fails compilation when
+  and reports duplicate IDs and seals registered in several kinds of context
+  (`Manifest::sealed::<F, C>()`); `assert_unique_ids!`, which fails compilation when
   listed markers share an ID; and `testing::assert_sealed_under`, which checks
   which keyring sealed a value.
 

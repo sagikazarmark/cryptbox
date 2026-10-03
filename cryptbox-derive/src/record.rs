@@ -1,6 +1,6 @@
 //! Expands `#[derive(Record)]`.
 
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Group, Span, TokenStream, TokenTree};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{
     Data, DeriveInput, Fields, GenericArgument, Ident, LitInt, LitStr, Meta, Path, PathArguments,
@@ -446,6 +446,25 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     Ok(Expansion::new(input, attrs, &fields).tokens())
 }
 
+/// `tokens` with every token spanned at `span`, so that the compiler reports an
+/// error in them there.
+fn respan(tokens: TokenStream, span: Span) -> TokenStream {
+    tokens
+        .into_iter()
+        .map(|tree| match tree {
+            TokenTree::Group(group) => {
+                let mut respanned = Group::new(group.delimiter(), respan(group.stream(), span));
+                respanned.set_span(span);
+                TokenTree::Group(respanned)
+            }
+            mut tree => {
+                tree.set_span(span);
+                tree
+            }
+        })
+        .collect()
+}
+
 /// Runs `body` on the value `value` of `field` in `from`, which may be absent.
 fn each_value(
     field: &Field<'_>,
@@ -481,7 +500,6 @@ impl SealItem<'_> {
         name: &Ident,
         doc: &str,
         id: &UuidLiteral,
-        record: &TokenStream,
         indexes: &TokenStream,
     ) -> TokenStream {
         let Self {
@@ -503,8 +521,6 @@ impl SealItem<'_> {
                     type Value = #value;
                     type Codec = #codec;
                     type Indexes = #indexes;
-                    const RECORD: ::core::option::Option<#krate::__private::RecordKind> =
-                        ::core::option::Option::Some(<#record as #krate::__private::RecordKey>::KIND);
                 }
             };
         }
@@ -559,13 +575,12 @@ impl<'a> Expansion<'a> {
         )
     }
 
-    /// Opens `value`, a sealed field's value in `stored`.
-    fn open_value(&self, seal: &Ident, stored: &Ident, value: &Ident, keys: &Ident) -> TokenStream {
+    /// The context of the record's sealed fields: its record ID. Spanned at the
+    /// record ID's type, where a type that is not a record ID type is reported.
+    fn context(&self) -> TokenStream {
         let krate = &self.krate;
-        let record_id = self.record_id.ident;
-        quote! {
-            #krate::__private::open_in_record::<#seal>(#value, &#stored.#record_id, #keys)?
-        }
+        let ty = self.record_id.ty;
+        respan(quote!(#krate::InRecord<#ty>), ty.span())
     }
 
     fn tokens(&self) -> TokenStream {
@@ -610,8 +625,6 @@ impl<'a> Expansion<'a> {
             || quote!(#krate::Padding::NONE),
             |padding| padding.to_tokens(krate),
         );
-        let record_ty = self.record_id.ty;
-        let record_ty = quote_spanned!(record_ty.span()=> #record_ty);
         let specs: Vec<Ident> = sealing
             .indexes
             .iter()
@@ -632,7 +645,6 @@ impl<'a> Expansion<'a> {
                 field.ident
             ),
             &sealing.id,
-            &record_ty,
             &quote!((#(#specs,)*)),
         );
         let indexes = sealing
@@ -710,7 +722,8 @@ impl<'a> Expansion<'a> {
         }
     }
 
-    /// The stored form: every field as it is, sealed fields as `Sealed<F>`, and
+    /// The stored form: every field as it is, sealed fields as
+    /// `Sealed<F, InRecord<Id>>`, and
     /// each blind index in a column after its field.
     fn stored_struct(&self) -> TokenStream {
         let krate = &self.krate;
@@ -739,7 +752,8 @@ impl<'a> Expansion<'a> {
                 }
             };
             let seal = self.seal_name(field, sealing);
-            let sealed = wrap(quote!(#krate::Sealed<#seal>));
+            let context = self.context();
+            let sealed = wrap(quote!(#krate::Sealed<#seal, #context>));
             let indexes = sealing.indexes.iter().map(|index| {
                 let spec = self.spec_name(index);
                 let column = &index.column;
@@ -769,6 +783,15 @@ impl<'a> Expansion<'a> {
         let keys = Ident::new("keys", Span::mixed_site());
         let stored = Ident::new("stored", Span::mixed_site());
         let value = Ident::new("value", Span::mixed_site());
+        let context = self.context();
+        let record_id = self.record_id.ident;
+        // Spanned at the record ID's type: a type that is not a record ID type is
+        // reported there.
+        let id_span = self.record_id.ty.span();
+        let seal_in =
+            |seal: &Ident| respan(quote!(#krate::Sealed::<#seal, #context>::seal_in), id_span);
+        let open_in = respan(quote!(#krate::Sealed::open_in), id_span);
+        let context_type = quote_spanned!(id_span=> type Context = #context;);
 
         let mut seals = Vec::new();
         let mut opens = Vec::new();
@@ -789,12 +812,12 @@ impl<'a> Expansion<'a> {
             let each =
                 |from: TokenStream, body: TokenStream| each_value(field, &from, &value, &body);
             let sealed = each(quote!(self), {
-                let record_id = self.record_id.ident;
-                quote!(#krate::__private::seal_in_record::<#seal>(#value, &self.#record_id, #keys)?)
+                let seal_in = seal_in(&seal);
+                quote!(#seal_in(#value, &self.#record_id, #keys)?)
             });
             let opened = each(
                 quote!(#stored),
-                self.open_value(&seal, &stored, &value, &keys),
+                quote!(#open_in(#value, &#stored.#record_id, #keys)?),
             );
             seals.push(quote!(let #ident = #sealed;));
             opens.push(quote!(let #ident = #opened;));
@@ -825,6 +848,7 @@ impl<'a> Expansion<'a> {
                 #[automatically_derived]
                 impl #krate::Record for #name {
                     type Stored = #stored_name;
+                    #context_type
 
                     #schema
 

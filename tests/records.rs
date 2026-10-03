@@ -2,10 +2,9 @@
 //! their seals and record ID.
 #![cfg(feature = "derive")]
 
-use cryptbox::__private::{RecordKey, RecordKind, seal_in_record};
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, Error,
-    Keys, Padding, Record, Seal, SealId, Sealed, Utf8,
+    InRecord, Keys, Padding, Record, Seal, SealId, Sealed, Utf8,
 };
 use zeroize::Zeroizing;
 
@@ -296,12 +295,13 @@ fn a_record_without_blind_indexes_takes_an_encryption_keyring() {
     };
 
     let row: NoteRow = note.seal(&keys).unwrap();
-    let _: &Sealed<NoteBody> = &row.body;
+    let _: &Sealed<NoteBody, InRecord<i64>> = &row.body;
 
     assert_eq!(Note::open(row, &keys).unwrap(), note);
 }
 
-/// The seal a record declares for `Note::body`, written by hand.
+/// The seal a record declares for `Note::body`, written by hand: a seal knows
+/// nothing of the record its values are stored in.
 struct ManualNoteBody;
 
 impl Seal for ManualNoteBody {
@@ -310,13 +310,13 @@ impl Seal for ManualNoteBody {
     type Value = String;
     type Codec = Utf8;
     type Indexes = ();
-    const RECORD: Option<RecordKind> = Some(<i64 as RecordKey>::KIND);
 }
 
 #[test]
 fn a_record_field_is_bound_to_its_seal_and_record_id() {
     let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
-    let body = seal_in_record::<ManualNoteBody>(&"ship it".to_owned(), &1_i64, &keys).unwrap();
+    let body =
+        Sealed::<ManualNoteBody, InRecord<i64>>::seal_in(&"ship it".to_owned(), &1, &keys).unwrap();
     let row = NoteRow {
         id: 1,
         org: ACME,
@@ -324,6 +324,43 @@ fn a_record_field_is_bound_to_its_seal_and_record_id() {
     };
 
     assert_eq!(Note::open(row, &keys).unwrap().body, "ship it");
+}
+
+#[test]
+fn a_record_field_opens_with_its_record_id_alone() {
+    let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+    let row: NoteRow = Note {
+        id: 1,
+        org: ACME,
+        body: "ship it".to_owned(),
+    }
+    .seal(&keys)
+    .unwrap();
+
+    assert_eq!(row.body.open_in(&row.id, &keys).unwrap(), "ship it");
+    assert!(matches!(
+        row.body.open_in(&2, &keys),
+        Err(Error::AuthenticationFailed)
+    ));
+}
+
+#[test]
+fn a_record_field_sealed_standalone_does_not_open_as_the_record_s() {
+    let keys = EncryptionKeyring::new(EncryptionKey::generate().unwrap(), []).unwrap();
+    // Nothing stops sealing a record field's seal standalone: the seal knows
+    // nothing of the record. The value is bound to the seal ID alone.
+    let standalone = Sealed::<NoteBody>::seal(&"ship it".to_owned(), &keys).unwrap();
+    let row = NoteRow {
+        id: 1,
+        org: ACME,
+        body: Sealed::from_bytes(standalone.as_bytes()).unwrap(),
+    };
+
+    assert!(matches!(
+        Note::open(row, &keys),
+        Err(Error::ContextMismatch)
+    ));
+    assert_eq!(standalone.open(&keys).unwrap(), "ship it");
 }
 
 #[cfg(feature = "json")]
