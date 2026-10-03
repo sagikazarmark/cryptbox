@@ -4,9 +4,11 @@
 //! seal, and, in a [`Context`] such as a [`Record`]'s field, to the record it is
 //! stored in. [`Sealed::open`] authenticates it and returns the plaintext value.
 //!
-//! **Experimental; not production-ready.** See the [threat model] for assumptions,
-//! limitations, and outstanding review work. The [guide] covers integration, and
-//! [operations] covers key rotation, sweeps, migration, and shredding.
+//! The stored format is stable: later releases read what this one writes. The
+//! API may still change before 1.0, and the library has not been independently
+//! audited. See the [threat model] for assumptions and limitations. The
+//! [guide] covers integration, and [operations] covers key rotation, sweeps,
+//! migration, and shredding.
 //!
 #![doc = concat!(
     "[threat model]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/security.md\n",
@@ -14,15 +16,54 @@
     "[operations]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/operations.md",
 )]
 //!
+//! # Quick start
+//!
+//! ```rust
+//! use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8};
+//!
+//! struct UserEmail;
+//!
+//! impl Seal for UserEmail {
+//!     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
+//!     const PADDING: Padding = Padding::NONE;
+//!     type Value = String;
+//!     type Codec = Utf8;
+//! }
+//!
+//! fn main() -> Result<(), cryptbox::Error> {
+//!     // Demo only: this key is lost when the process exits.
+//!     let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
+//!     let sealed = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), &keys)?;
+//!     assert_eq!(sealed.open(&keys)?, "mark@example.com");
+//!     Ok(())
+//! }
+//! ```
+//!
+//! With the `derive` feature, `#[derive(Seal)]` writes the impl, and
+//! `#[derive(Record)]` seals the fields of a whole row; see the [README].
+//!
+//! Before durable storage, settle the persistent schema below and load stable
+//! key material and generation IDs across restarts.
+//!
+//! When tenants must be kept apart, give each its own keyring, so another
+//! tenant's keys cannot open its values and one tenant's data can be shredded on
+//! its own. Sealing with the wrong keyring succeeds silently, while opening with
+//! it fails loudly; see the [tenant example].
+//!
+#![doc = concat!(
+    "[README]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/README.md\n",
+    "[tenant example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/tenant_field.rs",
+)]
+//!
 //! # Type model
 //!
 //! - [`Sealed<F>`] contains stored encrypted bytes. Parsing checks structure;
 //!   opening authenticates. Sealing borrows the source value.
 //! - [`Seal`] declares how values are sealed: its seal ID, value type, codec,
-//!   [`Padding`], and its blind indexes. A seal is a marker over a value type
-//!   that several seals can share, or its own value, such as a whole response.
-//! - [`Plain<F>`] and [`Secret<T>`] contain plaintext. `Plain` is the automatic
-//!   `SQLx` column, for seals without blind indexes.
+//!   and [`Padding`]. A seal is a marker over a value type that several seals
+//!   can share, or its own value, such as a whole response.
+//! - [`Secret<T>`] contains plaintext, redacted from `Debug`; read it with
+//!   [`Secret::expose_secret`].
 //! - A [`Codec`] encodes a seal's values. Only `String` and `Vec<u8>` and their
 //!   [`Secret`] wrappers have a default ([`Utf8`] and [`Raw`]); every other value
 //!   type names its codec.
@@ -38,47 +79,13 @@
 //! - A [`BlindIndexSpec`] binds a blind index to one seal. A [`BlindIndex`] is a
 //!   candidate selector: use every [`BlindIndex::probes`]
 //!   result, open candidates, and compare normalized plaintext.
+//! - [`envelope`] holds the byte-level inspection API, for tools and
+//!   migrations that look at stored bytes without a seal.
 //!
-//! Every operation takes its keys explicitly, and never reads the global. Only
-//! the automatic `SQLx` column `Plain<F, K>` reads its keys from `K`: the keys
-//! installed with [`keys::install`] ([`GlobalKeys`]) by default, which fail with
-//! [`Error::KeysNotInstalled`] before installation.
-//!
-//! # Quick start
-//!
-//! ```rust
-//! use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8};
-//!
-//! struct UserEmail;
-//!
-//! impl Seal for UserEmail {
-//!     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-//!     const PADDING: Padding = Padding::NONE;
-//!     type Value = String;
-//!     type Codec = Utf8;
-//!     type Indexes = ();
-//! }
-//!
-//! fn main() -> Result<(), cryptbox::Error> {
-//!     // Demo only: this key is lost when the process exits.
-//!     let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-//!     let sealed = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), &keys)?;
-//!     assert_eq!(sealed.open(&keys)?, "mark@example.com");
-//!     Ok(())
-//! }
-//! ```
-//!
-//! Before durable storage, settle the persistent schema below and load stable
-//! key material and generation IDs across restarts.
-//!
-//! When tenants must be kept apart, give each its own keyring, so another
-//! tenant's keys cannot open its values and one tenant's data can be shredded on
-//! its own. Sealing with the wrong keyring succeeds silently, while opening with
-//! it fails loudly; see the [tenant example].
-//!
-#![doc = concat!(
-    "[tenant example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/tenant_field.rs",
-)]
+//! Every operation takes its keys explicitly, and never reads a global. Only
+//! the automatic `SQLx` column, `Plain<F>` (with an `sqlx-*` feature), reads
+//! the keys installed with `keys::install`, because a column decoder receives
+//! no keys.
 //!
 // Markdown uses the first definition: qualify the shared page's relative links for rustdoc.
 #![doc = concat!(
@@ -124,11 +131,12 @@ mod blind;
 mod bound;
 mod codec;
 mod crypto;
-mod envelope;
+pub mod envelope;
 mod error;
 mod id;
 mod key;
 mod key_source;
+#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 pub mod keys;
 #[cfg(feature = "migrate")]
 pub mod migrate;
@@ -148,32 +156,28 @@ mod sqlx_sqlite;
 pub mod testing;
 mod value;
 
-pub use blind::{
-    BlindIndex, BlindIndexInfo, BlindIndexRef, BlindIndexSpec, IndexId, IndexList,
-    inspect_blind_index,
-};
+pub use blind::{BlindIndex, BlindIndexRef, BlindIndexSpec, IndexId};
 #[cfg(feature = "json")]
 pub use codec::Json;
-#[cfg(feature = "postcard")]
-pub use codec::Postcard;
 pub use codec::{Codec, Raw, Utf8};
 #[cfg(feature = "derive")]
 pub use cryptbox_derive::{BlindIndexSpec, Record, Seal};
-pub use envelope::{CiphertextInfo, SuiteId, inspect_ciphertext, is_ciphertext};
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use id::InvalidIdentifier;
 pub use key::{
     BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyError,
     KeyId, Keys,
 };
-pub use key_source::{BlindIndexKeys, ColumnKeys, EncryptionKeys, GlobalKeys, RecordKeys};
+pub use key_source::{BlindIndexKeys, EncryptionKeys, RecordKeys};
 pub use padding::Padding;
 pub use prepare::Prepared;
 pub use record::{Index, Record};
 pub use seal::{Seal, SealId};
 pub use seal_context::{Context, ContextKind, InRecord};
 pub use secret::Secret;
-pub use value::{Plain, Sealed};
+#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
+pub use value::Plain;
+pub use value::Sealed;
 
 // Paths that derive-generated code names; not public API.
 #[doc(hidden)]

@@ -14,7 +14,6 @@ impl Seal for TestSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Indexes = ();
 }
 
 struct ExactValue;

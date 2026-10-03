@@ -22,17 +22,15 @@ const TAG_LEN: usize = <Cipher as AeadCore>::TagSize::USIZE;
 // exactly that length, which would otherwise surface as Error::Internal.
 const MAX_MESSAGE_LEN: u64 = 274_877_906_879;
 
-/// The provisional suite ID for HKDF-SHA-256 plus XChaCha20-Poly1305.
-///
-/// This construction and its wire format are experimental pending focused
-/// cryptographic review and independently verified test vectors.
-pub(in crate::envelope) const EXPERIMENTAL_XCHACHA20_POLY1305: SuiteId = SuiteId::new(1);
+/// The suite ID of HKDF-SHA-256 plus XChaCha20-Poly1305: a persistent wire
+/// value, see ../../../docs/wire-format.md#encryption-suite-1.
+pub(in crate::envelope) const XCHACHA20_POLY1305: SuiteId = SuiteId::new(1);
 
 /// Suite 1: HKDF-SHA-256 and XChaCha20-Poly1305 over the format 2 envelope.
 pub(in crate::envelope) struct XChaCha20Poly1305;
 
 impl Suite for XChaCha20Poly1305 {
-    const ID: SuiteId = EXPERIMENTAL_XCHACHA20_POLY1305;
+    const ID: SuiteId = XCHACHA20_POLY1305;
 
     fn validate_payload(payload: &[u8]) -> Result<(), Error> {
         let minimum_len = NONCE_LEN

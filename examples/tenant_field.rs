@@ -11,7 +11,6 @@ impl Seal for CustomerEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 /// One keyring per tenant, so tenants cannot open each other's values and one
@@ -20,12 +19,24 @@ struct TenantKeyrings(HashMap<&'static str, EncryptionKeyring>);
 
 impl TenantKeyrings {
     /// The keyring of `tenant`. An unknown tenant fails closed.
-    fn of(&self, tenant: &str) -> Result<&EncryptionKeyring, Error> {
-        self.0.get(tenant).ok_or(Error::KeysUnavailable)
+    fn of(&self, tenant: &str) -> Result<&EncryptionKeyring, UnknownTenant> {
+        self.0.get(tenant).ok_or(UnknownTenant)
     }
 }
 
-fn main() -> Result<(), Error> {
+/// The application's own error for a tenant without keys.
+#[derive(Debug)]
+struct UnknownTenant;
+
+impl std::fmt::Display for UnknownTenant {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("unknown tenant")
+    }
+}
+
+impl std::error::Error for UnknownTenant {}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Ephemeral demo keys: an independent keyring per tenant on every run.
     let keys = TenantKeyrings(HashMap::from([
         (
@@ -61,7 +72,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tenant_field_round_trip() -> Result<(), Error> {
+    fn tenant_field_round_trip() -> Result<(), Box<dyn std::error::Error>> {
         main()
     }
 
@@ -69,6 +80,6 @@ mod tests {
     fn an_unknown_tenant_fails_closed() {
         let keys = TenantKeyrings(HashMap::new());
 
-        assert!(matches!(keys.of("acme"), Err(Error::KeysUnavailable)));
+        assert!(keys.of("acme").is_err());
     }
 }

@@ -1,3 +1,12 @@
+//! The byte-level inspection API: what a stored value or blind index says
+//! about itself, without keys or a seal.
+//!
+//! Use it in tools and migrations that look at stored bytes, such as telling
+//! ciphertext from legacy plaintext with [`is_ciphertext`], or counting values
+//! per key generation with [`inspect_ciphertext`]. Everything it reports is
+//! unauthenticated until the value is opened; see
+//! ../docs/wire-format.md for the layouts.
+
 mod format;
 mod suite;
 
@@ -6,8 +15,9 @@ use zeroize::Zeroizing;
 use crate::padding::unpad;
 use crate::{EncryptionKeyring, Error, Padding};
 
+pub use crate::blind::{BlindIndexInfo, inspect_blind_index};
 pub(crate) use format::validated_key_id;
-pub use format::{CiphertextInfo, SuiteId, is_ciphertext};
+pub use format::{CiphertextInfo, is_ciphertext};
 use format::{ParsedEnvelope, parse_envelope};
 pub(crate) use suite::Context;
 use suite::{AeadPlaintext, SupportedSuite};
@@ -27,7 +37,7 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
 /// Parses an envelope whose suite is supported and whose payload fits that suite.
 fn parse_supported(bytes: &[u8]) -> Result<(SupportedSuite, ParsedEnvelope<'_>), Error> {
     let envelope = parse_envelope(bytes)?;
-    let suite = SupportedSuite::from_id(envelope.info.suite_id())?;
+    let suite = SupportedSuite::from_id(envelope.info.suite())?;
     suite.validate_payload(envelope.suite_payload)?;
 
     Ok((suite, envelope))
@@ -105,7 +115,7 @@ impl CheckedEnvelope<'_> {
     pub(crate) fn needs_reseal(&self, padding: Padding, keyring: &EncryptionKeyring) -> bool {
         let info = self.parsed.info;
 
-        info.suite_id() != SupportedSuite::ACTIVE.id()
+        info.suite() != SupportedSuite::ACTIVE.id()
             || info.key_id() != keyring.current().id()
             || info.padded() != padding.is_padded()
     }
@@ -197,7 +207,7 @@ mod tests {
         assert_eq!(hex::encode(envelope), RECORD_VECTOR);
     }
 
-    // docs/wire-format.md#provisional-record-vector
+    // docs/wire-format.md#record-vector
     const UNBOUND_CONTEXT: &str = "123456781234423482341234567890ab0000";
     // The fingerprint of a context without a record ID.
     const UNBOUND_FINGERPRINT: &str = "65640fc8333534b9";
@@ -358,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn experimental_padded_format_2_vector_is_stable() {
+    fn padded_format_2_vector_is_stable() {
         let bytes = hex::decode(UNBOUND_CONTEXT).unwrap();
         let envelope = seal_with_nonce(
             context(&bytes, fingerprint(UNBOUND_FINGERPRINT)),
@@ -376,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn experimental_format_2_vector_is_stable() {
+    fn format_2_vector_is_stable() {
         let bytes = hex::decode(UNBOUND_CONTEXT).unwrap();
         let envelope = seal_with_nonce(
             context(&bytes, fingerprint(UNBOUND_FINGERPRINT)),

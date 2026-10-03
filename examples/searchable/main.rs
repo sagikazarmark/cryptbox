@@ -2,9 +2,10 @@
 
 use std::{env, error::Error, path::Path};
 
+use cryptbox::envelope::inspect_blind_index;
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Seal, Sealed, index_key_id, inspect_blind_index, key_id,
+    EncryptionKeyring, Seal, Sealed, index_key_id, key_id,
 };
 use sqlx::{Connection, QueryBuilder, Row};
 use zeroize::Zeroizing;

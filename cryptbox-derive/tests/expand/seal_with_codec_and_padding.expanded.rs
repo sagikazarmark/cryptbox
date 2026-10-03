@@ -18,7 +18,6 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
         type Value = Address;
         type Codec = AddressCodec;
-        type Indexes = ();
     }
 };
 #[cryptbox(id = "00000000-0000-4000-8000-000000000001", value = Address)]
@@ -33,7 +32,6 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::length(256usize);
         type Value = Address;
         type Codec = AddressCodec;
-        type Indexes = ();
     }
 };
 fn main() {}

@@ -1,10 +1,10 @@
 //! Serializes stored bytes, then deliberately authenticates and checks consistency.
 //! See README.md beside this source for usage and trust boundaries.
 
+use cryptbox::envelope::{inspect_blind_index, inspect_ciphertext};
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, Seal, Sealed, index_key_id, inspect_blind_index, inspect_ciphertext,
-    key_id,
+    EncryptionKeyring, Error, Seal, Sealed, index_key_id, key_id,
 };
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;

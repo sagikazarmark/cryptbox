@@ -13,7 +13,6 @@ macro_rules! seal {
             const PADDING: Padding = Padding::NONE;
             type Value = String;
             type Codec = Utf8;
-            type Indexes = ();
         }
     };
 }
@@ -46,7 +45,7 @@ fn values_carry_the_empty_declaration_fingerprint() {
     let keys = keys();
     let sealed = Sealed::<CustomerEmail>::seal(&email(), &keys).unwrap();
 
-    let info = cryptbox::inspect_ciphertext(sealed.as_bytes()).unwrap();
+    let info = cryptbox::envelope::inspect_ciphertext(sealed.as_bytes()).unwrap();
     // docs/wire-format.md#context-fingerprint
     assert_eq!(hex::encode(info.context_fingerprint()), "65640fc8333534b9");
 }

@@ -5,9 +5,9 @@
 //! [`Sealed::prepare`](crate::Sealed::prepare),
 //! [`Prepared::with_index`](crate::Prepared::with_index), and
 //! [`BlindIndex::probes`](crate::BlindIndex::probes). Only the automatic `SQLx`
-//! column, `Plain<F>`, reads the installed keys, through
-//! [`GlobalKeys`](crate::GlobalKeys), because `SQLx` encoding and decoding
-//! receive no context; [`installed()`] returns them to code that passes them on.
+//! column, [`Plain<F>`](crate::Plain), reads the installed keys, because
+//! `SQLx` encoding and decoding receive no context; [`installed()`] returns
+//! them to code that passes them on.
 //!
 //! The process-wide keys serve only standalone values: a record, or a tenant's
 //! value, is sealed and opened explicitly, with keys the
@@ -46,10 +46,6 @@
 //!     { path = "cryptbox::keys::installed", reason = "pass keys explicitly" },
 //! ]
 //! ```
-//!
-//! The automatic `SQLx` column defaults to [`GlobalKeys`](crate::GlobalKeys);
-//! name another [`ColumnKeys`](crate::ColumnKeys) as its second type parameter,
-//! `Plain<F, K>`, to use application-owned keys instead.
 //!
 #![doc = concat!(
     "[testing guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#testing",

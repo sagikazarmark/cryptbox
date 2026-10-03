@@ -16,7 +16,6 @@ impl Seal for Nickname {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 // A seal with a blind index is never a `Plain` column: the column would not write the index.
@@ -27,7 +26,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = (EmailLookup,);
 }
 
 struct EmailLookup;

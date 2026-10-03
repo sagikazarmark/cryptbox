@@ -3,8 +3,8 @@
 //! Enable them with `cryptbox`'s `derive` feature and use them through
 //! `cryptbox`; do not depend on this crate directly. Each derive expands to
 //! exactly the trait impls you would write by hand, inside `const _: () = { … };`
-//! with absolute `::cryptbox::` paths. It adds no `Debug`, `Deref`, `From`, or
-//! hidden items, so the manual impl stays a first-class alternative. The
+//! with absolute `::cryptbox::` paths. It adds no `Debug`, `Deref`, or `From`
+//! impls, so the manual impl stays a first-class alternative. The
 //! generated items are `Record`'s stored form, the seals and blind-index
 //! specs its fields declare, its index handles, and compile-time checks.
 //!
@@ -29,7 +29,6 @@ use syn::{DeriveInput, parse_macro_input};
 /// | `codec = Type` | on a type with fields, unless `transparent` | The codec. See below for its defaults. |
 /// | `transparent` | no | Stores a type's single field alone. |
 /// | `padding = …` | no | `none` (the default), `block(size)`, or `length(len)`. |
-/// | `indexes(Type, …)` | no | The seal's blind indexes (`Indexes`). Defaults to none. |
 ///
 /// The ID is validated when the macro expands and is never derived from the
 /// type's name: generate a fresh UUID for every seal. Padding parameters are
@@ -49,9 +48,10 @@ use syn::{DeriveInput, parse_macro_input};
 ///   stores exactly the bytes of a marker over the field's type with the same
 ///   ID and codec, so the two read each other's values.
 ///
-/// Values are bound to their seal ID. Without `indexes`, the seal declares no
-/// blind indexes. A seal bound to a record ID too is a record's field: see
-/// `#[derive(Record)]`.
+/// Every value is bound to its seal ID, and a value sealed in a context, such as
+/// a record's field, to the context's value too. A record declares the seals of
+/// its fields itself: see `#[derive(Record)]`. Blind indexes name their seal:
+/// see `#[derive(BlindIndexSpec)]`.
 ///
 /// ```
 /// #[derive(cryptbox::Seal)]
@@ -75,66 +75,6 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
 ///         type Value = String;
 ///         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-///         type Indexes = ();
-///     }
-/// };
-/// ```
-///
-/// A seal with a blind index:
-///
-/// ```
-/// # use cryptbox::BlindIndexError;
-/// # use zeroize::Zeroizing;
-/// # fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-/// #     Ok(Zeroizing::new(email.to_ascii_lowercase().into_bytes()))
-/// # }
-/// #[derive(cryptbox::Seal)]
-/// #[cryptbox(
-///     id = "6c3b1f0e-8a24-4d5b-9e71-2f4a6c8d0b13",
-///     value = String,
-///     indexes(EmailLookup),
-/// )]
-/// pub struct CustomerEmail;
-///
-/// #[derive(cryptbox::BlindIndexSpec)]
-/// #[cryptbox(
-///     id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
-///     seal = CustomerEmail,
-///     bits = 32,
-///     query = str,
-///     normalize = normalize_email,
-///     normalizer = "email/1",
-/// )]
-/// pub struct EmailLookup;
-/// ```
-///
-/// expands to exactly the manual impl:
-///
-/// ```
-/// # pub struct CustomerEmail;
-/// # pub struct EmailLookup;
-/// # impl cryptbox::BlindIndexSpec for EmailLookup {
-/// #     type Seal = CustomerEmail;
-/// #     const ID: cryptbox::IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
-/// #     const BITS: u16 = 32;
-/// #     const NORMALIZER: &'static str = "email/1";
-/// #     type Query = str;
-/// #     fn normalize_query(query: &str) -> Result<zeroize::Zeroizing<Vec<u8>>, cryptbox::BlindIndexError> {
-/// #         Ok(zeroize::Zeroizing::new(query.as_bytes().to_vec()))
-/// #     }
-/// #     fn normalize_value(value: &String) -> Result<zeroize::Zeroizing<Vec<u8>>, cryptbox::BlindIndexError> {
-/// #         Self::normalize_query(value)
-/// #     }
-/// # }
-/// const _: () = {
-///     #[automatically_derived]
-///     impl ::cryptbox::Seal for CustomerEmail {
-///         const ID: ::cryptbox::SealId =
-///             ::cryptbox::SealId::from_u128(0x6c3b1f0e_8a24_4d5b_9e71_2f4a6c8d0b13);
-///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
-///         type Value = String;
-///         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-///         type Indexes = (EmailLookup,);
 ///     }
 /// };
 /// ```
@@ -162,7 +102,9 @@ use syn::{DeriveInput, parse_macro_input};
 /// ```
 ///
 /// It is its own codec, since no crate-provided adapter can wrap or unwrap it
-/// without `From` or `Deref`. The derive expands to exactly the manual impls,
+/// without `From` or `Deref`. Decoding builds the type from its field directly,
+/// so a constructor that validates the field does not run: name a `codec` that
+/// validates, or seal the field's type with a marker and convert it yourself. The derive expands to exactly the manual impls,
 /// with `Result`, `Vec`, and `Zeroizing` spelled as absolute paths in the real
 /// expansion:
 ///
@@ -177,7 +119,6 @@ use syn::{DeriveInput, parse_macro_input};
 ///         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
 ///         type Value = Self;
 ///         type Codec = Self;
-///         type Indexes = ();
 ///     }
 ///
 ///     #[automatically_derived]
@@ -390,7 +331,6 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = (CustomerEmailIndex,);
 /// }
 ///
 /// /// The `email_index` blind index of `Customer::email`.

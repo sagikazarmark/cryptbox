@@ -7,10 +7,11 @@ use std::{
     future::{Future, ready},
 };
 
+use cryptbox::envelope::{inspect_blind_index, inspect_ciphertext};
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
-    index_key_id, inspect_blind_index, inspect_ciphertext, key_id,
+    index_key_id, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
@@ -31,7 +32,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct PaddedUserEmail;
@@ -41,7 +41,6 @@ impl Seal for PaddedUserEmail {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct EmailLookup;

@@ -15,9 +15,7 @@ generated per run.
 ## What it shows
 
 - **`Handle`** is its own value (`type Value = Self`), so callers cannot pass
-  another string where a handle belongs. It declares
-  `type Indexes = (HandleEquality,)`, so helpers that would not write the index,
-  such as the automatic `Plain` column, reject it. With `derive`,
+  another string where a handle belongs. With `derive`,
   `#[derive(Seal)]` with `#[cryptbox(id = …, codec = HandleCodec)]` writes the
   same impl; this example writes it by hand.
 - **`HandleCodec`** validates letters, digits, and hyphens, returning zeroizing
@@ -25,7 +23,7 @@ generated per run.
 - **`HandleEquality`** validates the same alphabet and lowercases inside a
   zeroizing buffer. Writes, probes, and candidate comparison share that rule.
 - **`CachedEncryptionKeys`** hands out a keyring from a local snapshot without
-  I/O, reporting `KeysUnavailable` when not loaded. The application owns
+  I/O, failing with its own `KeysUnavailable` error when not loaded. The application owns
   loading and refresh.
 - **`Secret<String>`** zeroizes on drop and redacts `Debug`.
 

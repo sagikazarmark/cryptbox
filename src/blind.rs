@@ -50,7 +50,6 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = ();
 /// }
 ///
 /// struct EmailLookup;
@@ -88,7 +87,6 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Indexes = ();
 /// # }
 /// struct ZeroBits;
 ///
@@ -114,7 +112,6 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Indexes = ();
 /// # }
 /// struct TooManyBits;
 ///
@@ -200,83 +197,6 @@ pub trait BlindIndexSpec: Sized + 'static {
     ) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>;
 }
 
-/// The blind indexes declared over seal `F`: `()`, or a tuple of up to eight
-/// [`BlindIndexSpec`]s over `F`.
-///
-/// This is [`Seal::Indexes`]. Listing an index declared over another seal is
-/// a type error.
-///
-/// ```compile_fail,E0271
-/// use cryptbox::{
-///     BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Utf8,
-/// };
-/// use zeroize::Zeroizing;
-///
-/// struct UserEmail;
-///
-/// impl Seal for UserEmail {
-///     const ID: SealId = SealId::from_bytes([1; 16]);
-///     const PADDING: Padding = Padding::NONE;
-///     type Value = String;
-///     type Codec = Utf8;
-///     type Indexes = (InviteEmailLookup,);
-/// }
-///
-/// struct InviteEmail;
-///
-/// impl Seal for InviteEmail {
-///     const ID: SealId = SealId::from_bytes([2; 16]);
-///     const PADDING: Padding = Padding::NONE;
-///     type Value = String;
-///     type Codec = Utf8;
-///     type Indexes = (InviteEmailLookup,);
-/// }
-///
-/// struct InviteEmailLookup;
-///
-/// impl BlindIndexSpec for InviteEmailLookup {
-///     type Seal = InviteEmail;
-///     const ID: IndexId = IndexId::from_bytes([3; 16]);
-///     const BITS: u16 = 32;
-///     const NORMALIZER: &'static str = "exact/1";
-///     type Query = str;
-///
-///     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-///         Ok(Zeroizing::new(query.as_bytes().to_vec()))
-///     }
-///
-///     fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-///         Self::normalize_query(value)
-///     }
-/// }
-/// ```
-pub trait IndexList<F: ?Sized>: 'static {
-    /// The declared index IDs, in declaration order.
-    const IDS: &'static [IndexId];
-}
-
-impl<F: ?Sized> IndexList<F> for () {
-    const IDS: &'static [IndexId] = &[];
-}
-
-// `F` names the seal, so the spec parameters skip it.
-macro_rules! index_list {
-    ($($spec:ident),+) => {
-        impl<F: Seal, $($spec: BlindIndexSpec<Seal = F>),+> IndexList<F> for ($($spec,)+) {
-            const IDS: &'static [IndexId] = &[$($spec::ID),+];
-        }
-    };
-}
-
-index_list!(A);
-index_list!(A, B);
-index_list!(A, B, C);
-index_list!(A, B, C, D);
-index_list!(A, B, C, D, E);
-index_list!(A, B, C, D, E, G);
-index_list!(A, B, C, D, E, G, H);
-index_list!(A, B, C, D, E, G, H, I);
-
 trait ValidBlindIndexBits {
     const ASSERT_VALID_BITS: ();
 }
@@ -323,7 +243,7 @@ impl<Spec: BlindIndexSpec> BlindIndex<Spec> {
         let bytes = bytes.into();
         let info = inspect_blind_index(&bytes)?;
 
-        if info.bits() != usize::from(Spec::BITS) {
+        if info.bits() != Spec::BITS {
             return Err(Error::InvalidBlindIndex);
         }
 

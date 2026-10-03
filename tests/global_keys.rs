@@ -1,13 +1,14 @@
 //! Public-boundary tests for the process-wide key installation.
 //!
-//! This binary is the only one that installs the global. Its assertions depend
-//! on install order, so they run as one sequenced test rather than racing each
+//! Its assertions depend on install order, starting from no installed keys, so they run as one sequenced test rather than racing each
 //! other on the shared global.
 
+#![cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
+
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, ColumnKeys,
-    EncryptionKey, EncryptionKeyring, Error, GlobalKeys, IndexId, IndexKeyId, KeyId, Keys, Padding,
-    Seal, SealId, Sealed, Utf8, index_id, index_key_id, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Keys, Padding, Seal, SealId, Sealed,
+    Utf8, index_id, index_key_id, key_id,
     keys::{self, AlreadyInstalled},
     seal_id,
 };
@@ -25,7 +26,6 @@ impl Seal for Email {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct EmailLookup;
@@ -63,7 +63,22 @@ fn global_keys_install_once_and_serve_only_what_reads_them() {
 
     // Before installation, reading the global fails closed.
     assert_eq!(keys::installed().unwrap_err(), Error::KeysNotInstalled);
-    assert_eq!(GlobalKeys::keys().unwrap_err(), Error::KeysNotInstalled);
+    #[cfg(feature = "sqlx-sqlite")]
+    {
+        use sqlx::{Encode, Sqlite};
+
+        let value = cryptbox::Plain::<Email>::new(email.clone());
+        let mut buffer = Vec::new();
+        let Err(error) =
+            <cryptbox::Plain<Email> as Encode<'_, Sqlite>>::encode_by_ref(&value, &mut buffer)
+        else {
+            panic!("an automatic column must not encode without installed keys");
+        };
+        assert_eq!(
+            error.downcast_ref::<Error>(),
+            Some(&Error::KeysNotInstalled)
+        );
+    }
 
     keys::install(Keys::new(installed.clone()).with_blind_indexes(installed_indexes.clone()))
         .unwrap();
@@ -74,9 +89,8 @@ fn global_keys_install_once_and_serve_only_what_reads_them() {
         Err(AlreadyInstalled)
     );
 
-    // The installed keys are the keys installed, and the column's default.
+    // The installed keys are the keys installed.
     let global = keys::installed().unwrap();
-    assert!(std::ptr::eq(global, GlobalKeys::keys().unwrap()));
     let global_sealed = Sealed::<Email>::seal(&email, global).unwrap();
     assert_eq!(global_sealed.open(&installed).unwrap(), "mark@example.com");
     assert_eq!(
@@ -94,23 +108,5 @@ fn global_keys_install_once_and_serve_only_what_reads_them() {
     assert_eq!(
         global_sealed.open(&explicit).unwrap_err(),
         Error::UnknownEncryptionKey(INSTALLED_KEY_ID)
-    );
-}
-
-#[test]
-fn keys_without_a_blind_index_keyring_reject_index_operations() {
-    let keys = Keys::new(keyring(EXPLICIT_KEY_ID, 2));
-    let email = "mark@example.com".to_owned();
-
-    assert_eq!(
-        BlindIndex::<EmailLookup>::probes("mark@example.com", &keys).unwrap_err(),
-        Error::BlindIndexKeysNotConfigured
-    );
-    assert_eq!(
-        Sealed::<Email>::prepare(&email, &keys)
-            .unwrap()
-            .with_index::<EmailLookup>(&keys)
-            .unwrap_err(),
-        Error::BlindIndexKeysNotConfigured
     );
 }

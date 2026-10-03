@@ -102,11 +102,8 @@ pub enum Error {
     /// Normalizing a blind-index input failed.
     #[error("blind-index normalization failed")]
     BlindIndexNormalizationFailed,
-    /// Keys could not be supplied, such as keys that a KMS has not loaded yet,
-    /// or a [`ColumnKeys`](crate::ColumnKeys) that could not load them.
-    #[error("keys are unavailable")]
-    KeysUnavailable,
     /// The installed keys were read before [`keys::install`](crate::keys::install).
+    #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
     #[error("keys are not installed")]
     KeysNotInstalled,
     /// A blind-index operation used [`Keys`](crate::Keys) without a

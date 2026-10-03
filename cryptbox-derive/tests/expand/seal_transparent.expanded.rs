@@ -13,7 +13,6 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
         type Value = Self;
         type Codec = Self;
-        type Indexes = ();
     }
     #[automatically_derived]
     impl ::cryptbox::Codec<Self> for UserEmail {

@@ -5,7 +5,7 @@ use sqlx::{
     postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, ColumnKeys, Plain, Seal, Sealed};
+use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, ContextKind, Plain, Seal, Sealed};
 
 fn bytea_type_info() -> PgTypeInfo {
     <Vec<u8> as Type<Postgres>>::type_info()
@@ -15,11 +15,7 @@ fn bytea_compatible(ty: &PgTypeInfo) -> bool {
     <Vec<u8> as Type<Postgres>>::compatible(ty)
 }
 
-impl<F, K> Type<Postgres> for Plain<F, K>
-where
-    F: Seal<Indexes = ()>,
-    K: ColumnKeys,
-{
+impl<F: Seal> Type<Postgres> for Plain<F> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -29,11 +25,7 @@ where
     }
 }
 
-impl<F, K> Encode<'_, Postgres> for Plain<F, K>
-where
-    F: Seal<Indexes = ()>,
-    K: ColumnKeys,
-{
+impl<F: Seal> Encode<'_, Postgres> for Plain<F> {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         let sealed = self.seal_for_column()?;
         buffer.extend_from_slice(sealed.as_bytes());
@@ -46,18 +38,14 @@ where
     }
 }
 
-impl<'row, F, K> Decode<'row, Postgres> for Plain<F, K>
-where
-    F: Seal<Indexes = ()>,
-    K: ColumnKeys,
-{
+impl<'row, F: Seal> Decode<'row, Postgres> for Plain<F> {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
         Ok(Self::open_column(bytes)?)
     }
 }
 
-impl<F: Seal, C> Type<Postgres> for Sealed<F, C> {
+impl<F: Seal, C: ContextKind> Type<Postgres> for Sealed<F, C> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -67,7 +55,7 @@ impl<F: Seal, C> Type<Postgres> for Sealed<F, C> {
     }
 }
 
-impl<F: Seal, C> Encode<'_, Postgres> for Sealed<F, C> {
+impl<F: Seal, C: ContextKind> Encode<'_, Postgres> for Sealed<F, C> {
     fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         buffer.extend_from_slice(self.as_bytes());
 
@@ -79,7 +67,7 @@ impl<F: Seal, C> Encode<'_, Postgres> for Sealed<F, C> {
     }
 }
 
-impl<'row, F: Seal, C> Decode<'row, Postgres> for Sealed<F, C> {
+impl<'row, F: Seal, C: ContextKind> Decode<'row, Postgres> for Sealed<F, C> {
     fn decode(value: PgValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
 

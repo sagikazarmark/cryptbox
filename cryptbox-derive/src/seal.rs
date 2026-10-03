@@ -12,7 +12,6 @@ const KEYS: &[Key] = &[
     Key::Codec,
     Key::Transparent,
     Key::Padding,
-    Key::Indexes,
     Key::Crate,
 ];
 
@@ -54,7 +53,6 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         || quote!(#krate::Padding::NONE),
         |padding| padding.to_tokens(&krate),
     );
-    let indexes = attrs.indexes.unwrap_or_default();
     let (impl_generics, type_generics, where_clause) = input.generics.split_for_impl();
 
     let (value, codec, adapter) = match form {
@@ -95,7 +93,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
     };
 
-    let items = seal_items(&krate, &id, &padding, &value, &codec, &indexes);
+    let items = seal_items(&krate, &id, &padding, &value, &codec);
 
     Ok(quote! {
         const _: () = {
@@ -116,14 +114,12 @@ pub(crate) fn seal_items(
     padding: &TokenStream,
     value: &TokenStream,
     codec: &TokenStream,
-    indexes: &[Type],
 ) -> TokenStream {
     quote! {
         const ID: #krate::SealId = #krate::SealId::from_u128(#id);
         const PADDING: #krate::Padding = #padding;
         type Value = #value;
         type Codec = #codec;
-        type Indexes = (#(#indexes,)*);
     }
 }
 

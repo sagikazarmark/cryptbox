@@ -62,13 +62,12 @@ impl RecordValue<'_> {
     }
 }
 
-/// A type a record ID can have: `[u8; 16]`, `uuid::Uuid` with the `uuid`
-/// feature, `i64`, `Vec<u8>`, or `Box<[u8]>`. Not public API: `#[derive(Record)]`
-/// names it for a record's `record_id` field.
+/// A type a record ID can have: `[u8; 16]`, `uuid::Uuid`, `i64`, `Vec<u8>`, or
+/// `Box<[u8]>`. Not public API: `#[derive(Record)]` names it for a record's `record_id` field.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a record ID type",
     label = "a record ID is a UUID, an `i64`, or bytes",
-    note = "use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid` with the `uuid` feature"
+    note = "use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`"
 )]
 pub trait RecordKey: sealed::Sealed + 'static {
     #[doc(hidden)]
@@ -86,7 +85,6 @@ impl RecordKey for [u8; 16] {
     }
 }
 
-#[cfg(feature = "uuid")]
 impl RecordKey for uuid::Uuid {
     const KIND: RecordKind = RecordKind::Uuid;
 
@@ -124,7 +122,6 @@ mod sealed {
 }
 
 impl sealed::Sealed for [u8; 16] {}
-#[cfg(feature = "uuid")]
 impl sealed::Sealed for uuid::Uuid {}
 impl sealed::Sealed for i64 {}
 impl sealed::Sealed for Vec<u8> {}
@@ -393,7 +390,6 @@ mod tests {
             const PADDING: crate::Padding = crate::Padding::NONE;
             type Value = String;
             type Codec = crate::Utf8;
-            type Indexes = ();
         }
 
         let context = SealContext::of::<Email, InRecord<i64>>(&1).unwrap();

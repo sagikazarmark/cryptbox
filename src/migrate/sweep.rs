@@ -420,9 +420,9 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::InvalidBlindIndex
         | Error::UnexpectedRecord
         | Error::LegacyRecoveryFailed(_) => true,
-        Error::KeysUnavailable
-        | Error::KeysNotInstalled
-        | Error::BlindIndexKeysNotConfigured
+        #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
+        Error::KeysNotInstalled => false,
+        Error::BlindIndexKeysNotConfigured
         | Error::DuplicateEncryptionKey(_)
         | Error::DuplicateBlindIndexKey(_)
         | Error::RandomnessUnavailable

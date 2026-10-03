@@ -18,7 +18,7 @@ use crate::{
 /// snapshot diff for review. Assert that [`Self::duplicates`] is empty as well.
 ///
 /// Each seal lists its seal ID, codec ID, and padding, and the
-/// [context fingerprint](crate::CiphertextInfo::context_fingerprint) of each
+/// [context fingerprint](crate::envelope::CiphertextInfo::context_fingerprint) of each
 /// context [`Self::sealed`] registers it in: a seal knows nothing of where its
 /// values are stored, so the manifest lists what the application registers.
 ///
@@ -48,7 +48,6 @@ use crate::{
 ///     const PADDING: Padding = Padding::block(16);
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = ();
 /// }
 ///
 /// // Nicknames are stored as standalone values, `Sealed<Nickname>`.
@@ -445,7 +444,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = ();
 /// }
 ///
 /// struct BillingAddress;
@@ -455,7 +453,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = ();
 /// }
 ///
 /// cryptbox::assert_unique_ids!(HomeAddress, BillingAddress);
@@ -471,7 +468,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Indexes = ();
 /// # }
 /// struct BillingAddress;
 ///
@@ -480,7 +476,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = ();
 /// }
 ///
 /// cryptbox::assert_unique_ids!(HomeAddress, BillingAddress);
@@ -497,7 +492,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = Vec<u8>;
 /// #     type Codec = Raw;
-/// #     type Indexes = ();
 /// # }
 /// struct Exact;
 ///

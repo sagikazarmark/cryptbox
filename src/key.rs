@@ -29,7 +29,7 @@ pub enum KeyError {
 ///
 /// `Keys` is a source for both roles, so it can be passed to any operation
 /// (`Sealed::seal`, `Sealed::open`, `BlindIndex::probes`, …). It is also what
-/// [`keys::install`](crate::keys::install) installs for the automatic `SQLx` column.
+/// the automatic `SQLx` column, `Plain`, reads once installed.
 ///
 /// Blind-index operations fail with
 /// [`Error::BlindIndexKeysNotConfigured`](crate::Error::BlindIndexKeysNotConfigured)

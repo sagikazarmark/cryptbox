@@ -7,7 +7,7 @@ use sqlx::{
     sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, ColumnKeys, Plain, Seal, Sealed};
+use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, ContextKind, Plain, Seal, Sealed};
 
 fn blob_type_info() -> SqliteTypeInfo {
     <Vec<u8> as Type<Sqlite>>::type_info()
@@ -17,11 +17,7 @@ fn blob_compatible(ty: &SqliteTypeInfo) -> bool {
     <Vec<u8> as Type<Sqlite>>::compatible(ty)
 }
 
-impl<F, K> Type<Sqlite> for Plain<F, K>
-where
-    F: Seal<Indexes = ()>,
-    K: ColumnKeys,
-{
+impl<F: Seal> Type<Sqlite> for Plain<F> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -31,7 +27,7 @@ where
     }
 }
 
-impl<F: Seal, C> Type<Sqlite> for Sealed<F, C> {
+impl<F: Seal, C: ContextKind> Type<Sqlite> for Sealed<F, C> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -61,11 +57,7 @@ impl<Spec> Type<Sqlite> for BlindIndexRef<'_, Spec> {
     }
 }
 
-impl<'q, F, K> Encode<'q, Sqlite> for Plain<F, K>
-where
-    F: Seal<Indexes = ()>,
-    K: ColumnKeys,
-{
+impl<'q, F: Seal> Encode<'q, Sqlite> for Plain<F> {
     fn encode_by_ref(
         &self,
         buffer: &mut Vec<SqliteArgumentValue<'q>>,
@@ -81,7 +73,7 @@ where
     }
 }
 
-impl<'q, F: Seal, C> Encode<'q, Sqlite> for Sealed<F, C> {
+impl<'q, F: Seal, C: ContextKind> Encode<'q, Sqlite> for Sealed<F, C> {
     fn encode_by_ref(
         &self,
         buffer: &mut Vec<SqliteArgumentValue<'q>>,
@@ -132,18 +124,14 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
     }
 }
 
-impl<'row, F, K> Decode<'row, Sqlite> for Plain<F, K>
-where
-    F: Seal<Indexes = ()>,
-    K: ColumnKeys,
-{
+impl<'row, F: Seal> Decode<'row, Sqlite> for Plain<F> {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
         Ok(Self::open_column(bytes)?)
     }
 }
 
-impl<'row, F: Seal, C> Decode<'row, Sqlite> for Sealed<F, C> {
+impl<'row, F: Seal, C: ContextKind> Decode<'row, Sqlite> for Sealed<F, C> {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
 

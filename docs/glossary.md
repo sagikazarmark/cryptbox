@@ -16,12 +16,6 @@ The encrypted bytes of a value: the envelope that a sealed value wraps.
 Structurally valid ciphertext has not necessarily been authenticated.
 <!-- Agent guidance: in the typed API, say “sealed value” (`Sealed<F>`); “ciphertext” is the byte-level envelope. Avoid “encrypted value” for plaintext-bearing types. -->
 
-**Column keys**:
-The keys of an automatic SQLx column, named in its type as `Plain<F, K>`
-(`ColumnKeys`): the installed keys (`GlobalKeys`, the default) or an
-application-owned static `Keys`. They belong to the column type, not to a seal.
-<!-- Agent guidance: “key context” is the retired name; do not reintroduce it. -->
-
 **Context**:
 What an envelope binds a value to: bytes that key derivation and the AAD both
 take, never stored, plus a context fingerprint in the header. A sealed value's
@@ -35,7 +29,7 @@ record fails. Tenants are kept apart by keys, not by the context.
 A public 8-byte truncated SHA-256 over a context's kind, never its values.
 Every envelope header stores it; opening compares it before any key lookup to
 report a context mismatch. Security never depends on it
-(`CiphertextInfo::context_fingerprint`).
+(`envelope::CiphertextInfo::context_fingerprint`).
 <!-- Agent guidance: “binding fingerprint” and “shape fingerprint” are retired names; do not reintroduce them. -->
 
 **Current generation**:
@@ -107,10 +101,11 @@ a `Context` does.
 <!-- Agent guidance: this is not the retired application-declared part of ADR-0005 to ADR-0010 (`#[part]`, `PartId`, `part_id!`), which stays retired; never suggest that applications add parts. Say “slot” only for a part's UUID. -->
 
 **Plain value**:
-A plaintext value of a seal held by the automatic SQLx column (`Plain<F, K>`),
-which seals it on encode and opens it on decode. A column decoder does not see
-the row, so it serves only standalone values without blind indexes.
-<!-- Agent guidance: `Plain` is the only plaintext-typed column; a record's fields and values of indexed seals are sealed explicitly. `Encrypted<F>` is the retired name of the plaintext carrier; do not reintroduce it. -->
+A plaintext value of a seal held by the automatic SQLx column (`Plain<F>`),
+which seals it on encode and opens it on decode with the installed keys. A
+column decoder does not see the row, so it serves only standalone values and
+writes no blind indexes.
+<!-- Agent guidance: `Plain` is the only plaintext-typed column; a record's fields and values of indexed seals are sealed explicitly. `Encrypted<F>` is the retired name of the plaintext carrier; do not reintroduce it. Column keys (`Plain<F, K>`, `ColumnKeys`, `GlobalKeys`) and “key context” are retired: the column reads the installed keys. -->
 
 **Prepared storage**:
 A sealed value and optional blind indexes derived from the same source value, ready

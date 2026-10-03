@@ -18,7 +18,6 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = Self;
         type Codec = Self;
-        type Indexes = ();
     }
     #[automatically_derived]
     impl ::cryptbox::Codec<Self> for HomeAddress {

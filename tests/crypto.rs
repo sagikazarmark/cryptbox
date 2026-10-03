@@ -1,9 +1,9 @@
 //! Public-boundary tests for encryption, seal binding, and key rotation.
 
 use cryptbox::EncryptionKey;
+use cryptbox::envelope::{inspect_ciphertext, is_ciphertext};
 use cryptbox::{
-    EncryptionKeyring, Error, KeyError, KeyId, Padding, Raw, Seal, Sealed, Utf8,
-    inspect_ciphertext, is_ciphertext, key_id, seal_id,
+    EncryptionKeyring, Error, KeyError, KeyId, Padding, Raw, Seal, Sealed, Utf8, key_id, seal_id,
 };
 
 const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
@@ -24,7 +24,6 @@ impl Seal for EmailSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Indexes = ();
 }
 
 struct PaddedEmailSeal;
@@ -34,7 +33,6 @@ impl Seal for PaddedEmailSeal {
     const PADDING: Padding = Padding::block(16);
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Indexes = ();
 }
 
 // Raw seals carry opaque bytes through `Sealed`, as the byte-level API did.
@@ -58,7 +56,6 @@ impl Seal for PhoneSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Indexes = ();
 }
 
 #[test]
@@ -77,7 +74,7 @@ fn encryption_is_randomized_and_authenticates_the_envelope() {
     let info = inspect_ciphertext(&first).unwrap();
     assert_eq!(info.format_version(), 2);
     assert!(!info.padded());
-    assert_eq!(info.suite_id().get(), 1);
+    assert_eq!(info.suite_id(), 1);
     assert_eq!(info.key_id(), CURRENT_KEY_ID);
 
     let mut tampered = first;
@@ -247,7 +244,6 @@ impl Seal for TypedEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 #[test]

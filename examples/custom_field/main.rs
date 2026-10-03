@@ -4,8 +4,8 @@ use std::sync::{PoisonError, RwLock};
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec,
-    CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, Error, Padding, Seal, SealId,
-    Sealed, Secret,
+    CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed,
+    Secret,
 };
 use zeroize::Zeroizing;
 
@@ -54,7 +54,6 @@ impl Seal for Handle {
     const PADDING: Padding = Padding::NONE;
     type Value = Self;
     type Codec = HandleCodec;
-    type Indexes = (HandleEquality,);
 }
 
 struct HandleEquality;
@@ -104,17 +103,29 @@ impl CachedEncryptionKeys {
     }
 
     /// The current snapshot, to pass to an operation.
-    fn keyring(&self) -> Result<EncryptionKeyring, Error> {
+    fn keyring(&self) -> Result<EncryptionKeyring, KeysUnavailable> {
         // Cloning shares the keys; it does not copy key material.
         self.snapshot
             .read()
-            .map_err(|_| Error::KeysUnavailable)?
+            .unwrap_or_else(PoisonError::into_inner)
             .clone()
-            .ok_or(Error::KeysUnavailable)
+            .ok_or(KeysUnavailable)
     }
 }
 
-fn main() -> Result<(), cryptbox::Error> {
+/// The application's own error for keys it could not load.
+#[derive(Debug, PartialEq)]
+struct KeysUnavailable;
+
+impl std::fmt::Display for KeysUnavailable {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("keys are unavailable")
+    }
+}
+
+impl std::error::Error for KeysUnavailable {}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Ephemeral demonstration only. Load stable key/ID pairs for durable data.
     let old_key = EncryptionKey::generate()?;
     let keys = CachedEncryptionKeys::new(Some(EncryptionKeyring::new(old_key.clone(), [])?));
@@ -156,8 +167,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn custom_secret_codec_round_trips_without_consuming_the_source() -> Result<(), cryptbox::Error>
-    {
+    fn custom_secret_codec_round_trips_without_consuming_the_source()
+    -> Result<(), Box<dyn std::error::Error>> {
         main()
     }
 
@@ -179,7 +190,7 @@ mod tests {
 
     #[test]
     fn source_retains_history_and_distinguishes_unknown_from_unavailable()
-    -> Result<(), cryptbox::Error> {
+    -> Result<(), Box<dyn std::error::Error>> {
         let old = EncryptionKey::generate()?;
         let current = EncryptionKey::generate()?;
         let unknown = EncryptionKey::generate()?.id();
@@ -205,7 +216,7 @@ mod tests {
             cryptbox::Error::UnknownEncryptionKey(old.id())
         );
         let unavailable = CachedEncryptionKeys::new(None);
-        assert_eq!(unavailable.keyring().unwrap_err(), Error::KeysUnavailable);
+        assert_eq!(unavailable.keyring().unwrap_err(), KeysUnavailable);
         // A later refresh recovers without restarting.
         unavailable.refresh(EncryptionKeyring::new(old, [])?);
         assert_eq!(
@@ -273,7 +284,6 @@ index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
             const PADDING: Padding = Padding::NONE;
             type Value = String;
             type Codec = cryptbox::Utf8;
-            type Indexes = ();
         }
 
         let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;

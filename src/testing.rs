@@ -30,7 +30,6 @@ use crate::{Codec, ContextKind, EncryptionKeyring, Seal, Sealed};
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = ();
 /// }
 ///
 /// assert_encoding::<Nickname>(&"ada".to_owned(), "616461");
@@ -95,7 +94,6 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = ();
 /// }
 ///
 /// /// Keeps payment seals under their own keyring.

@@ -9,7 +9,6 @@ impl Seal for UserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 // An application-owned schema label: no record data or secrets.
@@ -20,8 +19,7 @@ fn error_category(error: &Error) -> &'static str {
     match error {
         Error::AuthenticationFailed => "authentication_failed",
         Error::UnknownEncryptionKey(_) => "unknown_encryption_key",
-        Error::KeysUnavailable => "keys_unavailable",
-        Error::KeysNotInstalled => "keys_not_installed",
+        Error::BlindIndexKeysNotConfigured => "blind_index_keys_not_configured",
         Error::NotCiphertext | Error::InvalidEnvelope => "invalid_ciphertext",
         _ => "cryptbox_error", // Error is non-exhaustive; new variants stay sanitized.
     }

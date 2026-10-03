@@ -3,8 +3,8 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec,
-    CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, IndexId, IndexKeyId, IndexList,
-    Padding, Seal, SealId, Sealed, Utf8, index_id, index_key_id, seal_id,
+    CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, IndexId, IndexKeyId, Padding,
+    Seal, SealId, Sealed, Utf8, index_id, index_key_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -29,7 +29,6 @@ impl Seal for ManualUserEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 #[test]
@@ -384,7 +383,6 @@ fn a_derived_blind_index_names_its_normalizer() {
 #[cryptbox(
     id = "4b8e2d6f-1a3c-4e57-b9d0-6f2a4c8e1b35",
     value = String,
-    indexes(ProjectEmailLookup),
 )]
 struct ProjectEmail;
 
@@ -398,14 +396,6 @@ struct ProjectEmail;
     normalizer = "text/1",
 )]
 struct ProjectEmailLookup;
-
-#[test]
-fn a_derived_seal_declares_its_blind_indexes() {
-    assert_eq!(
-        <<ProjectEmail as Seal>::Indexes as IndexList<ProjectEmail>>::IDS,
-        [index_id!("9c1e5a3d-7f2b-4d48-a6e0-3b5d9f1c7e24")]
-    );
-}
 
 #[test]
 fn a_derived_blind_index_matches_its_probes() {
@@ -426,7 +416,6 @@ fn a_derived_blind_index_matches_its_probes() {
     assert_eq!(prepare(), probes[0]);
 }
 
-#[cfg(feature = "uuid")]
 mod uuid_records {
     use cryptbox::{Record, Sealed};
     use uuid::Uuid;

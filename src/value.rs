@@ -1,7 +1,7 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    Codec, Context, ContextKind, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal, bound,
+    Codec, Context, ContextKind, EncryptionKeys, Error, KeyId, Prepared, Seal, bound,
     envelope::validated_key_id,
     seal_context::{self, SealContext},
 };
@@ -43,7 +43,6 @@ use crate::{
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = ();
 /// }
 ///
 /// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
@@ -52,12 +51,12 @@ use crate::{
 /// assert_eq!(sealed.open(&keys)?, "user@example.com");
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
-pub struct Sealed<F: Seal, C = ()> {
+pub struct Sealed<F: Seal, C: ContextKind = ()> {
     bytes: Vec<u8>,
     marker: PhantomData<fn() -> (F, C)>,
 }
 
-impl<F: Seal, C> Sealed<F, C> {
+impl<F: Seal, C: ContextKind> Sealed<F, C> {
     /// Validates and wraps a binary `CryptBox` envelope.
     ///
     /// # Errors
@@ -67,7 +66,7 @@ impl<F: Seal, C> Sealed<F, C> {
     /// deferred until the value is opened.
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
         let bytes = bytes.into();
-        crate::inspect_ciphertext(&bytes)?;
+        crate::envelope::inspect_ciphertext(&bytes)?;
 
         Ok(Self::from_validated_bytes(bytes))
     }
@@ -272,7 +271,6 @@ impl<F: Seal, C: Context> Sealed<F, C> {
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Indexes = ();
     /// }
     ///
     /// let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
@@ -319,55 +317,9 @@ impl<F: Seal, C: Context> Sealed<F, C> {
     ) -> Result<F::Value, Error> {
         self.open_under(&SealContext::of::<F, C>(context)?, keys)
     }
-
-    /// Seals `value` in `context` into a prepared storage representation that
-    /// blind indexes can be added to.
-    ///
-    /// Indexes are derived under their seal alone, as for [`Sealed::prepare`].
-    ///
-    /// # Errors
-    ///
-    /// Returns any error of [`Self::seal_in`].
-    pub fn prepare_in<'a>(
-        value: &'a F::Value,
-        context: &C::Value,
-        keys: &(impl EncryptionKeys + ?Sized),
-    ) -> Result<Prepared<'a, F, C>, Error> {
-        Ok(Prepared::new(value, Self::seal_in(value, context, keys)?))
-    }
-
-    /// Opens and reseals this value in `context` as `F` currently writes it,
-    /// with the same keys, as [`Sealed::reseal`] does.
-    ///
-    /// # Errors
-    ///
-    /// Returns any opening, padding, or encryption error.
-    pub fn reseal_in(
-        &self,
-        context: &C::Value,
-        keys: &(impl EncryptionKeys + ?Sized),
-    ) -> Result<Self, Error> {
-        self.reseal_across_in(context, keys, keys)
-    }
-
-    /// Opens this value in `context` with `from_keys` and reseals it with
-    /// `to_keys`, as [`Sealed::reseal_across`] does.
-    ///
-    /// # Errors
-    ///
-    /// Returns any opening error with `from_keys`, or padding or encryption
-    /// error with `to_keys`.
-    pub fn reseal_across_in(
-        &self,
-        context: &C::Value,
-        from_keys: &(impl EncryptionKeys + ?Sized),
-        to_keys: &(impl EncryptionKeys + ?Sized),
-    ) -> Result<Self, Error> {
-        self.reseal_under(&SealContext::of::<F, C>(context)?, from_keys, to_keys)
-    }
 }
 
-impl<F: Seal, C> TryFrom<Vec<u8>> for Sealed<F, C> {
+impl<F: Seal, C: ContextKind> TryFrom<Vec<u8>> for Sealed<F, C> {
     type Error = Error;
 
     fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
@@ -376,49 +328,49 @@ impl<F: Seal, C> TryFrom<Vec<u8>> for Sealed<F, C> {
 }
 
 // Stores the envelope through `Vec<u8>`, as an ORM's `serialize_as` does.
-impl<F: Seal, C> From<Sealed<F, C>> for Vec<u8> {
+impl<F: Seal, C: ContextKind> From<Sealed<F, C>> for Vec<u8> {
     fn from(sealed: Sealed<F, C>) -> Self {
         sealed.into_bytes()
     }
 }
 
-impl<F: Seal, C> AsRef<[u8]> for Sealed<F, C> {
+impl<F: Seal, C: ContextKind> AsRef<[u8]> for Sealed<F, C> {
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
     }
 }
 
-impl<F: Seal, C> Clone for Sealed<F, C> {
+impl<F: Seal, C: ContextKind> Clone for Sealed<F, C> {
     fn clone(&self) -> Self {
         Self::from_validated_bytes(self.bytes.clone())
     }
 }
 
-impl<F: Seal, C> PartialEq for Sealed<F, C> {
+impl<F: Seal, C: ContextKind> PartialEq for Sealed<F, C> {
     fn eq(&self, other: &Self) -> bool {
         self.bytes == other.bytes
     }
 }
 
-impl<F: Seal, C> Eq for Sealed<F, C> {}
+impl<F: Seal, C: ContextKind> Eq for Sealed<F, C> {}
 
-impl<F: Seal, C> fmt::Debug for Sealed<F, C> {
+impl<F: Seal, C: ContextKind> fmt::Debug for Sealed<F, C> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Sealed([REDACTED])")
     }
 }
 
 /// A plaintext value of seal `F` that an automatic `SQLx` column seals on
-/// encode and opens on decode.
+/// encode and opens on decode, with the keys installed with
+/// [`keys::install`](crate::keys::install).
 ///
-/// A column decoder does not see the row, so `Plain` serves only standalone
-/// values of seals without blind indexes, `F::Indexes = ()`: it seals and opens
-/// them as [`Sealed<F>`]. Use [`Sealed`] explicitly for every other seal, and
-/// for a value in a [`Context`], such as a record's field.
-///
-/// `K` names the column's keys. The default, [`GlobalKeys`], reads the keys
-/// installed with [`keys::install`](crate::keys::install); name another
-/// [`ColumnKeys`](crate::ColumnKeys) to use application-owned keys instead.
+/// A column decoder sees neither the row nor the caller's keys, so `Plain`
+/// serves only standalone values: it seals and opens them as [`Sealed<F>`]
+/// with the installed keys, and fails with
+/// [`Error::KeysNotInstalled`] before installation. It writes no blind
+/// indexes. Use [`Sealed`] explicitly with keys you pass in for a value with
+/// blind indexes, for a value in a [`Context`], such as a record's field, and
+/// for a tenant's value.
 ///
 /// `Plain` contains plaintext while it is in application memory. It redacts
 /// `Debug`, does not implement `Display`, `Deref`, `PartialEq`, or Serde, and
@@ -435,53 +387,13 @@ impl<F: Seal, C> fmt::Debug for Sealed<F, C> {
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = ();
 /// }
 ///
 /// let email = Plain::<UserEmail>::new("user@example.com");
 /// assert_eq!(email.expose_secret(), "user@example.com");
 /// ```
 ///
-/// A seal with blind indexes is rejected, which the column would not write:
-///
-/// ```compile_fail,E0271
-/// use cryptbox::{
-///     BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Plain, Utf8,
-/// };
-/// use zeroize::Zeroizing;
-///
-/// struct UserEmail;
-///
-/// impl Seal for UserEmail {
-///     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-///     const PADDING: Padding = Padding::NONE;
-///     type Value = String;
-///     type Codec = Utf8;
-///     type Indexes = (EmailLookup,);
-/// }
-///
-/// struct EmailLookup;
-///
-/// impl BlindIndexSpec for EmailLookup {
-///     type Seal = UserEmail;
-///     const ID: IndexId = cryptbox::index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53");
-///     const BITS: u16 = 32;
-///     const NORMALIZER: &'static str = "exact/1";
-///     type Query = str;
-///
-///     fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-///         Ok(Zeroizing::new(query.as_bytes().to_vec()))
-///     }
-///
-///     fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-///         Self::normalize_query(value)
-///     }
-/// }
-///
-/// let email = Plain::<UserEmail>::new("user@example.com");
-/// ```
-///
-/// Plaintext comparison must also be explicit:
+/// Plaintext comparison must be explicit:
 ///
 /// ```compile_fail,E0369
 /// # use cryptbox::{Seal, SealId, Padding, Plain, Utf8};
@@ -491,7 +403,6 @@ impl<F: Seal, C> fmt::Debug for Sealed<F, C> {
 /// #     const PADDING: Padding = Padding::NONE;
 /// #     type Value = String;
 /// #     type Codec = Utf8;
-/// #     type Indexes = ();
 /// # }
 /// let left = Plain::<UserEmail>::new("secret");
 /// let right = Plain::<UserEmail>::new("secret");
@@ -502,26 +413,21 @@ impl<F: Seal, C> fmt::Debug for Sealed<F, C> {
     "See the [ownership reference].\n\n",
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
 )]
-pub struct Plain<F: Seal, K = GlobalKeys> {
+#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
+pub struct Plain<F: Seal> {
     value: F::Value,
-    marker: PhantomData<fn() -> (F, K)>,
+    marker: PhantomData<fn() -> F>,
 }
 
-impl<F, K> Plain<F, K>
-where
-    F: Seal<Indexes = ()>,
-{
+#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
+impl<F: Seal> Plain<F> {
     /// Wraps a plaintext value.
     ///
     /// Accepts anything convertible into the seal's value type, so a `&str`
     /// can initialize a `String` value.
     pub fn new(value: impl Into<F::Value>) -> Self {
-        Self::from_value(value.into())
-    }
-
-    const fn from_value(value: F::Value) -> Self {
         Self {
-            value,
+            value: value.into(),
             marker: PhantomData,
         }
     }
@@ -538,34 +444,22 @@ where
         self.value
     }
 
-    /// Moves this value into the column type that reads its keys from `K2`.
-    ///
-    /// This moves the plaintext; it neither copies nor reseals it.
-    #[must_use]
-    pub fn with_column_keys<K2>(self) -> Plain<F, K2> {
-        Plain::from_value(self.value)
-    }
-}
-
-// The automatic SQLx columns seal and open with their keys `K`.
-#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
-impl<F, K> Plain<F, K>
-where
-    F: Seal<Indexes = ()>,
-    K: crate::ColumnKeys,
-{
     pub(crate) fn seal_for_column(&self) -> Result<Sealed<F>, Error> {
-        Sealed::seal(&self.value, K::keys()?)
+        Sealed::seal(&self.value, crate::keys::installed()?)
     }
 
     pub(crate) fn open_column(bytes: Vec<u8>) -> Result<Self, Error> {
-        let value = Sealed::<F>::from_bytes(bytes)?.open(K::keys()?)?;
+        let value = Sealed::<F>::from_bytes(bytes)?.open(crate::keys::installed()?)?;
 
-        Ok(Self::from_value(value))
+        Ok(Self {
+            value,
+            marker: PhantomData,
+        })
     }
 }
 
-impl<F, K> Clone for Plain<F, K>
+#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
+impl<F> Clone for Plain<F>
 where
     F: Seal,
     F::Value: Clone,
@@ -578,7 +472,8 @@ where
     }
 }
 
-impl<F: Seal, K> fmt::Debug for Plain<F, K> {
+#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
+impl<F: Seal> fmt::Debug for Plain<F> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("Plain([REDACTED])")
     }

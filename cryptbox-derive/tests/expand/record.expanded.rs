@@ -51,7 +51,6 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::NONE;
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Indexes = (CustomerEmailIndex,);
     }
 };
 ///The `email_index` blind index of `Customer::email`.
@@ -95,7 +94,6 @@ const _: () = {
         const PADDING: ::cryptbox::Padding = ::cryptbox::Padding::block(16);
         type Value = String;
         type Codec = <String as ::cryptbox::__private::DefaultCodec>::Codec;
-        type Indexes = (CustomerNoteIndex,);
     }
 };
 ///The `note_index` blind index of `Customer::note`.

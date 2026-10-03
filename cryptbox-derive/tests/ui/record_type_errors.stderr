@@ -1,25 +1,39 @@
 error[E0277]: `String` is not a record ID type
+ --> tests/ui/record_type_errors.rs:2:10
+  |
+2 | #[derive(cryptbox::Record)]
+  |          ^^^^^^^^^^^^^^^^ a record ID is a UUID, an `i64`, or bytes
+  |
+  = help: the trait `cryptbox::__private::RecordKey` is not implemented for `String`
+  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
+  = help: the following other types implement trait `cryptbox::__private::RecordKey`:
+            Box<[u8]>
+            Vec<u8>
+            [u8; 16]
+            cryptbox::__private::uuid::Uuid
+            i64
+  = note: required for `InRecord<String>` to implement `ContextKind`
+note: required by a bound in `Sealed`
+ --> $WORKSPACE/src/value.rs
+  |
+  | pub struct Sealed<F: Seal, C: ContextKind = ()> {
+  |                               ^^^^^^^^^^^ required by this bound in `Sealed`
+  = note: this error originates in the derive macro `cryptbox::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `String` is not a record ID type
  --> tests/ui/record_type_errors.rs:5:9
   |
 5 |     id: String,
   |         ^^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
   = help: the trait `cryptbox::__private::RecordKey` is not implemented for `String`
-  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid` with the `uuid` feature
-help: the following other types implement trait `cryptbox::__private::RecordKey`
- --> $WORKSPACE/src/seal_context.rs
-  |
-  | impl RecordKey for [u8; 16] {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
-...
-  | impl RecordKey for i64 {
-  | ^^^^^^^^^^^^^^^^^^^^^^ `i64`
-...
-  | impl RecordKey for Vec<u8> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
-...
-  | impl RecordKey for Box<[u8]> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<[u8]>`
+  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
+  = help: the following other types implement trait `cryptbox::__private::RecordKey`:
+            Box<[u8]>
+            Vec<u8>
+            [u8; 16]
+            cryptbox::__private::uuid::Uuid
+            i64
   = note: required for `InRecord<String>` to implement `cryptbox::Context`
 note: required by a bound in `cryptbox::Record::Context`
  --> $WORKSPACE/src/record.rs
@@ -61,21 +75,13 @@ error[E0277]: `String` is not a record ID type
   |         ^^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
   = help: the trait `cryptbox::__private::RecordKey` is not implemented for `String`
-  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid` with the `uuid` feature
-help: the following other types implement trait `cryptbox::__private::RecordKey`
- --> $WORKSPACE/src/seal_context.rs
-  |
-  | impl RecordKey for [u8; 16] {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
-...
-  | impl RecordKey for i64 {
-  | ^^^^^^^^^^^^^^^^^^^^^^ `i64`
-...
-  | impl RecordKey for Vec<u8> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
-...
-  | impl RecordKey for Box<[u8]> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<[u8]>`
+  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
+  = help: the following other types implement trait `cryptbox::__private::RecordKey`:
+            Box<[u8]>
+            Vec<u8>
+            [u8; 16]
+            cryptbox::__private::uuid::Uuid
+            i64
 note: required by a bound in `_::{closure#0}::check`
  --> tests/ui/record_type_errors.rs:2:10
   |
@@ -85,6 +91,27 @@ note: required by a bound in `_::{closure#0}::check`
 5 |     id: String,
   |         ------ required by a bound in this function
   = note: this error originates in the derive macro `cryptbox::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: `String` is not a record ID type
+ --> tests/ui/record_type_errors.rs:5:9
+  |
+5 |     id: String,
+  |         ^^^^^^ a record ID is a UUID, an `i64`, or bytes
+  |
+  = help: the trait `cryptbox::__private::RecordKey` is not implemented for `String`
+  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
+  = help: the following other types implement trait `cryptbox::__private::RecordKey`:
+            Box<[u8]>
+            Vec<u8>
+            [u8; 16]
+            cryptbox::__private::uuid::Uuid
+            i64
+  = note: required for `InRecord<String>` to implement `ContextKind`
+note: required by a bound in `Sealed`
+ --> $WORKSPACE/src/value.rs
+  |
+  | pub struct Sealed<F: Seal, C: ContextKind = ()> {
+  |                               ^^^^^^^^^^^ required by this bound in `Sealed`
 
 error[E0599]: the associated function or constant `seal_in` exists for struct `Sealed<TextIdEmail, InRecord<String>>`, but its trait bounds were not satisfied
  --> tests/ui/record_type_errors.rs:5:9
@@ -97,50 +124,30 @@ error[E0599]: the associated function or constant `seal_in` exists for struct `S
   | pub struct InRecord<K>(PhantomData<fn() -> K>);
   | ---------------------- doesn't satisfy `InRecord<String>: cryptbox::Context`
   |
-note: if you're trying to build a new `Sealed<TextIdEmail, InRecord<String>>`, consider using `Sealed::<F, C>::from_bytes` which returns `Result<Sealed<_, _>, cryptbox::Error>`
- --> $WORKSPACE/src/value.rs
-  |
-  |     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   = note: the following trait bounds were not satisfied:
           `String: cryptbox::__private::RecordKey`
           which is required by `InRecord<String>: cryptbox::Context`
 
 error[E0277]: `String` is not a record ID type
- --> tests/ui/record_type_errors.rs:2:10
+ --> tests/ui/record_type_errors.rs:7:5
   |
-2 | #[derive(cryptbox::Record)]
-  |          ^^^^^^^^^^^^^^^^ a record ID is a UUID, an `i64`, or bytes
-...
-5 |     id: String,
-  |         ------ required by a bound introduced by this call
+7 |     email: String,
+  |     ^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
   = help: the trait `cryptbox::__private::RecordKey` is not implemented for `String`
-  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid` with the `uuid` feature
-help: the following other types implement trait `cryptbox::__private::RecordKey`
- --> $WORKSPACE/src/seal_context.rs
-  |
-  | impl RecordKey for [u8; 16] {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
-...
-  | impl RecordKey for i64 {
-  | ^^^^^^^^^^^^^^^^^^^^^^ `i64`
-...
-  | impl RecordKey for Vec<u8> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
-...
-  | impl RecordKey for Box<[u8]> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<[u8]>`
-  = note: required for `InRecord<String>` to implement `cryptbox::Context`
-note: required by a bound in `Sealed::<F, C>::open_in`
+  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
+  = help: the following other types implement trait `cryptbox::__private::RecordKey`:
+            Box<[u8]>
+            Vec<u8>
+            [u8; 16]
+            cryptbox::__private::uuid::Uuid
+            i64
+  = note: required for `InRecord<String>` to implement `ContextKind`
+note: required by a bound in `Sealed`
  --> $WORKSPACE/src/value.rs
   |
-  | impl<F: Seal, C: Context> Sealed<F, C> {
-  |                  ^^^^^^^ required by this bound in `Sealed::<F, C>::open_in`
-...
-  |     pub fn open_in(
-  |            ------- required by a bound in this associated function
-  = note: this error originates in the derive macro `cryptbox::Record` (in Nightly builds, run with -Z macro-backtrace for more info)
+  | pub struct Sealed<F: Seal, C: ContextKind = ()> {
+  |                               ^^^^^^^^^^^ required by this bound in `Sealed`
 
 error[E0277]: `String` is not a record ID type
  --> tests/ui/record_type_errors.rs:2:10
@@ -149,20 +156,12 @@ error[E0277]: `String` is not a record ID type
   |          ^^^^^^^^^^^^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
   = help: the trait `cryptbox::__private::RecordKey` is not implemented for `String`
-  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid` with the `uuid` feature
-help: the following other types implement trait `cryptbox::__private::RecordKey`
- --> $WORKSPACE/src/seal_context.rs
-  |
-  | impl RecordKey for [u8; 16] {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ `[u8; 16]`
-...
-  | impl RecordKey for i64 {
-  | ^^^^^^^^^^^^^^^^^^^^^^ `i64`
-...
-  | impl RecordKey for Vec<u8> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^ `Vec<u8>`
-...
-  | impl RecordKey for Box<[u8]> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Box<[u8]>`
+  = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
+  = help: the following other types implement trait `cryptbox::__private::RecordKey`:
+            Box<[u8]>
+            Vec<u8>
+            [u8; 16]
+            cryptbox::__private::uuid::Uuid
+            i64
   = note: required for `InRecord<String>` to implement `cryptbox::Context`
   = note: this error originates in the derive macro `cryptbox::Record` (in Nightly builds, run with -Z macro-backtrace for more info)

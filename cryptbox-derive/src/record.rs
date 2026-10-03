@@ -535,14 +535,7 @@ struct SealItem<'t> {
 }
 
 impl SealItem<'_> {
-    fn tokens(
-        &self,
-        krate: &Path,
-        name: &Ident,
-        doc: &str,
-        id: &UuidLiteral,
-        indexes: &TokenStream,
-    ) -> TokenStream {
+    fn tokens(&self, krate: &Path, name: &Ident, doc: &str, id: &UuidLiteral) -> TokenStream {
         let Self {
             vis,
             value,
@@ -561,7 +554,6 @@ impl SealItem<'_> {
                     const PADDING: #krate::Padding = #padding;
                     type Value = #value;
                     type Codec = #codec;
-                    type Indexes = #indexes;
                 }
             };
         }
@@ -686,7 +678,6 @@ impl<'a> Expansion<'a> {
                 field.ident
             ),
             &sealing.id,
-            &quote!((#(#specs,)*)),
         );
         let indexes = sealing
             .indexes

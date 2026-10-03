@@ -1,8 +1,9 @@
 //! Public-boundary tests for the schema manifest and unique-ID checks.
 
+use cryptbox::envelope::inspect_ciphertext;
 use cryptbox::{
     BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, InRecord, IndexId, Padding,
-    Raw, Seal, SealId, Sealed, Utf8, index_id, inspect_ciphertext,
+    Raw, Seal, SealId, Sealed, Utf8, index_id,
     schema::{Duplicate, Manifest},
     seal_id,
 };
@@ -15,7 +16,6 @@ impl Seal for Nickname {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct Avatar;
@@ -25,7 +25,6 @@ impl Seal for Avatar {
     const PADDING: Padding = Padding::block(64);
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Indexes = ();
 }
 
 #[test]
@@ -58,7 +57,6 @@ impl Seal for RowNote {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 #[test]
@@ -130,7 +128,6 @@ impl Seal for DisplayName {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 #[test]
@@ -227,7 +224,7 @@ fn manifest_reports_a_seal_in_several_contexts() {
 cryptbox::assert_unique_ids!(Nickname, Avatar);
 cryptbox::assert_unique_ids!(indexes: NicknameLookup);
 
-#[cfg(any(feature = "json", feature = "postcard"))]
+#[cfg(feature = "json")]
 mod serde_codecs {
     use cryptbox::{Padding, Seal, SealId, schema::Manifest, seal_id};
     use serde::{Deserialize, Serialize};
@@ -237,19 +234,15 @@ mod serde_codecs {
         street: String,
     }
 
-    #[cfg(feature = "json")]
     struct HomeAddress;
 
-    #[cfg(feature = "json")]
     impl Seal for HomeAddress {
         const ID: SealId = seal_id!("0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64");
         const PADDING: Padding = Padding::length(256);
         type Value = Address;
         type Codec = cryptbox::Json;
-        type Indexes = ();
     }
 
-    #[cfg(feature = "json")]
     #[test]
     fn manifest_names_the_json_codec() {
         assert_eq!(
@@ -258,31 +251,6 @@ mod serde_codecs {
 seal 0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64
   codec: json/1
   padding: length(256)
-"
-        );
-    }
-
-    #[cfg(feature = "postcard")]
-    struct BillingAddress;
-
-    #[cfg(feature = "postcard")]
-    impl Seal for BillingAddress {
-        const ID: SealId = seal_id!("7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13");
-        const PADDING: Padding = Padding::NONE;
-        type Value = Address;
-        type Codec = cryptbox::Postcard;
-        type Indexes = ();
-    }
-
-    #[cfg(feature = "postcard")]
-    #[test]
-    fn manifest_names_the_postcard_codec() {
-        assert_eq!(
-            Manifest::new().seal::<BillingAddress>().to_string(),
-            "\
-seal 7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13
-  codec: postcard/1
-  padding: none
 "
         );
     }

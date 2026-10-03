@@ -5,7 +5,8 @@ use zeroize::Zeroizing;
 use crate::{
     BlindIndex, BlindIndexKeyring, BlindIndexSpec, Codec, EncryptionKeyring, Error, Seal,
     blind::{derive_value, index_context},
-    bound, inspect_blind_index, inspect_ciphertext,
+    bound,
+    envelope::{inspect_blind_index, inspect_ciphertext},
     seal_context::{RecordKey, RecordValue, SealContext},
 };
 
@@ -228,7 +229,6 @@ where
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Indexes = ();
     /// }
     ///
     /// struct InviteEmail;
@@ -238,7 +238,6 @@ where
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Indexes = ();
     /// }
     ///
     /// struct InviteEmailLookup;

@@ -2,12 +2,12 @@ use zeroize::Zeroizing;
 
 use crate::{CodecError, CodecErrorKind, Secret};
 
-#[cfg(any(feature = "json", feature = "postcard"))]
+#[cfg(feature = "json")]
 struct ZeroizingByteBuffer {
     bytes: Zeroizing<Vec<u8>>,
 }
 
-#[cfg(any(feature = "json", feature = "postcard"))]
+#[cfg(feature = "json")]
 impl ZeroizingByteBuffer {
     fn new() -> Self {
         Self {
@@ -19,13 +19,6 @@ impl ZeroizingByteBuffer {
         self.bytes
     }
 
-    #[cfg(feature = "postcard")]
-    fn push(&mut self, byte: u8) {
-        self.reserve(1);
-        self.bytes.push(byte);
-    }
-
-    #[cfg(feature = "json")]
     fn extend_from_slice(&mut self, bytes: &[u8]) {
         self.reserve(bytes.len());
         self.bytes.extend_from_slice(bytes);
@@ -54,15 +47,6 @@ impl ZeroizingByteBuffer {
         // Keep the old allocation alive until the copy is complete, then wipe it
         // before its storage is returned to the allocator.
         drop(std::mem::replace(&mut self.bytes, replacement));
-    }
-}
-
-#[cfg(feature = "postcard")]
-impl Extend<u8> for ZeroizingByteBuffer {
-    fn extend<I: IntoIterator<Item = u8>>(&mut self, iter: I) {
-        for byte in iter {
-            self.push(byte);
-        }
     }
 }
 
@@ -104,8 +88,8 @@ impl std::io::Write for ZeroizingByteBuffer {
 ///
 /// Discard parser/serializer errors that retain input; return only a sanitized
 /// [`CodecError`] category without logging plaintext. The decoded `T` belongs to
-/// the application: [`crate::Plain`] does not zeroize arbitrary `T`; use
-/// [`Secret`] for values that must be erased on drop.
+/// the application, which zeroizes it only if it is a [`Secret`] or erases
+/// itself on drop.
 ///
 /// See the [custom-field example] and [ownership reference].
 ///
@@ -125,7 +109,7 @@ pub trait Codec<T>: 'static {
     /// does not store it. Give every representation its own ID, and change the
     /// ID whenever the emitted bytes or decode compatibility change, so a
     /// manifest snapshot flags the migration. The crate's codecs are `"utf8"`,
-    /// `"raw"`, `"json/1"`, and `"postcard/1"`.
+    /// `"raw"`, and `"json/1"`.
     const ID: &'static str;
 
     /// Encodes `value` into an owned, zeroizing plaintext buffer.
@@ -286,46 +270,6 @@ where
 
     fn decode(bytes: &[u8]) -> Result<T, CodecError> {
         serde_json::from_slice(bytes).map_err(|_| CodecError::new(CodecErrorKind::Decoding))
-    }
-}
-
-/// Encodes Serde values with Postcard.
-///
-/// Available with the `postcard` feature (which implies `serde`). Its
-/// [`Codec::ID`] is `"postcard/1"`.
-///
-/// Postcard is positional: it stores no field or variant names. Reordering
-/// struct fields or enum variants, or changing an integer type, decodes existing
-/// bytes into wrong values without an error. Serde attribute changes such as
-/// `rename_all` can change the stored bytes as well, for every seal that uses
-/// the value type. Pin each seal's bytes with
-/// [`assert_encoding`](crate::testing::assert_encoding).
-#[cfg(feature = "postcard")]
-#[derive(Clone, Copy, Debug, Default)]
-pub struct Postcard;
-
-#[cfg(feature = "postcard")]
-impl<T> Codec<T> for Postcard
-where
-    T: serde::Serialize + serde::de::DeserializeOwned,
-{
-    const ID: &'static str = "postcard/1";
-
-    fn encode(value: &T) -> Result<Zeroizing<Vec<u8>>, CodecError> {
-        let bytes = ZeroizingByteBuffer::new();
-
-        postcard::to_extend(value, bytes)
-            .map(ZeroizingByteBuffer::into_bytes)
-            .map_err(|_| CodecError::new(CodecErrorKind::Encoding))
-    }
-
-    fn decode(bytes: &[u8]) -> Result<T, CodecError> {
-        // `from_bytes` ignores trailing bytes, so a value followed by anything
-        // else (such as padding that was never removed) would decode silently.
-        match postcard::take_from_bytes(bytes) {
-            Ok((value, [])) => Ok(value),
-            _ => Err(CodecError::new(CodecErrorKind::Decoding)),
-        }
     }
 }
 

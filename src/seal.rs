@@ -1,5 +1,5 @@
 use crate::id::identifier;
-use crate::{Codec, IndexList, Padding};
+use crate::{Codec, Padding};
 
 identifier!(SealId, "A stable seal identifier.");
 
@@ -54,15 +54,13 @@ identifier!(SealId, "A stable seal identifier.");
 ///     const PADDING: Padding = Padding::NONE;
 ///     type Value = String;
 ///     type Codec = Utf8;
-///     type Indexes = ();
 /// }
 /// ```
 ///
 /// With the `derive` feature, `#[derive(Seal)]` writes this impl from
 /// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
 /// taking `String`'s built-in default codec, `Utf8`.
-/// Add `indexes(EmailLookup)` to set [`Self::Indexes`]. On a type with
-/// fields, the derive makes the type its own value: `codec = Json` encodes it
+/// On a type with fields, the derive makes the type its own value: `codec = Json` encodes it
 /// whole, and `transparent` stores its single field.
 ///
 /// A hand-written impl always names its codec. Only a derived seal over `String`,
@@ -102,14 +100,6 @@ pub trait Seal: 'static {
     /// A derived seal over `String`, `Vec<u8>`, or their `Secret` wrappers
     /// defaults to [`Utf8`](crate::Utf8) or [`Raw`](crate::Raw).
     type Codec: Codec<Self::Value>;
-
-    /// The blind indexes declared over this seal, as a tuple of
-    /// [`BlindIndexSpec`](crate::BlindIndexSpec)s, or `()` for none.
-    ///
-    /// Declaring them lets storage helpers reject a seal whose blind indexes
-    /// they would not write, such as the automatic column
-    /// [`Plain`](crate::Plain). See [`IndexList`].
-    type Indexes: IndexList<Self>;
 }
 
 /// Creates a [`SealId`](crate::SealId) from a UUID literal.

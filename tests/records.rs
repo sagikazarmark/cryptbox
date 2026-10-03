@@ -309,7 +309,6 @@ impl Seal for ManualNoteBody {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 #[test]

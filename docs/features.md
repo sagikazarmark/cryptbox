@@ -6,22 +6,22 @@ No features are enabled by default, and all features are additive:
   `#[derive(Record)]`. Each expands to the trait impls you would write by hand,
   plus a record's stored form and index handles. IDs are UUID literals checked at
   compile time; a codec is never inferred from a type's shape.
-- `json` and `postcard` add the `Json` and `Postcard` codecs. Their serialized
-  representation is persistent schema. Both imply `serde`.
+- `json` adds the `Json` codec. Its serialized representation is persistent
+  schema. It implies `serde`.
 - `migrate` adds the `migrate` module for adopting `CryptBox` over plaintext or a
   previous solution's ciphertext: permissive reads, a legacy recovery handler,
   and a resumable sweep. Normal decoding stays strict.
 - `serde` serializes `Sealed` and `BlindIndex` stored bytes: unpadded base64url
   in human-readable formats, bytes otherwise. `Plain` is never serializable,
   because it holds plaintext.
-- `sqlx-postgres` and `sqlx-sqlite` add `SQLx` 0.8 `BYTEA`/`BLOB` storage.
-  `migrate::PostgresSweepStore` and `migrate::SqliteSweepStore` additionally need
-  `migrate`.
-- `uuid` lets a record ID be a `uuid::Uuid`.
+- `sqlx-postgres` and `sqlx-sqlite` add `SQLx` 0.8 `BYTEA`/`BLOB` storage, and
+  `Plain<F>` with the `keys` module. `migrate::PostgresSweepStore` and
+  `migrate::SqliteSweepStore` additionally need `migrate`.
 
-The `SQLx` adapters seal and open `Plain<F>`, the column for standalone values of
-a seal without blind indexes, with the keys installed by `keys::install`; name
-other keys as `Plain<F, K>`. Seal every other value explicitly. The features
+`Sealed`, `BlindIndex`, and a record's stored form are ordinary columns.
+`Plain<F>` is the automatic column: it seals and opens a standalone value with
+the keys installed by `keys::install`, and writes no blind indexes. Seal every
+other value explicitly, with the keys you pass in. The features
 disable `SQLx` defaults and choose no runtime or TLS: add `SQLx` (and `serde`
 with `derive`, for derives) directly. docs.rs enables all features.
 

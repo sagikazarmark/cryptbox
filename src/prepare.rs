@@ -18,23 +18,19 @@ struct PreparedIndex {
 /// Dropping preparation releases its borrow, not the source plaintext. The
 /// application owns persistence and atomicity. See the [ownership reference].
 ///
-/// `C` is the context of the sealed value, as for [`Sealed`]: `()` from
-/// [`Sealed::prepare`], or a [`Context`](crate::Context) from
-/// [`Sealed::prepare_in`]. Indexes are derived under their seal alone either way.
-///
 #[doc = concat!(
     "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
 )]
-pub struct Prepared<'a, F, C = ()>
+pub struct Prepared<'a, F>
 where
     F: Seal,
 {
     source: &'a F::Value,
-    sealed: Sealed<F, C>,
+    sealed: Sealed<F>,
     indexes: Vec<PreparedIndex>,
 }
 
-impl<F, C> fmt::Debug for Prepared<'_, F, C>
+impl<F> fmt::Debug for Prepared<'_, F>
 where
     F: Seal,
 {
@@ -48,11 +44,11 @@ where
     }
 }
 
-impl<'a, F, C> Prepared<'a, F, C>
+impl<'a, F> Prepared<'a, F>
 where
     F: Seal,
 {
-    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F, C>) -> Self {
+    pub(crate) const fn new(source: &'a F::Value, sealed: Sealed<F>) -> Self {
         Self {
             source,
             sealed,
@@ -62,7 +58,7 @@ where
 
     /// Returns the sealed storage value.
     #[must_use]
-    pub const fn sealed(&self) -> &Sealed<F, C> {
+    pub const fn sealed(&self) -> &Sealed<F> {
         &self.sealed
     }
 
@@ -70,7 +66,7 @@ where
     ///
     /// Copy its indexes out with [`Self::index`] first.
     #[must_use]
-    pub fn into_sealed(self) -> Sealed<F, C> {
+    pub fn into_sealed(self) -> Sealed<F> {
         self.sealed
     }
 
@@ -93,7 +89,6 @@ where
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Indexes = ();
     /// }
     ///
     /// struct InviteEmail;
@@ -103,7 +98,6 @@ where
     ///     const PADDING: Padding = Padding::NONE;
     ///     type Value = String;
     ///     type Codec = Utf8;
-    ///     type Indexes = ();
     /// }
     ///
     /// struct InviteEmailLookup;

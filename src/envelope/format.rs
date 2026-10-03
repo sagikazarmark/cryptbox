@@ -1,5 +1,3 @@
-use std::fmt;
-
 use crate::{Error, KeyId};
 
 const MAGIC: &[u8; 4] = b"CBX\0";
@@ -23,23 +21,15 @@ const HEADER_LEN: usize = FINGERPRINT_OFFSET + FINGERPRINT_LEN;
 ///
 /// The envelope header records it; the suites define what each value means.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SuiteId(u8);
+pub(crate) struct SuiteId(u8);
 
 impl SuiteId {
     pub(crate) const fn new(value: u8) -> Self {
         Self(value)
     }
 
-    /// Returns the suite's wire value.
-    #[must_use]
-    pub const fn get(self) -> u8 {
+    pub(crate) const fn get(self) -> u8 {
         self.0
-    }
-}
-
-impl fmt::Display for SuiteId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(formatter)
     }
 }
 
@@ -60,9 +50,14 @@ impl CiphertextInfo {
         self.format_version
     }
 
-    /// Returns the complete cipher-suite identifier.
+    /// Returns the ID of the encryption suite, the complete construction that
+    /// sealed the value.
     #[must_use]
-    pub const fn suite_id(self) -> SuiteId {
+    pub const fn suite_id(self) -> u8 {
+        self.suite_id.get()
+    }
+
+    pub(crate) const fn suite(self) -> SuiteId {
         self.suite_id
     }
 

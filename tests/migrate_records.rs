@@ -45,7 +45,6 @@ impl Seal for UnboundEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 /// The columns a row's record ID is read from.

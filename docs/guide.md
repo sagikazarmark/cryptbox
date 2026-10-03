@@ -2,7 +2,8 @@
 
 CryptBox encrypts selected values inside your Rust application before they reach
 storage. The application supplies the keys and decides which values to protect.
-It is experimental: read the [threat model](security.md) first.
+Its stored format is stable, its API may still change before 1.0, and it has not
+been independently audited: read the [threat model](security.md) first.
 
 ## How it works
 
@@ -197,9 +198,9 @@ only if key IDs follow these rules:
 Key resolution must not do I/O on the sealing path: serve a local snapshot.
 Cloning a keyring shares its keys rather than copying material, so hand one out
 from behind a lock or a swapped snapshot; calls already in flight keep the
-keyring they were handed. Cache keyrings per tenant. Fail closed with
-`Error::KeysUnavailable` when the snapshot is not loaded or the tenant is
-unknown; never fall back to another tenant's keys. A refreshed keyring keeps
+keyring they were handed. Cache keyrings per tenant. Fail closed, with your own
+error, when the snapshot is not loaded or the tenant is unknown; never fall back
+to another tenant's keys. A refreshed keyring keeps
 every previous key whose values have not been resealed. The
 [custom-field example](../examples/custom_field/README.md#implementor-obligations)
 states the contract for keys the application refreshes.
@@ -215,7 +216,7 @@ process-wide keyring is not shreddable on its own; say so.
   unless the keyring holds the generation the envelope names. The key ID is
   unauthenticated metadata, which suffices for a value the test just sealed.
 - Assert that another tenant's keyring returns `Err(Error::UnknownEncryptionKey(_))`.
-- Assert that an unknown tenant fails with `Err(Error::KeysUnavailable)`.
+- Assert that your resolution rejects an unknown tenant.
 
 A round trip with the same keys proves nothing about custody: it passes even
 when every seal shares one keyring. Treat a tenant whose custody is untested as
@@ -244,10 +245,9 @@ Only `String` and `Secret<String>` (`Utf8`) and `Vec<u8>` and `Secret<Vec<u8>>`
 (`Raw`) have default codecs; these mappings are permanent. Every other value
 type names its codec. Serde codecs make the type's Serde representation schema:
 a `rename_all`, `rename` or `tag` change alters every seal using that type.
-`Postcard` is positional, so reordering fields or variants or changing an
-integer type can decode into wrong values silently; `Json` stores names, so a
-renamed field fails or takes its default. The same holds for a record's stored
-form under a positional format: append fields, never reorder them.
+`Json` stores names, so a renamed field fails or takes its default. A custom
+codec over a positional format can decode into wrong values silently when
+fields or variants are reordered: append fields, never reorder them.
 
 Name a normalizer's rules with `BlindIndexSpec::NORMALIZER`, such as
 `"email/1"`, and bump the version with every change.
@@ -262,7 +262,7 @@ when padding is enabled or disabled, but not when it is only resized. See the
 
 - **Golden bytes.** `testing::assert_encoding::<F>(&value, "…hex…")` checks that
   a seal still encodes a representative value to committed bytes and back.
-  Commit one per seal; it is essential for `Json` and `Postcard` seals.
+  Commit one per seal; it is essential for `Json` seals and custom codecs.
 - **Schema manifest.** `schema::Manifest` lists each seal (ID, codec ID,
   padding, and the context fingerprint of each context `sealed::<F, C>()`
   registers), index (ID, seal, bits, normalizer), and record (seals, record ID
@@ -284,18 +284,16 @@ The [custom-field example](../examples/custom_field/main.rs)'s
 | --- | --- |
 | Seal or prepare explicitly | Key failures happen at that step; the sealed bytes then cross the storage or serialization boundary. |
 | Load a stored form or `Sealed<F>` | Decoding checks structure without keys; the application opens when it needs plaintext. |
-| Automatic SQLx `Plain<F, K>` | Seals on encode and opens on decode, with keys from `K`. |
+| Automatic SQLx `Plain<F>` | Seals on encode and opens on decode, with the installed keys. |
 
-`Plain<F, K>` serves only standalone values of seals without blind indexes: a
-column decoder does not see the row and would not write index columns. It reads
-its keys as a type because SQLx decoding has no context. The default `K`,
-`GlobalKeys`, reads the **installed keys**: `keys::install(keys)` sets them once
-per process from the binary entry point; a second call returns
+`Plain<F>` serves only standalone values, and writes no blind indexes: a column
+decoder does not see the row or the caller's keys. It reads the **installed
+keys** because SQLx decoding has no context: `keys::install(keys)` sets them
+once per process from the binary entry point; a second call returns
 `AlreadyInstalled`, and before installation reads fail with
-`Error::KeysNotInstalled`. There are no thread- or task-scoped keys. Implement
-`ColumnKeys` over an application-owned static `Keys` to avoid the global;
-`Plain::with_column_keys::<K>()` moves a value between column types without
-resealing. To forbid the global, add to `clippy.toml`:
+`Error::KeysNotInstalled`. There are no thread- or task-scoped keys. Use
+`Sealed<F>` with keys you pass in for anything else. To forbid the global, add
+to `clippy.toml`:
 
 ```toml
 disallowed-methods = [
@@ -391,9 +389,9 @@ in its own process, and a test binary that installs must sequence every
 dependent assertion, such as in one test function
 ([example](../tests/fixtures/app/src/bin/testing-automatic.rs)). An `RwLock`
 around key lookups does not isolate fixture replacement: keys can change between
-sealing and opening. To test automatic columns without installing, implement
-`ColumnKeys` over a static test keyring and use `Plain<F, TestKeys>`, as the
-[SQLite adapter tests](../tests/sqlx_sqlite.rs) do.
+sealing and opening. Tests of automatic columns install one fixed test keyring
+once per test binary, as the [SQLite adapter tests](../tests/sqlx_sqlite.rs)
+do.
 
 ### Diagnostics
 

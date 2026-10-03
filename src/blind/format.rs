@@ -16,7 +16,7 @@ const INDEX_HEADER_LEN: usize = INDEX_BITS_OFFSET + 2;
 pub struct BlindIndexInfo {
     format_version: u8,
     index_key_id: IndexKeyId,
-    bits: usize,
+    bits: u16,
 }
 
 impl BlindIndexInfo {
@@ -34,7 +34,7 @@ impl BlindIndexInfo {
 
     /// Returns the intentionally retained digest precision.
     #[must_use]
-    pub const fn bits(self) -> usize {
+    pub const fn bits(self) -> u16 {
         self.bits
     }
 }
@@ -58,19 +58,18 @@ pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
         return Err(Error::InvalidBlindIndex);
     }
 
-    let bits = usize::from(u16::from_be_bytes([
-        bytes[INDEX_BITS_OFFSET],
-        bytes[INDEX_BITS_OFFSET + 1],
-    ]));
-    validate_bits(bits)?;
-    let digest_len = bits.div_ceil(8);
+    let bits = u16::from_be_bytes([bytes[INDEX_BITS_OFFSET], bytes[INDEX_BITS_OFFSET + 1]]);
+    validate_bits(usize::from(bits))?;
+    let digest_len = usize::from(bits).div_ceil(8);
 
     if bytes.len() != INDEX_HEADER_LEN + digest_len {
         return Err(Error::InvalidBlindIndex);
     }
 
     // Noncanonical: the unused low bits of the final byte must be zero.
-    if bytes.last().copied().ok_or(Error::InvalidBlindIndex)? & !final_byte_mask(bits) != 0 {
+    if bytes.last().copied().ok_or(Error::InvalidBlindIndex)? & !final_byte_mask(usize::from(bits))
+        != 0
+    {
         return Err(Error::InvalidBlindIndex);
     }
 

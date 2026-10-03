@@ -1,10 +1,10 @@
 //! Public-boundary tests for passing keys in: `Keys` and keyrings.
 
+use cryptbox::envelope::inspect_blind_index;
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, IndexId, IndexKeyId, KeyError, KeyId, Keys, Padding, Raw, Seal,
-    SealId, Sealed, index_id, index_key_id, inspect_blind_index, key_id, seal_id,
-    testing::assert_sealed_under,
+    SealId, Sealed, index_id, index_key_id, key_id, seal_id, testing::assert_sealed_under,
 };
 use zeroize::Zeroizing;
 
@@ -21,7 +21,6 @@ impl Seal for Email {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Indexes = ();
 }
 
 struct Iban;
@@ -31,7 +30,6 @@ impl Seal for Iban {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Indexes = ();
 }
 
 struct EmailLookup;

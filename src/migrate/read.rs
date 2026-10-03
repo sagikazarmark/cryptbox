@@ -56,7 +56,6 @@ use super::{LegacyFormat, legacy};
 ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
 ///     type Value = String;
 ///     type Codec = cryptbox::Utf8;
-///     type Indexes = ();
 /// }
 ///
 /// // Fixed key material is for this doctest only; load production keys securely.
@@ -122,7 +121,7 @@ where
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {
         let bytes = bytes.into();
 
-        match crate::inspect_ciphertext(&bytes) {
+        match crate::envelope::inspect_ciphertext(&bytes) {
             Ok(_) => Ok(Self {
                 state: State::Sealed(Sealed::from_validated_bytes(bytes)),
             }),
@@ -155,7 +154,6 @@ where
     ///     const PADDING: cryptbox::Padding = cryptbox::Padding::NONE;
     ///     type Value = Vec<u8>;
     ///     type Codec = cryptbox::Raw;
-    ///     type Indexes = ();
     /// }
     ///
     /// // A discriminator column established that these bytes are legacy, even

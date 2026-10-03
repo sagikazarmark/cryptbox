@@ -1,8 +1,9 @@
 //! Public-boundary tests for seal padding policies.
 
+use cryptbox::envelope::inspect_ciphertext;
 use cryptbox::{
     EncryptionKey, EncryptionKeyring, Error, KeyId, Padding, Raw, Seal, SealId, Sealed, Utf8,
-    inspect_ciphertext, key_id, seal_id,
+    key_id, seal_id,
 };
 
 const KEY_ID: KeyId = key_id!("50000000-0000-4000-8000-000000000005");
@@ -20,7 +21,6 @@ impl Seal for Unpadded {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct SharedSealPadded;
@@ -30,7 +30,6 @@ impl Seal for SharedSealPadded {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct FixedLength;
@@ -40,7 +39,6 @@ impl Seal for FixedLength {
     const PADDING: Padding = Padding::length(16);
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct WiderBlockPadded;
@@ -50,7 +48,6 @@ impl Seal for WiderBlockPadded {
     const PADDING: Padding = Padding::block(32);
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct BlockPadded;
@@ -60,7 +57,6 @@ impl Seal for BlockPadded {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct PolicyFixedLength;
@@ -70,7 +66,6 @@ impl Seal for PolicyFixedLength {
     const PADDING: Padding = Padding::length(1_048_576);
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 // Padding/envelope arithmetic from docs/wire-format.md#size-semantics-and-enforcement.
@@ -147,7 +142,6 @@ impl Seal for RawUnpadded {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Indexes = ();
 }
 
 struct RawPadded;
@@ -157,7 +151,6 @@ impl Seal for RawPadded {
     const PADDING: Padding = Padding::block(16);
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Indexes = ();
 }
 
 // A policy-based reader would misread these silently (ADR-0002); `Raw` accepts any bytes.

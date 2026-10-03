@@ -1,9 +1,10 @@
 //! Public-boundary tests for blind indexes and prepared storage values.
 
+use cryptbox::envelope::inspect_blind_index;
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
-    index_key_id, inspect_blind_index, key_id, seal_id,
+    index_key_id, key_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -18,7 +19,6 @@ impl Seal for EmailSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct PhoneSeal;
@@ -28,7 +28,6 @@ impl Seal for PhoneSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 fn normalize_email(input: &str) -> Zeroizing<Vec<u8>> {
@@ -232,7 +231,6 @@ impl Seal for PersonSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Person;
     type Codec = PersonCodec;
-    type Indexes = ();
 }
 
 struct PersonCodec;
@@ -468,7 +466,6 @@ impl Seal for TicketEmail {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = (TicketEmailExact,);
 }
 
 struct TicketEmailExact;

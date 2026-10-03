@@ -4,7 +4,7 @@ use proc_macro2::{Span, TokenStream, TokenTree};
 use quote::{ToTokens, quote_spanned};
 use syn::{
     Attribute, Ident, LitInt, LitStr, Path, Token, Type, parenthesized, parse::ParseStream,
-    punctuated::Punctuated, spanned::Spanned,
+    spanned::Spanned,
 };
 
 /// Every key of the helper attributes. Each attribute accepts a subset.
@@ -21,12 +21,11 @@ pub(crate) enum Key {
     Normalize,
     Normalizer,
     Project,
-    Indexes,
     Transparent,
 }
 
 impl Key {
-    const ALL: [Self; 13] = [
+    const ALL: [Self; 12] = [
         Self::Crate,
         Self::Id,
         Self::Value,
@@ -38,7 +37,6 @@ impl Key {
         Self::Normalize,
         Self::Normalizer,
         Self::Project,
-        Self::Indexes,
         Self::Transparent,
     ];
 
@@ -55,7 +53,6 @@ impl Key {
             Self::Normalize => "normalize",
             Self::Normalizer => "normalizer",
             Self::Project => "project",
-            Self::Indexes => "indexes",
             Self::Transparent => "transparent",
         }
     }
@@ -129,7 +126,6 @@ pub(crate) struct Attrs {
     pub(crate) normalize: Option<Path>,
     pub(crate) normalizer: Option<LitStr>,
     pub(crate) project: Option<Path>,
-    pub(crate) indexes: Option<Vec<Type>>,
     pub(crate) transparent: Option<Span>,
     seen: Vec<Key>,
 }
@@ -157,7 +153,6 @@ impl Attrs {
             normalize: None,
             normalizer: None,
             project: None,
-            indexes: None,
             transparent: None,
             seen: Vec::new(),
         };
@@ -198,8 +193,6 @@ impl Attrs {
                             Err(meta.error("`transparent` takes no value"))
                         }
                     }
-                    Key::Indexes => parse_list(meta.input, "blind index", "indexes")
-                        .map(|list| parsed.indexes = Some(list)),
                     _ if !meta.input.peek(Token![=]) => Err(meta.error(format!(
                         "`{name}` needs a value: `{name} = …`",
                         name = key.name()
@@ -240,8 +233,8 @@ impl Attrs {
             Key::Normalize => self.normalize = Some(input.parse()?),
             Key::Normalizer => self.normalizer = Some(input.parse()?),
             Key::Project => self.project = Some(input.parse()?),
-            Key::Transparent | Key::Indexes => {
-                unreachable!("flags and lists have no `= value`")
+            Key::Transparent => {
+                unreachable!("flags have no `= value`")
             }
         }
 
@@ -320,21 +313,6 @@ fn skip_value(input: ParseStream) -> syn::Result<()> {
     }
 
     Ok(())
-}
-
-/// Parses `indexes(A, B, …)`: at least one blind index.
-fn parse_list(input: ParseStream, item: &str, key: &str) -> syn::Result<Vec<Type>> {
-    let content;
-    let parens = parenthesized!(content in input);
-    let list = Punctuated::<Type, Token![,]>::parse_terminated(&content)?;
-    if list.is_empty() {
-        return Err(syn::Error::new(
-            parens.span.join(),
-            format!("list at least one {item}, or omit `{key}`"),
-        ));
-    }
-
-    Ok(list.into_iter().collect())
 }
 
 pub(crate) fn parse_uuid(name: &str, input: ParseStream) -> syn::Result<UuidLiteral> {

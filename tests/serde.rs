@@ -1,6 +1,6 @@
 //! Public-boundary tests for explicit sealed-value Serde representations.
 
-#![cfg(any(feature = "json", feature = "postcard"))]
+#![cfg(feature = "serde")]
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
@@ -17,7 +17,6 @@ impl Seal for EmailSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 struct EmailExact;
@@ -170,7 +169,6 @@ fn blind_index_serde_rejects_noncanonical_values() {
 }
 
 #[test]
-#[cfg(feature = "postcard")]
 fn binary_serde_round_trips_sealed_and_blind_index_bytes() {
     let sealed = sealed(&encryption_keys());
     let index = blind_index();
