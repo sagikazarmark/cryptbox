@@ -26,9 +26,7 @@ const HEADER_LEN: usize = FINGERPRINT_OFFSET + FINGERPRINT_LEN;
 pub struct SuiteId(u8);
 
 impl SuiteId {
-    /// Creates a suite identifier from its wire value.
-    #[must_use]
-    pub const fn new(value: u8) -> Self {
+    pub(crate) const fn new(value: u8) -> Self {
         Self(value)
     }
 

@@ -198,9 +198,7 @@ pub use codec::Postcard;
 pub use codec::{Codec, Raw, Utf8};
 #[cfg(feature = "derive")]
 pub use cryptbox_derive::{BlindIndexSpec, Record, Seal};
-pub use envelope::{
-    CiphertextInfo, EXPERIMENTAL_XCHACHA20_POLY1305, SuiteId, inspect_ciphertext, is_ciphertext,
-};
+pub use envelope::{CiphertextInfo, SuiteId, inspect_ciphertext, is_ciphertext};
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use id::InvalidIdentifier;
 pub use key::{

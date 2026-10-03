@@ -26,7 +26,7 @@ const MAX_MESSAGE_LEN: u64 = 274_877_906_879;
 ///
 /// This construction and its wire format are experimental pending focused
 /// cryptographic review and independently verified test vectors.
-pub const EXPERIMENTAL_XCHACHA20_POLY1305: SuiteId = SuiteId::new(1);
+pub(in crate::envelope) const EXPERIMENTAL_XCHACHA20_POLY1305: SuiteId = SuiteId::new(1);
 
 /// Suite 1: HKDF-SHA-256 and XChaCha20-Poly1305 over the format 2 envelope.
 pub(in crate::envelope) struct XChaCha20Poly1305;
