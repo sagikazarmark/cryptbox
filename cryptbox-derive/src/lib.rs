@@ -437,7 +437,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///         let email =
 ///             Sealed::<CustomerEmail, InRecord<i64>>::seal_in(&self.email, &self.id, keys)?;
 ///         let email_index =
-///             CustomerEmailIndex::derive_with(&self.email, keys.record_blind_index_keyring()?)?;
+///             BlindIndex::<CustomerEmailIndex>::derive(&self.email, keys.record_blind_index_keyring()?)?;
 ///
 ///         Ok(StoredCustomer {
 ///             id: Clone::clone(&self.id),

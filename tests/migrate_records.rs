@@ -125,7 +125,7 @@ fn planner<'a>(
     keys: &'a EncryptionKeyring,
     index_keys: &'a BlindIndexKeyring,
 ) -> RowPlanner<'a, CustomerEmail, Columns> {
-    RowPlanner::for_rows(keys, record_id).with_index_with::<CustomerEmailIndex>(index_keys)
+    RowPlanner::for_rows(keys, record_id).with_index::<CustomerEmailIndex>(index_keys)
 }
 
 #[test]

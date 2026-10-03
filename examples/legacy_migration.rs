@@ -7,7 +7,7 @@ use chacha20poly1305::{
     aead::{Aead, Payload},
 };
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, IndexKeyId, KeyId, Seal, Sealed, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore,
@@ -164,7 +164,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     // sweep recovers legacy rows, encrypts them, and derives every blind index.
     let planner = RowPlanner::<UserEmail>::new(&keys)
         .with_legacy(&legacy)
-        .with_index_with::<EmailLookup>(&index_keys);
+        .with_index::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let table = SweepTable::new("users", "id", "email_ciphertext").with_index_column("email_bidx");
     let mut store = SqliteSweepStore::new(&mut connection, &table);
@@ -184,7 +184,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     drop(store);
 
     // Separately demonstrate strict authenticated reading for this lookup.
-    let probes = EmailLookup::probes_with("foreign@example.com", &index_keys)?;
+    let probes = BlindIndex::<EmailLookup>::probes("foreign@example.com", &index_keys)?;
     let mut matches = 0;
     for probe in probes {
         let rows = sqlx::query("SELECT email_ciphertext FROM users WHERE email_bidx = ?")
@@ -260,7 +260,7 @@ async fn insert_encrypted(
 ) -> Result<(), Box<dyn Error>> {
     let value = email.to_owned();
     let prepared =
-        Sealed::<UserEmail>::prepare(&value, keys)?.with_index_with::<EmailLookup>(index_keys)?;
+        Sealed::<UserEmail>::prepare(&value, keys)?.with_index::<EmailLookup>(index_keys)?;
     sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
         .bind(prepared.sealed())
         .bind(prepared.index::<EmailLookup>()?)

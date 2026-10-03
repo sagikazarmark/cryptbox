@@ -106,7 +106,7 @@ pub enum Error {
     /// or a [`ColumnKeys`](crate::ColumnKeys) that could not load them.
     #[error("keys are unavailable")]
     KeysUnavailable,
-    /// A global convenience was used before [`keys::install`](crate::keys::install).
+    /// The installed keys were read before [`keys::install`](crate::keys::install).
     #[error("keys are not installed")]
     KeysNotInstalled,
     /// A blind-index operation used [`Keys`](crate::Keys) without a

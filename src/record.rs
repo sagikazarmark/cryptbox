@@ -150,7 +150,7 @@ impl<R: Record, S: BlindIndexSpec> Index<R, S> {
     ///
     /// A truncated index selects false candidates too, so each row is opened
     /// and its value compared with `query` by
-    /// [`BlindIndexSpec::verify_candidate`]; rows that do not match are dropped.
+    /// [`BlindIndex::verify_candidate`]; rows that do not match are dropped.
     /// A row that fails to open is reported as its error, never as a non-match.
     /// Plaintext columns, such as an org, are not authenticated: select within
     /// what the caller may read, and authorize on each hit.
@@ -175,7 +175,8 @@ impl<R: Record, S: BlindIndexSpec> Index<R, S> {
                     continue;
                 }
             };
-            match (self.value)(&record).map(|value| S::verify_candidate(query, value)) {
+            match (self.value)(&record).map(|value| BlindIndex::<S>::verify_candidate(query, value))
+            {
                 None | Some(Ok(false)) => {}
                 Some(Ok(true)) => results.push(Ok(record)),
                 Some(Err(error)) => results.push(Err(error)),

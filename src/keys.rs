@@ -1,23 +1,22 @@
-//! The process-wide keys behind the global conveniences.
+//! The process-wide keys behind the automatic `SQLx` column.
 //!
 //! Every operation takes its keys explicitly and never reads the global:
 //! [`Sealed::seal`](crate::Sealed::seal), [`Sealed::open`](crate::Sealed::open),
 //! [`Sealed::prepare`](crate::Sealed::prepare),
-//! [`Prepared::with_index_with`](crate::Prepared::with_index_with), and
-//! [`BlindIndexSpec::probes_with`](crate::BlindIndexSpec::probes_with).
-//! The global conveniences [`Sealed::seal_global`](crate::Sealed::seal_global),
-//! [`Sealed::open_global`](crate::Sealed::open_global), `with_index()`, and
-//! `probes()` are exactly their explicit forms called with [`installed()`], and
-//! the automatic `SQLx` column `Plain<F>` reads the same keys through
-//! [`GlobalKeys`](crate::GlobalKeys).
+//! [`Prepared::with_index`](crate::Prepared::with_index), and
+//! [`BlindIndex::probes`](crate::BlindIndex::probes). Only the automatic `SQLx`
+//! column, `Plain<F>`, reads the installed keys, through
+//! [`GlobalKeys`](crate::GlobalKeys), because `SQLx` encoding and decoding
+//! receive no context; [`installed()`] returns them to code that passes them on.
 //!
 //! The process-wide keys serve only standalone values: a record, or a tenant's
 //! value, is sealed and opened explicitly, with keys the
 //! application chooses for that tenant.
 //!
 //! [`install`] sets the keys once, from the binary's entry point. It never
-//! replaces installed keys, and nothing resets them. Before installation, the
-//! global conveniences return [`Error::KeysNotInstalled`]; there is no default.
+//! replaces installed keys, and nothing resets them. Before installation,
+//! [`installed()`] and the automatic column return [`Error::KeysNotInstalled`];
+//! there is no default.
 //!
 //! ```
 //! use cryptbox::{EncryptionKey, EncryptionKeyring, Keys, keys};
@@ -38,18 +37,12 @@
 //!
 //! Teams that want every call to name its keys can forbid the global with
 //! Clippy's `disallowed_methods` in `clippy.toml`. Disallowing [`install`] is
-//! enough to keep the global empty, so any remaining global call fails with
-//! [`Error::KeysNotInstalled`]; disallowing the global conveniences reports
-//! those calls at lint time instead:
+//! enough to keep the global empty, so an automatic column that reads it fails
+//! with [`Error::KeysNotInstalled`]:
 //!
 //! ```toml
 #![doc = include_str!("../docs/snippets/clippy-no-global-keys.toml")]
 //! ```
-//!
-//! With the `migrate` feature, also disallow
-//! `cryptbox::migrate::MaybeEncrypted::open_global` and
-//! `cryptbox::migrate::MaybeEncrypted::open_global_legacy`. Clippy warns about
-//! paths that do not exist, so add them only when the feature is enabled.
 //!
 //! The automatic `SQLx` column defaults to [`GlobalKeys`](crate::GlobalKeys);
 //! name another [`ColumnKeys`](crate::ColumnKeys) as its second type parameter,

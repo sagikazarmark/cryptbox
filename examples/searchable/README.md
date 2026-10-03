@@ -184,7 +184,7 @@ async fn put(
     let prepared = email
         .as_ref()
         .map(|email| {
-            Sealed::<UserEmail>::prepare(email, encryption)?.with_index_with::<EmailLookup>(indexes)
+            Sealed::<UserEmail>::prepare(email, encryption)?.with_index::<EmailLookup>(indexes)
         })
         .transpose()?;
     let sealed = prepared.as_ref().map(|p| p.sealed());
@@ -248,7 +248,7 @@ async fn search(
     encryption: &EncryptionKeyring,
     indexes: &BlindIndexKeyring,
 ) -> Result<()> {
-    let probes = EmailLookup::probes_with(query, indexes)?;
+    let probes = BlindIndex::<EmailLookup>::probes(query, indexes)?;
     let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
     let mut values = sql.separated(", ");
     for probe in &probes {
@@ -261,7 +261,7 @@ async fn search(
     for row in rows {
         let sealed: SealedEmail = row.try_get("email")?;
         let candidate = sealed.open(encryption)?;
-        if EmailLookup::verify_candidate(query, &candidate)? {
+        if BlindIndex::<EmailLookup>::verify_candidate(query, &candidate)? {
             matches.push(row.try_get("id")?);
         } else {
             rejected += 1; // A collision is an ordinary non-match, not an assertion failure.

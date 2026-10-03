@@ -6,7 +6,7 @@
 use std::{future::Future, panic::AssertUnwindSafe};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, IndexId, Padding, Seal, Sealed, Utf8, index_id, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyFormat, MaybeEncrypted, PostgresSweepStore, RowPlanner, Sweep,
@@ -146,7 +146,7 @@ async fn insert(
     let value = email.to_owned();
     let prepared = Sealed::<UserEmail>::prepare(&value, keys)
         .unwrap()
-        .with_index_with::<EmailLookup>(index_keys)
+        .with_index::<EmailLookup>(index_keys)
         .unwrap();
     sqlx::query("INSERT INTO users VALUES ($1, $2, $3)")
         .bind(id)
@@ -163,7 +163,7 @@ async fn search(
     index_keys: &BlindIndexKeyring,
 ) -> (Vec<i64>, Vec<i64>) {
     let query = " ALICE@example.com ";
-    let probes = EmailLookup::probes_with(query, index_keys).unwrap();
+    let probes = BlindIndex::<EmailLookup>::probes(query, index_keys).unwrap();
     let mut candidates = Vec::new();
     let mut matches = Vec::new();
     for probe in probes {
@@ -177,7 +177,7 @@ async fn search(
             candidates.push(id);
             let sealed: Sealed<UserEmail> = row.get("email_ciphertext");
             let value = sealed.open(keys).unwrap();
-            if EmailLookup::verify_candidate(query, &value).unwrap() {
+            if BlindIndex::<EmailLookup>::verify_candidate(query, &value).unwrap() {
                 matches.push(id);
             }
         }
@@ -276,7 +276,7 @@ fn postgres_sweep_converts_mixed_rows_and_resumes_stored_progress() {
 
         let planner = RowPlanner::<UserEmail>::new(&keys)
             .with_legacy(&ToyLegacy)
-            .with_index_with::<EmailLookup>(&index_keys);
+            .with_index::<EmailLookup>(&index_keys);
         let sweep = Sweep::new(planner).with_batch_size(1);
         let table =
             SweepTable::new("users", "id", "email_ciphertext").with_index_column("email_bidx");
@@ -343,8 +343,7 @@ fn postgres_guarded_updates_preserve_competing_ciphertext_and_index_writes() {
         .await;
         let table =
             SweepTable::new("users", "id", "email_ciphertext").with_index_column("email_bidx");
-        let planner =
-            RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
+        let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
         let mut writer = connect(&url, &schema).await;
 
         // Interleave a real second connection between the public load and update
@@ -362,7 +361,7 @@ fn postgres_guarded_updates_preserve_competing_ciphertext_and_index_writes() {
             let other_value = "other@example.com".to_owned();
             let prepared = Sealed::<UserEmail>::prepare(&other_value, &old_keys)
                 .unwrap()
-                .with_index_with::<EmailLookup>(&old_index_keys)
+                .with_index::<EmailLookup>(&old_index_keys)
                 .unwrap();
             let changed_bytes = if column == "email_ciphertext" {
                 prepared.sealed().as_bytes().to_vec()

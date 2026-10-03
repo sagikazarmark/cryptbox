@@ -1,7 +1,7 @@
 //! Public-boundary tests for safe key construction.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, IndexId, KeyError, Padding, Raw, Seal, SealId, Sealed, index_id,
     index_key_id, key_id,
 };
@@ -92,8 +92,8 @@ fn blind_index_keys_load_from_hex_and_base64() {
     let base64_keys = BlindIndexKeyring::new(base64_key, []).unwrap();
 
     assert_eq!(
-        ExactValue::derive_with(&b"loaded key".to_vec(), &hex_keys).unwrap(),
-        ExactValue::derive_with(&b"loaded key".to_vec(), &base64_keys).unwrap(),
+        BlindIndex::<ExactValue>::derive(&b"loaded key".to_vec(), &hex_keys).unwrap(),
+        BlindIndex::<ExactValue>::derive(&b"loaded key".to_vec(), &base64_keys).unwrap(),
     );
 }
 

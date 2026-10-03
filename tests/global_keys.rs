@@ -5,9 +5,9 @@
 //! other on the shared global.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Keys, Padding, Seal, SealId, Sealed,
-    Utf8, index_id, index_key_id, key_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, ColumnKeys,
+    EncryptionKey, EncryptionKeyring, Error, GlobalKeys, IndexId, IndexKeyId, KeyId, Keys, Padding,
+    Seal, SealId, Sealed, Utf8, index_id, index_key_id, key_id,
     keys::{self, AlreadyInstalled},
     seal_id,
 };
@@ -17,7 +17,6 @@ const INSTALLED_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
 const EXPLICIT_KEY_ID: KeyId = key_id!("20000000-0000-4000-8000-000000000002");
 const REJECTED_KEY_ID: KeyId = key_id!("30000000-0000-4000-8000-000000000003");
 const INSTALLED_INDEX_KEY_ID: IndexKeyId = index_key_id!("60000000-0000-4000-8000-000000000006");
-const EXPLICIT_INDEX_KEY_ID: IndexKeyId = index_key_id!("70000000-0000-4000-8000-000000000007");
 
 struct Email;
 
@@ -56,35 +55,15 @@ fn index_keyring(id: IndexKeyId, byte: u8) -> BlindIndexKeyring {
 }
 
 #[test]
-fn global_keys_install_once_back_only_the_global_conveniences() {
+fn global_keys_install_once_and_serve_only_what_reads_them() {
     let installed = keyring(INSTALLED_KEY_ID, 1);
     let installed_indexes = index_keyring(INSTALLED_INDEX_KEY_ID, 11);
     let explicit = keyring(EXPLICIT_KEY_ID, 2);
-    let explicit_indexes = index_keyring(EXPLICIT_INDEX_KEY_ID, 12);
     let email = "mark@example.com".to_owned();
 
-    // Before installation, every global convenience fails closed.
+    // Before installation, reading the global fails closed.
     assert_eq!(keys::installed().unwrap_err(), Error::KeysNotInstalled);
-    assert_eq!(
-        Sealed::<Email>::seal_global(&email).unwrap_err(),
-        Error::KeysNotInstalled
-    );
-    assert_eq!(
-        EmailLookup::probes("mark@example.com").unwrap_err(),
-        Error::KeysNotInstalled
-    );
-    let explicit_sealed = Sealed::<Email>::seal(&email, &explicit).unwrap();
-    assert_eq!(
-        explicit_sealed.open_global().unwrap_err(),
-        Error::KeysNotInstalled
-    );
-    assert_eq!(
-        Sealed::<Email>::prepare(&email, &explicit)
-            .unwrap()
-            .with_index::<EmailLookup>()
-            .unwrap_err(),
-        Error::KeysNotInstalled
-    );
+    assert_eq!(GlobalKeys::keys().unwrap_err(), Error::KeysNotInstalled);
 
     keys::install(Keys::new(installed.clone()).with_blind_indexes(installed_indexes.clone()))
         .unwrap();
@@ -95,37 +74,26 @@ fn global_keys_install_once_back_only_the_global_conveniences() {
         Err(AlreadyInstalled)
     );
 
-    // Implicit forms use the installed keys.
-    let global_sealed = Sealed::<Email>::seal_global(&email).unwrap();
+    // The installed keys are the keys installed, and the column's default.
+    let global = keys::installed().unwrap();
+    assert!(std::ptr::eq(global, GlobalKeys::keys().unwrap()));
+    let global_sealed = Sealed::<Email>::seal(&email, global).unwrap();
     assert_eq!(global_sealed.open(&installed).unwrap(), "mark@example.com");
-    assert_eq!(global_sealed.open_global().unwrap(), "mark@example.com");
     assert_eq!(
-        EmailLookup::probes("mark@example.com").unwrap(),
-        EmailLookup::probes_with("mark@example.com", &installed_indexes).unwrap()
+        BlindIndex::<EmailLookup>::probes("mark@example.com", global).unwrap(),
+        BlindIndex::<EmailLookup>::probes("mark@example.com", &installed_indexes).unwrap()
     );
 
-    // Explicit forms ignore the installed keys.
+    // Explicit keys ignore the installed keys.
     let explicit_sealed = Sealed::<Email>::seal(&email, &explicit).unwrap();
     assert_eq!(explicit_sealed.open(&explicit).unwrap(), "mark@example.com");
     assert_eq!(
-        explicit_sealed.open_global().unwrap_err(),
+        explicit_sealed.open(global).unwrap_err(),
         Error::UnknownEncryptionKey(EXPLICIT_KEY_ID)
     );
     assert_eq!(
         global_sealed.open(&explicit).unwrap_err(),
         Error::UnknownEncryptionKey(INSTALLED_KEY_ID)
-    );
-    let prepared = Sealed::<Email>::prepare(&email, &explicit)
-        .unwrap()
-        .with_index_with::<EmailLookup>(&explicit_indexes)
-        .unwrap();
-    assert_eq!(
-        prepared.index::<EmailLookup>().unwrap().as_bytes(),
-        EmailLookup::probes_with("mark@example.com", &explicit_indexes).unwrap()[0].as_bytes()
-    );
-    assert_ne!(
-        EmailLookup::probes_with("mark@example.com", &explicit_indexes).unwrap(),
-        EmailLookup::probes("mark@example.com").unwrap()
     );
 }
 
@@ -135,13 +103,13 @@ fn keys_without_a_blind_index_keyring_reject_index_operations() {
     let email = "mark@example.com".to_owned();
 
     assert_eq!(
-        EmailLookup::probes_with("mark@example.com", &keys).unwrap_err(),
+        BlindIndex::<EmailLookup>::probes("mark@example.com", &keys).unwrap_err(),
         Error::BlindIndexKeysNotConfigured
     );
     assert_eq!(
         Sealed::<Email>::prepare(&email, &keys)
             .unwrap()
-            .with_index_with::<EmailLookup>(&keys)
+            .with_index::<EmailLookup>(&keys)
             .unwrap_err(),
         Error::BlindIndexKeysNotConfigured
     );

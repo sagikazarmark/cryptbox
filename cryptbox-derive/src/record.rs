@@ -871,7 +871,7 @@ impl<'a> Expansion<'a> {
                 let derived = each(
                     quote!(self),
                     quote! {
-                        <#spec as #krate::BlindIndexSpec>::derive_with(
+                        #krate::BlindIndex::<#spec>::derive(
                             #value,
                             #krate::RecordKeys::record_blind_index_keyring(#keys)?,
                         )?

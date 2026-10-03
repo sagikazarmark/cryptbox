@@ -4,7 +4,7 @@ use subtle::ConstantTimeEq;
 use zeroize::Zeroizing;
 
 use crate::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeys, Error, IndexKeyId, Seal, id::identifier, keys,
+    BlindIndexError, BlindIndexKey, BlindIndexKeys, Error, IndexKeyId, Seal, id::identifier,
     seal_context::SealContext,
 };
 
@@ -150,8 +150,8 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// retain the input in third-party errors. Candidate verification must use the
 /// same normalization after authenticated decryption, not accept an index hit alone.
 ///
-/// Implement only the associated items and the two normalizers; do not override
-/// the provided derivation, probe, and verification methods.
+/// [`BlindIndex`] derives, probes, and verifies indexes of a spec, so an
+/// implementation supplies only the associated items and the two normalizers.
 ///
 /// See the [custom-field example] and [ownership reference].
 /// Padding is a closed set of policies; a custom normalizer does not bind an index to a row.
@@ -198,100 +198,6 @@ pub trait BlindIndexSpec: Sized + 'static {
     fn normalize_value(
         value: &<Self::Seal as Seal>::Value,
     ) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>;
-
-    /// Derives the current stored index for a value of [`Self::Seal`].
-    ///
-    /// Use this to recompute a stored index from decrypted plaintext. New
-    /// writes usually derive indexes through [`crate::Prepared::with_index_with`].
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for normalization failure or unavailable keys.
-    fn derive_with(
-        value: &<Self::Seal as Seal>::Value,
-        keys: &(impl BlindIndexKeys + ?Sized),
-    ) -> Result<BlindIndex<Self>, Error> {
-        derive_value::<Self>(value, &index_context::<Self>(), keys)
-    }
-
-    /// Derives one candidate probe for every currently readable index
-    /// generation.
-    ///
-    /// Results are candidates only; decrypt candidate rows and verify their
-    /// normalized plaintext with [`Self::verify_candidate`].
-    /// See the complete [blind-index example].
-    ///
-    #[doc = concat!(
-        "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/blind_indexes.rs",
-    )]
-    ///
-    /// # Errors
-    ///
-    /// Returns an error for normalization failure or unavailable keys.
-    fn probes_with(
-        query: &Self::Query,
-        keys: &(impl BlindIndexKeys + ?Sized),
-    ) -> Result<Vec<BlindIndex<Self>>, Error> {
-        probes_in::<Self>(query, &index_context::<Self>(), keys)
-    }
-
-    /// Derives probes with the [installed keys](keys::installed).
-    ///
-    /// This is exactly `Self::probes_with(query, keys::installed()?)`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
-    /// probe derivation fails.
-    fn probes(query: &Self::Query) -> Result<Vec<BlindIndex<Self>>, Error> {
-        Self::probes_with(query, keys::installed()?)
-    }
-
-    /// Compares a normalized query with normalized candidate plaintext after lookup.
-    ///
-    /// Decrypt and authenticate the candidate ciphertext before calling this.
-    /// This receives no stored index or keys: it rejects false plaintext
-    /// matches but does not authenticate index metadata or establish
-    /// index/ciphertext consistency; use [`Self::is_consistent_with`] for that.
-    ///
-    /// Equal-length normalized values are compared in constant time. A normalized
-    /// length mismatch returns early, so callers must treat normalized lengths as
-    /// observable.
-    ///
-    /// # Errors
-    ///
-    /// Returns a sanitized error when either input cannot be normalized.
-    fn verify_candidate(
-        query: &Self::Query,
-        candidate: &<Self::Seal as Seal>::Value,
-    ) -> Result<bool, Error> {
-        compare_normalized::<Self>(query, candidate)
-    }
-
-    /// Checks a stored index against the value it should have been derived
-    /// from.
-    ///
-    /// Decrypt and authenticate the associated ciphertext before calling this.
-    /// This resolves exactly the index-key generation that `stored` names,
-    /// re-derives from `value` with [`Self::normalize_value`], and compares the
-    /// complete stored representation in constant time. It works alike for
-    /// exact, computed, and composite indexes, whether `stored` uses the
-    /// current or a historical generation. A match is consistency at the
-    /// configured precision, not proof of provenance or freshness.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::UnknownBlindIndexKey`] when the keyring does not hold
-    /// the generation named by `stored`, so an unverifiable index is reported
-    /// distinctly from an inconsistent one. Also returns an error for
-    /// normalization failure or unavailable keys.
-    fn is_consistent_with(
-        value: &<Self::Seal as Seal>::Value,
-        stored: &BlindIndex<Self>,
-        keys: &(impl BlindIndexKeys + ?Sized),
-    ) -> Result<bool, Error> {
-        check_consistency::<Self>(value, stored, keys)
-    }
 }
 
 /// The blind indexes declared over seal `F`: `()`, or a tuple of up to eight
@@ -397,7 +303,7 @@ fn assert_valid_bits<Spec: BlindIndexSpec>() {
 /// Deserialization uses [`Self::from_bytes`] for structural and precision checks,
 /// without keys. Neither operation authenticates stored metadata or establishes
 /// consistency with a ciphertext. Candidate plaintext comparison is a separate
-/// operation; see [`BlindIndexSpec::verify_candidate`].
+/// operation; see [`Self::verify_candidate`].
 pub struct BlindIndex<Spec> {
     bytes: Vec<u8>,
     marker: PhantomData<fn() -> Spec>,
@@ -422,6 +328,88 @@ impl<Spec: BlindIndexSpec> BlindIndex<Spec> {
         }
 
         Ok(Self::from_validated_bytes(bytes))
+    }
+
+    /// Derives the current stored index for a value of the spec's seal.
+    ///
+    /// Use this to recompute a stored index from decrypted plaintext. New
+    /// writes usually derive indexes through [`crate::Prepared::with_index`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for normalization failure or unavailable keys.
+    pub fn derive(
+        value: &<Spec::Seal as Seal>::Value,
+        keys: &(impl BlindIndexKeys + ?Sized),
+    ) -> Result<Self, Error> {
+        derive_value::<Spec>(value, &index_context::<Spec>(), keys)
+    }
+
+    /// Derives one candidate probe for every currently readable index
+    /// generation.
+    ///
+    /// Results are candidates only; decrypt candidate rows and verify their
+    /// normalized plaintext with [`Self::verify_candidate`].
+    /// See the complete [blind-index example].
+    ///
+    #[doc = concat!(
+        "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/blind_indexes.rs",
+    )]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for normalization failure or unavailable keys.
+    pub fn probes(
+        query: &Spec::Query,
+        keys: &(impl BlindIndexKeys + ?Sized),
+    ) -> Result<Vec<Self>, Error> {
+        probes_in::<Spec>(query, &index_context::<Spec>(), keys)
+    }
+
+    /// Compares a normalized query with normalized candidate plaintext after lookup.
+    ///
+    /// Decrypt and authenticate the candidate ciphertext before calling this.
+    /// This receives no stored index or keys: it rejects false plaintext
+    /// matches but does not authenticate index metadata or establish
+    /// index/ciphertext consistency; use [`Self::is_consistent_with`] for that.
+    ///
+    /// Equal-length normalized values are compared in constant time. A normalized
+    /// length mismatch returns early, so callers must treat normalized lengths as
+    /// observable.
+    ///
+    /// # Errors
+    ///
+    /// Returns a sanitized error when either input cannot be normalized.
+    pub fn verify_candidate(
+        query: &Spec::Query,
+        candidate: &<Spec::Seal as Seal>::Value,
+    ) -> Result<bool, Error> {
+        compare_normalized::<Spec>(query, candidate)
+    }
+
+    /// Checks this stored index against the value it should have been derived
+    /// from.
+    ///
+    /// Decrypt and authenticate the associated ciphertext before calling this.
+    /// This resolves exactly the index-key generation this index names,
+    /// re-derives from `value` with [`BlindIndexSpec::normalize_value`], and
+    /// compares the complete stored representation in constant time. It works
+    /// alike for exact, computed, and composite indexes, whether this index uses
+    /// the current or a historical generation. A match is consistency at the
+    /// configured precision, not proof of provenance or freshness.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::UnknownBlindIndexKey`] when the keyring does not hold
+    /// the generation this index names, so an unverifiable index is reported
+    /// distinctly from an inconsistent one. Also returns an error for
+    /// normalization failure or unavailable keys.
+    pub fn is_consistent_with(
+        &self,
+        value: &<Spec::Seal as Seal>::Value,
+        keys: &(impl BlindIndexKeys + ?Sized),
+    ) -> Result<bool, Error> {
+        check_consistency::<Spec>(value, self, keys)
     }
 }
 

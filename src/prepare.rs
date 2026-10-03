@@ -3,7 +3,6 @@ use std::fmt;
 use crate::{
     BlindIndexKeys, BlindIndexRef, BlindIndexSpec, Error, Seal, Sealed,
     blind::{derive_value, index_context},
-    keys,
 };
 
 struct PreparedIndex {
@@ -131,7 +130,7 @@ where
     /// ) -> Result<(), cryptbox::Error> {
     ///     let email = "mark@example.com".to_owned();
     ///     Sealed::<UserEmail>::prepare(&email, keys)?
-    ///         .with_index_with::<InviteEmailLookup>(index_keys)?;
+    ///         .with_index::<InviteEmailLookup>(index_keys)?;
     ///     Ok(())
     /// }
     /// ```
@@ -140,10 +139,7 @@ where
     ///
     /// Returns an error for duplicate index IDs, normalization failure,
     /// invalid precision, or unavailable keys.
-    pub fn with_index_with<Spec>(
-        mut self,
-        keys: &(impl BlindIndexKeys + ?Sized),
-    ) -> Result<Self, Error>
+    pub fn with_index<Spec>(mut self, keys: &(impl BlindIndexKeys + ?Sized)) -> Result<Self, Error>
     where
         Spec: BlindIndexSpec<Seal = F>,
     {
@@ -158,21 +154,6 @@ where
         });
 
         Ok(self)
-    }
-
-    /// Adds an index with the [installed keys](keys::installed).
-    ///
-    /// This is exactly `self.with_index_with::<Spec>(keys::installed()?)`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::KeysNotInstalled`] before installation, or an error for
-    /// duplicate index IDs, unavailable keys, or failed index derivation.
-    pub fn with_index<Spec>(self) -> Result<Self, Error>
-    where
-        Spec: BlindIndexSpec<Seal = F>,
-    {
-        self.with_index_with::<Spec>(keys::installed()?)
     }
 
     /// Returns a prepared logical index by its typed specification.

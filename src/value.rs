@@ -3,7 +3,6 @@ use std::{fmt, marker::PhantomData};
 use crate::{
     Codec, Context, ContextKind, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal, bound,
     envelope::validated_key_id,
-    keys,
     seal_context::{self, SealContext},
 };
 
@@ -207,7 +206,7 @@ impl<F: Seal> Sealed<F> {
     /// can be added to.
     ///
     /// Indexes are then derived from the same borrowed value with
-    /// [`Prepared::with_index_with`].
+    /// [`Prepared::with_index`].
     ///
     /// # Errors
     ///
@@ -251,31 +250,6 @@ impl<F: Seal> Sealed<F> {
         to_keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
         self.reseal_under(&SealContext::standalone::<F>(), from_keys, to_keys)
-    }
-
-    /// Seals `value` with the [installed keys](keys::installed).
-    ///
-    /// This is exactly `Self::seal(value, keys::installed()?)`. The
-    /// process-wide keys serve only standalone values.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::KeysNotInstalled`] before installation, or any error of
-    /// [`Self::seal`].
-    pub fn seal_global(value: &F::Value) -> Result<Self, Error> {
-        Self::seal(value, keys::installed()?)
-    }
-
-    /// Opens this value with the [installed keys](keys::installed).
-    ///
-    /// This is exactly `self.open(keys::installed()?)`.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::KeysNotInstalled`] before installation, or any error of
-    /// [`Self::open`].
-    pub fn open_global(&self) -> Result<F::Value, Error> {
-        self.open(keys::installed()?)
     }
 }
 
@@ -443,7 +417,7 @@ impl<F: Seal, C> fmt::Debug for Sealed<F, C> {
 /// for a value in a [`Context`], such as a record's field.
 ///
 /// `K` names the column's keys. The default, [`GlobalKeys`], reads the keys
-/// installed with [`keys::install`]; name another
+/// installed with [`keys::install`](crate::keys::install); name another
 /// [`ColumnKeys`](crate::ColumnKeys) to use application-owned keys instead.
 ///
 /// `Plain` contains plaintext while it is in application memory. It redacts

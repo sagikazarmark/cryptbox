@@ -75,7 +75,7 @@ Do not infer a NULL policy from backend decoding behavior.
 
 ## Sweep loop
 
-Register each index in the same order in `RowPlanner::with_index_with` and
+Register each index in the same order in `RowPlanner::with_index` and
 `SweepTable::with_index_column`; create the store's progress table with
 `ensure_progress_table`. For each batch:
 
@@ -188,13 +188,13 @@ from trusted application schema, not stored metadata.
    keyring. Authentication, padding, codec and key-availability failures all fail
    the audit. Validate decoded application constraints; account for every row.
 4. **Recompute every index.** Parse as `BlindIndex<ExpectedSpec>` and call
-   `ExpectedSpec::is_consistent_with` with the authenticated plaintext and a
+   `BlindIndex::is_consistent_with` with the authenticated plaintext and a
    blind-index keyring holding exactly the allowed generations; it compares
    **complete stored bytes**, not just IDs, under the generation the index names.
    `Ok(false)` is an inconsistent index. `Error::UnknownBlindIndexKey` means an
    unknown or disallowed generation: it also fails the check, but report it
    distinctly as unverifiable. After convergence, also require that the stored
-   bytes equal `ExpectedSpec::derive_with` under the current generation.
+   bytes equal `BlindIndex::<ExpectedSpec>::derive` under the current generation.
 5. **Resolve failures and reconcile coverage.** Record sanitized row/run metadata
    and compare coverage with the inventory and expected searches. Repair only
    from authoritative values with atomic full-tuple CAS, then repeat the complete

@@ -95,12 +95,11 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     let read: Plain<Nickname> = row.try_get("nickname")?;
     assert_eq!(read.expose_secret(), plaintext); // Automatic authenticated opening.
 
-    // A value of an indexed seal is sealed explicitly. Preparation seals with the installed
-    // keys, and the implicit `with_index` resolves the installed blind-index keys
-    // too. One statement maintains the sealed value and index pair atomically.
+    // A value of an indexed seal is sealed explicitly, here with the installed keys.
+    // One statement maintains the sealed value and index pair atomically.
+    let keys = keys::installed()?;
     let email = plaintext.to_owned();
-    let prepared =
-        Sealed::<UserEmail>::prepare(&email, keys::installed()?)?.with_index::<EmailLookup>()?;
+    let prepared = Sealed::<UserEmail>::prepare(&email, keys)?.with_index::<EmailLookup>(keys)?;
     sqlx::query("UPDATE users SET email = ?, email_idx = ?")
         .bind(prepared.sealed())
         .bind(prepared.index::<EmailLookup>()?)
@@ -110,7 +109,7 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
         .fetch_one(&mut connection)
         .await?;
     let read: Sealed<UserEmail> = row.try_get("email")?;
-    assert_eq!(read.open_global()?, plaintext);
+    assert_eq!(read.open(keys)?, plaintext);
     assert_eq!(
         row.try_get::<Vec<u8>, _>("email_idx")?,
         prepared.index::<EmailLookup>()?.as_bytes(),

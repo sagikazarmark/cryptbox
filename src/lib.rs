@@ -32,7 +32,7 @@
 //!   seals and opens the whole row, and its [`Index`] handles derive probes and
 //!   open the candidate rows of a lookup.
 //! - A [`BlindIndexSpec`] binds a blind index to one seal. A [`BlindIndex`] is a
-//!   candidate selector: use every [`BlindIndexSpec::probes_with`]
+//!   candidate selector: use every [`BlindIndex::probes`]
 //!   result, open candidates, and compare normalized plaintext.
 //!
 #![doc = "<div>"]
@@ -48,11 +48,10 @@
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md",
 )]
 //!
-//! Every operation takes its keys explicitly, and never reads the global.
-//! [`Sealed::seal_global`] and [`Sealed::open_global`] read the keys installed
-//! with [`keys::install`] and fail with [`Error::KeysNotInstalled`] before
-//! installation. The automatic `SQLx` column `Plain<F, K>` reads its keys from
-//! `K`, the installed keys ([`GlobalKeys`]) by default. [`Padding`] is a closed
+//! Every operation takes its keys explicitly, and never reads the global. Only
+//! the automatic `SQLx` column `Plain<F, K>` reads its keys from `K`: the keys
+//! installed with [`keys::install`] ([`GlobalKeys`]) by default, which fail with
+//! [`Error::KeysNotInstalled`] before installation. [`Padding`] is a closed
 //! set of const policies.
 //!
 //! The [documentation index] links integration and operational guides.

@@ -88,8 +88,8 @@ fn email(value: &str) -> String {
 fn blind_indexes_are_deterministic_normalized_and_explicitly_truncated() {
     let keys = index_keys();
 
-    let first = EmailExact::derive_with(&email(" Mark@Example.com "), &keys).unwrap();
-    let second = EmailExact::derive_with(&email("mark@example.com"), &keys).unwrap();
+    let first = BlindIndex::<EmailExact>::derive(&email(" Mark@Example.com "), &keys).unwrap();
+    let second = BlindIndex::<EmailExact>::derive(&email("mark@example.com"), &keys).unwrap();
 
     assert_eq!(first, second);
     assert_eq!(format!("{first:?}"), "BlindIndex([REDACTED])");
@@ -108,8 +108,8 @@ fn blind_indexes_are_deterministic_normalized_and_explicitly_truncated() {
 #[test]
 fn seal_and_index_domains_are_cryptographically_separated() {
     let keys = index_keys();
-    let email_index = EmailExact::derive_with(&email("mark@example.com"), &keys).unwrap();
-    let phone_index = PhoneExact::derive_with(&email("mark@example.com"), &keys).unwrap();
+    let email_index = BlindIndex::<EmailExact>::derive(&email("mark@example.com"), &keys).unwrap();
+    let phone_index = BlindIndex::<PhoneExact>::derive(&email("mark@example.com"), &keys).unwrap();
 
     assert_ne!(email_index.as_bytes(), phone_index.as_bytes());
 }
@@ -119,7 +119,7 @@ fn query_probes_cover_current_and_historical_index_generations() {
     let old = index_key(OLD_INDEX_KEY_ID, 43);
     let keys = BlindIndexKeyring::new(index_key(CURRENT_INDEX_KEY_ID, 47), [old]).unwrap();
 
-    let probes = EmailExact::probes_with("mark@example.com", &keys).unwrap();
+    let probes = BlindIndex::<EmailExact>::probes("mark@example.com", &keys).unwrap();
 
     assert_eq!(probes.len(), 2);
     assert_eq!(
@@ -139,9 +139,9 @@ fn query_probes_cover_current_and_historical_index_generations() {
 #[test]
 fn query_probes_match_indexes_derived_from_values() {
     let keys = index_keys();
-    let stored = EmailExact::derive_with(&email("mark@example.com"), &keys).unwrap();
+    let stored = BlindIndex::<EmailExact>::derive(&email("mark@example.com"), &keys).unwrap();
 
-    let probes = EmailExact::probes_with(" Mark@Example.com ", &keys).unwrap();
+    let probes = BlindIndex::<EmailExact>::probes(" Mark@Example.com ", &keys).unwrap();
 
     assert_eq!(probes, vec![stored]);
 }
@@ -149,10 +149,19 @@ fn query_probes_match_indexes_derived_from_values() {
 #[test]
 fn candidate_hits_require_normalized_plaintext_verification() {
     assert!(
-        EmailExact::verify_candidate(" Mark@Example.com ", &email("mark@example.com")).unwrap()
+        BlindIndex::<EmailExact>::verify_candidate(
+            " Mark@Example.com ",
+            &email("mark@example.com")
+        )
+        .unwrap()
     );
-    assert!(!EmailExact::verify_candidate("mark@example.com", &email("mask@example.com")).unwrap());
-    assert!(!EmailExact::verify_candidate("mark@example.com", &email("short")).unwrap());
+    assert!(
+        !BlindIndex::<EmailExact>::verify_candidate("mark@example.com", &email("mask@example.com"))
+            .unwrap()
+    );
+    assert!(
+        !BlindIndex::<EmailExact>::verify_candidate("mark@example.com", &email("short")).unwrap()
+    );
 }
 
 #[test]
@@ -164,12 +173,12 @@ fn prepared_values_derive_the_sealed_value_and_indexes_from_one_source() {
 
     let prepared = Sealed::<EmailSeal>::prepare(&value, &encryption_keys)
         .unwrap()
-        .with_index_with::<EmailExact>(&index_keys)
+        .with_index::<EmailExact>(&index_keys)
         .unwrap();
 
     assert!(!prepared.sealed().as_bytes().is_empty());
     let prepared_index = prepared.index::<EmailExact>().unwrap();
-    let direct = EmailExact::derive_with(&value, &index_keys).unwrap();
+    let direct = BlindIndex::<EmailExact>::derive(&value, &index_keys).unwrap();
     assert_eq!(prepared_index.as_bytes(), direct.as_bytes());
     assert_eq!(AsRef::<[u8]>::as_ref(&prepared_index), direct.as_bytes());
 }
@@ -198,14 +207,17 @@ impl BlindIndexSpec for EmailDomain {
 #[test]
 fn a_blind_index_can_be_computed_from_part_of_the_value() {
     let keys = index_keys();
-    let stored = EmailDomain::derive_with(&email("mark@Example.com"), &keys).unwrap();
+    let stored = BlindIndex::<EmailDomain>::derive(&email("mark@Example.com"), &keys).unwrap();
 
     assert_eq!(
-        EmailDomain::probes_with("example.com", &keys).unwrap(),
+        BlindIndex::<EmailDomain>::probes("example.com", &keys).unwrap(),
         vec![stored]
     );
-    assert!(EmailDomain::verify_candidate("EXAMPLE.com", &email("ada@example.com")).unwrap());
-    assert!(EmailDomain::derive_with(&email("no domain"), &keys).is_err());
+    assert!(
+        BlindIndex::<EmailDomain>::verify_candidate("EXAMPLE.com", &email("ada@example.com"))
+            .unwrap()
+    );
+    assert!(BlindIndex::<EmailDomain>::derive(&email("no domain"), &keys).is_err());
 }
 
 struct Person {
@@ -270,11 +282,11 @@ fn a_blind_index_can_combine_several_parts_of_the_value() {
         postal_code: "SW1A 1AA".to_owned(),
     };
 
-    let index = NameAndPostalCode::derive_with(&person, &keys).unwrap();
+    let index = BlindIndex::<NameAndPostalCode>::derive(&person, &keys).unwrap();
 
     assert_eq!(inspect_blind_index(index.as_bytes()).unwrap().bits(), 128);
     assert_eq!(
-        NameAndPostalCode::probes_with(&("ada lovelace", "SW1A 1AA"), &keys).unwrap(),
+        BlindIndex::<NameAndPostalCode>::probes(&("ada lovelace", "SW1A 1AA"), &keys).unwrap(),
         vec![index]
     );
 }
@@ -282,7 +294,7 @@ fn a_blind_index_can_combine_several_parts_of_the_value() {
 #[test]
 fn typed_indexes_reject_noncanonical_storage_bytes() {
     let keys = index_keys();
-    let index = EmailExact::derive_with(&email("mark@example.com"), &keys).unwrap();
+    let index = BlindIndex::<EmailExact>::derive(&email("mark@example.com"), &keys).unwrap();
     let mut bytes = index.into_bytes();
     *bytes.last_mut().unwrap() |= 1;
 
@@ -291,7 +303,8 @@ fn typed_indexes_reject_noncanonical_storage_bytes() {
 
 #[test]
 fn inspection_rejects_untrusted_out_of_range_precisions() {
-    let index = EmailExact::derive_with(&email("mark@example.com"), &index_keys()).unwrap();
+    let index =
+        BlindIndex::<EmailExact>::derive(&email("mark@example.com"), &index_keys()).unwrap();
     let mut bytes = index.into_bytes();
 
     bytes[17..19].copy_from_slice(&0_u16.to_be_bytes());
@@ -335,7 +348,7 @@ fn assert_canonical_truncation<Spec>(expected_bytes: usize)
 where
     Spec: BlindIndexSpec<Seal = EmailSeal>,
 {
-    let index = Spec::derive_with(&email("truncation vector"), &index_keys()).unwrap();
+    let index = BlindIndex::<Spec>::derive(&email("truncation vector"), &index_keys()).unwrap();
 
     assert_eq!(index.as_bytes().len(), 19 + expected_bytes);
 
@@ -359,36 +372,50 @@ fn truncation_is_canonical_at_supported_bit_boundaries() {
 #[test]
 fn a_stored_index_is_consistent_with_the_value_it_was_derived_from() {
     let keys = index_keys();
-    let stored = EmailExact::derive_with(&email("mark@example.com"), &keys).unwrap();
+    let stored = BlindIndex::<EmailExact>::derive(&email("mark@example.com"), &keys).unwrap();
 
-    assert!(EmailExact::is_consistent_with(&email(" Mark@Example.com "), &stored, &keys).unwrap());
+    assert!(
+        stored
+            .is_consistent_with(&email(" Mark@Example.com "), &keys)
+            .unwrap()
+    );
 }
 
 #[test]
 fn a_stored_index_from_a_historical_generation_is_consistent_with_its_value() {
     let old = index_key(OLD_INDEX_KEY_ID, 43);
     let before_rotation = BlindIndexKeyring::new(old.clone(), []).unwrap();
-    let stored = EmailExact::derive_with(&email("mark@example.com"), &before_rotation).unwrap();
+    let stored =
+        BlindIndex::<EmailExact>::derive(&email("mark@example.com"), &before_rotation).unwrap();
     let keys = BlindIndexKeyring::new(index_key(CURRENT_INDEX_KEY_ID, 47), [old]).unwrap();
 
-    assert!(EmailExact::is_consistent_with(&email("mark@example.com"), &stored, &keys).unwrap());
+    assert!(
+        stored
+            .is_consistent_with(&email("mark@example.com"), &keys)
+            .unwrap()
+    );
 }
 
 #[test]
 fn a_stored_index_for_another_value_is_inconsistent() {
     let keys = index_keys();
-    let stored = EmailExact::derive_with(&email("other@example.com"), &keys).unwrap();
+    let stored = BlindIndex::<EmailExact>::derive(&email("other@example.com"), &keys).unwrap();
 
-    assert!(!EmailExact::is_consistent_with(&email("mark@example.com"), &stored, &keys).unwrap());
+    assert!(
+        !stored
+            .is_consistent_with(&email("mark@example.com"), &keys)
+            .unwrap()
+    );
 }
 
 #[test]
 fn a_stored_index_from_an_unknown_generation_cannot_be_checked() {
     let retired = BlindIndexKeyring::new(index_key(OLD_INDEX_KEY_ID, 43), []).unwrap();
-    let stored = EmailExact::derive_with(&email("mark@example.com"), &retired).unwrap();
+    let stored = BlindIndex::<EmailExact>::derive(&email("mark@example.com"), &retired).unwrap();
 
     assert_eq!(
-        EmailExact::is_consistent_with(&email("mark@example.com"), &stored, &index_keys())
+        stored
+            .is_consistent_with(&email("mark@example.com"), &index_keys())
             .unwrap_err(),
         Error::UnknownBlindIndexKey(OLD_INDEX_KEY_ID)
     );
@@ -397,10 +424,18 @@ fn a_stored_index_from_an_unknown_generation_cannot_be_checked() {
 #[test]
 fn a_computed_index_is_consistent_with_any_value_sharing_the_computed_part() {
     let keys = index_keys();
-    let stored = EmailDomain::derive_with(&email("mark@Example.com"), &keys).unwrap();
+    let stored = BlindIndex::<EmailDomain>::derive(&email("mark@Example.com"), &keys).unwrap();
 
-    assert!(EmailDomain::is_consistent_with(&email("ada@example.com"), &stored, &keys).unwrap());
-    assert!(!EmailDomain::is_consistent_with(&email("mark@example.org"), &stored, &keys).unwrap());
+    assert!(
+        stored
+            .is_consistent_with(&email("ada@example.com"), &keys)
+            .unwrap()
+    );
+    assert!(
+        !stored
+            .is_consistent_with(&email("mark@example.org"), &keys)
+            .unwrap()
+    );
 }
 
 #[test]
@@ -411,14 +446,17 @@ fn a_composite_index_is_consistent_only_when_every_part_matches() {
         postal_code: postal_code.to_owned(),
     };
     let stored =
-        NameAndPostalCode::derive_with(&person("Ada Lovelace", "SW1A 1AA"), &keys).unwrap();
+        BlindIndex::<NameAndPostalCode>::derive(&person("Ada Lovelace", "SW1A 1AA"), &keys)
+            .unwrap();
 
     assert!(
-        NameAndPostalCode::is_consistent_with(&person("ada lovelace", "SW1A 1AA"), &stored, &keys)
+        stored
+            .is_consistent_with(&person("ada lovelace", "SW1A 1AA"), &keys)
             .unwrap()
     );
     assert!(
-        !NameAndPostalCode::is_consistent_with(&person("Ada Lovelace", "EC1A 1BB"), &stored, &keys)
+        !stored
+            .is_consistent_with(&person("Ada Lovelace", "EC1A 1BB"), &keys)
             .unwrap()
     );
 }
@@ -462,12 +500,12 @@ fn prepared_indexes_match_derived_ones() {
     let value = email("mark@example.com");
     let prepared = Sealed::<TicketEmail>::prepare(&value, &keys)
         .unwrap()
-        .with_index_with::<TicketEmailExact>(&index_keys)
+        .with_index::<TicketEmailExact>(&index_keys)
         .unwrap();
 
     assert_eq!(
         prepared.index::<TicketEmailExact>().unwrap().as_bytes(),
-        TicketEmailExact::derive_with(&value, &index_keys)
+        BlindIndex::<TicketEmailExact>::derive(&value, &index_keys)
             .unwrap()
             .into_bytes()
     );
@@ -478,19 +516,19 @@ fn separate_index_keys_separate_equal_values() {
     let acme = index_keys();
     let globex = BlindIndexKeyring::new(BlindIndexKey::generate().unwrap(), []).unwrap();
     let value = email("mark@example.com");
-    let stored = TicketEmailExact::derive_with(&value, &acme).unwrap();
+    let stored = BlindIndex::<TicketEmailExact>::derive(&value, &acme).unwrap();
 
     assert_ne!(
         stored,
-        TicketEmailExact::derive_with(&value, &globex).unwrap()
+        BlindIndex::<TicketEmailExact>::derive(&value, &globex).unwrap()
     );
     assert!(
-        !TicketEmailExact::probes_with(" Mark@Example.com ", &globex)
+        !BlindIndex::<TicketEmailExact>::probes(" Mark@Example.com ", &globex)
             .unwrap()
             .contains(&stored)
     );
     assert_eq!(
-        TicketEmailExact::probes_with(" Mark@Example.com ", &acme).unwrap(),
+        BlindIndex::<TicketEmailExact>::probes(" Mark@Example.com ", &acme).unwrap(),
         [stored]
     );
 }

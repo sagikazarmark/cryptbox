@@ -121,7 +121,7 @@ Switch to blind-index-only lookup only after the [closure gates](#verification-a
 
 Configure `RowPlanner::<F>::new(encryption_keys)`, add the
 explicit handler with `with_legacy`, and register indexes in stored order with
-`with_index_with::<Spec>(index_keys)`. Omit `with_legacy` only for authorized
+`with_index::<Spec>(index_keys)`. Omit `with_legacy` only for authorized
 plaintext-only data. Recovery decodes through the seal's codec, seals and
 derives every registered index. Stale CryptBox components are rewritten; current
 ones are retained under the [sweep rules](reencryption-sweep.md#sweep-loop).

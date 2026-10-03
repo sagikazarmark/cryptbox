@@ -19,9 +19,8 @@ use super::{LegacyFormat, legacy};
 /// of legacy plaintext does not establish authenticity, and re-encrypting it
 /// cannot retroactively establish its provenance.
 ///
-/// [`Self::open`] and [`Self::open_global`] use identity recovery for
-/// plaintext-only migrations. [`Self::open_legacy`] and
-/// [`Self::open_global_legacy`] first invoke a [`LegacyFormat`] handler for foreign
+/// [`Self::open`] uses identity recovery for plaintext-only migrations.
+/// [`Self::open_legacy`] first invokes a [`LegacyFormat`] handler for foreign
 /// ciphertext. Valid `CryptBox` envelopes ignore the handler.
 ///
 /// Reads are permissive; writes never are. `MaybeEncrypted` implements no
@@ -207,42 +206,6 @@ where
     ) -> Result<F::Value, Error> {
         match self.state {
             State::Sealed(sealed) => sealed.open(keys),
-            State::Plaintext(value) => Ok(value),
-            State::Legacy(bytes) => decode_legacy::<F>(&bytes, Some(legacy)),
-        }
-    }
-}
-
-impl<F> MaybeEncrypted<F>
-where
-    F: Seal,
-{
-    /// Consumes the read and opens it with the [installed keys](crate::keys::installed).
-    ///
-    /// Legacy bytes use identity recovery without touching the keys.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error::KeysNotInstalled`] before installation, or an error when
-    /// opening fails or legacy bytes cannot be decoded by the seal's codec.
-    pub fn open_global(self) -> Result<F::Value, Error> {
-        match self.state {
-            State::Sealed(sealed) => sealed.open_global(),
-            State::Plaintext(value) => Ok(value),
-            State::Legacy(bytes) => decode_legacy::<F>(&bytes, None),
-        }
-    }
-
-    /// Consumes the read and recovers legacy bytes with an explicit handler,
-    /// using the [installed keys](crate::keys::installed) for `CryptBox` envelopes.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when legacy recovery, codec decoding, key lookup,
-    /// or opening the envelope fails.
-    pub fn open_global_legacy(self, legacy: &dyn LegacyFormat) -> Result<F::Value, Error> {
-        match self.state {
-            State::Sealed(sealed) => sealed.open_global(),
             State::Plaintext(value) => Ok(value),
             State::Legacy(bytes) => decode_legacy::<F>(&bytes, Some(legacy)),
         }

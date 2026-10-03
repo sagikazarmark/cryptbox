@@ -3,7 +3,7 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, IndexKeyId, KeyId, Seal, Sealed, index_key_id, key_id,
     migrate::{MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
 };
@@ -105,7 +105,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     }
 
     // One sweep encrypts the legacy rows and re-encrypts the stale one.
-    let planner = RowPlanner::<UserEmail>::new(&keys).with_index_with::<EmailLookup>(&index_keys);
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
     let sweep = Sweep::new(planner).with_batch_size(2);
     let table = SweepTable::new("users", "id", "email_ciphertext").with_index_column("email_bidx");
     let mut store = SqliteSweepStore::new(&mut connection, &table);
@@ -126,7 +126,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     assert_eq!(report.current, 4);
 
     // Separately demonstrate strict authenticated reading for this lookup.
-    let probes = EmailLookup::probes_with("first@example.com", &index_keys)?;
+    let probes = BlindIndex::<EmailLookup>::probes("first@example.com", &index_keys)?;
     let mut matched = 0;
     for probe in probes {
         let rows = sqlx::query("SELECT email_ciphertext FROM users WHERE email_bidx = ?")
@@ -155,7 +155,7 @@ async fn insert_encrypted(
 ) -> Result<(), Box<dyn Error>> {
     let value = email.to_owned();
     let prepared =
-        Sealed::<UserEmail>::prepare(&value, keys)?.with_index_with::<EmailLookup>(index_keys)?;
+        Sealed::<UserEmail>::prepare(&value, keys)?.with_index::<EmailLookup>(index_keys)?;
 
     sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
         .bind(prepared.sealed())

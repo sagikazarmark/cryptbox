@@ -48,7 +48,7 @@ fn blind_index() -> BlindIndex<EmailExact> {
     )
     .unwrap();
 
-    EmailExact::derive_with(&"mark@example.com".to_owned(), &keys).unwrap()
+    BlindIndex::<EmailExact>::derive(&"mark@example.com".to_owned(), &keys).unwrap()
 }
 
 fn encryption_keys() -> EncryptionKeyring {

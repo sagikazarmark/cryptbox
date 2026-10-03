@@ -1,7 +1,7 @@
 //! Provisional compatibility vectors for the experimental formats.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, InRecord, IndexId, IndexKeyId, KeyId, Padding, Raw, Seal, Sealed,
     Utf8, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id, seal_id,
 };
@@ -127,8 +127,9 @@ fn experimental_blind_index_vector_is_stable() {
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();
 
-    let index = VectorIndex::derive_with(&b"normalized@example.com".to_vec(), &keys).unwrap();
-    let probes = VectorIndex::probes_with("normalized@example.com", &keys).unwrap();
+    let index =
+        BlindIndex::<VectorIndex>::derive(&b"normalized@example.com".to_vec(), &keys).unwrap();
+    let probes = BlindIndex::<VectorIndex>::probes("normalized@example.com", &keys).unwrap();
 
     assert_eq!(hex::encode(index.as_bytes()), VECTOR);
     assert_eq!(probes.len(), 1);

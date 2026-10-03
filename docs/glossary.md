@@ -80,10 +80,9 @@ and obscure equality more, without eliminating index leakage.
 
 **Installed keys**:
 The process-wide keys set once with `keys::install` and never replaced. They
-serve only standalone values. The global conveniences (`seal_global()`,
-`open_global()`, `with_index()`, `probes()`) and the automatic column read them
-and fail with `KeysNotInstalled` before installation; every other operation
-takes keys explicitly.
+serve only standalone values. Only the automatic column reads them, and fails
+with `KeysNotInstalled` before installation; every operation takes keys
+explicitly.
 <!-- Agent guidance: avoid “global column keys” or “global keyring”; the global is the installed keys. -->
 
 **Key generation**:

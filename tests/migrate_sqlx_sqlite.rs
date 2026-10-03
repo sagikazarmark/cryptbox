@@ -121,7 +121,7 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
             let value = email.to_owned();
             let prepared = Sealed::<UserEmail>::prepare(&value, keyring)
                 .unwrap()
-                .with_index_with::<EmailLookup>(index_keyring)
+                .with_index::<EmailLookup>(index_keyring)
                 .unwrap();
             sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
                 .bind(prepared.sealed())
@@ -148,7 +148,7 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
         // Batch size one exercises pagination and per-batch checkpoints.
         let planner = RowPlanner::<UserEmail>::new(&keys)
             .with_legacy(&TOY_LEGACY)
-            .with_index_with::<EmailLookup>(&index_keys);
+            .with_index::<EmailLookup>(&index_keys);
         let sweep = Sweep::new(planner).with_batch_size(1);
         let table =
             SweepTable::new("users", "id", "email_ciphertext").with_index_column("email_bidx");

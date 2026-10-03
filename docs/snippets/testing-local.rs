@@ -2,7 +2,7 @@
 #![cfg(test)]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8,
 };
 use zeroize::Zeroizing;
@@ -74,8 +74,8 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
     assert_eq!(sealed.open(&keys)?, plaintext);
 
     let prepared =
-        Sealed::<UserEmail>::prepare(&value, &keys)?.with_index_with::<EmailLookup>(&indexes)?;
-    let probes = EmailLookup::probes_with(plaintext, &indexes)?;
+        Sealed::<UserEmail>::prepare(&value, &keys)?.with_index::<EmailLookup>(&indexes)?;
+    let probes = BlindIndex::<EmailLookup>::probes(plaintext, &indexes)?;
     let stored_index = prepared.index::<EmailLookup>()?;
     assert!(
         probes
@@ -83,8 +83,10 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
             .any(|probe| probe.as_bytes() == stored_index.as_bytes())
     );
     let candidate = prepared.sealed().open(&keys)?;
-    assert!(EmailLookup::verify_candidate(plaintext, &candidate,)?);
-    assert!(!EmailLookup::verify_candidate(
+    assert!(BlindIndex::<EmailLookup>::verify_candidate(
+        plaintext, &candidate,
+    )?);
+    assert!(!BlindIndex::<EmailLookup>::verify_candidate(
         "not-the-query@example.test",
         &candidate,
     )?);

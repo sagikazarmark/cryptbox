@@ -20,7 +20,7 @@ pub struct SweepRow<C, R = ()> {
     /// The encrypted column's bytes exactly as read.
     pub ciphertext: Vec<u8>,
     /// Each blind-index column's bytes exactly as read, in the order the
-    /// columns were registered with [`RowPlanner::with_index_with`].
+    /// columns were registered with [`RowPlanner::with_index`].
     pub indexes: Vec<Vec<u8>>,
 }
 

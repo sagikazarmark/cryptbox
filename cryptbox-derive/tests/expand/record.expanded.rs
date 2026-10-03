@@ -203,7 +203,9 @@ const _: () = {
             };
             let email_index = {
                 let value = &self.email;
-                <CustomerEmailIndex as ::cryptbox::BlindIndexSpec>::derive_with(
+                ::cryptbox::BlindIndex::<
+                    CustomerEmailIndex,
+                >::derive(
                     value,
                     ::cryptbox::RecordKeys::record_blind_index_keyring(keys)?,
                 )?
@@ -222,7 +224,9 @@ const _: () = {
             let note_index = match &self.note {
                 ::core::option::Option::Some(value) => {
                     ::core::option::Option::Some(
-                        <CustomerNoteIndex as ::cryptbox::BlindIndexSpec>::derive_with(
+                        ::cryptbox::BlindIndex::<
+                            CustomerNoteIndex,
+                        >::derive(
                             value,
                             ::cryptbox::RecordKeys::record_blind_index_keyring(keys)?,
                         )?,

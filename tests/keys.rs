@@ -1,7 +1,7 @@
 //! Public-boundary tests for passing keys in: `Keys` and keyrings.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, IndexId, IndexKeyId, KeyError, KeyId, Keys, Padding, Raw, Seal,
     SealId, Sealed, index_id, index_key_id, inspect_blind_index, key_id, seal_id,
     testing::assert_sealed_under,
@@ -115,7 +115,7 @@ fn a_blind_index_keyring_lists_its_current_key_first() {
     let ids: Vec<_> = keyring.readable().map(BlindIndexKey::id).collect();
     assert_eq!(ids, [PAYMENTS_INDEX_KEY_ID, GENERAL_INDEX_KEY_ID]);
 
-    let probes = EmailLookup::probes_with(b"ada", &keyring).unwrap();
+    let probes = BlindIndex::<EmailLookup>::probes(b"ada", &keyring).unwrap();
     let probe_ids: Vec<_> = probes
         .iter()
         .map(|probe| {
@@ -182,13 +182,13 @@ fn keys_without_a_blind_index_keyring_reject_index_operations() {
     let keys = Keys::new(keyring(GENERAL_KEY_ID, 1));
 
     assert_eq!(
-        EmailLookup::probes_with(b"ada", &keys).unwrap_err(),
+        BlindIndex::<EmailLookup>::probes(b"ada", &keys).unwrap_err(),
         Error::BlindIndexKeysNotConfigured
     );
     assert_eq!(
         Sealed::<Email>::prepare(&b"ada".to_vec(), &keys)
             .unwrap()
-            .with_index_with::<EmailLookup>(&keys)
+            .with_index::<EmailLookup>(&keys)
             .unwrap_err(),
         Error::BlindIndexKeysNotConfigured
     );
@@ -202,7 +202,7 @@ fn keys_serve_both_roles() {
 
     let prepared = Sealed::<Email>::prepare(&value, &keys)
         .unwrap()
-        .with_index_with::<EmailLookup>(&keys)
+        .with_index::<EmailLookup>(&keys)
         .unwrap();
 
     assert_eq!(prepared.sealed().key_id(), GENERAL_KEY_ID);

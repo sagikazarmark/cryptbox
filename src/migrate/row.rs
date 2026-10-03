@@ -263,11 +263,11 @@ where
     ///     keys: &'a EncryptionKeyring,
     ///     index_keys: &'a BlindIndexKeyring,
     /// ) -> RowPlanner<'a, UserEmail> {
-    ///     RowPlanner::<UserEmail>::new(keys).with_index_with::<InviteEmailLookup>(index_keys)
+    ///     RowPlanner::<UserEmail>::new(keys).with_index::<InviteEmailLookup>(index_keys)
     /// }
     /// ```
     #[must_use]
-    pub fn with_index_with<Spec>(mut self, keys: &'a BlindIndexKeyring) -> Self
+    pub fn with_index<Spec>(mut self, keys: &'a BlindIndexKeyring) -> Self
     where
         Spec: BlindIndexSpec<Seal = F>,
     {

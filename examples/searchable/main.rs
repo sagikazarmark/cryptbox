@@ -3,7 +3,7 @@
 use std::{env, error::Error, path::Path};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Seal, Sealed, index_key_id, inspect_blind_index, key_id,
 };
 use sqlx::{Connection, QueryBuilder, Row};
@@ -214,7 +214,7 @@ async fn audit_current(
             let sealed: SealedEmail = row.try_get("email")?;
             let value = sealed.open(encryption)?;
             validate_email(&value)?;
-            let expected = EmailLookup::derive_with(&value, indexes)?;
+            let expected = BlindIndex::<EmailLookup>::derive(&value, indexes)?;
             if expected.as_bytes() != row.try_get::<Vec<u8>, _>("email_lookup")? {
                 return Err("index consistency check failed".into());
             }
@@ -243,7 +243,7 @@ async fn maintenance(
     let table = SweepTable::new("users", "id", "email")
         .with_index_column("email_lookup")
         .with_progress("cryptbox_migration_progress", run);
-    let planner = RowPlanner::<UserEmail>::new(encryption).with_index_with::<EmailLookup>(indexes);
+    let planner = RowPlanner::<UserEmail>::new(encryption).with_index::<EmailLookup>(indexes);
     #[cfg(feature = "legacy-migration")]
     let legacy = migration::PreviousEncryption::load()?;
     #[cfg(feature = "legacy-migration")]
@@ -258,7 +258,7 @@ async fn maintenance(
             let rows = store.load_batch(None, 1).await?;
             let row = rows.first().ok_or("conflict rehearsal needs a stale row")?;
             let planner =
-                RowPlanner::<UserEmail>::new(encryption).with_index_with::<EmailLookup>(indexes);
+                RowPlanner::<UserEmail>::new(encryption).with_index::<EmailLookup>(indexes);
             let plan = planner.plan_row(&(), &row.ciphertext, &[&row.indexes[0]])?;
             let replacement = plan.write().ok_or("conflict rehearsal needs a stale row")?;
             let mut writer = DbConnection::connect(&database_url()?).await?;
@@ -325,8 +325,8 @@ fn rotation_canary(
     indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     let value = CANARY.to_owned();
-    let prepared = Sealed::<UserEmail>::prepare(&value, encryption)?
-        .with_index_with::<EmailLookup>(indexes)?;
+    let prepared =
+        Sealed::<UserEmail>::prepare(&value, encryption)?.with_index::<EmailLookup>(indexes)?;
     // Out-of-band synthetic data: never put a future generation in the live users table.
     std::fs::write(
         path,
@@ -355,7 +355,7 @@ fn rotation_ready(
         return Err("canary plaintext mismatch".into());
     }
     let token = hex::decode(lines[1])?;
-    let probes = EmailLookup::probes_with(CANARY, indexes)?;
+    let probes = BlindIndex::<EmailLookup>::probes(CANARY, indexes)?;
     if !probes.iter().any(|probe| probe.as_bytes() == token) {
         return Err("canary index generation unavailable or mismatched".into());
     }
@@ -377,7 +377,7 @@ async fn put(
     let prepared = email
         .as_ref()
         .map(|email| {
-            Sealed::<UserEmail>::prepare(email, encryption)?.with_index_with::<EmailLookup>(indexes)
+            Sealed::<UserEmail>::prepare(email, encryption)?.with_index::<EmailLookup>(indexes)
         })
         .transpose()?;
     let sealed = prepared.as_ref().map(|p| p.sealed());
@@ -418,7 +418,7 @@ async fn search(
     encryption: &EncryptionKeyring,
     indexes: &BlindIndexKeyring,
 ) -> Result<()> {
-    let probes = EmailLookup::probes_with(query, indexes)?;
+    let probes = BlindIndex::<EmailLookup>::probes(query, indexes)?;
     let mut sql = QueryBuilder::<Db>::new("SELECT id, email FROM users WHERE email_lookup IN (");
     let mut values = sql.separated(", ");
     for probe in &probes {
@@ -431,7 +431,7 @@ async fn search(
     for row in rows {
         let sealed: SealedEmail = row.try_get("email")?;
         let candidate = sealed.open(encryption)?;
-        if EmailLookup::verify_candidate(query, &candidate)? {
+        if BlindIndex::<EmailLookup>::verify_candidate(query, &candidate)? {
             matches.push(row.try_get("id")?);
         } else {
             rejected += 1; // A collision is an ordinary non-match, not an assertion failure.
@@ -451,8 +451,8 @@ async fn macro_put(
     indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     validate_email(&email)?;
-    let prepared = Sealed::<UserEmail>::prepare(&email, encryption)?
-        .with_index_with::<EmailLookup>(indexes)?;
+    let prepared =
+        Sealed::<UserEmail>::prepare(&email, encryption)?.with_index::<EmailLookup>(indexes)?;
     let sealed = prepared.sealed();
     let index = prepared.index::<EmailLookup>()?.as_bytes();
     // PostgreSQL's macro sees BYTEA, not the custom wrapper: override input inference.

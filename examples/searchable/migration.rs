@@ -4,6 +4,7 @@ use chacha20poly1305::{
     KeyInit, XChaCha20Poly1305, XNonce,
     aead::{Aead, Payload},
 };
+use cryptbox::BlindIndex;
 use cryptbox::migrate::{LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted};
 
 const HEADER: &[u8] = b"illustrative-legacy-v1\0";
@@ -141,8 +142,8 @@ async fn seed(
         (50, keys, indexes),
     ] {
         let value = "mixed@example.com".to_owned();
-        let prepared = Sealed::<UserEmail>::prepare(&value, encryption)?
-            .with_index_with::<EmailLookup>(index)?;
+        let prepared =
+            Sealed::<UserEmail>::prepare(&value, encryption)?.with_index::<EmailLookup>(index)?;
         let token = if id == 50 {
             &[]
         } else {
@@ -173,7 +174,7 @@ async fn lookup(
     // The quarantine gate and candidate read must observe the same snapshot.
     quarantine_gate(&mut tx).await?;
     let legacy = PreviousEncryption::load()?;
-    let probes = EmailLookup::probes_with(query, indexes)?;
+    let probes = BlindIndex::<EmailLookup>::probes(query, indexes)?;
     // One statement selects a row once, even when it matches both predicates.
     // A single statement snapshot avoids moving rows between a scan and probe query.
     let mut sql = QueryBuilder::<Db>::new(
@@ -192,7 +193,7 @@ async fn lookup(
         let collision =
             row.try_get::<Option<String>, _>("format")?.as_deref() == Some("legacy-collision");
         let candidate = recover(row.try_get("email")?, collision, keys, &legacy)?;
-        if EmailLookup::verify_candidate(query, &candidate)? {
+        if BlindIndex::<EmailLookup>::verify_candidate(query, &candidate)? {
             matches.push(row.try_get("id")?);
         } else {
             rejected += 1;
@@ -241,7 +242,7 @@ async fn repair(
         &PreviousEncryption::load()?,
     )?;
     let prepared =
-        Sealed::<UserEmail>::prepare(&value, keys)?.with_index_with::<EmailLookup>(indexes)?;
+        Sealed::<UserEmail>::prepare(&value, keys)?.with_index::<EmailLookup>(indexes)?;
     let changed = sqlx::query("UPDATE users SET email = $1, email_lookup = $2 WHERE id = $3 AND email = $4 AND email_lookup = $5")
         .bind(prepared.sealed()).bind(prepared.index::<EmailLookup>()?.as_bytes())
         .bind(id).bind(bytes.as_slice()).bind(&old_index).execute(&mut *tx).await?.rows_affected();
@@ -283,7 +284,7 @@ async fn close(
     use cryptbox::migrate::SqliteSweepStore as Store;
     use cryptbox::migrate::{RowPlanner, Sweep, SweepTable};
     let table = SweepTable::new("users", "id", "email").with_index_column("email_lookup");
-    let planner = RowPlanner::<UserEmail>::new(keys).with_index_with::<EmailLookup>(indexes);
+    let planner = RowPlanner::<UserEmail>::new(keys).with_index::<EmailLookup>(indexes);
     let report = Sweep::new(planner)
         .with_batch_size(2)
         .verify(&mut Store::new(db, &table))
@@ -348,8 +349,8 @@ pub(super) async fn command(
         ["migration-restore"] => {
             // Fixture-only trusted source. In production require investigated, approved data.
             let value = "mixed@example.com".to_owned();
-            let prepared = Sealed::<UserEmail>::prepare(&value, keys)?
-                .with_index_with::<EmailLookup>(indexes)?;
+            let prepared =
+                Sealed::<UserEmail>::prepare(&value, keys)?.with_index::<EmailLookup>(indexes)?;
             let mut tx = db.begin().await?;
             // INSERT, not upsert: a concurrently recreated row must not be overwritten.
             sqlx::query("INSERT INTO users (id, email, email_lookup) VALUES (20, $1, $2)")

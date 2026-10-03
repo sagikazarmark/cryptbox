@@ -33,7 +33,7 @@ installs both keyrings with `keys::install` once per process, so each fixture
 runs in its own process.
 `Plain` serves only seals without blind indexes, since a column cannot write
 its index. The example seals its indexed value explicitly with `Sealed::prepare`
-and `with_index()`, and writes the pair atomically.
+and `with_index`, with the installed keys, and writes the pair atomically.
 
 To test automatic columns without the installed keys, implement `ColumnKeys`
 over a fixed test keyring in a `static` and use `Plain<F, TestKeys>`, as the

@@ -41,10 +41,10 @@ impl SweepTable {
 
     /// Registers the next blind-index column.
     ///
-    /// Order must match the [`RowPlanner::with_index_with`] registration
+    /// Order must match the [`RowPlanner::with_index`] registration
     /// order.
     ///
-    /// [`RowPlanner::with_index_with`]: super::RowPlanner::with_index_with
+    /// [`RowPlanner::with_index`]: super::RowPlanner::with_index
     #[must_use]
     pub fn with_index_column(mut self, column: &str) -> Self {
         self.index_columns.push(column.to_owned());

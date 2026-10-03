@@ -43,11 +43,11 @@ impl BlindIndexInfo {
 ///
 /// This does not authenticate the returned key ID, precision, or digest. Treat
 /// all metadata as untrusted. To check index consistency, decrypt the associated
-/// ciphertext and call [`BlindIndexSpec::is_consistent_with`](crate::BlindIndexSpec::is_consistent_with) with the intended
+/// ciphertext and call [`BlindIndex::is_consistent_with`](crate::BlindIndex::is_consistent_with) with the intended
 /// specification and a keyring holding only allowed key generations; it
 /// recomputes and compares the complete stored representation. A match is
 /// consistency at the configured precision, not proof of provenance or freshness.
-/// [`BlindIndexSpec::verify_candidate`](crate::BlindIndexSpec::verify_candidate) only compares plaintexts; it does not perform
+/// [`BlindIndex::verify_candidate`](crate::BlindIndex::verify_candidate) only compares plaintexts; it does not perform
 /// this recomputation or authenticate stored index metadata.
 ///
 /// # Errors

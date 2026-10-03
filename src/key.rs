@@ -28,8 +28,8 @@ pub enum KeyError {
 /// An encryption keyring and an optional blind-index keyring, passed together.
 ///
 /// `Keys` is a source for both roles, so it can be passed to any operation
-/// (`Sealed::seal`, `Sealed::open`, `probes_with`, …). It is also what
-/// [`keys::install`](crate::keys::install) installs for the global conveniences.
+/// (`Sealed::seal`, `Sealed::open`, `BlindIndex::probes`, …). It is also what
+/// [`keys::install`](crate::keys::install) installs for the automatic `SQLx` column.
 ///
 /// Blind-index operations fail with [`Error::BlindIndexKeysNotConfigured`](crate::Error::BlindIndexKeysNotConfigured) when
 /// `blind_indexes` is `None`.

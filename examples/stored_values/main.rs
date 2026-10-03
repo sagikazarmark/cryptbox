@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The UserEmail seal binds the sealed value and index to its seal ID.
     // prepare borrows email: it does not remove plaintext from memory.
     let prepared =
-        Sealed::<UserEmail>::prepare(&email, &keys)?.with_index_with::<EmailLookup>(&index_keys)?;
+        Sealed::<UserEmail>::prepare(&email, &keys)?.with_index::<EmailLookup>(&index_keys)?;
     let stored = StoredUser {
         email: prepared.sealed().clone(),
         email_lookup: BlindIndex::from_bytes(prepared.index::<EmailLookup>()?.as_bytes())?,
@@ -79,20 +79,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(plaintext, "Mark@Example.com");
 
     // Separately check index consistency, here after convergence to the current key.
-    let recomputed = EmailLookup::derive_with(&plaintext, &index_keys)?;
+    let recomputed = BlindIndex::<EmailLookup>::derive(&plaintext, &index_keys)?;
     assert_eq!(restored.email_lookup, recomputed);
 
     // Lookup searches every readable generation and compares authenticated plaintext.
     let query = "mark@example.com";
-    let probes = EmailLookup::probes_with(query, &index_keys)?;
+    let probes = BlindIndex::<EmailLookup>::probes(query, &index_keys)?;
     let matches = probes.iter().any(|probe| probe == &restored.email_lookup)
-        && EmailLookup::verify_candidate(query, &plaintext)?;
+        && BlindIndex::<EmailLookup>::verify_candidate(query, &plaintext)?;
     assert!(matches);
 
     // Plaintext comparison alone cannot detect a stored index for another value.
-    let unrelated_index = EmailLookup::derive_with(&"other@example.com".to_owned(), &index_keys)?;
+    let unrelated_index =
+        BlindIndex::<EmailLookup>::derive(&"other@example.com".to_owned(), &index_keys)?;
     assert_ne!(unrelated_index, recomputed);
-    assert!(EmailLookup::verify_candidate(query, &plaintext)?);
+    assert!(BlindIndex::<EmailLookup>::verify_candidate(
+        query, &plaintext
+    )?);
 
     // Structurally valid, current-generation bytes can still fail authentication.
     let mut damaged = restored.email.into_bytes();

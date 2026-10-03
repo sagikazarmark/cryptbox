@@ -4,8 +4,9 @@
 use std::sync::{PoisonError, RwLock};
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeyring, Error, Padding, Seal, SealId, Sealed, Secret,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec,
+    CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, Error, Padding, Seal, SealId,
+    Sealed, Secret,
 };
 use zeroize::Zeroizing;
 
@@ -122,7 +123,7 @@ fn main() -> Result<(), cryptbox::Error> {
     let index_writer = BlindIndexKeyring::new(old_index_key.clone(), [])?;
     let value = Handle(Secret::new("Alice-7".to_owned()));
     let prepared = Sealed::<Handle>::prepare(&value, &keys.keyring()?)?
-        .with_index_with::<HandleEquality>(&index_writer)?;
+        .with_index::<HandleEquality>(&index_writer)?;
     let sealed = prepared.sealed().clone();
     let stored_index = prepared.index::<HandleEquality>()?.as_bytes().to_vec();
     // These two representations belong in one atomic storage write.
@@ -137,12 +138,14 @@ fn main() -> Result<(), cryptbox::Error> {
     // After index-key promotion, query every readable generation, including old data.
     let index_reader = BlindIndexKeyring::new(BlindIndexKey::generate()?, [old_index_key])?;
     let query = Secret::new("ALICE-7".to_owned());
-    let probes = HandleEquality::probes_with(&query, &index_reader)?;
+    let probes = BlindIndex::<HandleEquality>::probes(&query, &index_reader)?;
     assert_eq!(probes.len(), 2);
     assert!(probes.iter().any(|probe| probe.as_bytes() == stored_index));
     // An index hit is only a candidate: authenticate and compare normalized plaintext.
     let opened = sealed.open(&keys.keyring()?)?;
-    assert!(HandleEquality::verify_candidate(&query, &opened)?);
+    assert!(BlindIndex::<HandleEquality>::verify_candidate(
+        &query, &opened
+    )?);
     assert_eq!(opened.0.expose_secret(), "Alice-7");
     assert_eq!(value.0.expose_secret(), "Alice-7");
     println!("Custom field round trip and normalized lookup succeeded.");
@@ -167,8 +170,12 @@ mod tests {
         let query = Secret::new("ALICE-7".to_owned());
         let bob = Handle(Secret::new("Bob-7".to_owned()));
         assert_eq!(&*HandleEquality::normalize_value(&alice)?, b"alice-7");
-        assert!(HandleEquality::verify_candidate(&query, &alice)?);
-        assert!(!HandleEquality::verify_candidate(&query, &bob)?);
+        assert!(BlindIndex::<HandleEquality>::verify_candidate(
+            &query, &alice
+        )?);
+        assert!(!BlindIndex::<HandleEquality>::verify_candidate(
+            &query, &bob
+        )?);
         Ok(())
     }
 

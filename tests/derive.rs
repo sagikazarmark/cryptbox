@@ -2,9 +2,9 @@
 #![cfg(feature = "derive")]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec, CodecError,
-    CodecErrorKind, EncryptionKey, EncryptionKeyring, IndexId, IndexKeyId, IndexList, Padding,
-    Seal, SealId, Sealed, Utf8, index_id, index_key_id, seal_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Codec,
+    CodecError, CodecErrorKind, EncryptionKey, EncryptionKeyring, IndexId, IndexKeyId, IndexList,
+    Padding, Seal, SealId, Sealed, Utf8, index_id, index_key_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -260,16 +260,18 @@ fn a_derived_blind_index_derives_the_same_index_as_its_manual_equivalent() {
     assert_eq!(EmailLookup::ID, ManualEmailLookup::ID);
     assert_eq!(EmailLookup::BITS, 32);
     assert_eq!(
-        EmailLookup::derive_with(&email, &keys).unwrap().as_bytes(),
-        ManualEmailLookup::derive_with(&email, &keys)
+        BlindIndex::<EmailLookup>::derive(&email, &keys)
+            .unwrap()
+            .as_bytes(),
+        BlindIndex::<ManualEmailLookup>::derive(&email, &keys)
             .unwrap()
             .as_bytes()
     );
     assert_eq!(
-        EmailLookup::probes_with("mark@example.com", &keys).unwrap()[0].as_bytes(),
-        ManualEmailLookup::probes_with("mark@example.com", &keys).unwrap()[0].as_bytes()
+        BlindIndex::<EmailLookup>::probes("mark@example.com", &keys).unwrap()[0].as_bytes(),
+        BlindIndex::<ManualEmailLookup>::probes("mark@example.com", &keys).unwrap()[0].as_bytes()
     );
-    assert!(EmailLookup::verify_candidate("MARK@example.com", &email).unwrap());
+    assert!(BlindIndex::<EmailLookup>::verify_candidate("MARK@example.com", &email).unwrap());
 }
 
 fn street(address: &Address) -> &str {
@@ -312,15 +314,15 @@ fn a_projected_blind_index_normalizes_part_of_the_value() {
     let keys = index_keys();
 
     assert_eq!(
-        StreetLookup::derive_with(&address(), &keys)
+        BlindIndex::<StreetLookup>::derive(&address(), &keys)
             .unwrap()
             .as_bytes(),
-        ManualStreetLookup::derive_with(&address(), &keys)
+        BlindIndex::<ManualStreetLookup>::derive(&address(), &keys)
             .unwrap()
             .as_bytes()
     );
-    assert!(StreetLookup::verify_candidate("1 MAIN STREET", &address()).unwrap());
-    assert!(!StreetLookup::verify_candidate("Springfield", &address()).unwrap());
+    assert!(BlindIndex::<StreetLookup>::verify_candidate("1 MAIN STREET", &address()).unwrap());
+    assert!(!BlindIndex::<StreetLookup>::verify_candidate("Springfield", &address()).unwrap());
 }
 
 #[test]
@@ -412,14 +414,14 @@ fn a_derived_blind_index_matches_its_probes() {
     let prepare = || {
         Sealed::<ProjectEmail>::prepare(&email, &keyring())
             .unwrap()
-            .with_index_with::<ProjectEmailLookup>(&keys)
+            .with_index::<ProjectEmailLookup>(&keys)
             .unwrap()
             .index::<ProjectEmailLookup>()
             .unwrap()
             .to_blind_index()
     };
 
-    let probes = ProjectEmailLookup::probes_with("mark@example.com", &keys).unwrap();
+    let probes = BlindIndex::<ProjectEmailLookup>::probes("mark@example.com", &keys).unwrap();
 
     assert_eq!(prepare(), probes[0]);
 }

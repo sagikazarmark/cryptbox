@@ -1,8 +1,4 @@
 disallowed-methods = [
     { path = "cryptbox::keys::install", reason = "pass keys explicitly" },
     { path = "cryptbox::keys::installed", reason = "pass keys explicitly" },
-    { path = "cryptbox::Sealed::seal_global", reason = "use seal" },
-    { path = "cryptbox::Sealed::open_global", reason = "use open" },
-    { path = "cryptbox::Prepared::with_index", reason = "use with_index_with" },
-    { path = "cryptbox::BlindIndexSpec::probes", reason = "use probes_with" },
 ]

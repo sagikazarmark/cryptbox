@@ -122,14 +122,14 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let current_index_keys = BlindIndexKeyring::new(current_index_key, [])?;
     assert!(verify_sweep(&mut connection, &current_keys, &current_index_keys).await?);
     assert_eq!(
-        EmailLookup::probes_with("first@example.com", &current_index_keys)?.len(),
+        BlindIndex::<EmailLookup>::probes("first@example.com", &current_index_keys)?.len(),
         1
     );
 
     // Fresh verification must see a late stale write even at a negative cursor.
     let late = "late@example.com".to_owned();
     let prepared = Sealed::<UserEmail>::prepare(&late, &old_keys)?
-        .with_index_with::<EmailLookup>(&old_index_keys)?;
+        .with_index::<EmailLookup>(&old_index_keys)?;
     sqlx::query("UPDATE users SET email_ciphertext = ?, email_bidx = ? WHERE id = -1")
         .bind(prepared.sealed())
         .bind(prepared.index::<EmailLookup>()?)
@@ -149,7 +149,7 @@ async fn insert_email(
 ) -> Result<(), Box<dyn Error>> {
     let value = email.to_owned();
     let prepared =
-        Sealed::<UserEmail>::prepare(&value, keys)?.with_index_with::<EmailLookup>(index_keys)?;
+        Sealed::<UserEmail>::prepare(&value, keys)?.with_index::<EmailLookup>(index_keys)?;
 
     sqlx::query("INSERT INTO users (id, email_ciphertext, email_bidx) VALUES (?, ?, ?)")
         .bind(id)
@@ -205,7 +205,7 @@ async fn sweep_batch(
         };
         let rewritten_index = if index_is_stale {
             let plaintext = rewritten_ciphertext.open(keys)?;
-            EmailLookup::derive_with(&plaintext, index_keys)?
+            BlindIndex::<EmailLookup>::derive(&plaintext, index_keys)?
         } else {
             index
         };

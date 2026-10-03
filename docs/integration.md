@@ -157,17 +157,17 @@ append fields rather than reordering them. An `Option<T>` sealed field stores
 A **keyring** holds one current key generation and the previous generations
 that stored data still needs: `EncryptionKeyring` for values and
 `BlindIndexKeyring` for blind indexes. `Keys` pairs an encryption keyring with an
-optional blind-index keyring. The **installed keys** back the process-wide forms,
-and a **`ColumnKeys`** type selects the keys of an automatic SQLx column.
+optional blind-index keyring. The **installed keys** back the automatic SQLx
+column, and a **`ColumnKeys`** type selects the keys of an automatic SQLx column.
 
 Which keyring protects which values is the decision with the most silent
 failure modes; [choosing keyrings](choosing-keyrings.md) covers it in full, and
 [shredding a tenant](shredding.md) covers what destroying one tenant's keys does.
 
 Operations take the keys to use. Explicit `Sealed::seal`, `open`, and `prepare`
-take an `EncryptionKeyring` or `Keys`; `with_index_with` and `probes_with` a
+take an `EncryptionKeyring` or `Keys`; `with_index` and `BlindIndex::probes` a
 `BlindIndexKeyring` or `Keys`; and a record's `seal` an `EncryptionKeyring`, or
-`Keys` when it has blind indexes. They never read the installed keys, so each
+`Keys` when it has blind indexes. Every operation takes its keys and never reads the installed keys, so each
 test or application component owns its dependencies.
 
 Choosing which keyring protects which values is application code. Pass the
@@ -179,13 +179,13 @@ keyrings. Sealing with the wrong keyring succeeds silently, so test the choice:
 [choosing keyrings](choosing-keyrings.md) lists the failure modes, the key-ID
 rules, and how to record and test custody.
 
-The process-wide forms (`Sealed::seal_global`, `open_global`, `with_index()`,
-`probes()`) are the explicit forms called with `keys::installed()`. Like the
-automatic column, `seal_global` and `open_global` serve only seals without a
-record.
+Only the automatic column reads the installed keys; `keys::installed()` returns
+them to code that passes them on. Like the column, they serve only standalone
+values.
 `keys::install(keys)` sets the installed keys once per process, from the binary
 entry point; a second call returns `AlreadyInstalled` and never replaces them.
-Before installation the process-wide forms return `Error::KeysNotInstalled`: there is
+Before installation `keys::installed()` and the column return
+`Error::KeysNotInstalled`: there is
 no default and no panic. There are no thread- or task-scoped keys, because work
 spawned outside a scope would silently use other keys
 ([ADR-0004](adr/0004-key-supply-global-and-explicit.md)).
@@ -197,12 +197,10 @@ the installed keys. Implement `ColumnKeys` over an application-owned static
 `Plain::with_column_keys::<K>()` moves a value into another column type without
 resealing it. A seal does not choose its keys.
 
-Teams that forbid the global can deny `keys::install` and the process-wide forms with
+Teams that forbid the global can deny `keys::install` and `keys::installed` with
 Clippy's `disallowed_methods`, using
-[this `clippy.toml`](snippets/clippy-no-global-keys.toml). Denying `install` alone
-keeps the installed keys empty, so process-wide calls fail at run time; denying
-the process-wide forms also reports them at lint time. With the `migrate` feature,
-also deny `MaybeEncrypted::open_global` and `MaybeEncrypted::open_global_legacy`.
+[this `clippy.toml`](snippets/clippy-no-global-keys.toml). Denying `install`
+keeps the installed keys empty, so a column that reads them fails at run time.
 
 Resolving keys is synchronous. Applications load secrets from their chosen
 source and build keyrings locally; CryptBox does not distribute secrets or

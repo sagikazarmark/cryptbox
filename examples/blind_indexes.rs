@@ -1,7 +1,7 @@
 //! Prepares and safely queries a blind index across index-key rotation.
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, IndexKeyId, KeyId, Seal, Sealed, index_key_id, key_id,
 };
 use zeroize::Zeroizing;
@@ -41,7 +41,7 @@ fn main() -> Result<(), cryptbox::Error> {
 
     let value = "Mark@Example.com".to_owned();
     let prepared = Sealed::<UserEmail>::prepare(&value, &encryption_keys)?
-        .with_index_with::<EmailLookup>(&old_index_keys)?;
+        .with_index::<EmailLookup>(&old_index_keys)?;
     let stored = prepared.sealed().clone();
     let stored_index = prepared.index::<EmailLookup>()?.as_bytes().to_vec();
 
@@ -50,7 +50,7 @@ fn main() -> Result<(), cryptbox::Error> {
         [old_index_key],
     )?;
     let query = "mark@example.com";
-    let probes = EmailLookup::probes_with(query, &index_keys)?;
+    let probes = BlindIndex::<EmailLookup>::probes(query, &index_keys)?;
 
     // Stored indexes are lookup tokens, not plaintext secrets, so ordinary
     // equality is appropriate when matching every probe during key rotation.
@@ -59,7 +59,9 @@ fn main() -> Result<(), cryptbox::Error> {
 
     // A blind-index hit is only a candidate: open it and compare normalized plaintext.
     let candidate = stored.open(&encryption_keys)?;
-    assert!(EmailLookup::verify_candidate(query, &candidate)?);
+    assert!(BlindIndex::<EmailLookup>::verify_candidate(
+        query, &candidate
+    )?);
 
     Ok(())
 }
