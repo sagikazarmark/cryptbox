@@ -133,7 +133,7 @@ field, so keep sensitive fields in `Secret` or write `Debug` by hand.
 ### Rotating a record's keys
 
 There is no record-level reseal. Each sealed field reports whether it needs one
-without decrypting: `stored.email.needs_reseal(&keys)?`. To rewrite a row, open
+without opening it: `stored.email.needs_reseal(&keys)?`. To rewrite a row, open
 it and seal it again, then write every sealed field and index column in one
 statement:
 

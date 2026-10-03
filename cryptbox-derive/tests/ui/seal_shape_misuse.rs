@@ -43,4 +43,17 @@ struct GenericLookup<T>(PhantomData<T>);
 )]
 enum EnumLookup {}
 
+#[derive(cryptbox::BlindIndexSpec)]
+#[cryptbox(
+    id = "5f7b9d1e-3a6c-4da4-8f8b-0c2e4a6c8da5",
+    seal = UserEmail,
+    bits = 32,
+    query = str,
+    normalize = normalize_email,
+    normalizer = "email/1",
+)]
+union UnionLookup {
+    byte: u8,
+}
+
 fn main() {}

@@ -12,10 +12,10 @@ Decisions are recorded in ADR-0001 to ADR-0012.
 
 - **Breaking:** profiles are replaced by seals over the application's own value
   types (ADR-0001, ADR-0007). `Seal` declares `const ID: SealId` (`seal_id!`),
-  `const PADDING`, `type Value`, and `type Codec`. A seal is a marker over a value type, which several
-  seals can share, or its own value. `profile!`, `EncryptionProfile`, `Field`,
-  `Binding`, `FieldBound`, `Unbound`, `ProfileContext`, and the per-profile key
-  context are removed.
+  `const PADDING`, `type Value`, and `type Codec`. A seal is a marker over a
+  value type, which several seals can share, or its own value. `profile!`,
+  `EncryptionProfile`, `Field`, `Binding`, `FieldBound`, `Unbound`,
+  `ProfileContext`, and the per-profile key context are removed.
 - **Breaking:** only `String` and `Vec<u8>` and their `Secret` wrappers have a
   default codec, `Utf8` and `Raw`, permanently; a seal over any other value type
   names its codec. `Codec` requires `const ID: &'static str`, a stable name for
@@ -38,16 +38,16 @@ Decisions are recorded in ADR-0001 to ADR-0012.
   it fails authentication.
 - `Sealed<F, C = ()>` names the context a value is sealed in besides its seal ID
   (ADR-0012): `()` for a standalone value, or a `Context`, such as
-  `InRecord<K>` for a record's field. `Sealed::seal_in(&value, &context, &keys)` and
-  `open_in` take the context's value, such as the record ID; `needs_reseal`
+  `InRecord<K>` for a record's field. `Sealed::seal_in(&value, &context, &keys)`
+  and `open_in` take the context's value, such as the record ID; `needs_reseal`
   serves every context. `C` is bounded by `ContextKind`, which only the library
   implements. A seal knows nothing of where its values are stored.
 - **Breaking:** the byte-level `encrypt`, `decrypt`, `reencrypt`, and
   `needs_reencryption` are removed; seal opaque bytes with a `Vec<u8>` seal.
   `is_ciphertext`, `inspect_ciphertext`, `CiphertextInfo`,
   `inspect_blind_index`, and `BlindIndexInfo` move to the `cryptbox::envelope`
-  module. `CiphertextInfo` reports `padded` and `context_fingerprint`, and its
-  `suite_id` returns a `u8`; `BlindIndexInfo::bits` returns a `u16`.
+  module. `CiphertextInfo` reports `padded` and `context_fingerprint`, and
+  `BlindIndexInfo::bits` returns a `u16`.
 - **Breaking:** the automatic SQLx column is `Plain<F>`, available with an
   `sqlx-*` feature. It seals and opens a standalone value with the installed
   keys, and writes no blind indexes. `KeyContext` is removed, and
@@ -138,9 +138,9 @@ Decisions are recorded in ADR-0001 to ADR-0012.
   context fingerprints, normalizers, and plaintext fields, for snapshot tests,
   and reports duplicate IDs, seals registered in several kinds of context
   (`Manifest::sealed::<F, C>()`), and seal IDs that fields of several records
-  declare (`Duplicate::RecordField`); `assert_unique_ids!`, which fails compilation when
-  listed markers share an ID, declare the nil UUID, or name an unversioned
-  normalizer; and `testing::assert_sealed_under`, which checks
+  declare (`Duplicate::RecordField`); `assert_unique_ids!`, which fails
+  compilation when listed markers share an ID, declare the nil UUID, or name an
+  unversioned normalizer; and `testing::assert_sealed_under`, which checks
   which keyring sealed a value.
 
 ### Derives and features
@@ -168,8 +168,9 @@ Decisions are recorded in ADR-0001 to ADR-0012.
 
 - **Breaking:** the `migrate` module follows the new types.
   `MaybeEncrypted<F>` is `MaybeSealed<F>`, opens with `open(&keys)` and
-  `open_legacy`, returns the bare value, and exposes `as_sealed`. `RowPlanner::with_index_with` is
-  `with_index`, and `SweepError` is non-exhaustive.
+  `open_legacy`, returns the bare value, and exposes `as_sealed`.
+  `RowPlanner::with_index_with` is `with_index`, and `SweepError` is
+  non-exhaustive.
   `RowPlanner<F, R = ()>` and `Sweep<F, R = ()>` take the type of a row's
   columns: `RowPlanner::new(&keys)` serves standalone values, and
   `RowPlanner::for_rows(&keys, |row| Ok(&row.id))` a record's field, whose

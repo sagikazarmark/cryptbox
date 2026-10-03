@@ -4,8 +4,12 @@
 //! Use it in tools and migrations that look at stored bytes, such as telling
 //! ciphertext from legacy plaintext with [`is_ciphertext`], or counting values
 //! per key generation with [`inspect_ciphertext`]. Everything it reports is
-//! unauthenticated until the value is opened; see
-//! ../docs/wire-format.md for the layouts.
+//! unauthenticated until the value is opened. The [wire format] defines the
+//! layouts.
+//!
+#![doc = concat!(
+    "[wire format]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md",
+)]
 
 mod format;
 mod suite;

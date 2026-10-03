@@ -354,7 +354,6 @@ pub(crate) fn parse_uuid(name: &str, input: ParseStream) -> syn::Result<UuidLite
     })
 }
 
-/// Parses the hyphenated form `cryptbox::SealId::from_str` accepts.
 /// Parses a normalizer name, which must be versioned: `<name>/<version>`, such as
 /// `"email/1"`. Mirrors `cryptbox::BlindIndexSpec::NORMALIZER`'s rule.
 pub(crate) fn parse_normalizer(input: ParseStream) -> syn::Result<LitStr> {
@@ -381,6 +380,7 @@ fn valid_normalizer(name: &str) -> bool {
         && version.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+/// Parses the hyphenated form `cryptbox::SealId::from_str` accepts.
 fn uuid_value(text: &str) -> Option<u128> {
     let bytes = text.as_bytes();
     if bytes.len() != 36 {
@@ -451,4 +451,23 @@ pub(crate) fn parse_bits(input: ParseStream) -> syn::Result<LitInt> {
     }
 
     Ok(bits)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_normalizer;
+
+    // The same names as `normalizer_names_carry_a_version_from_one` in
+    // cryptbox's src/blind.rs: the derive and `assert_unique_ids!` must agree.
+    #[test]
+    fn normalizer_names_carry_a_version_from_one() {
+        for name in ["email/1", "exact/12", "a/b/3", "email-v2/10"] {
+            assert!(valid_normalizer(name), "{name}");
+        }
+        for name in [
+            "", "email", "/1", "email/", "email/0", "email/01", "email/v1", "email/1 ",
+        ] {
+            assert!(!valid_normalizer(name), "{name}");
+        }
+    }
 }

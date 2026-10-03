@@ -1,7 +1,8 @@
 //! Public-boundary tests for the process-wide key installation.
 //!
-//! Its assertions depend on install order, starting from no installed keys, so they run as one sequenced test rather than racing each
-//! other on the shared global.
+//! Its assertions depend on install order, starting from no installed keys, so
+//! they run as one sequenced test rather than racing each other on the shared
+//! global.
 
 #![cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 

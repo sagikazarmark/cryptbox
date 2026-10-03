@@ -60,8 +60,8 @@ identifier!(SealId, "A stable seal identifier.");
 /// With the `derive` feature, `#[derive(Seal)]` writes this impl from
 /// `#[cryptbox(id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25", value = String)]`,
 /// taking `String`'s built-in default codec, `Utf8`.
-/// On a type with fields, the derive makes the type its own value: `codec = Json` encodes it
-/// whole, and `transparent` stores its single field.
+/// On a type with fields, the derive makes the type its own value: `codec = Json`
+/// encodes it whole, and `transparent` stores its single field.
 ///
 /// A hand-written impl always names its codec. Only a derived seal over `String`,
 /// `Vec<u8>`, or their [`Secret`](crate::Secret) wrappers may omit it, taking

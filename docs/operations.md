@@ -289,6 +289,12 @@ evidence for **every** accepted value; codec success (`Raw` rejects nothing) and
 sampling prove nothing. Re-encryption protects bytes going forward, not their
 origin.
 
+Values CryptBox 0.5.0 stored are not legacy values: they carry the CryptBox
+magic, so reads report `UnsupportedFormatVersion(1)` and never reach a
+`LegacyFormat`, and no sweep can upgrade them. Rewrite them with a program that
+depends on both versions; see
+[upgrading stored values from 0.5](../CHANGELOG.md#upgrading-stored-values-from-05).
+
 `cryptbox::migrate::MaybeSealed<F>` reads columns that may still hold legacy
 values. Classification needs no keys:
 

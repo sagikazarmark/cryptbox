@@ -104,9 +104,9 @@ use syn::{DeriveInput, parse_macro_input};
 /// It is its own codec, since no crate-provided adapter can wrap or unwrap it
 /// without `From` or `Deref`. Decoding builds the type from its field directly,
 /// so a constructor that validates the field does not run: name a `codec` that
-/// validates, or seal the field's type with a marker and convert it yourself. The derive expands to exactly the manual impls,
-/// with `Result`, `Vec`, and `Zeroizing` spelled as absolute paths in the real
-/// expansion:
+/// validates, or seal the field's type with a marker and convert it yourself.
+/// The derive expands to exactly the manual impls, with `Result`, `Vec`, and
+/// `Zeroizing` spelled as absolute paths in the real expansion:
 ///
 /// ```
 /// # use zeroize::Zeroizing;

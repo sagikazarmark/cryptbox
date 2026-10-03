@@ -21,3 +21,9 @@ error: `BlindIndexSpec` is derived for a struct, such as a unit struct marker
    |
 44 | enum EnumLookup {}
    |      ^^^^^^^^^^
+
+error: `BlindIndexSpec` is derived for a struct, such as a unit struct marker
+  --> tests/ui/seal_shape_misuse.rs:55:7
+   |
+55 | union UnionLookup {
+   |       ^^^^^^^^^^^

@@ -569,6 +569,8 @@ macro_rules! index_id {
 mod tests {
     use super::valid_normalizer;
 
+    // The same names as the derive's test in cryptbox-derive/src/attr.rs: the
+    // derive and `assert_unique_ids!` must agree.
     #[test]
     fn normalizer_names_carry_a_version_from_one() {
         for name in ["email/1", "exact/12", "a/b/3", "email-v2/10"] {

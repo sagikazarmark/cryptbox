@@ -1,4 +1,5 @@
-//! Provisional compatibility vectors for the experimental formats.
+//! Compatibility vectors for the stable formats: ciphertext format 2 and
+//! blind-index format 2.
 
 use cryptbox::envelope::{inspect_blind_index, inspect_ciphertext};
 use cryptbox::{
@@ -43,7 +44,7 @@ impl Seal for PaddedVectorSeal {
 }
 
 #[test]
-fn experimental_envelope_vectors_record_their_padding() {
+fn envelope_vectors_record_their_padding() {
     for (vector, padded) in [(UNPADDED, false), (PADDED, true)] {
         let envelope = hex::decode(vector).unwrap();
         let info = inspect_ciphertext(&envelope).unwrap();
@@ -57,7 +58,7 @@ fn experimental_envelope_vectors_record_their_padding() {
 }
 
 #[test]
-fn experimental_envelope_vectors_decrypt_under_either_padding_policy() {
+fn envelope_vectors_decrypt_under_either_padding_policy() {
     for vector in [UNPADDED, PADDED] {
         assert_eq!(read::<VectorSeal>(vector).unwrap(), b"cryptbox vector");
         assert_eq!(read::<PaddedVectorSeal>(vector).unwrap(), "cryptbox vector");
@@ -121,7 +122,7 @@ impl BlindIndexSpec for VectorIndex {
 }
 
 #[test]
-fn experimental_blind_index_vector_is_stable() {
+fn blind_index_vector_is_stable() {
     const VECTOR: &str = "02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000de800";
     let key_id: IndexKeyId = index_key_id!("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
     let keys = BlindIndexKeyring::new(BlindIndexKey::new(key_id, [0x22; 32]), []).unwrap();

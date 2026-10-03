@@ -83,6 +83,8 @@ pub const fn non_nil(bytes: [u8; 16]) -> [u8; 16] {
     bytes
 }
 
+/// Reports whether `bytes` is the nil UUID. Not public API: `assert_unique_ids!`
+/// calls it.
 #[doc(hidden)]
 #[must_use]
 pub const fn is_nil(bytes: &[u8; 16]) -> bool {
