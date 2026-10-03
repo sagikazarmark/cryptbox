@@ -224,7 +224,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         },
         kind: "customer.created".to_owned(),
     };
-    let json = serde_json::to_string(&event.seal(&acme_keys.encryption)?)?;
+    let json = serde_json::to_string(&event.seal(acme_keys.encryption())?)?;
     assert!(!json.contains("Springfield"));
     let received: CustomerCreatedEvent = serde_json::from_str(&json)?;
     assert_eq!(CustomerCreated::open(received, &acme_keys)?, event);

@@ -200,7 +200,7 @@ fn a_record_with_blind_indexes_needs_blind_index_keys() {
 
     assert_eq!(
         customer(7, SALES, "ada@example.com")
-            .seal(&keys.encryption)
+            .seal(keys.encryption())
             .unwrap_err(),
         Error::BlindIndexKeysNotConfigured
     );

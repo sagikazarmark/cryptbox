@@ -31,8 +31,9 @@ pub enum KeyError {
 /// (`Sealed::seal`, `Sealed::open`, `BlindIndex::probes`, …). It is also what
 /// [`keys::install`](crate::keys::install) installs for the automatic `SQLx` column.
 ///
-/// Blind-index operations fail with [`Error::BlindIndexKeysNotConfigured`](crate::Error::BlindIndexKeysNotConfigured) when
-/// `blind_indexes` is `None`.
+/// Blind-index operations fail with
+/// [`Error::BlindIndexKeysNotConfigured`](crate::Error::BlindIndexKeysNotConfigured)
+/// for keys without a blind-index keyring.
 ///
 /// `Keys` serves every seal and record alike. To keep seals or tenants under
 /// separate keys, pass each its own `Keys`; see [choosing keyrings].
@@ -55,10 +56,8 @@ pub enum KeyError {
 /// ```
 #[derive(Clone, Debug)]
 pub struct Keys {
-    /// The keyring that seals and opens values.
-    pub encryption: EncryptionKeyring,
-    /// The separately keyed blind-index keyring, if blind indexes are used.
-    pub blind_indexes: Option<BlindIndexKeyring>,
+    encryption: EncryptionKeyring,
+    blind_indexes: Option<BlindIndexKeyring>,
 }
 
 impl Keys {
@@ -76,5 +75,18 @@ impl Keys {
     pub fn with_blind_indexes(mut self, keyring: BlindIndexKeyring) -> Self {
         self.blind_indexes = Some(keyring);
         self
+    }
+
+    /// Returns the keyring that seals and opens values.
+    #[must_use]
+    pub const fn encryption(&self) -> &EncryptionKeyring {
+        &self.encryption
+    }
+
+    /// Returns the separately keyed blind-index keyring, if blind indexes are
+    /// used.
+    #[must_use]
+    pub const fn blind_indexes(&self) -> Option<&BlindIndexKeyring> {
+        self.blind_indexes.as_ref()
     }
 }

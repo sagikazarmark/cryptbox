@@ -71,7 +71,7 @@ impl EncryptionKeys for EncryptionKeyring {
 
 impl EncryptionKeys for Keys {
     fn encryption_keyring(&self) -> &EncryptionKeyring {
-        &self.encryption
+        self.encryption()
     }
 }
 
@@ -83,8 +83,7 @@ impl BlindIndexKeys for BlindIndexKeyring {
 
 impl BlindIndexKeys for Keys {
     fn blind_index_keyring(&self) -> Result<&BlindIndexKeyring, Error> {
-        self.blind_indexes
-            .as_ref()
+        self.blind_indexes()
             .ok_or(Error::BlindIndexKeysNotConfigured)
     }
 }
