@@ -2,7 +2,9 @@ use std::{fmt, marker::PhantomData};
 
 use crate::{
     Codec, Context, ContextKind, EncryptionKeys, Error, GlobalKeys, KeyId, Prepared, Seal, bound,
-    envelope::validated_key_id, keys, seal_context::SealContext,
+    envelope::validated_key_id,
+    keys,
+    seal_context::{self, SealContext},
 };
 
 /// A value sealed with seal `F` in context `C`: an encrypted envelope bound to
@@ -157,7 +159,12 @@ impl<F: Seal, C: ContextKind> Sealed<F, C> {
     /// Returns [`Error::ContextMismatch`] for a value sealed under another
     /// kind of context, or an error for unavailable keys.
     pub fn needs_reseal(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<bool, Error> {
-        bound::needs_reseal_kind::<C>(F::PADDING, &self.bytes, keys.encryption_keyring())
+        bound::needs_reseal(
+            seal_context::fingerprint(C::RECORD),
+            F::PADDING,
+            &self.bytes,
+            keys.encryption_keyring(),
+        )
     }
 }
 

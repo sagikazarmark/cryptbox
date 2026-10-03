@@ -67,8 +67,16 @@ pub struct Manifest {
     seals: Vec<SealEntry>,
     indexes: Vec<IndexEntry>,
     records: Vec<RecordEntry>,
-    // Every context a seal ID is registered in, by `sealed` or by a record.
-    contexts: Vec<(SealId, Option<RecordKind>)>,
+    contexts: Vec<ContextEntry>,
+}
+
+/// A context a seal ID is registered in: by `sealed`, which names the seal's
+/// marker, or by a record, which names only its seals' IDs.
+#[derive(Debug, PartialEq)]
+struct ContextEntry {
+    seal: SealId,
+    marker: Option<TypeId>,
+    record_kind: Option<RecordKind>,
 }
 
 #[derive(Debug)]
@@ -76,7 +84,7 @@ struct RecordEntry {
     marker: TypeId,
     seals: &'static [SealId],
     record_id: &'static str,
-    record: Option<RecordKind>,
+    record_kind: Option<RecordKind>,
     plaintext: &'static [&'static str],
 }
 
@@ -97,8 +105,6 @@ struct SealEntry {
     id: SealId,
     codec: &'static str,
     padding: Padding,
-    // The contexts `sealed` registers it in, in registration order.
-    contexts: Vec<Option<RecordKind>>,
 }
 
 impl Manifest {
@@ -115,7 +121,16 @@ impl Manifest {
     /// record's.
     #[must_use]
     pub fn seal<F: Seal>(mut self) -> Self {
-        self.seal_entry::<F>();
+        let marker = TypeId::of::<F>();
+        if self.seals.iter().all(|seal| seal.marker != marker) {
+            self.seals.push(SealEntry {
+                marker,
+                name: type_name::<F>(),
+                id: F::ID,
+                codec: <F::Codec as Codec<F::Value>>::ID,
+                padding: F::PADDING,
+            });
+        }
         self
     }
 
@@ -128,32 +143,15 @@ impl Manifest {
     /// nothing.
     #[must_use]
     pub fn sealed<F: Seal, C: ContextKind>(mut self) -> Self {
-        let seal = self.seal_entry::<F>();
-        if !seal.contexts.contains(&C::RECORD) {
-            seal.contexts.push(C::RECORD);
+        let context = ContextEntry {
+            seal: F::ID,
+            marker: Some(TypeId::of::<F>()),
+            record_kind: C::RECORD,
+        };
+        if !self.contexts.contains(&context) {
+            self.contexts.push(context);
         }
-        self.contexts.push((F::ID, C::RECORD));
-        self
-    }
-
-    fn seal_entry<F: Seal>(&mut self) -> &mut SealEntry {
-        let marker = TypeId::of::<F>();
-        let position =
-            if let Some(position) = self.seals.iter().position(|seal| seal.marker == marker) {
-                position
-            } else {
-                self.seals.push(SealEntry {
-                    marker,
-                    name: type_name::<F>(),
-                    id: F::ID,
-                    codec: <F::Codec as Codec<F::Value>>::ID,
-                    padding: F::PADDING,
-                    contexts: Vec::new(),
-                });
-                self.seals.len() - 1
-            };
-
-        &mut self.seals[position]
+        self.seal::<F>()
     }
 
     /// Registers blind index `I`.
@@ -186,16 +184,20 @@ impl Manifest {
     pub fn record<R: Record + 'static>(mut self) -> Self {
         let marker = TypeId::of::<R>();
         if self.records.iter().all(|record| record.marker != marker) {
-            let record = <R::Context as ContextKind>::RECORD;
+            let record_kind = <R::Context as ContextKind>::RECORD;
             self.records.push(RecordEntry {
                 marker,
                 seals: R::SEALS,
                 record_id: R::RECORD_ID,
-                record,
+                record_kind,
                 plaintext: R::PLAINTEXT,
             });
             self.contexts
-                .extend(R::SEALS.iter().map(|seal| (*seal, record)));
+                .extend(R::SEALS.iter().map(|seal| ContextEntry {
+                    seal: *seal,
+                    marker: None,
+                    record_kind,
+                }));
         }
         self
     }
@@ -237,14 +239,15 @@ impl Manifest {
     fn shared_contexts(&self) -> impl Iterator<Item = (SealId, Vec<Option<RecordKind>>)> {
         let mut groups: Vec<(SealId, Vec<Option<RecordKind>>)> = Vec::new();
 
-        for (id, context) in &self.contexts {
-            match groups.iter_mut().find(|(group, _)| group == id) {
-                Some((_, contexts)) => {
-                    if !contexts.contains(context) {
-                        contexts.push(*context);
+        for context in &self.contexts {
+            let kind = context.record_kind;
+            match groups.iter_mut().find(|(id, _)| *id == context.seal) {
+                Some((_, kinds)) => {
+                    if !kinds.contains(&kind) {
+                        kinds.push(kind);
                     }
                 }
-                None => groups.push((*id, vec![*context])),
+                None => groups.push((context.seal, vec![kind])),
             }
         }
 
@@ -324,11 +327,15 @@ impl fmt::Display for Manifest {
             writeln!(formatter, "seal {}", seal.id)?;
             writeln!(formatter, "  codec: {}", seal.codec)?;
             writeln!(formatter, "  padding: {}", seal.padding)?;
-            for context in &seal.contexts {
+            let contexts = self
+                .contexts
+                .iter()
+                .filter(|context| context.marker == Some(seal.marker));
+            for context in contexts {
                 writeln!(
                     formatter,
                     "  context: {}",
-                    hex::encode(seal_context::fingerprint(*context))
+                    hex::encode(seal_context::fingerprint(context.record_kind))
                 )?;
             }
         }
@@ -352,12 +359,12 @@ impl fmt::Display for Manifest {
             writeln!(
                 formatter,
                 "  record kind: {}",
-                record.record.map_or("none", kind_name)
+                record.record_kind.map_or("none", kind_name)
             )?;
             writeln!(
                 formatter,
                 "  context: {}",
-                hex::encode(seal_context::fingerprint(record.record))
+                hex::encode(seal_context::fingerprint(record.record_kind))
             )?;
             match record.plaintext {
                 [] => writeln!(formatter, "  plaintext: none")?,
