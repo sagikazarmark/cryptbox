@@ -4,6 +4,11 @@ status: accepted
 
 # Records declare their fields' seals; the record ID is a bound part
 
+> Amended by [ADR-0012](0012-a-record-is-a-context-layer-over-a-seal.md):
+> a record's context is named by
+> its stored fields' types, `Sealed<F, InRecord<Id>>`, and its fields' seals
+> know nothing of the record.
+
 > Amended by [ADR-0009](0009-scopes-have-views.md). The derives' attributes are
 > named after them: `#[record(…)]`, `#[record_id]`, `#[seal(…)]`, and
 > `#[blind_index(…)]` replace `#[cryptbox(…)]`. A record field without

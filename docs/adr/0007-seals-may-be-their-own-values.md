@@ -4,6 +4,11 @@ status: accepted
 
 # A seal declares how values are sealed, and may be its own value
 
+> Amended by [ADR-0012](0012-a-record-is-a-context-layer-over-a-seal.md):
+> a seal no longer declares a
+> record flag. It declares its identity and encoding, and knows nothing of the
+> context its values are sealed in.
+
 The `Field` trait becomes `Seal`, and a seal may be its own value type. A seal
 declares everything that decides how its values are sealed: its ID, value type,
 codec, padding, scope, record flag, and blind indexes. `Sealed<S>` is a value

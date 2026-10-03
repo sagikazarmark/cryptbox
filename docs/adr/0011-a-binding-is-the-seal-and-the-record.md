@@ -4,6 +4,12 @@ status: accepted
 
 # A binding is the seal and the record
 
+> Amended by [ADR-0012](0012-a-record-is-a-context-layer-over-a-seal.md):
+> a record field's seal is no
+> longer marked by a hidden `Seal::RECORD`. The record is a context,
+> `InRecord<K>`, that its derive seals and opens with `Sealed::seal_in` and
+> `open_in`.
+
 > Amended when implemented. The binding is private to the library: standalone
 > seals bind their seal ID alone, so `Seal::Record`, `Args`, and the public
 > record ID types are removed, and only `#[derive(Record)]` binds a field to its
