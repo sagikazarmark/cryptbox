@@ -15,7 +15,7 @@
 //! authenticated readability, decoded-value validity, or index consistency.
 //! Obtain those assurances with separate decryption and index recomputation.
 //!
-//! A record field's seal binds each row's record ID, which
+//! A record's fields are sealed under each row's record ID, which
 //! [`RowPlanner::for_rows`] reads from the row's columns.
 //!
 //! Reads are permissive; writes never are. [`MaybeEncrypted`] implements no

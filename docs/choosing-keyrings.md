@@ -123,11 +123,10 @@ forbid them.
 
 Key resolution is ordinary application logic, so test it like any other:
 
-- **Assert which generation sealed a value.** `Sealed::key_id` returns the key
-  generation the envelope names, so a test can compare it with the current key of
-  the keyring the value should have been sealed under:
-  `assert_eq!(sealed.key_id(), payments.current().id())`. The ID is
-  unauthenticated metadata, which is enough for a test over a value your test
+- **Assert which keyring sealed a value.**
+  `testing::assert_sealed_under::<CustomerIban>(&sealed, &payments)` panics unless
+  the keyring holds the key generation the envelope names, current or previous.
+  The key ID is unauthenticated metadata, which is enough for a test over a value your test
   just sealed.
 - **Assert that another tenant's keyring cannot open it.** With per-tenant key
   IDs, opening with another tenant's keyring returns

@@ -25,7 +25,7 @@
 | --- | --- |
 | ✅ It CAN | Protect encrypted values in a stolen database dump when keys stay separate. |
 | ❌ It CAN'T | Protect a compromised application. |
-| ❌ It CAN'T | Prevent replay, or cross-row substitution for seals that bind no record. |
+| ❌ It CAN'T | Prevent replay, or cross-row substitution of standalone values. |
 
 [Try it](docs/first-field.md) · [How it works](docs/concepts.md) ·
 [Security](docs/security.md) · [Documentation](docs/README.md) ·

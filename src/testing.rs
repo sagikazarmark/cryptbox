@@ -77,7 +77,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 /// the value.
 ///
 #[doc = concat!(
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/adr/0006-keys-are-passed-in.md#consequences",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md#test-the-choice",
 )]
 ///
 /// # Examples

@@ -143,8 +143,8 @@ These behaviors make the following separate audit necessary.
 
 ## Records
 
-A record field's seal binds each row's record ID, so its sweep reads the ID from
-the row. A planner seals with one keyring, so a sweep is **partitioned by the
+A record's fields are sealed under each row's record ID, so their sweep reads
+the ID from the row. A planner seals with one keyring, so a sweep is **partitioned by the
 keys it uses**: with a keyring per org, configure one planner per org with
 `RowPlanner::for_rows(keys, |row| Ok(&row.id))`, and have the store select only
 that org's rows. The closure reads each row's record ID, a UUID, an `i64`, or

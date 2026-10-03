@@ -81,8 +81,9 @@ Sealing and opening bind the value at runtime to its seal ID. The fields of a
 `Record` are bound to the record ID too, which the record reads from the row:
 opening checks it, so a field copied to another row fails to open. A sealed
 email will not authenticate under a different seal, even if they share a root
-key, and does not open with another tenant's keyring. Seals that should read
-each other's values declare the same seal ID. A standalone value identifies a
+key, and does not open with another tenant's keyring. Markers that declare
+the same seal ID are one seal and read each other's values, which is usually
+a copied ID. A standalone value identifies a
 seal alone, not a row or tenant: copying it between rows sealed with the same
 seal can still succeed.
 

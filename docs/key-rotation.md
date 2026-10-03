@@ -78,7 +78,7 @@ all-probe candidate verification. If it cannot load the compatible keyset, keep
 compatible readers serving while repairing the rollout. Settle rollback policy
 before sweeping: old-generation writers can reintroduce dependencies behind progress.
 
-### Key source lifecycle
+### Keyring lifecycle
 
 The consumer loads `EncryptionKeyring` and `BlindIndexKeyring` once at
 startup. File/environment changes do not replace a running snapshot; drain/restart

@@ -6,11 +6,10 @@ status: accepted
 
 > Amended for the documentation mitigations (#96). The guide is
 > [`docs/choosing-keyrings.md`](../choosing-keyrings.md) and the destruction
-> procedure is [`docs/shredding.md`](../shredding.md). `Manifest::custody` and
-> `testing::assert_sealed_under` are not built yet (#89), so those two guide
-> sections document the equivalent practice: a committed custody table beside the
-> manifest snapshot, and `Sealed::key_id` plus cross-scope `UnknownEncryptionKey`
-> assertions. Retarget them when #89 lands.
+> procedure is [`docs/shredding.md`](../shredding.md). #89 built
+> `testing::assert_sealed_under`, which the guide's tests use, but not
+> `Manifest::custody`, so the guide keeps a committed custody table beside the
+> manifest snapshot.
 >
 > Amended when implemented (#100). The provider traits are removed entirely, not
 > reduced to `current_key()` / `key(id)`: the keyrings are the only key types.

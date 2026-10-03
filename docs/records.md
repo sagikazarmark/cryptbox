@@ -85,7 +85,8 @@ fails to open with `UnknownEncryptionKey`, and so does a row whose org column
 was edited to name another org, since the application then picks that org's
 keys. Under one shared keyring, an edited org column goes unnoticed. Storage can
 also return a whole authentic row in place of another, which no context
-prevents: when you asked for one record, check its ID, as `open_expecting` does.
+prevents: when you asked for one record, check its ID; `open_expecting` runs
+the check you pass it before opening.
 
 ## Record IDs
 
