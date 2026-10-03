@@ -97,9 +97,9 @@ fn documented_block_padding_sizes_include_the_marker_at_boundaries() {
 }
 
 #[test]
-fn documented_fixed_padding_sizes_reserve_room_for_the_marker() {
-    assert_stored_sizes::<PolicyFixedLength>(&[(0, 1_048_647), (1_048_575, 1_048_647)]);
-    let value = "x".repeat(1_048_576);
+fn documented_fixed_padding_sizes_add_one_byte_for_the_marker() {
+    assert_stored_sizes::<PolicyFixedLength>(&[(0, 1_048_648), (1_048_576, 1_048_648)]);
+    let value = "x".repeat(1_048_577);
     assert!(matches!(
         Sealed::<PolicyFixedLength>::seal(&value, &keyring()),
         Err(Error::PaddingOverflow)
@@ -218,7 +218,8 @@ fn assert_swept<F: Seal<Value = String>>(swept: &[Sealed<F>; 2], padded: bool) {
 #[test]
 fn fixed_length_padding_rejects_encoded_plaintext_that_does_not_fit() {
     let keys = keyring();
-    let value = "x".repeat(16);
+    Sealed::<FixedLength>::seal(&"x".repeat(16), &keys).unwrap();
+    let value = "x".repeat(17);
 
     assert!(matches!(
         Sealed::<FixedLength>::seal(&value, &keys),

@@ -290,8 +290,8 @@ depend on the block size or fixed length that produced the padding.
 
 For encoded length `E`, `Padding::NONE` passes through `E` bytes;
 `Padding::block(N)` (`N >= 2`) produces `N * ceil((E + 1) / N)` bytes; and
-`Padding::length(N)` (`N >= 1`) produces exactly `N` bytes, rejecting `E >= N`
-because the marker must fit. An aligned block input receives a whole extra
+`Padding::length(N)` (`N >= 1`) produces exactly `N + 1` bytes, rejecting `E > N`:
+it hides lengths up to `N`, and the marker takes the extra byte. An aligned block input receives a whole extra
 block, and even an empty padded input contains a marker.
 
 The writer sets the padded flag exactly when it applies padding, and a reader
@@ -325,22 +325,22 @@ Padding boundary examples (ASCII input, one encoded byte per character):
 | `Padding::block(16)` | 0 | 16 | 16 | 87 | Empty input still padded |
 | `Padding::block(16)` | 15 | 1 | 16 | 87 | Marker fills block |
 | `Padding::block(16)` | 16 | 16 | 32 | 103 | Marker starts next block |
-| `Padding::length(16)` | 0 | 16 | 16 | 87 | Empty input uses entire target |
-| `Padding::length(16)` | 15 | 1 | 16 | 87 | Largest fitting input |
-| `Padding::length(16)` | 16 | — | — | — | `PaddingOverflow`: marker cannot fit |
+| `Padding::length(16)` | 0 | 17 | 17 | 88 | Empty input uses entire target |
+| `Padding::length(16)` | 16 | 1 | 17 | 88 | Largest fitting input |
+| `Padding::length(16)` | 17 | — | — | — | `PaddingOverflow` |
 
 Suite 1 limits `P` to `274,877,906,879` bytes, one byte below RFC 8439's functional
 maximum `(2^32 - 1) * 64`, which the reference implementation's AEAD rejects. It
 enforces the limit on encryption and rejects parsed/decrypted payloads implying a
 larger `P`, with `MessageTooLong`. Padding/envelope size arithmetic is checked;
-fixed padding rejects `E >= N` with `PaddingOverflow`. This is an algorithmic
+fixed padding rejects `E > N` with `PaddingOverflow`. This is an algorithmic
 ceiling, not a recommended value size. Applications must choose smaller limits
 appropriate to their workloads; see
 [application responsibilities](security.md#application-responsibilities).
 
 For an application-selected padded cap `L`, `Padding::NONE` permits `E <= L`;
 `Padding::block(N)` permits `E <= N * floor(L / N) - 1` if at least one block fits;
-`Padding::length(N)` requires `N <= L` and `E <= N - 1`. Bound encoding and compute
+`Padding::length(N)` requires `N + 1 <= L` and `E <= N`. Bound encoding and compute
 padded size with checked arithmetic before allocating/encrypting. Bound incoming
 binary envelopes to `W <= L + 71` before copying/decrypting, and bound decoding
 expansion separately. Current padding parameters do not cap historical reads:

@@ -57,9 +57,10 @@ impl Padding {
         Self(Policy::Block(size))
     }
 
-    /// Pads every encoded value to exactly `len` bytes.
+    /// Hides the length of every encoded value of up to `len` bytes: each is
+    /// padded to `len + 1` bytes, the extra byte holding the padding marker.
     ///
-    /// Encoding a value of `len` bytes or more fails with
+    /// Encoding a value of more than `len` bytes fails with
     /// [`Error::PaddingOverflow`].
     ///
     /// # Panics
@@ -96,11 +97,12 @@ impl Padding {
                 Ok(Some(pad_to_length(plaintext, target)))
             }
             Policy::Length(length) => {
-                if plaintext.len() >= length {
+                if plaintext.len() > length {
                     return Err(Error::PaddingOverflow);
                 }
+                let target = length.checked_add(1).ok_or(Error::MessageTooLong)?;
 
-                Ok(Some(pad_to_length(plaintext, length)))
+                Ok(Some(pad_to_length(plaintext, target)))
             }
         }
     }
@@ -172,7 +174,7 @@ mod tests {
     fn fixed_length_padding_matches_iso_7816_4_bytes() {
         let padded = padded(Padding::length(6).pad(b"abc").unwrap());
 
-        assert_eq!(padded.as_slice(), b"abc\x80\0\0");
+        assert_eq!(padded.as_slice(), b"abc\x80\0\0\0");
     }
 
     #[test]
@@ -188,16 +190,16 @@ mod tests {
 
     #[test]
     fn fixed_length_padding_fills_the_target_and_rejects_overflow() {
-        for length in 0..32 {
+        for length in 0..=32 {
             let plaintext = vec![b'x'; length];
             let padded = padded(Padding::length(32).pad(&plaintext).unwrap());
 
-            assert_eq!(padded.len(), 32);
+            assert_eq!(padded.len(), 33);
             assert_eq!(unpad(padded).unwrap().as_slice(), plaintext);
         }
 
         assert!(matches!(
-            Padding::length(32).pad(&[b'x'; 32]),
+            Padding::length(32).pad(&[b'x'; 33]),
             Err(Error::PaddingOverflow)
         ));
     }
