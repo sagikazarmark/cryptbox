@@ -101,6 +101,7 @@ pub trait SweepStore {
 
 /// An error that interrupted a sweep or verification pass.
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum SweepError<E>
 where
     E: std::error::Error + 'static,
