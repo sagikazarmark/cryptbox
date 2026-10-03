@@ -7,6 +7,12 @@ status: accepted
 > Amended by [ADR-0006](0006-keys-are-passed-in.md). The process-wide keys and the
 > automatic column remain only for `FieldOnly` fields. Explicit operations take
 > keyrings instead of routed providers.
+>
+> Amended before the release after 0.5.0: the implicit forms (`seal_global`,
+> `open_global`, `with_index()`, `probes()`) are removed. Each saved one
+> argument, and their names disagreed on which form took keys. The installed
+> keys back only the automatic column; `keys::installed()` returns them to code
+> that passes them on.
 
 Every operation has an explicit form that takes keys (`encrypt_with`,
 `decrypt_with`, `prepare_with`, …) and is always available. On top of it, a
