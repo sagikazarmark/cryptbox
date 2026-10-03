@@ -24,7 +24,7 @@ ADR-0012.
   or `Padding::length(n)`, instead of `NoPadding`, `PadToBlock<N>`, and
   `PadToLength<N>`. The envelope records whether a value is padded, so padding
   is write policy: changing it keeps stored values readable, and a sweep rewrites
-  them (ADR-0002).
+  them when padding is enabled or disabled, not when it is resized (ADR-0002).
 
 ### Sealed values
 

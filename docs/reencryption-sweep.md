@@ -5,7 +5,10 @@ Rewrite stored values in bounded, resumable batches.
 
 Rotation selects keys for future writes; a later sweep converges existing
 ciphertext and indexes. The same sweep rewrites ciphertext whose padding flag
-disagrees with the seal's current policy, so it also applies a padding change. The `migrate` feature supplies
+disagrees with the seal's current policy, so it applies enabling or disabling
+padding. It does not detect a resized policy, such as `Padding::block(16)` to
+`Padding::block(64)`: the envelope records only whether a value is padded, so
+those values count as current. The `migrate` feature supplies
 `RowPlanner`, `Sweep` and `SweepStore`, which also sweep
 [records](#records); the
 [manual SQLite example](../examples/reencryption_sweep.rs) demonstrates the same
@@ -154,9 +157,9 @@ bytes, from the columns the store loads into `SweepRow::columns`. Packaged
 stores load no columns, so a record field's seal needs an application-owned
 `SweepStore`.
 
-A sweep rotates keys and padding; it does not change a seal's context. A row
-under another kind of context, such as a standalone value stored in a record's
-column, fails with `Error::ContextMismatch`. See
+A sweep rotates keys and enables or disables padding; it does not change a
+seal's context. A row under another kind of context, such as a standalone value
+stored in a record's column, fails with `Error::ContextMismatch`. See
 [change a field's seal or record ID](records.md#change-a-fields-seal-or-record-id).
 
 To move a value to other keys, such as a tenant's data changing residency, open

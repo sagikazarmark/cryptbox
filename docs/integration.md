@@ -99,10 +99,10 @@ keys that should have protected it.
 Padding is not persistent schema. The envelope records, under authentication,
 whether its payload is padded, and readers remove padding only when that flag is
 set. A seal's padding policy describes how new values are written: enabling,
-disabling, or resizing it keeps existing values readable, and a
-[re-encryption sweep](reencryption-sweep.md) rewrites them with the current
-policy. Current padding parameters also do not impose a limit on historical
-reads. See the [size and padding contracts](wire-format.md#plaintext-padding).
+disabling, or resizing it keeps existing values readable. A
+[re-encryption sweep](reencryption-sweep.md) rewrites them when padding is
+enabled or disabled, but not when it is only resized. Current padding
+parameters also do not impose a limit on historical reads. See the [size and padding contracts](wire-format.md#plaintext-padding).
 
 ## Storage boundaries
 
