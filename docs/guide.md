@@ -110,11 +110,42 @@ pub struct Customer {
 ```
 
 Every field has one role; a field without one fails the build. The derive
-generates the **stored form**, `StoredCustomer`, with each sealed field as
-`Sealed<_, InRecord<Uuid>>` and a `BlindIndex` column per index, plus a seal per
-sealed field. `customer.seal(&keys)` seals the row and
-`Customer::open(stored, &keys)` opens it. To open one field:
-`stored.email.open_in(&stored.id, &keys)`.
+generates:
+
+| Item | Name | What it is |
+| --- | --- | --- |
+| Stored form | `StoredCustomer` (`Stored` + the record's name; rename it with `stored(name = …)`) | The row to write: plaintext fields as they are, each sealed field as `Sealed<_, InRecord<Uuid>>`, and a `BlindIndex` column per index. |
+| Index column | `email_index` (the field's name + `_index`; rename it with `column = …`) | A field of the stored form. |
+| Index handle | `Customer::EMAIL_INDEX` (the column's name, upper case) | `probes` derives a lookup's probes; `open_matching` opens the candidate rows and keeps the matches. |
+| Seal | `CustomerEmail` (the record's name + the field's name; rename it with `name = …`) | One per sealed field. |
+| Blind-index spec | `CustomerEmailIndex` (the record's name + the column's name) | One per blind index. |
+
+`customer.seal(&keys)` seals the row and `Customer::open(stored, &keys)` opens
+it. To open one field: `stored.email.open_in(&stored.id, &keys)`. A record with
+blind indexes takes `Keys` with a blind-index keyring; without one, sealing
+fails at runtime with `BlindIndexKeysNotConfigured`.
+
+A `Secret<String>` or `Secret<Vec<u8>>` field stores the same bytes as the bare
+type, but redacts `Debug` and wipes the value on drop. Read it with
+`expose_secret()`. A derived `Debug` on the record itself prints every bare
+field, so keep sensitive fields in `Secret` or write `Debug` by hand.
+
+### Rotating a record's keys
+
+There is no record-level reseal. Each sealed field reports whether it needs one
+without decrypting: `stored.email.needs_reseal(&keys)?`. To rewrite a row, open
+it and seal it again, then write every sealed field and index column in one
+statement:
+
+```rust
+let customer = Customer::open(stored, &keys)?;
+let resealed = customer.seal(&keys)?;
+// UPDATE customer SET email = ?, email_index = ?, note = ? WHERE id = ?
+```
+
+[Key rotation](operations.md#key-rotation) covers when to promote the new key,
+and [maintenance sweeps](operations.md#maintenance-sweeps) how to rewrite rows
+in batches.
 
 ### Plaintext columns are authorized, not authenticated
 

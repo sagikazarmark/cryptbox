@@ -23,8 +23,8 @@ generated per run.
 - **`HandleEquality`** validates the same alphabet and lowercases inside a
   zeroizing buffer. Writes, probes, and candidate comparison share that rule.
 - **`CachedEncryptionKeys`** hands out a keyring from a local snapshot without
-  I/O, failing with its own `KeysUnavailable` error when not loaded. The application owns
-  loading and refresh.
+  I/O, failing with its own `KeysUnavailable` error when not loaded. The
+  application owns loading and refresh.
 - **`Secret<String>`** zeroizes on drop and redacts `Debug`.
 
 ## Implementor obligations

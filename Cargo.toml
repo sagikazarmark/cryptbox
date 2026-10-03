@@ -9,8 +9,22 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/sagikazarmark/cryptbox"
 keywords = ["cryptography", "database", "encryption", "security", "sqlx"]
 categories = ["cryptography", "database"]
-# Process-level tests build the unpublished workspace fixture, which is not archived.
-exclude = ["/tests/e2e.rs", "/tests/e2e/"]
+# Process-level tests build the unpublished workspace fixture, which is not
+# archived; the rest is repository tooling.
+exclude = [
+    "/tests/e2e.rs",
+    "/tests/e2e/",
+    "/.editorconfig",
+    "/.github/",
+    "/.gitignore",
+    "/AGENTS.md",
+    "/CONTEXT.md",
+    "/dagger*",
+    "/deny.toml",
+    "/devenv*",
+    "/docs/agents/",
+    "/lychee.toml",
+]
 
 [workspace]
 members = ["cryptbox-derive", "examples/searchable", "tests/fixtures/app"]

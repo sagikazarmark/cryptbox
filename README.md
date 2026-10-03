@@ -8,7 +8,8 @@
 **Application-layer encryption for sensitive data in Rust.**
 
 > [!WARNING]
-> CryptBox is under development. **Use it at your own risk.**
+> CryptBox has not been independently audited, and its API may change before
+> 1.0. Its stored format is stable. **Use it at your own risk.**
 >
 > Read the [threat model](docs/security.md) for its security boundaries and
 > outstanding review work.
@@ -30,40 +31,77 @@
 ## Quick start
 
 ```sh
-cargo add cryptbox
+cargo add cryptbox --features derive
+cargo add zeroize
 ```
 
-Seal and open a string with an in-memory key:
+Encrypt the sensitive fields of a row, and look it up by email:
 
 ```rust
 use cryptbox::{
-    EncryptionKey, EncryptionKeyring, Seal, SealId, Padding, Sealed, Utf8,
+    BlindIndexError, BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, Keys,
+    Record, Secret,
 };
+use zeroize::Zeroizing;
 
-struct UserEmail;
+#[derive(Record)]
+struct User {
+    #[cryptbox(record_id)]
+    id: i64,
+    // Generate a fresh UUID for every seal and index, such as with `uuidgen`.
+    #[cryptbox(seal = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25")]
+    #[cryptbox(blind_index(
+        id = "2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53",
+        bits = 32,
+        normalize = normalize_email,
+        normalizer = "email/1",
+    ))]
+    email: String,
+    #[cryptbox(seal = "7d1f0c52-3b8e-4a6f-9c21-6e4b8d0a9f13")]
+    ssn: Secret<String>,
+}
 
-impl Seal for UserEmail {
-    const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-    const PADDING: Padding = Padding::NONE;
-    type Value = String;
-    type Codec = Utf8;
+/// Lookups match emails that differ only in case or surrounding spaces.
+fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
+    Ok(Zeroizing::new(email.trim().to_ascii_lowercase().into_bytes()))
 }
 
 fn main() -> Result<(), cryptbox::Error> {
-    // Demo only: this key is lost when the process exits.
-    let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-    let email = "mark@example.com".to_owned();
+    // Demo only: these keys are lost when the process exits.
+    let keys = Keys::new(EncryptionKeyring::new(EncryptionKey::generate()?, [])?)
+        .with_blind_indexes(BlindIndexKeyring::new(BlindIndexKey::generate()?, [])?);
 
-    let sealed = Sealed::<UserEmail>::seal(&email, &keys)?;
-    let opened = sealed.open(&keys)?;
-    assert_eq!(opened, "mark@example.com");
+    let user = User {
+        id: 7,
+        email: "Mark@Example.com".to_owned(),
+        ssn: Secret::new("123-45-6789".to_owned()),
+    };
+
+    // What you store: `id` as it is, `email` and `ssn` sealed, and `email_index`.
+    let stored: StoredUser = user.seal(&keys)?;
+
+    // Look a user up: select the rows whose `email_index` is one of the probes...
+    let probes = User::EMAIL_INDEX.probes("mark@example.com", &keys)?;
+    assert!(probes.contains(&stored.email_index));
+
+    // ...then open those rows, keeping only the real matches.
+    let found = User::EMAIL_INDEX.open_matching("mark@example.com", [stored], &keys)?;
+    let user = found.into_iter().next().expect("one match")?;
+    assert_eq!(user.ssn.expose_secret(), "123-45-6789");
     Ok(())
 }
 ```
 
-`UserEmail` is a seal: its ID binds every value sealed with it to this seal, and
-it stores a `String` as UTF-8 without padding. `Sealed` holds the encrypted value;
-`open` returns the plaintext, and `&keys` supplies the keys.
+`#[derive(Record)]` generates the stored form, `StoredUser`, and an index
+handle, `User::EMAIL_INDEX`, for each blind index. Every sealed field is bound
+to its seal and to the row's `id`, so a value copied to another field or row
+fails to open. `Secret` keeps the SSN out of `Debug` output and wipes it on
+drop; read it with `expose_secret`.
+
+Without the derive, implement `Seal` for a value type and seal it with
+`Sealed::seal`; see the [API docs](https://docs.rs/cryptbox/latest/cryptbox/).
+For real keys, key rotation, and storage with SQLx, read the
+[guide](docs/guide.md).
 
 ## Documentation
 

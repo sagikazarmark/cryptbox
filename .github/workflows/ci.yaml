@@ -63,7 +63,7 @@ jobs:
           cargo run --locked --example first_field
           cargo run --locked --example tenant_field
           cargo run --locked --example custom_field
-          cargo run --locked --example records --features derive,json,sqlx-sqlite,uuid
+          cargo run --locked --example records --features derive,json,sqlx-sqlite
 
       - name: Run documentation tests
         run: |

@@ -123,7 +123,8 @@
 
 #![forbid(unsafe_code)]
 
-#[cfg(doctest)]
+// The README's quick start uses the derives.
+#[cfg(all(doctest, feature = "derive"))]
 #[doc = include_str!("../README.md")]
 pub struct ReadmeDoctests;
 

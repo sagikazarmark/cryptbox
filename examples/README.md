@@ -6,7 +6,7 @@ Run commands from the repository root.
 | --- | --- | --- |
 | [First seal](first_field.rs) | A seal, a local key, seal and open | `cargo run --locked --example first_field` |
 | [Tenant seal](tenant_field.rs) | One keyring per tenant | `cargo run --locked --example tenant_field` |
-| [Records](records/README.md) | Record-bound rows, a keyring per org, search within an org, SQLx, a JSON message | `cargo run --locked --example records --features derive,json,sqlx-sqlite,uuid` |
+| [Records](records/README.md) | Record-bound rows, a keyring per org, search within an org, SQLx, a JSON message | `cargo run --locked --example records --features derive,json,sqlx-sqlite` |
 | [SQLite](sqlite/README.md) | Durable storage read back in a separate process | See its README |
 | [Searchable storage](searchable/README.md) | Atomic ciphertext/index writes and verified lookup on SQLite or PostgreSQL | See its README |
 | [Stored values](stored_values/README.md) | Serde serialization of ciphertext and blind indexes | `cargo run --locked --example stored_values --features derive,serde` |

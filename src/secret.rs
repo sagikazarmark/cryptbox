@@ -6,8 +6,9 @@ use zeroize::{Zeroize, Zeroizing};
 ///
 /// Drop invokes `T`'s [`Zeroize`] implementation. Cloning creates a separate `T`
 /// with its own lifetime; it does not share a single erasure boundary. This cannot
-/// erase previous copies, superseded allocations, or OS copies. For an opened
-/// `String`, use `Secret::new(sealed.open(args, keys)?)`.
+/// erase previous copies, superseded allocations, or OS copies. Read the value
+/// with [`Self::expose_secret`]. For an opened `String`, use
+/// `Secret::new(sealed.open(&keys)?)`.
 /// A seal can also take `Secret<String>` or `Secret<Vec<u8>>` as its value type: their
 /// default codecs ([`crate::Utf8`], [`crate::Raw`]) write the same bytes.
 /// See the [custom-field example] and [ownership reference].

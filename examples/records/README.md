@@ -5,7 +5,7 @@ org, store them in SQLite with SQLx, search an email index within an org, and
 carry a record as a JSON message.
 
 ```sh
-cargo run --locked --example records --features derive,json,sqlx-sqlite,uuid
+cargo run --locked --example records --features derive,json,sqlx-sqlite
 ```
 
 Expect `Records round trip, search, and message succeeded.` The database is in

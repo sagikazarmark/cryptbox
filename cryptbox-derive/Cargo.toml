@@ -6,6 +6,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sagikazarmark/cryptbox"
+readme = "README.md"
 keywords = ["cryptography", "derive", "encryption"]
 categories = ["cryptography", "development-tools::procedural-macro-helpers"]
 

@@ -7,8 +7,8 @@ use crate::{Codec, ContextKind, EncryptionKeyring, Seal, Sealed};
 /// and decodes those bytes back to a value that encodes identically.
 ///
 /// Commit one fixture per seal and run this in a test: it fails when the
-/// stored bytes would change, as a serde attribute change on a `Json` or
-/// `Postcard` value type can do silently. See [guarding the schema in CI].
+/// stored bytes would change, as a serde attribute change on a `Json` value
+/// type can do silently. See [guarding the schema in CI].
 ///
 /// The check covers the codec only; padding and encryption are applied after it.
 /// Decoding is checked by re-encoding the decoded value, so the value type needs

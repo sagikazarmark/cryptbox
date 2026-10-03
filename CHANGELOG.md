@@ -4,15 +4,15 @@
 
 This release replaces profiles with seals and adds records. Values and blind
 indexes stored by 0.5.0 are deliberately not readable: the envelope and the
-blind index both move to format 2. Decisions are recorded in ADR-0001 to
-ADR-0012.
+blind index both move to format 2. Both formats are now stable: later releases
+read them, and a new construction would be a new suite ID or format version.
+Decisions are recorded in ADR-0001 to ADR-0012.
 
 ### Seals
 
 - **Breaking:** profiles are replaced by seals over the application's own value
   types (ADR-0001, ADR-0007). `Seal` declares `const ID: SealId` (`seal_id!`),
-  `const PADDING`, `type Value`, `type Codec`, and `type Indexes`, the blind
-  indexes declared over it. A seal is a marker over a value type, which several
+  `const PADDING`, `type Value`, and `type Codec`. A seal is a marker over a value type, which several
   seals can share, or its own value. `profile!`, `EncryptionProfile`, `Field`,
   `Binding`, `FieldBound`, `Unbound`, `ProfileContext`, and the per-profile key
   context are removed.
@@ -25,6 +25,8 @@ ADR-0012.
   `PadToLength<N>`. The envelope records whether a value is padded, so padding
   is write policy: changing it keeps stored values readable, and a sweep rewrites
   them when padding is enabled or disabled, not when it is resized (ADR-0002).
+  `Padding::length(n)` hides every length up to `n` bytes, padding to `n + 1`;
+  `PadToLength<N>` padded to `N` and rejected values of `N` bytes (#86).
 
 ### Sealed values
 
@@ -36,18 +38,19 @@ ADR-0012.
   it fails authentication.
 - `Sealed<F, C = ()>` names the context a value is sealed in besides its seal ID
   (ADR-0012): `()` for a standalone value, or a `Context`, such as
-  `InRecord<K>` for a record's field. `Sealed::seal_in(&value, &context, &keys)`,
-  `open_in`, `prepare_in`, `reseal_in`, and `reseal_across_in` take the context's
-  value, such as the record ID; `needs_reseal` serves every context. A seal
-  knows nothing of where its values are stored. `Prepared` takes the same
-  parameter.
+  `InRecord<K>` for a record's field. `Sealed::seal_in(&value, &context, &keys)` and
+  `open_in` take the context's value, such as the record ID; `needs_reseal`
+  serves every context. `C` is bounded by `ContextKind`, which only the library
+  implements. A seal knows nothing of where its values are stored.
 - **Breaking:** the byte-level `encrypt`, `decrypt`, `reencrypt`, and
   `needs_reencryption` are removed; seal opaque bytes with a `Vec<u8>` seal.
-  `is_ciphertext`, `inspect_ciphertext`, and `CiphertextInfo` stay, and
-  `CiphertextInfo` reports `padded` and `context_fingerprint`.
-- **Breaking:** the automatic SQLx column is `Plain<F, K = GlobalKeys>`. It
-  serves seals without blind indexes, reads its keys from `K`, a `ColumnKeys`
-  (was `KeyContext`), and converts with `Plain::with_column_keys`;
+  `is_ciphertext`, `inspect_ciphertext`, `CiphertextInfo`,
+  `inspect_blind_index`, and `BlindIndexInfo` move to the `cryptbox::envelope`
+  module. `CiphertextInfo` reports `padded` and `context_fingerprint`, and its
+  `suite_id` returns a `u8`; `BlindIndexInfo::bits` returns a `u16`.
+- **Breaking:** the automatic SQLx column is `Plain<F>`, available with an
+  `sqlx-*` feature. It seals and opens a standalone value with the installed
+  keys, and writes no blind indexes. `KeyContext` is removed, and
   `into_secret` is `into_inner`.
 - `Prepared::sealed` (was `ciphertext`) and `Prepared::into_sealed`, and
   `BlindIndexRef::to_blind_index`, take owned values out of a preparation.
@@ -107,8 +110,11 @@ ADR-0012.
   `GlobalProviders` are removed. Choosing which keyring protects which values is
   application code; key IDs are generated UUIDs, never shared across keyrings.
 - **Breaking:** key and keyring constructors return `KeyError`, which converts
-  into `Error`. New errors: `KeysNotInstalled`, `KeysUnavailable` (was
-  `KeyProviderUnavailable`), and `BlindIndexKeysNotConfigured`.
+  into `Error`. New errors: `KeysNotInstalled`, with an `sqlx-*` feature, and
+  `BlindIndexKeysNotConfigured`. `KeyProviderUnavailable` is removed: the
+  library never looks keys up, so resolution errors are the application's.
+- **Breaking:** the `keys` module, which installs the keys `Plain` reads, needs
+  an `sqlx-*` feature.
 
 ### Wire format
 
@@ -119,8 +125,10 @@ ADR-0012.
   `Error::ContextMismatch` before any key lookup. Format 1 envelopes, which
   0.5.0 wrote, report `UnsupportedFormatVersion(1)`.
 - **Breaking:** `Error::UnsupportedSuite` carries the suite byte read from the
-  header. `EXPERIMENTAL_XCHACHA20_POLY1305` and `SuiteId::new` are no longer
-  public; `CiphertextInfo::suite_id` still reports the suite.
+  header. `SuiteId` and `EXPERIMENTAL_XCHACHA20_POLY1305` are no longer public;
+  `CiphertextInfo::suite_id` reports the suite as a `u8`.
+- Within a context, parts appear in ascending order of their slots, each at
+  most once, so a context has exactly one encoding.
 
 ### Schema guardrails
 
@@ -131,7 +139,8 @@ ADR-0012.
   and reports duplicate IDs, seals registered in several kinds of context
   (`Manifest::sealed::<F, C>()`), and seal IDs that fields of several records
   declare (`Duplicate::RecordField`); `assert_unique_ids!`, which fails compilation when
-  listed markers share an ID; and `testing::assert_sealed_under`, which checks
+  listed markers share an ID, declare the nil UUID, or name an unversioned
+  normalizer; and `testing::assert_sealed_under`, which checks
   which keyring sealed a value.
 
 ### Derives and features
@@ -141,19 +150,25 @@ ADR-0012.
   exactly the manual impls, plus a record's stored form and its fields' seals
   and index handles. IDs, padding, and index precision are validated when the
   macro expands, and `#[derive(Record)]` rejects a seal or index ID repeated
-  within one record, whose fields' values could otherwise be swapped.
+  within one record, whose fields' values could otherwise be swapped. They
+  reject the nil UUID, a normalizer name without a version, such as `"email"`
+  instead of `"email/1"` (#77), and generic types; `Seal` rejects unions, and
+  `BlindIndexSpec` anything but a struct (#82). The ID macros reject the nil
+  UUID too.
 - Add the opt-in `serde` feature for stored bytes: `Sealed<F>` and
   `BlindIndex<S>` serialize as unpadded base64url text in human-readable
   formats and as bytes otherwise. `From<Sealed<F>> for Vec<u8>` and its
   `BlindIndex` equivalent serve ORMs that store bytes.
 - `uuid` is a required dependency: the ID macros check their literal with
-  `uuid::uuid!`. The `uuid` feature lets a record ID be a `uuid::Uuid`.
+  `uuid::uuid!`, and a record ID may be a `uuid::Uuid`.
+- **Breaking:** the `postcard` feature and the `Postcard` codec are removed.
+  Write a `Codec` for a positional format your application needs.
 
 ### Migration
 
 - **Breaking:** the `migrate` module follows the new types.
-  `MaybeEncrypted<F>` opens with `open(&keys)` and `open_legacy`, returns the
-  bare value, and exposes `as_sealed`. `RowPlanner::with_index_with` is
+  `MaybeEncrypted<F>` is `MaybeSealed<F>`, opens with `open(&keys)` and
+  `open_legacy`, returns the bare value, and exposes `as_sealed`. `RowPlanner::with_index_with` is
   `with_index`, and `SweepError` is non-exhaustive.
   `RowPlanner<F, R = ()>` and `Sweep<F, R = ()>` take the type of a row's
   columns: `RowPlanner::new(&keys)` serves standalone values, and
@@ -172,8 +187,6 @@ ADR-0012.
   stops the sweep with a column decode error, as `PostgresSweepStore` does,
   instead of reading as empty bytes and conflicting the same way.
 - `Json` decodes every float to exactly the value that was encoded.
-- `Postcard` rejects bytes that follow a valid value with
-  `CodecErrorKind::Decoding` instead of ignoring them.
 - The AEAD cipher zeroizes each derived encryption key and its ChaCha20 state
   on drop.
 - A message of exactly 274,877,906,880 bytes fails with `MessageTooLong`
@@ -182,9 +195,11 @@ ADR-0012.
 
 ### Documentation
 
-- New guides: records, choosing keyrings, shredding a tenant, integration with
-  SQLx, Diesel, and Serde, and task-oriented adoption guidance, with the
-  `records` and `tenant_field` examples.
+- The guides are consolidated into a [guide](docs/guide.md), covering records,
+  choosing keyrings, schema, storage, and testing, and
+  [operations](docs/operations.md), covering rotation, sweeps, migration, and
+  shredding, with the `records` and `tenant_field` examples.
+- `cryptbox-derive` has a README.
 
 ### Migrating from 0.5
 
@@ -193,7 +208,7 @@ ADR-0012.
 | `cryptbox::profile! { P: String { id: "…", name: "…", codec: Utf8 } }` | `#[derive(cryptbox::Seal)] #[cryptbox(id = "…", value = String)] struct P;`, with the `derive` feature |
 | `FieldId`, `field_id!`, `FieldId::from_uuid_literal("…")` | `SealId`, `seal_id!("…")` |
 | `KeyId::from_uuid_literal("…")` and the other ID types' | `key_id!("…")`, `index_id!`, `index_key_id!` |
-| `impl EncryptionProfile<String> for P { … }` | `impl Seal for P { const ID: SealId = seal_id!("…"); const PADDING: Padding = Padding::NONE; type Value = String; type Codec = Utf8; type Indexes = (); }` |
+| `impl EncryptionProfile<String> for P { … }` | `impl Seal for P { const ID: SealId = seal_id!("…"); const PADDING: Padding = Padding::NONE; type Value = String; type Codec = Utf8; }` |
 | `type Padding = PadToBlock<16>;` | `const PADDING: Padding = Padding::block(16);` |
 | `Encrypted<String, P>`, `Ciphertext<String, P>` | `Sealed<P>` holds stored bytes; the value is a plain `String` |
 | `Encrypted::new(v).encrypt_with(&(), &keys)` | `Sealed::<P>::seal(&v, &keys)` |
@@ -214,7 +229,7 @@ ADR-0012.
 
 This release cannot read what 0.5.0 stored. Its values report
 `UnsupportedFormatVersion(1)` and its indexes `InvalidBlindIndex`, and
-`MaybeEncrypted::from_bytes`, `RowPlanner`, and the packaged sweeps report the
+`MaybeSealed::from_bytes`, `RowPlanner`, and the packaged sweeps report the
 same errors rather than hand 0.5.0 envelopes to a `LegacyFormat` handler, so a
 sweep cannot drive this upgrade. Rewrite stored values with a program that
 depends on both versions, adding 0.5.0 under another name:
