@@ -2,8 +2,8 @@
 
 use cryptbox::{
     BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Raw, Seal, Sealed, Utf8,
-    index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id, seal_id,
+    EncryptionKeyring, Error, InRecord, IndexId, IndexKeyId, KeyId, Padding, Raw, Seal, Sealed,
+    Utf8, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id, seal_id,
 };
 use zeroize::Zeroizing;
 
@@ -63,6 +63,33 @@ fn experimental_envelope_vectors_decrypt_under_either_padding_policy() {
         assert_eq!(read::<VectorSeal>(vector).unwrap(), b"cryptbox vector");
         assert_eq!(read::<PaddedVectorSeal>(vector).unwrap(), "cryptbox vector");
     }
+}
+
+// docs/wire-format.md#provisional-record-vector
+const RECORD: &str = "434258000201001111111122224333844455555555555576081b730530f822000102030405060708090a0b0c0d0e0f1011121314151617c899d84358bcff6b35f9bb49eea2c2e906efc22bcad85fd463c7217135fe97";
+
+#[test]
+fn the_record_vector_opens_only_as_its_record_field() {
+    let field =
+        Sealed::<VectorSeal, InRecord<i64>>::from_bytes(hex::decode(RECORD).unwrap()).unwrap();
+
+    assert_eq!(
+        hex::encode(
+            inspect_ciphertext(field.as_bytes())
+                .unwrap()
+                .context_fingerprint()
+        ),
+        "76081b730530f822"
+    );
+    assert_eq!(field.open_in(&7, &keys()).unwrap(), b"cryptbox vector");
+    assert_eq!(
+        field.open_in(&8, &keys()).unwrap_err(),
+        Error::AuthenticationFailed
+    );
+    assert_eq!(
+        read::<VectorSeal>(RECORD).unwrap_err(),
+        Error::ContextMismatch
+    );
 }
 
 #[test]

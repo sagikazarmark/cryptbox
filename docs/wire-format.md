@@ -145,7 +145,9 @@ with it. These fingerprints are fixed permanently:
 | Context | Fingerprint |
 | --- | --- |
 | A standalone value | `65640fc8333534b9` |
+| A record's field with a UUID record ID | `87770d1356443105` |
 | A record's field with an `i64` record ID | `76081b730530f822` |
+| A record's field with a bytes record ID | `338f462e2f4a92a7` |
 
 For seal `12345678-1234-4234-8234-1234567890ab` and the `i64` record `7`, the
 context is:

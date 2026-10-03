@@ -331,6 +331,28 @@ mod tests {
                 "726f772d37",
             )
         );
+        // Independently computed with shasum over the documented bytes.
+        assert_eq!(context.fingerprint, hex_array("338f462e2f4a92a7"));
+    }
+
+    #[test]
+    fn a_uuid_record_id_is_its_16_bytes() {
+        let uuid = [0xab; 16];
+        let context = SealContext::new(&SEAL, Some(RecordValue::Uuid(uuid))).unwrap();
+
+        assert_eq!(
+            hex::encode(&context.bytes),
+            concat!(
+                "123456781234423482341234567890ab",
+                "0001",
+                "00000000000000000000000000000000",
+                "01",
+                "00000010",
+                "abababababababababababababababab",
+            )
+        );
+        // Independently computed with shasum over the documented bytes.
+        assert_eq!(context.fingerprint, hex_array("87770d1356443105"));
     }
 
     #[test]
