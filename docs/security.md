@@ -1,9 +1,9 @@
 # Threat model and security boundaries
 
 CryptBox encrypts selected application values before storage.
-**It is not production-ready.** Ciphertext format 2, blind-index format 2, and
-suite 1 remain experimental; version numbers and passing tests do not indicate
-security approval.
+Ciphertext format 2, blind-index format 2, and suite 1 are stable: later
+releases read them. **They have not had an independent cryptographic audit**;
+version numbers and passing tests do not indicate security approval.
 
 ## Trust boundary and assumptions
 
@@ -86,13 +86,21 @@ specification is an expired IETF draft. Separately keyed, domain-separated
 HMAC-SHA-256 indexes permit deterministic lookup and independent rotation;
 truncation trades precision for false candidates without removing equality leakage.
 
+XChaCha20-Poly1305 does not commit to its key. A value is bound to its context
+by the key derived from it and by the AAD, which holds against attackers without
+keys; there are no low-entropy or attacker-chosen keys. A key-committing
+construction would be a new suite ID, read alongside suite 1, not a new format.
+
 ## Review status
 
-Outstanding gates include independent vectors ([#10](https://github.com/sagikazarmark/cryptbox/issues/10)),
-HKDF/HMAC/AAD composition and failure-path review, parser fuzzing
-([#11](https://github.com/sagikazarmark/cryptbox/issues/11)), target and
-zeroization review, an accepted usage policy, and pilot use before format freeze
-([#12](https://github.com/sagikazarmark/cryptbox/issues/12)). A primitive
+The formats are frozen. The published vectors were computed independently of
+the implementation and reproduced with Node.js and OpenSSL's primitives
+([#10](https://github.com/sagikazarmark/cryptbox/issues/10)). Still outstanding:
+an independent review of the HKDF/HMAC/AAD composition and failure paths, parser
+fuzzing ([#11](https://github.com/sagikazarmark/cryptbox/issues/11)), target and
+zeroization review, an accepted usage policy, and pilot use
+([#12](https://github.com/sagikazarmark/cryptbox/issues/12)). Findings from them
+would be fixed with a new suite or format version, never by changing these. A primitive
 implementation's audit does not audit CryptBox's composition. Earlier research and
 the proposed usage policy are frozen at
 [0c3627e](https://github.com/sagikazarmark/cryptbox/tree/0c3627e1817b88cfdc681efec20335fde525c526/docs)

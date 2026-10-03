@@ -11,12 +11,13 @@ needed to reproduce them.
 | [Ciphertext](#envelope) | 2 | [1](#encryption-suite-1) |
 | [Blind index](#blind-index-format-2) | 2 | — |
 
-> [!WARNING]
-> **These wire formats are experimental.** They may change without backward
-> compatibility.
+> [!NOTE]
+> **Ciphertext format 2 and blind-index format 2 are stable.** Every later
+> release reads them. A later construction gets a new suite ID or format version
+> and is read alongside these; nothing here changes in place.
 >
-> No cryptography review has been conducted yet. A focused review and independently
-> generated test vectors are still required.
+> The formats have not had an independent cryptographic audit. The vectors below
+> were reproduced outside this crate; see [security](security.md).
 
 ## Versions and identifiers
 
@@ -107,6 +108,9 @@ part         = slot[16] || kind[1] || len[4] || value[len]
 - Each part names its slot, a UUID the library allocates, and the kind of its
   value. The record ID is the only part today, in the nil slot. `len` is an
   unsigned 32-bit byte count, so every value is length-prefixed.
+- Parts appear in ascending byte order of their slots, and a slot appears at
+  most once, so a context has exactly one encoding. The fingerprint lists its
+  entries in the same order.
 - There is no leading tag or type byte: the context starts with the seal ID.
 
 The reader supplies the expected context, from the type of the sealed value and,
@@ -348,7 +352,7 @@ A size check is not authentication.
 See [ownership and erasure](guide.md#ownership-and-erasure) for buffer lifetimes and erasure
 obligations.
 
-### Provisional envelope vectors
+### Envelope vectors
 
 These fixed inputs and expected outputs help check byte-for-byte compatibility.
 The first vector encrypts unpadded plaintext (flags `00`) bound to
@@ -378,7 +382,7 @@ Both decrypt to `"cryptbox vector"` whatever the reader's padding policy. The
 vectors are generated and consumed in separate tests, and were computed
 independently as described under the record vector below.
 
-### Provisional record vector
+### Record vector
 
 This vector uses the root key, `KeyId`, `SealId`, plaintext, and nonce above,
 unpadded, with the [seal context](#seal-context) of the `i64` record `7`, whose
@@ -391,8 +395,9 @@ envelope: 434258000201001111111122224333844455555555555576081b730530f82200010203
 
 The fingerprints, contexts, and all three envelopes above were computed
 independently of the implementation from the recipes above, with a separate
-HKDF, HChaCha20, and ChaCha20-Poly1305 construction. They have not yet been
-cross-checked against a third-party implementation.
+HKDF, HChaCha20, and ChaCha20-Poly1305 construction. They were reproduced
+again with Node.js and OpenSSL's HKDF and ChaCha20-Poly1305, over a separately
+written HChaCha20.
 
 ## Blind-index format 2
 
@@ -496,7 +501,7 @@ values to share an index, index hits remain candidates requiring authenticated
 decryption and normalized plaintext comparison. See the
 [verified search example](../examples/searchable/README.md) for using these bytes in a query.
 
-### Provisional blind-index vector
+### Blind-index vector
 
 ```text
 root key:     2222222222222222222222222222222222222222222222222222222222222222
@@ -512,5 +517,5 @@ stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000de800
 The final byte `00` has its three unused low bits cleared.
 
 The blind-index vector was computed from the recipe above independently of
-the implementation, with a separate HKDF and HMAC construction. It has not yet
-been cross-checked against a third-party implementation.
+the implementation, with a separate HKDF and HMAC construction, and reproduced
+again with Node.js and OpenSSL's HKDF and HMAC.

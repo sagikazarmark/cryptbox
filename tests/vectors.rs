@@ -1,13 +1,14 @@
 //! Provisional compatibility vectors for the experimental formats.
 
+use cryptbox::envelope::{inspect_blind_index, inspect_ciphertext};
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, InRecord, IndexId, IndexKeyId, KeyId, Padding, Raw, Seal, Sealed,
-    Utf8, index_id, index_key_id, inspect_blind_index, inspect_ciphertext, key_id, seal_id,
+    Utf8, index_id, index_key_id, key_id, seal_id,
 };
 use zeroize::Zeroizing;
 
-// docs/wire-format.md#provisional-envelope-vectors
+// docs/wire-format.md#envelope-vectors
 const UNPADDED: &str = "434258000201001111111122224333844455555555555565640fc8333534b9000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e330da90830136eec9273c8315c1f22b7b";
 const PADDED: &str = "434258000201011111111122224333844455555555555565640fc8333534b9000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e3c5e74a10b924aec9355f18b42c5b131fa0";
 
@@ -30,7 +31,6 @@ impl Seal for VectorSeal {
     const PADDING: Padding = Padding::NONE;
     type Value = Vec<u8>;
     type Codec = Raw;
-    type Indexes = ();
 }
 
 struct PaddedVectorSeal;
@@ -40,7 +40,6 @@ impl Seal for PaddedVectorSeal {
     const PADDING: Padding = Padding::block(16);
     type Value = String;
     type Codec = Utf8;
-    type Indexes = ();
 }
 
 #[test]
@@ -65,7 +64,7 @@ fn experimental_envelope_vectors_decrypt_under_either_padding_policy() {
     }
 }
 
-// docs/wire-format.md#provisional-record-vector
+// docs/wire-format.md#record-vector
 const RECORD: &str = "434258000201001111111122224333844455555555555576081b730530f822000102030405060708090a0b0c0d0e0f1011121314151617c899d84358bcff6b35f9bb49eea2c2e906efc22bcad85fd463c7217135fe97";
 
 #[test]
