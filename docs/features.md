@@ -25,7 +25,8 @@ No features are enabled by default, and all features are additive:
   bytes: unpadded base64url text in human-readable formats, bytes otherwise. It never adds serialization for plaintext `Plain` values.
 - `sqlx-postgres` adds `SQLx` 0.8 `BYTEA` storage for `PostgreSQL`.
 - `sqlx-sqlite` adds `SQLx` 0.8 `BLOB` storage for `SQLite`.
-- `uuid` lets a record ID be a `uuid::Uuid`, and converts one into a `RecordId`. Either binds the UUID's 16 bytes, exactly as a `[u8; 16]` does.
+- `uuid` lets a record ID be a `uuid::Uuid`: the same record ID as a `[u8; 16]`
+  holding its bytes.
 
 The `SQLx` adapters automatically seal and open `Plain<F>`, the column for
 standalone values of a seal without blind indexes. `Plain<F>` uses the keys

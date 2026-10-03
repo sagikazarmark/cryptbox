@@ -1,7 +1,7 @@
 [package]
 name = "cryptbox-derive"
 version = "0.5.0"
-description = "Derive macros for cryptbox fields, bindings, blind indexes, plaintext types, and records"
+description = "Derive macros for cryptbox seals, blind indexes, and records"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"

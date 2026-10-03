@@ -19,13 +19,13 @@ resolver = "2"
 
 [features]
 default = []
-# Derive macros for `Seal`, `Binding`, `BlindIndexSpec`, and `Record`.
+# Derive macros for `Seal`, `BlindIndexSpec`, and `Record`.
 derive = ["dep:cryptbox-derive"]
 json = ["serde", "dep:serde_json"]
 migrate = []
 postcard = ["dep:postcard", "serde"]
 serde = ["dep:serde"]
-# `uuid::Uuid` binding parts and record IDs.
+# `uuid::Uuid` record IDs.
 uuid = []
 sqlx-postgres = ["dep:sqlx", "sqlx/postgres"]
 sqlx-sqlite = ["dep:sqlx", "sqlx/sqlite"]
