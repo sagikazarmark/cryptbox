@@ -31,18 +31,7 @@ enum Form<'a> {
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    if !input.generics.params.is_empty() {
-        errors.push(syn::Error::new_spanned(
-            &input.generics,
-            "`Seal` can't be derived for a generic type: every instance would share its seal ID",
-        ));
-    }
-    if let Data::Union(data) = &input.data {
-        errors.push(syn::Error::new(
-            data.union_token.span,
-            "`Seal` can't be derived for a union",
-        ));
-    }
+    reject_shapes(input, &mut errors);
     let mut attrs = Attrs::parse(&input.attrs, "cryptbox", KEYS, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
@@ -117,6 +106,23 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             #adapter
         };
     })
+}
+
+/// Rejects the shapes a seal can't have: a generic type, whose instances would
+/// share one seal ID, and a union.
+fn reject_shapes(input: &DeriveInput, errors: &mut Errors) {
+    if !input.generics.params.is_empty() {
+        errors.push(syn::Error::new_spanned(
+            &input.generics,
+            "`Seal` can't be derived for a generic type: every instance would share its seal ID",
+        ));
+    }
+    if let Data::Union(data) = &input.data {
+        errors.push(syn::Error::new(
+            data.union_token.span,
+            "`Seal` can't be derived for a union",
+        ));
+    }
 }
 
 /// The items of a `Seal` impl, as every derive that declares a seal writes them.

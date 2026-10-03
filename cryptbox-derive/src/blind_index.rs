@@ -19,19 +19,7 @@ const KEYS: &[Key] = &[
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
-    if !input.generics.params.is_empty() {
-        errors.push(syn::Error::new_spanned(
-            &input.generics,
-            "`BlindIndexSpec` can't be derived for a generic type: every instance would share \
-             its index ID",
-        ));
-    }
-    if !matches!(input.data, Data::Struct(_)) {
-        errors.push(syn::Error::new(
-            input.ident.span(),
-            "`BlindIndexSpec` is derived for a struct, such as a unit struct marker",
-        ));
-    }
+    reject_shapes(input, &mut errors);
     let mut attrs = Attrs::parse(&input.attrs, "cryptbox", KEYS, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;
@@ -131,6 +119,24 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
             }
         };
     })
+}
+
+/// Rejects the shapes a spec can't have: a generic type, whose instances would
+/// share one index ID, and anything but a struct.
+fn reject_shapes(input: &DeriveInput, errors: &mut Errors) {
+    if !input.generics.params.is_empty() {
+        errors.push(syn::Error::new_spanned(
+            &input.generics,
+            "`BlindIndexSpec` can't be derived for a generic type: every instance would share \
+             its index ID",
+        ));
+    }
+    if !matches!(input.data, Data::Struct(_)) {
+        errors.push(syn::Error::new(
+            input.ident.span(),
+            "`BlindIndexSpec` is derived for a struct, such as a unit struct marker",
+        ));
+    }
 }
 
 // Calls the normalizer on the sealed value, or on its projection.
