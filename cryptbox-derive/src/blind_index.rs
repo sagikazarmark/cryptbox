@@ -2,7 +2,7 @@
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{DeriveInput, Ident, Path, Type, spanned::Spanned};
+use syn::{Data, DeriveInput, Ident, Path, Type, spanned::Spanned};
 
 use crate::attr::{Attrs, Errors, Key, required};
 
@@ -19,6 +19,19 @@ const KEYS: &[Key] = &[
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
+    if !input.generics.params.is_empty() {
+        errors.push(syn::Error::new_spanned(
+            &input.generics,
+            "`BlindIndexSpec` can't be derived for a generic type: every instance would share \
+             its index ID",
+        ));
+    }
+    if !matches!(input.data, Data::Struct(_)) {
+        errors.push(syn::Error::new(
+            input.ident.span(),
+            "`BlindIndexSpec` is derived for a struct, such as a unit struct marker",
+        ));
+    }
     let mut attrs = Attrs::parse(&input.attrs, "cryptbox", KEYS, &mut errors);
     let krate = attrs.krate();
     let name = &input.ident;

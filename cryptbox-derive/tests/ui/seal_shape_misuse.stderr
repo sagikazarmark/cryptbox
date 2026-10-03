@@ -1,0 +1,23 @@
+error: `Seal` can't be derived for a generic type: every instance would share its seal ID
+ --> tests/ui/seal_shape_misuse.rs:8:15
+  |
+8 | struct Generic<T>(PhantomData<T>);
+  |               ^^^
+
+error: `Seal` can't be derived for a union
+  --> tests/ui/seal_shape_misuse.rs:12:1
+   |
+12 | union Bytes {
+   | ^^^^^
+
+error: `BlindIndexSpec` can't be derived for a generic type: every instance would share its index ID
+  --> tests/ui/seal_shape_misuse.rs:33:21
+   |
+33 | struct GenericLookup<T>(PhantomData<T>);
+   |                     ^^^
+
+error: `BlindIndexSpec` is derived for a struct, such as a unit struct marker
+  --> tests/ui/seal_shape_misuse.rs:44:6
+   |
+44 | enum EnumLookup {}
+   |      ^^^^^^^^^^
