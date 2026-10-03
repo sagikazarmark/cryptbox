@@ -32,9 +32,8 @@ ADR-0012.
   `Encrypted<T, P>` carrier is removed. `Sealed::seal(&value, &keys)`,
   `sealed.open(&keys)`, which returns the bare value, `Sealed::prepare`,
   `needs_reseal`, `reseal`, `reseal_across(&from_keys, &to_keys)`, and `key_id`
-  take the keys to use; `seal_global` and `open_global` use the installed keys.
-  A value is bound to its seal ID: opened as another seal, it fails
-  authentication.
+  take the keys to use. A value is bound to its seal ID: opened as another seal,
+  it fails authentication.
 - `Sealed<F, C = ()>` names the context a value is sealed in besides its seal ID
   (ADR-0012): `()` for a standalone value, or a `Context`, such as
   `InRecord<K>` for a record's field. `Sealed::seal_in(&value, &context, &keys)`,
@@ -83,8 +82,9 @@ ADR-0012.
   rules, and `type Query`, and normalizes queries and stored values separately,
   so an index can project part of a value. `derive_blind_index`,
   `blind_index_probes`, and `verify_blind_index_candidate` are replaced by
-  `S::derive_with`, `S::probes_with`, `S::probes`, and `S::verify_candidate`.
-- Add `BlindIndexSpec::is_consistent_with`, which checks a stored index against
+  `BlindIndex::<S>::derive`, `BlindIndex::<S>::probes`, and
+  `BlindIndex::<S>::verify_candidate`, which a spec cannot override.
+- Add `BlindIndex::is_consistent_with`, which checks a stored index against
   its decrypted value under the key generation the index names.
 - **Breaking:** blind indexes are derived under their seal ID and move to format
   2. 0.5.0 indexes fail to parse with `Error::InvalidBlindIndex` instead of
@@ -95,10 +95,14 @@ ADR-0012.
 - **Breaking:** keys are passed to each call or installed once per process
   (ADR-0004, ADR-0006, ADR-0010). `EncryptionKeyring` and `BlindIndexKeyring`
   (were `LocalEncryptionKeyring` and `LocalBlindIndexKeyring`) hold a current
-  key and previous keys and reject duplicate key IDs; `Keys` pairs them.
-  Operations take `EncryptionKeys`, `BlindIndexKeys`, or `RecordKeys`.
+  key and previous keys and reject duplicate key IDs; `Keys` pairs them, and
+  `Keys::encryption` and `Keys::blind_indexes` read them.
+  Operations take `EncryptionKeys`, `BlindIndexKeys`, or `RecordKeys`, and
+  never read the installed keys; only the automatic SQLx column does.
   `keys::install(Keys)` replaces `GlobalKeyContext::install(GlobalProviders)` and
-  returns `keys::AlreadyInstalled` instead of replacing the installed keys. The
+  returns `keys::AlreadyInstalled` instead of replacing the installed keys;
+  `keys::installed()` returns them. The implicit `encrypt` and `decrypt` have no
+  replacement: pass `keys::installed()?` to `seal` and `open`. The
   key provider traits, `KeyProviderError`, `GlobalKeyContext`, and
   `GlobalProviders` are removed. Choosing which keyring protects which values is
   application code; key IDs are generated UUIDs, never shared across keyrings.
@@ -115,7 +119,8 @@ ADR-0012.
   `Error::ContextMismatch` before any key lookup. Format 1 envelopes, which
   0.5.0 wrote, report `UnsupportedFormatVersion(1)`.
 - **Breaking:** `Error::UnsupportedSuite` carries the suite byte read from the
-  header.
+  header. `EXPERIMENTAL_XCHACHA20_POLY1305` and `SuiteId::new` are no longer
+  public; `CiphertextInfo::suite_id` still reports the suite.
 
 ### Schema guardrails
 
@@ -123,8 +128,9 @@ ADR-0012.
   bytes to a committed fixture; `schema::Manifest`, which lists seals, blind
   indexes, and records with their IDs, codec IDs, padding, record ID kinds,
   context fingerprints, normalizers, and plaintext fields, for snapshot tests,
-  and reports duplicate IDs and seals registered in several kinds of context
-  (`Manifest::sealed::<F, C>()`); `assert_unique_ids!`, which fails compilation when
+  and reports duplicate IDs, seals registered in several kinds of context
+  (`Manifest::sealed::<F, C>()`), and seal IDs that fields of several records
+  declare (`Duplicate::RecordField`); `assert_unique_ids!`, which fails compilation when
   listed markers share an ID; and `testing::assert_sealed_under`, which checks
   which keyring sealed a value.
 
@@ -134,7 +140,8 @@ ADR-0012.
   and `#[derive(Record)]`, configured with `#[cryptbox(…)]`. Each expands to
   exactly the manual impls, plus a record's stored form and its fields' seals
   and index handles. IDs, padding, and index precision are validated when the
-  macro expands.
+  macro expands, and `#[derive(Record)]` rejects a seal or index ID repeated
+  within one record, whose fields' values could otherwise be swapped.
 - Add the opt-in `serde` feature for stored bytes: `Sealed<F>` and
   `BlindIndex<S>` serialize as unpadded base64url text in human-readable
   formats and as bytes otherwise. `From<Sealed<F>> for Vec<u8>` and its
@@ -145,8 +152,9 @@ ADR-0012.
 ### Migration
 
 - **Breaking:** the `migrate` module follows the new types.
-  `MaybeEncrypted<F>` opens with `open(&keys)`, `open_legacy`, `open_global`,
-  and `open_global_legacy`, returns the bare value, and exposes `as_sealed`.
+  `MaybeEncrypted<F>` opens with `open(&keys)` and `open_legacy`, returns the
+  bare value, and exposes `as_sealed`. `RowPlanner::with_index_with` is
+  `with_index`, and `SweepError` is non-exhaustive.
   `RowPlanner<F, R = ()>` and `Sweep<F, R = ()>` take the type of a row's
   columns: `RowPlanner::new(&keys)` serves standalone values, and
   `RowPlanner::for_rows(&keys, |row| Ok(&row.id))` a record's field, whose
@@ -177,22 +185,45 @@ ADR-0012.
 
 | 0.5 | Now |
 | --- | --- |
-| `cryptbox::profile! { P: String { id: "…", name: "…", codec: Utf8 } }` | `#[derive(cryptbox::Seal)] #[cryptbox(id = "…", value = String)] struct P;` |
+| `cryptbox::profile! { P: String { id: "…", name: "…", codec: Utf8 } }` | `#[derive(cryptbox::Seal)] #[cryptbox(id = "…", value = String)] struct P;`, with the `derive` feature |
+| `FieldId`, `field_id!`, `FieldId::from_uuid_literal("…")` | `SealId`, `seal_id!("…")` |
+| `KeyId::from_uuid_literal("…")` and the other ID types' | `key_id!("…")`, `index_id!`, `index_key_id!` |
 | `impl EncryptionProfile<String> for P { … }` | `impl Seal for P { const ID: SealId = seal_id!("…"); const PADDING: Padding = Padding::NONE; type Value = String; type Codec = Utf8; type Indexes = (); }` |
 | `type Padding = PadToBlock<16>;` | `const PADDING: Padding = Padding::block(16);` |
 | `Encrypted<String, P>`, `Ciphertext<String, P>` | `Sealed<P>` holds stored bytes; the value is a plain `String` |
 | `Encrypted::new(v).encrypt_with(&(), &keys)` | `Sealed::<P>::seal(&v, &keys)` |
 | `ciphertext.decrypt_with(&(), &keys)?.into_secret()` | `sealed.open(&keys)` |
 | `reencrypt_with`, `needs_reencryption_with` | `reseal`, `needs_reseal` |
-| `encrypt()`, `decrypt()` with `GlobalKeyContext::install(GlobalProviders::…)` | `seal_global`, `open_global` with `keys::install(Keys::new(keyring))` |
+| `encrypt()`, `decrypt()` with `GlobalKeyContext::install(GlobalProviders::…)` | `seal(&v, keys::installed()?)`, `open(keys::installed()?)` after `keys::install(Keys::new(keyring))` |
 | `LocalEncryptionKeyring`, `LocalBlindIndexKeyring` | `EncryptionKeyring`, `BlindIndexKeyring`, paired in `Keys` |
 | `impl EncryptionKeyProvider for S` | resolve the keyring yourself and pass it |
 | `Encrypted<T, P>` as an SQLx column | `Plain<P>` |
 | `impl BlindIndexMetadata for S` plus `impl BlindIndexSpec<str> for S` | one `impl BlindIndexSpec for S { type Seal = P; const BITS: u16 = …; const NORMALIZER: &'static str = "…"; type Query = str; … }` |
-| `derive_blind_index::<S, _, _>(&v, &keys)` | `S::derive_with(&v, &keys)` |
-| `blind_index_probes::<S, str, _>(q, &keys)` | `S::probes_with(q, &keys)` |
-| `verify_blind_index_candidate::<S, str>(q, c)` | `S::verify_candidate(q, c)` |
-| values stored by 0.5.0 | read them with 0.5.0 and seal them again with this release |
+| `derive_blind_index::<S, _, _>(&v, &keys)` | `BlindIndex::<S>::derive(&v, &keys)` |
+| `blind_index_probes::<S, str, _>(q, &keys)` | `BlindIndex::<S>::probes(q, &keys)` |
+| `verify_blind_index_candidate::<S, str>(q, c)` | `BlindIndex::<S>::verify_candidate(q, c)` |
+| `RowPlanner::with_index_with` | `RowPlanner::with_index` |
+| values stored by 0.5.0 | see [upgrading stored values](#upgrading-stored-values-from-05) |
+
+### Upgrading stored values from 0.5
+
+This release cannot read what 0.5.0 stored. Its values report
+`UnsupportedFormatVersion(1)` and its indexes `InvalidBlindIndex`, and
+`MaybeEncrypted::from_bytes`, `RowPlanner`, and the packaged sweeps report the
+same errors rather than hand 0.5.0 envelopes to a `LegacyFormat` handler, so a
+sweep cannot drive this upgrade. Rewrite stored values with a program that
+depends on both versions, adding 0.5.0 under another name:
+
+```toml
+cryptbox05 = { package = "cryptbox", version = "=0.5.0" }
+```
+
+Load the same key material into both versions' keyrings. For each row, open
+every value with 0.5.0 (`decrypt_with`), seal it again with this release
+(`Sealed::seal`, or `Record::seal` for a record), derive its blind indexes again,
+and write them in one statement. Until every row is rewritten, read with this
+release and fall back to 0.5.0 on `UnsupportedFormatVersion(1)`, and look up
+blind indexes in both formats.
 
 ## 0.5.0
 
