@@ -67,7 +67,9 @@ command runs in a new process. The manual in-memory example is not evidence of
 cross-process durability.
 
 `SqliteSweepStore` and `PostgresSweepStore` use an `i64` cursor and require
-**non-NULL bytes in every swept column** for this recipe. Packaged stores offer
+**non-NULL bytes in every swept column** for this recipe: a NULL stops the sweep
+with a column decode error. `SqliteSweepStore` compares stored values as BLOBs, so
+legacy values stored as TEXT are swept like bytes. Packaged stores offer
 no NULL policy, `WHERE` filter, discriminator or upper cursor bound. Nullable or
 filtered populations, other cursor shapes and snapshot/high-water policies need
 an application-owned `SweepStore` or manual loop with appropriate atomic predicates.

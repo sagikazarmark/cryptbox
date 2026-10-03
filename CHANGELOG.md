@@ -166,6 +166,11 @@ ADR-0012.
 
 ### Fixes
 
+- `SqliteSweepStore` sweeps legacy values stored as TEXT. Its guarded update
+  compared them with BLOB bytes, which never match, so every such row counted as
+  a conflict and the checkpoint moved past it. A NULL in a swept column now
+  stops the sweep with a column decode error, as `PostgresSweepStore` does,
+  instead of reading as empty bytes and conflicting the same way.
 - `Json` decodes every float to exactly the value that was encoded.
 - `Postcard` rejects bytes that follow a valid value with
   `CodecErrorKind::Decoding` instead of ignoring them.

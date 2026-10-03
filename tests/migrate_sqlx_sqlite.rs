@@ -3,11 +3,12 @@
 #![cfg(all(feature = "migrate", feature = "sqlx-sqlite"))]
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
     index_key_id, key_id,
     migrate::{
-        LegacyError, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable,
+        LegacyError, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepError,
+        SweepTable,
     },
     seal_id,
 };
@@ -218,5 +219,106 @@ fn permissive_decode_propagates_hard_errors() {
             source.downcast_ref::<Error>(),
             Some(&Error::InvalidEnvelope)
         );
+    });
+}
+
+#[test]
+fn migrates_plaintext_stored_as_text() {
+    futures_executor::block_on(async {
+        let mut connection = SqliteConnection::connect("sqlite::memory:").await.unwrap();
+        sqlx::query(
+            "CREATE TABLE users (
+                id INTEGER PRIMARY KEY,
+                email TEXT NOT NULL,
+                email_bidx BLOB NOT NULL DEFAULT ''
+            )",
+        )
+        .execute(&mut connection)
+        .await
+        .unwrap();
+
+        // Applications usually bind existing plaintext as text, and an index
+        // column added with a `''` default holds text as well.
+        sqlx::query("INSERT INTO users (email) VALUES (?)")
+            .bind("first@example.com")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        let keys =
+            EncryptionKeyring::new(EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]), []).unwrap();
+        let index_keys =
+            BlindIndexKeyring::new(BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x44; 32]), [])
+                .unwrap();
+        let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
+        let sweep = Sweep::new(planner);
+        let table = SweepTable::new("users", "id", "email").with_index_column("email_bidx");
+        let mut store = SqliteSweepStore::new(&mut connection, &table);
+        store.ensure_progress_table().await.unwrap();
+
+        let report = sweep.run(&mut store).await.unwrap();
+        assert_eq!(report.legacy, 1);
+        assert_eq!(report.conflicts, 0);
+
+        let report = sweep.verify(&mut store).await.unwrap();
+        assert!(report.is_terminal());
+
+        let row = sqlx::query("SELECT email, email_bidx FROM users")
+            .fetch_one(&mut connection)
+            .await
+            .unwrap();
+        let email: Sealed<UserEmail> = row.try_get("email").unwrap();
+        let email = email.open(&keys).unwrap();
+        assert_eq!(email, "first@example.com");
+        let index: Vec<u8> = row.try_get("email_bidx").unwrap();
+        let index = BlindIndex::<EmailLookup>::from_bytes(index).unwrap();
+        assert!(index.is_consistent_with(&email, &index_keys).unwrap());
+    });
+}
+
+#[test]
+fn rejects_null_in_a_swept_column() {
+    futures_executor::block_on(async {
+        let mut connection = SqliteConnection::connect("sqlite::memory:").await.unwrap();
+        sqlx::query("CREATE TABLE users (id INTEGER PRIMARY KEY, email BLOB NOT NULL)")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO users (email) VALUES (?)")
+            .bind(b"first@example.com".to_vec())
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        // The natural way to add an index column leaves it nullable.
+        sqlx::query("ALTER TABLE users ADD COLUMN email_bidx BLOB")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+
+        let keys =
+            EncryptionKeyring::new(EncryptionKey::new(CURRENT_KEY_ID, [0x22; 32]), []).unwrap();
+        let index_keys =
+            BlindIndexKeyring::new(BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x44; 32]), [])
+                .unwrap();
+        let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&index_keys);
+        let sweep = Sweep::new(planner);
+        let table = SweepTable::new("users", "id", "email").with_index_column("email_bidx");
+        let mut store = SqliteSweepStore::new(&mut connection, &table);
+        store.ensure_progress_table().await.unwrap();
+
+        // NULL has no packaged policy: the sweep stops instead of skipping
+        // the row as a conflict and checkpointing past it.
+        let error = sweep.run(&mut store).await.unwrap_err();
+        let SweepError::Store(sqlx::Error::ColumnDecode { index, .. }) = error else {
+            panic!("expected a column decode error, got {error:?}");
+        };
+        assert_eq!(index, "2");
+
+        let checkpoint: Option<i64> =
+            sqlx::query_scalar("SELECT last_id FROM cryptbox_migration_progress")
+                .fetch_optional(&mut connection)
+                .await
+                .unwrap();
+        assert_eq!(checkpoint, None);
     });
 }

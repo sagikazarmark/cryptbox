@@ -100,7 +100,7 @@ impl SweepTable {
         predicates.extend(
             columns
                 .iter()
-                .map(|column| format!("{column} = {}", params.next())),
+                .map(|column| style.guard(column, &params.next())),
         );
         let update = format!(
             "UPDATE {table} SET {} WHERE {}",
@@ -154,6 +154,19 @@ impl ParamStyle {
         Params {
             style: self,
             count: 0,
+        }
+    }
+
+    /// Compares a stored column with the bytes the sweep loaded from it.
+    ///
+    /// `SQLite` loads TEXT values as their bytes, but a TEXT value never equals
+    /// the BLOB bound back here, so the stored value is compared as a BLOB.
+    fn guard(self, column: &str, param: &str) -> String {
+        match self {
+            #[cfg(any(feature = "sqlx-sqlite", test))]
+            Self::Question => format!("CAST({column} AS BLOB) = {param}"),
+            #[cfg(any(feature = "sqlx-postgres", test))]
+            Self::Dollar => format!("{column} = {param}"),
         }
     }
 }
@@ -210,7 +223,8 @@ mod tests {
         assert_eq!(
             sql.update,
             "UPDATE \"users\" SET \"email_ciphertext\" = ?, \"email_bidx\" = ? \
-             WHERE \"id\" = ? AND \"email_ciphertext\" = ? AND \"email_bidx\" = ?",
+             WHERE \"id\" = ? AND CAST(\"email_ciphertext\" AS BLOB) = ? \
+             AND CAST(\"email_bidx\" AS BLOB) = ?",
         );
         assert_eq!(sql.migration_name, "users.email_ciphertext");
         assert_eq!(sql.index_count, 1);

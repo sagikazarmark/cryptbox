@@ -1,4 +1,4 @@
-use sqlx::{Row, SqliteConnection};
+use sqlx::{Row, SqliteConnection, error::UnexpectedNullError, sqlite::SqliteRow};
 
 use super::{
     RowWrite, SweepRow, SweepStore,
@@ -79,10 +79,10 @@ impl SweepStore for SqliteSweepStore<'_> {
         let mut batch = Vec::with_capacity(rows.len());
         for row in rows {
             let cursor: i64 = row.try_get(0)?;
-            let ciphertext: Vec<u8> = row.try_get(1)?;
+            let ciphertext = bytes(&row, 1)?;
             let mut indexes = Vec::with_capacity(self.sql.index_count);
             for position in 0..self.sql.index_count {
-                indexes.push(row.try_get::<Vec<u8>, _>(2 + position)?);
+                indexes.push(bytes(&row, 2 + position)?);
             }
 
             batch.push(SweepRow {
@@ -114,4 +114,16 @@ impl SweepStore for SqliteSweepStore<'_> {
 
         Ok(result.rows_affected() == 1)
     }
+}
+
+/// Reads a swept column's bytes, rejecting NULL.
+///
+/// `SQLite` decodes NULL as empty bytes, which the guarded update could never
+/// match, so the row would be skipped as a conflict.
+fn bytes(row: &SqliteRow, index: usize) -> Result<Vec<u8>, sqlx::Error> {
+    row.try_get::<Option<Vec<u8>>, _>(index)?
+        .ok_or_else(|| sqlx::Error::ColumnDecode {
+            index: index.to_string(),
+            source: Box::new(UnexpectedNullError),
+        })
 }
