@@ -67,6 +67,16 @@ pub(crate) struct UuidLiteral {
     span: Span,
 }
 
+impl UuidLiteral {
+    pub(crate) fn value(&self) -> u128 {
+        self.value
+    }
+
+    pub(crate) fn span(&self) -> Span {
+        self.span
+    }
+}
+
 impl ToTokens for UuidLiteral {
     /// Emits a hex literal grouped like the UUID, so expansions stay recognizable.
     fn to_tokens(&self, tokens: &mut TokenStream) {

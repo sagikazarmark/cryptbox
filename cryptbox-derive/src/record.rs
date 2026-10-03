@@ -350,8 +350,24 @@ fn parse_record_attrs(input: &DeriveInput, errors: &mut Errors) -> RecordAttrs {
     parsed
 }
 
-/// Checks the record as a whole: one record ID, at least one sealed field, and
-/// distinct columns.
+/// Reports each ID after the first that repeats an earlier one, naming the
+/// field that declared it first.
+fn check_distinct<'a>(
+    ids: impl Iterator<Item = (&'a UuidLiteral, &'a Ident)>,
+    message: impl Fn(&Ident) -> String,
+    errors: &mut Errors,
+) {
+    let mut seen: Vec<(u128, &Ident)> = Vec::new();
+    for (id, field) in ids {
+        match seen.iter().find(|(value, _)| *value == id.value()) {
+            Some((_, first)) => errors.push(syn::Error::new(id.span(), message(first))),
+            None => seen.push((id.value(), field)),
+        }
+    }
+}
+
+/// Checks the record as a whole: one record ID, at least one sealed field,
+/// distinct seal and index IDs, and distinct columns.
 fn check_record(name: &Ident, fields: &[Field<'_>], errors: &mut Errors) {
     let record_ids: Vec<_> = fields
         .iter()
@@ -392,6 +408,31 @@ fn check_record(name: &Ident, fields: &[Field<'_>], errors: &mut Errors) {
             ));
         }
     }
+
+    // Fields that share a seal ID share a context, so their stored values
+    // could be swapped undetected.
+    check_distinct(
+        fields
+            .iter()
+            .filter_map(|f| Some((&f.sealing()?.id, f.ident))),
+        |first| {
+            format!(
+                "`{first}` already declares this seal ID: give each sealed field its own, or \
+                 their values can be swapped undetected"
+            )
+        },
+        errors,
+    );
+    check_distinct(
+        fields.iter().flat_map(|f| {
+            f.sealing()
+                .map_or(&[][..], |s| &s.indexes)
+                .iter()
+                .map(|index| (&index.id, f.ident))
+        }),
+        |first| format!("`{first}` already declares this index ID: give each blind index its own"),
+        errors,
+    );
 
     let mut columns: Vec<&Ident> = fields.iter().map(|f| f.ident).collect();
     for field in fields {

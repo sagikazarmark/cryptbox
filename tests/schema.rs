@@ -361,6 +361,38 @@ record
     }
 
     #[test]
+    fn a_seal_id_in_two_records_is_reported() {
+        #[derive(cryptbox::Record)]
+        struct Supplier {
+            #[cryptbox(record_id)]
+            id: i64,
+            #[cryptbox(seal = "4f3ca6a2-a683-49b7-8d1a-718b790f7154")]
+            email: String,
+        }
+
+        #[derive(cryptbox::Record)]
+        struct Partner {
+            #[cryptbox(record_id)]
+            id: i64,
+            // Copied from `Supplier`: a supplier's email opens as partner 7's.
+            #[cryptbox(seal = "4f3ca6a2-a683-49b7-8d1a-718b790f7154")]
+            email: String,
+        }
+
+        let manifest = Manifest::new().record::<Supplier>().record::<Partner>();
+
+        assert!(matches!(
+            manifest.duplicates().as_slice(),
+            [cryptbox::schema::Duplicate::RecordField { records, .. }] if records.len() == 2
+        ));
+        assert!(
+            manifest.to_string().ends_with(
+                "seal ID 4f3ca6a2-a683-49b7-8d1a-718b790f7154 in several record fields\n"
+            )
+        );
+    }
+
+    #[test]
     fn a_records_stored_form_defaults_to_stored_and_its_name() {
         fn stored<R: cryptbox::Record<Stored = StoredCustomer>>() {}
 

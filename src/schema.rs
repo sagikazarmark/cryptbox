@@ -82,6 +82,7 @@ struct ContextEntry {
 #[derive(Debug)]
 struct RecordEntry {
     marker: TypeId,
+    name: &'static str,
     seals: &'static [SealId],
     record_id: &'static str,
     record_kind: Option<RecordKind>,
@@ -187,6 +188,7 @@ impl Manifest {
             let record_kind = <R::Context as ContextKind>::RECORD;
             self.records.push(RecordEntry {
                 marker,
+                name: type_name::<R>(),
                 seals: R::SEALS,
                 record_id: R::RECORD_ID,
                 record_kind,
@@ -203,7 +205,8 @@ impl Manifest {
     }
 
     /// Returns every seal or index ID that more than one registered marker
-    /// declares, and every seal ID registered in more than one kind of context.
+    /// declares, every seal ID registered in more than one kind of context, and
+    /// every seal ID that more than one registered record field declares.
     ///
     /// Markers that share a seal ID are one seal and can read each
     /// other's ciphertext. That is occasionally deliberate, but usually a copied
@@ -215,6 +218,11 @@ impl Manifest {
     /// also stored standalone, has values that open only in the context they
     /// were sealed in, and that share its blind indexes. That is usually a
     /// mistake.
+    ///
+    /// Record fields that share a seal ID, in one record or in several with the
+    /// same kind of record ID, share a context: their stored values can be
+    /// swapped undetected. `#[derive(Record)]` rejects a seal ID repeated within
+    /// one record.
     #[must_use]
     pub fn duplicates(&self) -> Vec<Duplicate> {
         let seals = shared_ids(self.seals.iter().map(|seal| (seal.id, seal.name)))
@@ -231,7 +239,14 @@ impl Manifest {
                     .collect(),
             });
 
-        seals.chain(indexes).chain(contexts).collect()
+        let fields = shared_ids(
+            self.records
+                .iter()
+                .flat_map(|record| record.seals.iter().map(|seal| (*seal, record.name))),
+        )
+        .map(|(id, records)| Duplicate::RecordField { id, records });
+
+        seals.chain(indexes).chain(contexts).chain(fields).collect()
     }
 
     /// Groups the kinds of context of each seal ID, in order of first
@@ -282,6 +297,14 @@ pub enum Duplicate {
         /// The contexts' fingerprints, in registration order.
         contexts: Vec<[u8; 8]>,
     },
+    /// Several record fields declare one seal ID, so their values can be
+    /// swapped between them.
+    RecordField {
+        /// The shared seal ID.
+        id: SealId,
+        /// The records' type names, once per field, in registration order.
+        records: Vec<&'static str>,
+    },
 }
 
 impl fmt::Display for Duplicate {
@@ -301,6 +324,11 @@ impl fmt::Display for Duplicate {
                     contexts.join(", ")
                 )
             }
+            Self::RecordField { id, records } => write!(
+                formatter,
+                "seal ID {id} in several record fields: {}",
+                records.join(", ")
+            ),
         }
     }
 }
@@ -379,6 +407,9 @@ impl fmt::Display for Manifest {
                 Duplicate::Index { id, .. } => writeln!(formatter, "duplicate index ID {id}")?,
                 Duplicate::Context { id, .. } => {
                     writeln!(formatter, "seal ID {id} in several contexts")?;
+                }
+                Duplicate::RecordField { id, .. } => {
+                    writeln!(formatter, "seal ID {id} in several record fields")?;
                 }
             }
         }

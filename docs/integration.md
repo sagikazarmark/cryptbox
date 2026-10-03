@@ -73,7 +73,8 @@ Stored bytes do not describe this schema, so check it in tests:
   name, so a field that should have been sealed shows up). Compare the
   `Display` output with a committed snapshot, and
   assert that `duplicates()` is empty: it also reports a seal registered in
-  several kinds of context, such as a record field's seal stored standalone. A
+  several kinds of context, such as a record field's seal stored standalone,
+  and a seal ID that several record fields declare. A
   snapshot diff needs review: for example, a codec ID, normalizer, or record ID
   change needs a migration.
 - **Unique IDs.** `cryptbox::assert_unique_ids!(HomeAddress, BillingAddress)`

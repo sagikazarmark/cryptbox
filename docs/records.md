@@ -210,7 +210,10 @@ searchable examples share the tutorial's `UserEmail`; a `UserEmail` marker in
 another example is a different seal with its own ID, because the Rust name is
 not the identity.
 
-`assert_unique_ids!` rejects seal and index IDs shared by listed markers, and a
+`#[derive(Record)]` rejects a seal or index ID repeated within one record,
+`assert_unique_ids!` rejects seal and index IDs shared by listed markers, the
+[manifest](integration.md#guarding-the-schema-in-ci) reports a seal ID shared
+by fields of several records, and a
 [manifest snapshot](integration.md#guarding-the-schema-in-ci) makes any change
 to the IDs you have chosen a reviewable diff.
 
