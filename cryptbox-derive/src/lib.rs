@@ -365,7 +365,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// each impl in `const _: () = { … };`, forwards docs, and checks, at compile
 /// time, that the record ID is a UUID, an `i64`, or bytes. The seals it declares
 /// know nothing of the record: the record seals and opens their values in its
-/// context, [`InRecord`](cryptbox::InRecord), under its record ID:
+/// context, `cryptbox::InRecord`, under its record ID:
 ///
 /// ```
 /// # use cryptbox::{
