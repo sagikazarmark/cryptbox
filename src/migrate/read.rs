@@ -23,7 +23,7 @@ use super::{LegacyFormat, legacy};
 /// [`Self::open_legacy`] first invokes a [`LegacyFormat`] handler for foreign
 /// ciphertext. Valid `CryptBox` envelopes ignore the handler.
 ///
-/// Reads are permissive; writes never are. `MaybeEncrypted` implements no
+/// Reads are permissive; writes never are. `MaybeSealed` implements no
 /// storage `Encode` and no Serde: the only forward path is the opened value,
 /// which is sealed again with [`Sealed::seal`].
 ///
@@ -36,7 +36,7 @@ use super::{LegacyFormat, legacy};
 /// ```
 /// use cryptbox::{
 ///     EncryptionKey, EncryptionKeyring, Sealed, key_id,
-///     migrate::{LegacyError, LegacyFormat, MaybeEncrypted},
+///     migrate::{LegacyError, LegacyFormat, MaybeSealed},
 /// };
 /// use zeroize::Zeroizing;
 ///
@@ -68,7 +68,7 @@ use super::{LegacyFormat, legacy};
 /// )?;
 ///
 /// // The handler accepts both plaintext and the previous format.
-/// let plaintext = MaybeEncrypted::<UserEmail>::from_bytes(
+/// let plaintext = MaybeSealed::<UserEmail>::from_bytes(
 ///     b"mark@example.com".to_vec(),
 /// )?;
 /// assert!(plaintext.is_legacy());
@@ -78,16 +78,16 @@ use super::{LegacyFormat, legacy};
 ///     "mark@example.com",
 /// );
 ///
-/// let foreign = MaybeEncrypted::<UserEmail>::from_bytes(
+/// let foreign = MaybeSealed::<UserEmail>::from_bytes(
 ///     b"previous:other@example.com".to_vec(),
 /// )?;
 /// let value = foreign.open_legacy(&keys, &PreviousFormat)?;
 /// let stored = Sealed::<UserEmail>::seal(&value, &keys)?;
-/// let read = MaybeEncrypted::<UserEmail>::from_bytes(stored.into_bytes())?;
+/// let read = MaybeSealed::<UserEmail>::from_bytes(stored.into_bytes())?;
 /// assert!(!read.is_legacy());
 /// # Ok::<(), cryptbox::Error>(())
 /// ```
-pub struct MaybeEncrypted<F: Seal> {
+pub struct MaybeSealed<F: Seal> {
     state: State<F>,
 }
 
@@ -105,7 +105,7 @@ fn decode_legacy<F: Seal>(
     Ok(F::Codec::decode(&plaintext)?)
 }
 
-impl<F> MaybeEncrypted<F>
+impl<F> MaybeSealed<F>
 where
     F: Seal,
 {
@@ -145,7 +145,7 @@ where
     /// legacy value that begins with the `CryptBox` envelope magic.
     ///
     /// ```
-    /// use cryptbox::migrate::MaybeEncrypted;
+    /// use cryptbox::migrate::MaybeSealed;
     ///
     /// struct LegacyBlob;
     ///
@@ -158,7 +158,7 @@ where
     ///
     /// // A discriminator column established that these bytes are legacy, even
     /// // though they collide with CryptBox's envelope magic.
-    /// let read = MaybeEncrypted::<LegacyBlob>::from_legacy_bytes(
+    /// let read = MaybeSealed::<LegacyBlob>::from_legacy_bytes(
     ///     b"CBX\0previous-format".to_vec(),
     /// );
     /// assert!(read.is_legacy());
@@ -210,7 +210,7 @@ where
     }
 }
 
-impl<F: Seal> MaybeEncrypted<F> {
+impl<F: Seal> MaybeSealed<F> {
     /// Returns whether the value represents legacy, non-envelope storage.
     #[doc(alias = "is_plaintext")]
     #[must_use]
@@ -228,7 +228,7 @@ impl<F: Seal> MaybeEncrypted<F> {
     }
 }
 
-impl<F: Seal> From<Sealed<F>> for MaybeEncrypted<F> {
+impl<F: Seal> From<Sealed<F>> for MaybeSealed<F> {
     fn from(sealed: Sealed<F>) -> Self {
         Self {
             state: State::Sealed(sealed),
@@ -236,8 +236,8 @@ impl<F: Seal> From<Sealed<F>> for MaybeEncrypted<F> {
     }
 }
 
-impl<F: Seal> fmt::Debug for MaybeEncrypted<F> {
+impl<F: Seal> fmt::Debug for MaybeSealed<F> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("MaybeEncrypted([REDACTED])")
+        formatter.write_str("MaybeSealed([REDACTED])")
     }
 }

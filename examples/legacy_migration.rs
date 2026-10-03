@@ -10,7 +10,7 @@ use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, IndexKeyId, KeyId, Seal, Sealed, index_key_id, key_id,
     migrate::{
-        LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore,
+        LegacyError, LegacyErrorKind, LegacyFormat, MaybeSealed, RowPlanner, SqliteSweepStore,
         Sweep, SweepTable,
     },
 };
@@ -200,7 +200,7 @@ async fn run() -> Result<(), Box<dyn Error>> {
     }
     assert_eq!(matches, 1);
 
-    // Closing checklist: replace MaybeEncrypted reads with strict reads, delete
+    // Closing checklist: replace MaybeSealed reads with strict reads, delete
     // the online handler, and disable `migrate`. A clean live-data pass does not
     // cover backups or other stores: remove online keys only after convergence,
     // retain recovery keys/handlers separately, and destroy them only when every
@@ -236,7 +236,7 @@ async fn verify_permissive_reads(
     ];
     for (row, expected) in rows.into_iter().zip(expected) {
         let id: i64 = row.try_get("id")?;
-        let value: MaybeEncrypted<UserEmail> = row.try_get("email_ciphertext")?;
+        let value: MaybeSealed<UserEmail> = row.try_get("email_ciphertext")?;
         assert_eq!(value.is_legacy(), id <= 2);
         assert_eq!(value.open_legacy(keys, legacy)?, expected,);
     }

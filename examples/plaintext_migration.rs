@@ -5,7 +5,7 @@ use std::error::Error;
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, IndexKeyId, KeyId, Seal, Sealed, index_key_id, key_id,
-    migrate::{MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
+    migrate::{MaybeSealed, RowPlanner, SqliteSweepStore, Sweep, SweepTable},
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use zeroize::Zeroizing;
@@ -92,13 +92,13 @@ async fn run() -> Result<(), Box<dyn Error>> {
     ));
 
     // During the bounded migration window, reads are permissive. Writes are
-    // not: MaybeEncrypted has no Encode, so storing always seals.
+    // not: MaybeSealed has no Encode, so storing always seals.
     let rows = sqlx::query("SELECT id, email_ciphertext FROM users ORDER BY id")
         .fetch_all(&mut connection)
         .await?;
     for row in rows {
         let id: i64 = row.try_get("id")?;
-        let value: MaybeEncrypted<UserEmail> = row.try_get("email_ciphertext")?;
+        let value: MaybeSealed<UserEmail> = row.try_get("email_ciphertext")?;
         assert_eq!(value.is_legacy(), id <= 2);
         let email = value.open(&keys)?;
         assert!(email.ends_with("@example.com"));

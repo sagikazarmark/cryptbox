@@ -13,7 +13,7 @@ use cryptbox::{
     EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
     index_key_id, key_id,
     migrate::{
-        LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted, RowPlanner, RowState, Sweep,
+        LegacyError, LegacyErrorKind, LegacyFormat, MaybeSealed, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
     },
     seal_id,
@@ -164,7 +164,7 @@ fn classification_accepts_valid_envelopes() {
     let keys = rotated_keys();
     let bytes = encrypt_email("mark@example.com", &keys);
 
-    let read = MaybeEncrypted::<UserEmail>::from_bytes(bytes).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(bytes).unwrap();
     assert!(!read.is_legacy());
     assert!(read.as_sealed().is_some());
     assert_eq!(read.open(&keys).unwrap(), "mark@example.com");
@@ -172,28 +172,28 @@ fn classification_accepts_valid_envelopes() {
 
 #[test]
 fn classification_treats_bytes_without_magic_as_legacy() {
-    let read = MaybeEncrypted::<UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
     assert!(read.is_legacy());
     assert!(read.as_sealed().is_none());
 }
 
 #[test]
 fn open_recovers_legacy_plaintext_through_the_codec() {
-    let read = MaybeEncrypted::<UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"mark@example.com".to_vec()).unwrap();
 
     assert_eq!(read.open(&rotated_keys()).unwrap(), "mark@example.com");
 }
 
 #[test]
 fn classification_treats_empty_bytes_as_legacy() {
-    let read = MaybeEncrypted::<UserEmail>::from_bytes(Vec::new()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(Vec::new()).unwrap();
     assert!(read.is_legacy());
     assert_eq!(read.open(&rotated_keys()).unwrap(), "");
 }
 
 #[test]
 fn from_bytes_defers_codec_errors_to_open() {
-    let read = MaybeEncrypted::<UserEmail>::from_bytes(vec![0xFF, 0xFE]).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(vec![0xFF, 0xFE]).unwrap();
 
     assert_eq!(
         read.open(&rotated_keys()).unwrap_err(),
@@ -205,8 +205,7 @@ fn from_bytes_defers_codec_errors_to_open() {
 
 #[test]
 fn open_legacy_recovers_foreign_ciphertext() {
-    let read =
-        MaybeEncrypted::<UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec()).unwrap();
 
     assert_eq!(
         read.open_legacy(&rotated_keys(), &ToyLegacy).unwrap(),
@@ -216,17 +215,16 @@ fn open_legacy_recovers_foreign_ciphertext() {
 
 #[test]
 fn debug_redacts_deferred_legacy_bytes() {
-    let read =
-        MaybeEncrypted::<UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"legacy:mark@example.com".to_vec()).unwrap();
 
-    assert_eq!(format!("{read:?}"), "MaybeEncrypted([REDACTED])");
+    assert_eq!(format!("{read:?}"), "MaybeSealed([REDACTED])");
 }
 
 #[test]
 fn open_legacy_ignores_the_handler_for_envelopes() {
     let keys = rotated_keys();
     let read =
-        MaybeEncrypted::<UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys)).unwrap();
+        MaybeSealed::<UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys)).unwrap();
 
     assert_eq!(
         read.open_legacy(&keys, &PanickingLegacy).unwrap(),
@@ -236,7 +234,7 @@ fn open_legacy_ignores_the_handler_for_envelopes() {
 
 #[test]
 fn legacy_recovery_failure_is_a_hard_error() {
-    let read = MaybeEncrypted::<UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
 
     assert_eq!(
         read.open_legacy(&rotated_keys(), &FailingLegacy)
@@ -255,7 +253,7 @@ fn recovered_garbage_fails_codec_decode() {
         }
     }
 
-    let read = MaybeEncrypted::<UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
+    let read = MaybeSealed::<UserEmail>::from_bytes(b"legacy:broken".to_vec()).unwrap();
     assert_eq!(
         read.open_legacy(&rotated_keys(), &InvalidUtf8).unwrap_err(),
         Error::CodecFailed(cryptbox::CodecError::new(
@@ -278,7 +276,7 @@ fn from_legacy_bytes_bypasses_classification_even_with_magic_prefix() {
     }
 
     let read =
-        MaybeEncrypted::<UserEmail>::from_legacy_bytes(b"CBX\0legacy:mark@example.com".to_vec());
+        MaybeSealed::<UserEmail>::from_legacy_bytes(b"CBX\0legacy:mark@example.com".to_vec());
     assert!(read.is_legacy());
     assert_eq!(
         read.open_legacy(&rotated_keys(), &MagicPrefixed).unwrap(),
@@ -289,7 +287,7 @@ fn from_legacy_bytes_bypasses_classification_even_with_magic_prefix() {
 #[test]
 fn magic_prefixed_garbage_is_a_hard_error_not_plaintext() {
     assert_eq!(
-        MaybeEncrypted::<UserEmail>::from_bytes(b"CBX\0garbage".to_vec()).unwrap_err(),
+        MaybeSealed::<UserEmail>::from_bytes(b"CBX\0garbage".to_vec()).unwrap_err(),
         Error::InvalidEnvelope,
     );
 }
@@ -300,7 +298,7 @@ fn unsupported_format_version_is_a_hard_error_not_plaintext() {
     bytes[4] = 9;
 
     assert_eq!(
-        MaybeEncrypted::<UserEmail>::from_bytes(bytes).unwrap_err(),
+        MaybeSealed::<UserEmail>::from_bytes(bytes).unwrap_err(),
         Error::UnsupportedFormatVersion(9),
     );
 }
@@ -308,13 +306,12 @@ fn unsupported_format_version_is_a_hard_error_not_plaintext() {
 #[test]
 fn out_of_band_constructors_bypass_byte_classification() {
     let keys = rotated_keys();
-    let read =
-        MaybeEncrypted::<UserEmail>::from_plaintext("CBX\0-prefixed legacy value".to_owned());
+    let read = MaybeSealed::<UserEmail>::from_plaintext("CBX\0-prefixed legacy value".to_owned());
     assert!(read.is_legacy());
 
     let ciphertext =
         Sealed::<UserEmail>::from_bytes(encrypt_email("mark@example.com", &keys)).unwrap();
-    let read = MaybeEncrypted::from(ciphertext);
+    let read = MaybeSealed::from(ciphertext);
     assert!(!read.is_legacy());
 }
 

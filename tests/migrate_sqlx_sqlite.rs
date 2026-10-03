@@ -7,7 +7,7 @@ use cryptbox::{
     EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
     index_key_id, key_id,
     migrate::{
-        LegacyError, LegacyFormat, MaybeEncrypted, RowPlanner, SqliteSweepStore, Sweep, SweepError,
+        LegacyError, LegacyFormat, MaybeSealed, RowPlanner, SqliteSweepStore, Sweep, SweepError,
         SweepTable,
     },
     seal_id,
@@ -140,7 +140,7 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
         for row in rows {
             let id: i64 = row.try_get("id").unwrap();
             assert_strict_decode(&row, id <= 2);
-            let read: MaybeEncrypted<UserEmail> = row.try_get("email_ciphertext").unwrap();
+            let read: MaybeSealed<UserEmail> = row.try_get("email_ciphertext").unwrap();
             assert_eq!(read.is_legacy(), id <= 2);
             read.open_legacy(&keys, &TOY_LEGACY).unwrap();
         }
@@ -209,7 +209,7 @@ fn permissive_decode_propagates_hard_errors() {
             .fetch_one(&mut connection)
             .await
             .unwrap();
-        let result = row.try_get::<MaybeEncrypted<UserEmail>, _>("bytes");
+        let result = row.try_get::<MaybeSealed<UserEmail>, _>("bytes");
         let error = result.unwrap_err();
         let sqlx::Error::ColumnDecode { source, .. } = error else {
             panic!("expected a column decode error");

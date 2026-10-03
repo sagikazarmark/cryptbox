@@ -5,7 +5,7 @@ use chacha20poly1305::{
     aead::{Aead, Payload},
 };
 use cryptbox::BlindIndex;
-use cryptbox::migrate::{LegacyError, LegacyErrorKind, LegacyFormat, MaybeEncrypted};
+use cryptbox::migrate::{LegacyError, LegacyErrorKind, LegacyFormat, MaybeSealed};
 
 const HEADER: &[u8] = b"illustrative-legacy-v1\0";
 const COLLISION: &[u8] = b"CBX\0illustrative-legacy-v1\0";
@@ -80,11 +80,11 @@ fn recover(
     keys: &EncryptionKeyring,
     legacy: &PreviousEncryption,
 ) -> Result<String> {
-    let stored: MaybeEncrypted<UserEmail> = if collision {
+    let stored: MaybeSealed<UserEmail> = if collision {
         // Only a trusted application discriminator can authorize this bypass.
-        MaybeEncrypted::from_legacy_bytes(bytes)
+        MaybeSealed::from_legacy_bytes(bytes)
     } else {
-        MaybeEncrypted::from_bytes(bytes)?
+        MaybeSealed::from_bytes(bytes)?
     };
     let value = stored.open_legacy(keys, legacy)?;
     validate_email(&value)?;
@@ -375,7 +375,7 @@ pub(super) async fn command(
                 .bind(id.parse::<i64>()?)
                 .fetch_one(db)
                 .await?;
-            MaybeEncrypted::<UserEmail>::from_bytes(bytes)?;
+            MaybeSealed::<UserEmail>::from_bytes(bytes)?;
             println!("Ordinary classification succeeded.");
         }
         ["migration-repair-collision"] => {

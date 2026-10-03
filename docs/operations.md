@@ -289,7 +289,7 @@ evidence for **every** accepted value; codec success (`Raw` rejects nothing) and
 sampling prove nothing. Re-encryption protects bytes going forward, not their
 origin.
 
-`cryptbox::migrate::MaybeEncrypted<F>` reads columns that may still hold legacy
+`cryptbox::migrate::MaybeSealed<F>` reads columns that may still hold legacy
 values. Classification needs no keys:
 
 - A valid envelope opens with authentication, ignoring the handler.
@@ -298,10 +298,10 @@ values. Classification needs no keys:
 - A malformed or unsupported envelope, or an envelope that fails authentication,
   is a hard error, **never a legacy fallback**.
 
-`MaybeEncrypted` cannot be written; new writes use `Sealed::seal`,
+`MaybeSealed` cannot be written; new writes use `Sealed::seal`,
 `Sealed::prepare`, or `Plain`. For legacy bytes that collide with the `CBX\0`
 magic, only a trusted out-of-band discriminator may authorize
-`MaybeEncrypted::from_legacy_bytes`.
+`MaybeSealed::from_legacy_bytes`.
 
 ### Transitional search
 
@@ -352,7 +352,7 @@ and the strict-reader cutover, or supply equivalent consistency.
    index recomputation.
 3. Reconcile expected rows and searches with the inventory, and retain
    provenance evidence for unauthenticated values.
-4. Replace `MaybeEncrypted` with strict reads; remove the handler, migration
+4. Replace `MaybeSealed` with strict reads; remove the handler, migration
    commands, and the `migrate` feature.
 5. Restart strict readers and verify converted reads, complete searches, and a
    write, read, and search round trip before reopening traffic.

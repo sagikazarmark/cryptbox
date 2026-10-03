@@ -9,8 +9,8 @@ use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, IndexId, Padding, Seal, Sealed, Utf8, index_id, index_key_id, key_id,
     migrate::{
-        LegacyError, LegacyFormat, MaybeEncrypted, PostgresSweepStore, RowPlanner, Sweep,
-        SweepReport, SweepStore, SweepTable,
+        LegacyError, LegacyFormat, MaybeSealed, PostgresSweepStore, RowPlanner, Sweep, SweepReport,
+        SweepStore, SweepTable,
     },
     seal_id,
 };
@@ -218,7 +218,7 @@ async fn assert_readable_rows(
             // Authentication is asserted separately from generation convergence.
             assert_eq!(ciphertext.open(keys).unwrap(), expected);
         }
-        let permissive: MaybeEncrypted<UserEmail> = row.get("email_ciphertext");
+        let permissive: MaybeSealed<UserEmail> = row.get("email_ciphertext");
         assert_eq!(permissive.is_legacy(), is_legacy);
         assert_eq!(permissive.open_legacy(keys, &ToyLegacy).unwrap(), expected,);
     }

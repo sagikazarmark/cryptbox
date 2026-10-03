@@ -84,7 +84,7 @@ fn encrypted_storage_types_map_to_postgres_bytea() {
     // The permissive migration read decodes but deliberately has no Encode:
     // writes always encrypt through `Plain`, `Sealed`, or `Prepared`.
     #[cfg(feature = "migrate")]
-    assert_sqlx_decode::<cryptbox::migrate::MaybeEncrypted<TestSeal>>();
+    assert_sqlx_decode::<cryptbox::migrate::MaybeSealed<TestSeal>>();
 
     let bytea: PgTypeInfo = <Vec<u8> as Type<Postgres>>::type_info();
     assert_eq!(<Plain<TestSeal> as Type<Postgres>>::type_info(), bytea);

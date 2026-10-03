@@ -109,7 +109,7 @@ where
 }
 
 #[cfg(feature = "migrate")]
-impl<F: Seal> Type<Postgres> for crate::migrate::MaybeEncrypted<F> {
+impl<F: Seal> Type<Postgres> for crate::migrate::MaybeSealed<F> {
     fn type_info() -> PgTypeInfo {
         bytea_type_info()
     }
@@ -124,7 +124,7 @@ impl<F: Seal> Type<Postgres> for crate::migrate::MaybeEncrypted<F> {
 // `Encode` counterpart: writes always encrypt through `Plain`, `Sealed`, or
 // `Prepared`.
 #[cfg(feature = "migrate")]
-impl<'row, F> Decode<'row, Postgres> for crate::migrate::MaybeEncrypted<F>
+impl<'row, F> Decode<'row, Postgres> for crate::migrate::MaybeSealed<F>
 where
     F: Seal,
 {
