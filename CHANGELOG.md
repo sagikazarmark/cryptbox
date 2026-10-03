@@ -148,8 +148,12 @@ ADR-0012.
   `MaybeEncrypted<F>` opens with `open(&keys)`, `open_legacy`, `open_global`,
   and `open_global_legacy`, returns the bare value, and exposes `as_sealed`.
   `RowPlanner<F, R = ()>` and `Sweep<F, R = ()>` take the type of a row's
-  columns: `RowPlanner::new(&keys)` serves a standalone seal, and
-  `RowPlanner::for_rows(&keys, |row| Ok(&row.id))` a record field's seal.
+  columns: `RowPlanner::new(&keys)` serves standalone values, and
+  `RowPlanner::for_rows(&keys, |row| Ok(&row.id))` a record's field, whose
+  context the record ID's type fixes. A seal no longer knows whether it is a
+  record field's (ADR-0012), so `new` on a record field's seal, or `for_rows`
+  with a record ID of another kind, builds, and every row reports
+  `ContextMismatch`, which verification counts as malformed (#113).
   `SweepStore` gains `type Columns`, carried in `SweepRow::columns`.
 
 ### Fixes

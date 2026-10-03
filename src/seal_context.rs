@@ -149,7 +149,8 @@ impl ContextKind for () {
 /// context or with another value. Only the library implements it, and `()`,
 /// the standalone context, never does: every context adds at least one part.
 pub trait Context: ContextKind {
-    /// The value a sealed value is bound to in this context, such as the record ID.
+    /// What a value is sealed under in this context besides its seal ID, such
+    /// as the record ID.
     type Value: ?Sized;
 
     /// The record ID in `value`. Not public API.
@@ -246,8 +247,8 @@ impl SealContext {
         })
     }
 
-    /// The context of seal `id` alone, as a standalone values and every
-    /// blind index use it.
+    /// The context of seal `id` alone, which standalone values and every blind
+    /// index are sealed or derived under.
     pub(crate) fn seal_id(id: &SealId) -> Self {
         Self::new(id, None).expect("a context without a record always fits")
     }

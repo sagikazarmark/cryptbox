@@ -34,7 +34,7 @@ value (`()`), and the record ID for a field of a record (`InRecord<K>`). A seal
 knows nothing of the context its values are sealed in. Opening under another
 seal, context, or record fails. Tenants are kept apart by keys, not by the
 context.
-<!-- Agent guidance: “binding” is retired as a concept above the envelope (ADR-0011): say “context”, or “seal context” for the bytes; `Context` names a kind of context that adds parts after the seal ID (ADR-0012), and `ContextKind` is `()` or a `Context`. “Binding arguments” (`Args`), “bound value”, “bound ID type”, and “partition” are retired, as “scope”, “part”, “view”, and “keys view” were (ADR-0010). Applications never write context bytes. -->
+<!-- Agent guidance: “binding” is retired as a concept above the envelope (ADR-0011): say “context”, or “seal context” for the bytes; `Context` names a kind of context that adds parts after the seal ID (ADR-0012), and `ContextKind` is `()` or a `Context`. “Binding arguments” (`Args`), “bound value”, “bound ID type”, and “partition” are retired, as “scope”, “view”, and “keys view” were (ADR-0010). “Part” returns only for the library-owned parts of a context (ADR-0012). Applications never write context bytes. -->
 
 **Context fingerprint**:
 A public 8-byte summary of a context: truncated SHA-256 over whether it holds a
@@ -108,6 +108,13 @@ The application-defined conversion that gives equivalent values the same bytes
 for blind-index derivation and candidate comparison. It is persistent schema;
 the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 
+**Part**:
+A typed value a context adds after the seal ID: its slot, a UUID the library
+allocates, the kind of its value, and the length-prefixed value. The record ID,
+in the nil slot, is the only part. Applications never declare parts or slots;
+a `Context` does.
+<!-- Agent guidance: this is not the retired application-declared part of ADR-0005 to ADR-0010 (`#[part]`, `PartId`, `part_id!`), which stays retired; never suggest that applications add parts. Say “slot” only for a part's UUID. -->
+
 **Plain value**:
 A plaintext value of a seal held by the automatic SQLx column (`Plain<F, K>`),
 which seals it on encode and opens it on decode. A column decoder does not see
@@ -149,9 +156,9 @@ before the values are sealed: a `Uuid` or `[u8; 16]`, an `i64`, or bytes
 A reviewable listing of registered seals, blind indexes, and records with their
 persistent schema: seal ID, codec ID, padding, the fingerprint of each context a
 seal is registered in, index ID, precision, normalizer name, and a record's
-seals, record ID, record kind, context fingerprint, and plaintext fields. It names IDs, never Rust types, so its output is
-the same on every toolchain; a record's fields, which have no ID, are listed by
-name. Applications compare it with a committed snapshot in CI.
+seals, record ID, record kind, context fingerprint, and plaintext fields. It
+names IDs, never Rust types, so its output is the same on every toolchain; a
+record's fields, which have no ID, are listed by name. Applications compare it with a committed snapshot in CI.
 <!-- Agent guidance: the codec ID and normalizer name are reported, never stored in ciphertext or indexes. Custody labels and the shred unit are retired with keys views (ADR-0010); `testing::assert_sealed_under` is how an application tests its choice of keys. -->
 
 **Seal**:

@@ -5,8 +5,8 @@ status: accepted
 # Runtime binding is the core; fields declare its shape
 
 > Amended by [ADR-0012](0012-a-record-is-a-context-layer-over-a-seal.md):
-> a context's declaration is the
-> sealed value's type, `Sealed<F, C>`, not the seal's.
+> a context's declaration is the sealed value's type, `Sealed<F, C>`, not the
+> seal's.
 
 > Amended by [ADR-0011](0011-a-binding-is-the-seal-and-the-record.md): a
 > binding is the seal ID and, for a record's field, its record ID. Declared

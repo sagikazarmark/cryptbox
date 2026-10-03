@@ -282,7 +282,7 @@ rows or authenticate index metadata; see
 [what each check establishes](../../docs/security.md#what-each-check-establishes).
 
 Blind indexes reveal equality/frequency and cannot enforce uniqueness. `Padding::NONE`
-reveals encoded length; a standalone seal does not prevent substitution between rows of one seal, or replay.
+reveals encoded length; a standalone value does not prevent substitution between rows of one seal, or replay.
 
 ## Use it in your application
 

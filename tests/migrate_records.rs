@@ -37,7 +37,7 @@ struct Customer {
     email: String,
 }
 
-/// The same seal ID, as a standalone seal.
+/// The same seal ID, for standalone values.
 struct UnboundEmail;
 
 impl Seal for UnboundEmail {

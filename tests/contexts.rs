@@ -1,4 +1,4 @@
-//! Public-boundary tests for the context record fields and standalone seals are sealed under.
+//! Public-boundary tests for the context record fields and standalone values are sealed under.
 #![cfg(feature = "derive")]
 
 use cryptbox::{EncryptionKey, EncryptionKeyring, Error, Record, Sealed};

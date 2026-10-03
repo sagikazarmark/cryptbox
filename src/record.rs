@@ -10,10 +10,11 @@ use crate::{
 /// which the row stores.
 ///
 /// A record pairs a plaintext struct with its stored form, [`Self::Stored`]:
-/// the record ID and plaintext fields as they are, each sealed
-/// field as its [`Sealed`](crate::Sealed) value in the record's context,
-/// [`Self::Context`], and a [`BlindIndex`] column per blind index. [`Self::seal`] encrypts every sealed
-/// field and derives its indexes; [`Self::open`] authenticates and opens them.
+/// the record ID and plaintext fields as they are, each sealed field as its
+/// [`Sealed`](crate::Sealed) value in the record's context, [`Self::Context`],
+/// and a [`BlindIndex`] column per blind index. [`Self::seal`] encrypts every
+/// sealed field and derives its indexes; [`Self::open`] authenticates and opens
+/// them.
 ///
 /// The record ID is read from the stored row and authenticated by opening: a
 /// sealed value copied from another row or field fails to open. Plaintext

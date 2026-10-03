@@ -46,9 +46,16 @@ let token = Sealed::<ApiToken>::seal(&value, &keys)?;           // standalone: `
 - **Blind indexes and `Plain` are unaffected.** An index is derived under its seal
   ID alone, whatever the context of its seal's values. `Plain` and the installed
   keys serve standalone values only, as before.
-- **The manifest reports contexts per record.** A seal entry lists its seal ID,
-  codec, and padding. A record entry lists the kind of its record ID and its
-  context fingerprint, beside its seals, record ID, and plaintext fields.
+- **The manifest reports contexts where they are registered.** A seal knows
+  nothing of its contexts, so `Manifest::seal` lists its seal ID, codec, and
+  padding only. A record entry lists the kind of its record ID and its context
+  fingerprint, beside its seals, record ID, and plaintext fields.
+  `Manifest::sealed::<F, C>()` registers a seal's values stored in context `C`,
+  such as `()` for standalone values, and the seal entry lists that context's
+  fingerprint. `duplicates()` reports a seal registered in several kinds of
+  context, as `Duplicate::Context`: the manifest's guard against a record
+  field's seal also stored standalone, effective only for contexts the
+  application registers.
 - **The wire format does not change.** Context bytes and fingerprints are those of
   ADR-0011, and every test vector stands.
 
@@ -78,11 +85,19 @@ let token = Sealed::<ApiToken>::seal(&value, &keys)?;           // standalone: `
   alone and fails to open as the record's, with `ContextMismatch`. A record field
   still cannot name an existing seal, so a generated seal is named only by its own
   record, and #113 tracks restoring the build error.
+- **A misconfigured migration planner builds.** `RowPlanner::new` over a record
+  field's seal, or `RowPlanner::for_rows` with a record ID of another kind, used
+  to fail the build. Neither the seal nor the planner, which reads raw column
+  bytes, has a type that says which context a column holds, so every row now
+  reports `ContextMismatch`, and a verification pass counts each as a malformed
+  row rather than aborting as misconfigured. A context parameter on the planner
+  would not restore the check, since the caller would name it; #113 would.
 - **The API breaks, before 1.0:** `Sealed` and `Prepared` gain a context parameter
   that defaults to `()`; `Seal::RECORD`, `__private::seal_in_record`, and
   `__private::open_in_record` go; `Context`, `ContextKind`, `InRecord`, the `*_in`
-  methods, and `Record::Context` are added. Manifest snapshots change: seal
-  entries lose `record` and `context`, and record entries gain them.
+  methods, `Record::Context`, `Manifest::sealed`, and `Duplicate::Context` are
+  added. Manifest snapshots change: seal entries lose `record` and list a
+  `context` only for contexts `sealed` registers, and record entries gain both.
 - **ADR-0011 is amended:** a record field's seal is no longer marked by a hidden
   `Seal::RECORD`, and its binding to the record ID is public as `InRecord`, sealed
   and opened by the record's derive or with `seal_in` and `open_in`. **ADR-0007** is

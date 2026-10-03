@@ -135,6 +135,13 @@ where
 /// keys, such as one keyring per org, run one sweep per keyring over the rows
 /// those keys protect. [`Self::new`] serves standalone values, whose rows
 /// need no columns.
+///
+/// A seal does not know whether it is a record field's, so a planner of the
+/// wrong kind builds: [`Self::new`] over a record's field, or
+/// [`Self::for_rows`] with a record ID of another kind. Every row then reports
+/// [`Error::ContextMismatch`], which a verification pass counts as a malformed
+/// row, not as a misconfigured pass. Check a pass on a few known-good rows
+/// before trusting its counts.
 pub struct RowPlanner<'a, F, R = ()>
 where
     F: Seal,

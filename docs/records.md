@@ -8,8 +8,8 @@ apart by keys, not by the context. This page explains records, where their
 record IDs come from, and how blind indexes and tenants fit in.
 [Documentation](README.md) · [Choosing keyrings](choosing-keyrings.md).
 
-Start from [seal your first value](first-field.md), whose standalone values are bound
-values to its seal ID alone. Make values fields of a record when a value copied
+Start from [seal your first value](first-field.md), whose values are standalone:
+sealed under their seal ID alone. Make values fields of a record when a value copied
 between rows must fail to open, and give each tenant its own keyring when tenants
 must not be able to read each other's values: see
 [choosing keyrings](choosing-keyrings.md).

@@ -330,9 +330,10 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// `crate = "path"` names the path to `cryptbox`.
 ///
 /// The stored form has the record's fields in order, each sealed field as its
-/// `Sealed<Seal, InRecord<Id>>`, sealed under the record ID of type `Id`, and each blind index in a `BlindIndex<Spec>` column after its
-/// field. `Record::seal` clones the record ID and plaintext fields, so they
-/// implement `Clone`.
+/// `Sealed<Seal, InRecord<Id>>`, sealed under the record ID of type `Id`, and
+/// each blind index in a `BlindIndex<Spec>` column after its field.
+/// `Record::seal` clones the record ID and plaintext fields, so they implement
+/// `Clone`.
 ///
 /// ```
 /// # use cryptbox::BlindIndexError;
@@ -433,7 +434,8 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///     where
 ///         K: RecordKeys + ?Sized,
 ///     {
-///         let email = Sealed::<CustomerEmail, InRecord<i64>>::seal_in(&self.email, &self.id, keys)?;
+///         let email =
+///             Sealed::<CustomerEmail, InRecord<i64>>::seal_in(&self.email, &self.id, keys)?;
 ///         let email_index =
 ///             CustomerEmailIndex::derive_with(&self.email, keys.record_blind_index_keyring()?)?;
 ///

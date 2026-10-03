@@ -51,7 +51,7 @@ fn experimental_envelope_vectors_record_their_padding() {
 
         assert_eq!(info.format_version(), 2);
         assert_eq!(info.padded(), padded);
-        // A standalone seal's context fingerprint: docs/wire-format.md#context-fingerprint
+        // A standalone value's context fingerprint: docs/wire-format.md#context-fingerprint
         assert_eq!(hex::encode(info.context_fingerprint()), "65640fc8333534b9");
         assert_eq!(read::<VectorSeal>(vector).unwrap(), b"cryptbox vector");
     }
