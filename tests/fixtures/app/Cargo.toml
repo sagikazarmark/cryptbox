@@ -23,9 +23,9 @@ zeroize = { version = "1", features = ["alloc"] }
 
 [[bin]]
 name = "automatic"
-path = "../../../docs/snippets/testing-automatic.rs"
+path = "src/bin/testing-automatic.rs"
 required-features = ["sqlite"]
 
 [[bin]]
 name = "diagnostics"
-path = "../../../docs/snippets/testing-diagnostics.rs"
+path = "src/bin/testing-diagnostics.rs"

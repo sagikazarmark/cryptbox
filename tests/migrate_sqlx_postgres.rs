@@ -1,5 +1,5 @@
 //! Live public-boundary coverage for the packaged `PostgreSQL` sweep store.
-//! Run with `DATABASE_URL` and `--include-ignored`; see `docs/testing.md`.
+//! Run with `DATABASE_URL` and `--include-ignored`; see `CONTRIBUTING.md`.
 
 #![cfg(all(feature = "migrate", feature = "sqlx-postgres"))]
 

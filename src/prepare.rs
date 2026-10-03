@@ -23,7 +23,7 @@ struct PreparedIndex {
 /// [`Sealed::prepare_in`]. Indexes are derived under their seal alone either way.
 ///
 #[doc = concat!(
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
 )]
 pub struct Prepared<'a, F, C = ()>
 where

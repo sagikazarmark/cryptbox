@@ -345,7 +345,7 @@ A size check is not authentication.
 
 ### Key and buffer lifetime
 
-See [plaintext and key ownership](ownership.md) for buffer lifetimes and erasure
+See [ownership and erasure](guide.md#ownership-and-erasure) for buffer lifetimes and erasure
 obligations.
 
 ### Provisional envelope vectors

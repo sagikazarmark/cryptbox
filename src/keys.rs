@@ -41,7 +41,10 @@
 //! with [`Error::KeysNotInstalled`]:
 //!
 //! ```toml
-#![doc = include_str!("../docs/snippets/clippy-no-global-keys.toml")]
+//! disallowed-methods = [
+//!     { path = "cryptbox::keys::install", reason = "pass keys explicitly" },
+//!     { path = "cryptbox::keys::installed", reason = "pass keys explicitly" },
+//! ]
 //! ```
 //!
 //! The automatic `SQLx` column defaults to [`GlobalKeys`](crate::GlobalKeys);
@@ -49,7 +52,7 @@
 //! `Plain<F, K>`, to use application-owned keys instead.
 //!
 #![doc = concat!(
-    "[testing guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/testing.md",
+    "[testing guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#testing",
 )]
 
 use std::sync::OnceLock;

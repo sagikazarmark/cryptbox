@@ -12,7 +12,7 @@ use crate::{BlindIndexKeyring, EncryptionKeyring, Error, Keys};
 /// see [choosing keyrings]. This trait is sealed.
 ///
 #[doc = concat!(
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#choosing-keyrings",
 )]
 #[diagnostic::on_unimplemented(
     message = "`{Self}` are not encryption keys",

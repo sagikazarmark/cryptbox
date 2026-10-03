@@ -39,7 +39,7 @@ pub enum KeyError {
 /// separate keys, pass each its own `Keys`; see [choosing keyrings].
 ///
 #[doc = concat!(
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#choosing-keyrings",
 )]
 ///
 /// # Examples

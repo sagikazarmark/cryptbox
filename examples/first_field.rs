@@ -1,6 +1,5 @@
 //! First seal-bound round trip with explicit, ephemeral keys.
 
-// ANCHOR: first-field
 use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8};
 
 struct UserEmail;
@@ -24,7 +23,6 @@ fn main() -> Result<(), cryptbox::Error> {
     println!("Seal-bound round trip succeeded.");
     Ok(())
 }
-// ANCHOR_END: first-field
 
 #[cfg(test)]
 mod tests {

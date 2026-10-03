@@ -500,7 +500,7 @@ impl<F: Seal, C> fmt::Debug for Sealed<F, C> {
 ///
 #[doc = concat!(
     "See the [ownership reference].\n\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
 )]
 pub struct Plain<F: Seal, K = GlobalKeys> {
     value: F::Value,
