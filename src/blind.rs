@@ -168,7 +168,8 @@ pub trait BlindIndexSpec: Sized + 'static {
     /// The number of most-significant HMAC bits retained for candidate lookup.
     const BITS: u16;
 
-    /// A stable name for the normalization rules, such as `"email/1"`.
+    /// A stable name for the normalization rules, such as `"email/1"`: a name,
+    /// `/`, and a version from 1.
     ///
     /// Normalization is persistent schema, but neither stored indexes nor code
     /// review reliably reveal a change to it. The
@@ -525,12 +526,58 @@ fn derive_normalized<Spec: BlindIndexSpec>(
     Ok(BlindIndex::from_validated_bytes(stored))
 }
 
+/// Reports whether `name` is a versioned normalizer name, `<name>/<version>`:
+/// a non-empty name, `/`, and a decimal version from 1 without leading zeros.
+#[doc(hidden)]
+#[must_use]
+pub const fn valid_normalizer(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    let mut slash = bytes.len();
+    while slash > 0 {
+        slash -= 1;
+        if bytes[slash] == b'/' {
+            break;
+        }
+    }
+    if slash == 0 || bytes[slash] != b'/' || slash + 1 == bytes.len() || bytes[slash + 1] == b'0' {
+        return false;
+    }
+
+    let mut index = slash + 1;
+    while index < bytes.len() {
+        if !bytes[index].is_ascii_digit() {
+            return false;
+        }
+        index += 1;
+    }
+
+    true
+}
+
 /// Creates an [`IndexId`](crate::IndexId) from a UUID literal.
 #[macro_export]
 macro_rules! index_id {
     ($value:literal) => {{
-        const ID: $crate::IndexId =
-            $crate::IndexId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
+        const ID: $crate::IndexId = $crate::IndexId::from_bytes($crate::__private::non_nil(
+            $crate::__private::uuid::uuid!($value).into_bytes(),
+        ));
         ID
     }};
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_normalizer;
+
+    #[test]
+    fn normalizer_names_carry_a_version_from_one() {
+        for name in ["email/1", "exact/12", "a/b/3", "email-v2/10"] {
+            assert!(valid_normalizer(name), "{name}");
+        }
+        for name in [
+            "", "email", "/1", "email/", "email/0", "email/01", "email/v1", "email/1 ",
+        ] {
+            assert!(!valid_normalizer(name), "{name}");
+        }
+    }
 }

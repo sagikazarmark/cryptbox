@@ -8,7 +8,9 @@ use syn::{
     spanned::Spanned,
 };
 
-use crate::attr::{Errors, Padding, UuidLiteral, parse_bits, parse_padding, parse_uuid};
+use crate::attr::{
+    Errors, Padding, UuidLiteral, parse_bits, parse_normalizer, parse_padding, parse_uuid,
+};
 
 /// The keys of a record field's `#[cryptbox(…)]`.
 const FIELD_KEYS: &str = "`record_id`, `seal`, `plaintext`, `codec`, `padding`, `name`, \
@@ -260,7 +262,7 @@ fn parse_index(field: &Ident, meta: &ParseNestedMeta<'_>) -> syn::Result<IndexDe
         } else if inner.path.is_ident("normalize") {
             normalize = Some(inner.value()?.parse()?);
         } else if inner.path.is_ident("normalizer") {
-            normalizer = Some(inner.value()?.parse()?);
+            normalizer = Some(parse_normalizer(inner.value()?)?);
         } else if inner.path.is_ident("query") {
             query = Some(inner.value()?.parse()?);
         } else if inner.path.is_ident("project") {

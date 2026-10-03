@@ -231,7 +231,7 @@ impl Attrs {
             Key::Bits => self.bits = Some(parse_bits(input)?),
             Key::Query => self.query = Some(input.parse()?),
             Key::Normalize => self.normalize = Some(input.parse()?),
-            Key::Normalizer => self.normalizer = Some(input.parse()?),
+            Key::Normalizer => self.normalizer = Some(parse_normalizer(input)?),
             Key::Project => self.project = Some(input.parse()?),
             Key::Transparent => {
                 unreachable!("flags have no `= value`")
@@ -339,6 +339,14 @@ pub(crate) fn parse_uuid(name: &str, input: ParseStream) -> syn::Result<UuidLite
             ),
         )
     })?;
+    if value == 0 {
+        return Err(syn::Error::new(
+            literal.span(),
+            format!(
+                "`{name}` must not be the nil UUID: generate a fresh one, such as with `uuidgen`"
+            ),
+        ));
+    }
 
     Ok(UuidLiteral {
         value,
@@ -347,6 +355,32 @@ pub(crate) fn parse_uuid(name: &str, input: ParseStream) -> syn::Result<UuidLite
 }
 
 /// Parses the hyphenated form `cryptbox::SealId::from_str` accepts.
+/// Parses a normalizer name, which must be versioned: `<name>/<version>`, such as
+/// `"email/1"`. Mirrors `cryptbox::BlindIndexSpec::NORMALIZER`'s rule.
+pub(crate) fn parse_normalizer(input: ParseStream) -> syn::Result<LitStr> {
+    let literal: LitStr = input.parse()?;
+    if !valid_normalizer(&literal.value()) {
+        return Err(syn::Error::new(
+            literal.span(),
+            "`normalizer` must be a versioned name, such as \"email/1\": a name, `/`, and a \
+             version from 1",
+        ));
+    }
+
+    Ok(literal)
+}
+
+fn valid_normalizer(name: &str) -> bool {
+    let Some((name, version)) = name.rsplit_once('/') else {
+        return false;
+    };
+
+    !name.is_empty()
+        && !version.is_empty()
+        && !version.starts_with('0')
+        && version.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 fn uuid_value(text: &str) -> Option<u128> {
     let bytes = text.as_bytes();
     if bytes.len() != 36 {

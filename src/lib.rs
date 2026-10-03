@@ -185,7 +185,9 @@ pub mod __private {
     pub use uuid;
     pub use zeroize::Zeroizing;
 
+    pub use crate::blind::valid_normalizer;
     pub use crate::codec::DefaultCodec;
+    pub use crate::id::{is_nil, non_nil};
     pub use crate::schema::has_duplicate;
     pub use crate::seal_context::{RecordKey, RecordKind, RecordValue};
 }

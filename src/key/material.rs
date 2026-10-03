@@ -246,8 +246,9 @@ fn initialize_key_material<Id: Clone>(
 #[macro_export]
 macro_rules! key_id {
     ($value:literal) => {{
-        const ID: $crate::KeyId =
-            $crate::KeyId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
+        const ID: $crate::KeyId = $crate::KeyId::from_bytes($crate::__private::non_nil(
+            $crate::__private::uuid::uuid!($value).into_bytes(),
+        ));
         ID
     }};
 }
@@ -256,8 +257,9 @@ macro_rules! key_id {
 #[macro_export]
 macro_rules! index_key_id {
     ($value:literal) => {{
-        const ID: $crate::IndexKeyId =
-            $crate::IndexKeyId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
+        const ID: $crate::IndexKeyId = $crate::IndexKeyId::from_bytes($crate::__private::non_nil(
+            $crate::__private::uuid::uuid!($value).into_bytes(),
+        ));
         ID
     }};
 }

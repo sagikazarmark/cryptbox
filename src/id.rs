@@ -70,6 +70,33 @@ impl fmt::Display for InvalidIdentifier {
 
 impl std::error::Error for InvalidIdentifier {}
 
+/// Returns `bytes`, failing const evaluation for the nil UUID. Not public API:
+/// the ID macros call it, so a nil literal fails the build.
+#[doc(hidden)]
+#[must_use]
+pub const fn non_nil(bytes: [u8; 16]) -> [u8; 16] {
+    assert!(
+        !is_nil(&bytes),
+        "an ID must not be the nil UUID: generate a fresh one"
+    );
+
+    bytes
+}
+
+#[doc(hidden)]
+#[must_use]
+pub const fn is_nil(bytes: &[u8; 16]) -> bool {
+    let mut index = 0;
+    while index < 16 {
+        if bytes[index] != 0 {
+            return false;
+        }
+        index += 1;
+    }
+
+    true
+}
+
 // Accepts only the hyphenated form: `try_parse` also takes simple, braced, and URN
 // forms, which all differ from it in length.
 pub(crate) fn parse_uuid(value: &str) -> Result<[u8; 16], InvalidIdentifier> {

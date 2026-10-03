@@ -103,11 +103,19 @@ pub trait Seal: 'static {
 }
 
 /// Creates a [`SealId`](crate::SealId) from a UUID literal.
+///
+/// The literal is checked at compile time, and the nil UUID is rejected, as it
+/// is by `index_id!`, `key_id!`, and `index_key_id!`:
+///
+/// ```compile_fail,E0080
+/// const ID: cryptbox::SealId = cryptbox::seal_id!("00000000-0000-0000-0000-000000000000");
+/// ```
 #[macro_export]
 macro_rules! seal_id {
     ($value:literal) => {{
-        const ID: $crate::SealId =
-            $crate::SealId::from_bytes($crate::__private::uuid::uuid!($value).into_bytes());
+        const ID: $crate::SealId = $crate::SealId::from_bytes($crate::__private::non_nil(
+            $crate::__private::uuid::uuid!($value).into_bytes(),
+        ));
         ID
     }};
 }

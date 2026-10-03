@@ -426,10 +426,13 @@ const fn kind_name(kind: RecordKind) -> &'static str {
     }
 }
 
-/// Fails compilation when two of the listed types declare the same ID.
+/// Fails compilation when two of the listed types declare the same ID, when one
+/// declares the nil UUID, or when a blind index's normalizer name is not
+/// versioned, such as `"email/1"`.
 ///
 /// List seals to check their seal IDs, or `indexes:` followed by
-/// blind-index markers to check their index IDs. The check is a constant
+/// blind-index markers to check their index IDs and normalizer names. The
+/// derives check the same rules when they expand. The check is a constant
 /// assertion, so it works with manual impls and derives alike and needs no test
 /// to run. Markers that deliberately share a seal ID are one seal;
 /// leave one of them out.
@@ -519,6 +522,33 @@ const fn kind_name(kind: RecordKind) -> &'static str {
 ///
 /// cryptbox::assert_unique_ids!(indexes: Exact, Prefix);
 /// ```
+///
+/// And so does a normalizer name without a version:
+///
+/// ```compile_fail,E0080
+/// # use cryptbox::{BlindIndexError, BlindIndexSpec, Seal, SealId, IndexId, Padding, Raw};
+/// # use zeroize::Zeroizing;
+/// # struct Bytes;
+/// # impl Seal for Bytes {
+/// #     const ID: SealId = SealId::from_bytes([1; 16]);
+/// #     const PADDING: Padding = Padding::NONE;
+/// #     type Value = Vec<u8>;
+/// #     type Codec = Raw;
+/// # }
+/// struct Exact;
+///
+/// impl BlindIndexSpec for Exact {
+///     type Seal = Bytes;
+///     const ID: IndexId = IndexId::from_bytes([2; 16]);
+///     const BITS: u16 = 32;
+///     const NORMALIZER: &'static str = "exact";
+///     type Query = [u8];
+/// #   fn normalize_query(q: &[u8]) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(q.to_vec())) }
+/// #   fn normalize_value(v: &Vec<u8>) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> { Ok(Zeroizing::new(v.clone())) }
+/// }
+///
+/// cryptbox::assert_unique_ids!(indexes: Exact);
+/// ```
 #[macro_export]
 macro_rules! assert_unique_ids {
     (indexes: $($index:ty),+ $(,)?) => {
@@ -528,6 +558,20 @@ macro_rules! assert_unique_ids {
             ]),
             ::core::concat!("duplicate index ID among ", ::core::stringify!($($index),+)),
         );
+        $(
+            const _: () = ::core::assert!(
+                !$crate::__private::is_nil(<$index as $crate::BlindIndexSpec>::ID.as_bytes()),
+                ::core::concat!("the ID of ", ::core::stringify!($index), " is the nil UUID"),
+            );
+            const _: () = ::core::assert!(
+                $crate::__private::valid_normalizer(<$index as $crate::BlindIndexSpec>::NORMALIZER),
+                ::core::concat!(
+                    "the normalizer of ",
+                    ::core::stringify!($index),
+                    " is not a versioned name, such as \"email/1\"",
+                ),
+            );
+        )+
     };
     ($($seal:ty),+ $(,)?) => {
         const _: () = ::core::assert!(
@@ -536,6 +580,12 @@ macro_rules! assert_unique_ids {
             ]),
             ::core::concat!("duplicate seal ID among ", ::core::stringify!($($seal),+)),
         );
+        $(
+            const _: () = ::core::assert!(
+                !$crate::__private::is_nil(<$seal as $crate::Seal>::ID.as_bytes()),
+                ::core::concat!("the ID of ", ::core::stringify!($seal), " is the nil UUID"),
+            );
+        )+
     };
 }
 
