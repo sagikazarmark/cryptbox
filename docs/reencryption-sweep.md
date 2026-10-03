@@ -5,7 +5,10 @@ Rewrite stored values in bounded, resumable batches.
 
 Rotation selects keys for future writes; a later sweep converges existing
 ciphertext and indexes. The same sweep rewrites ciphertext whose padding flag
-disagrees with the seal's current policy, so it also applies a padding change. The `migrate` feature supplies
+disagrees with the seal's current policy, so it applies enabling or disabling
+padding. It does not detect a resized policy, such as `Padding::block(16)` to
+`Padding::block(64)`: the envelope records only whether a value is padded, so
+those values count as current. The `migrate` feature supplies
 `RowPlanner`, `Sweep` and `SweepStore`, which also sweep
 [records](#records); the
 [manual SQLite example](../examples/reencryption_sweep.rs) demonstrates the same
@@ -67,7 +70,9 @@ command runs in a new process. The manual in-memory example is not evidence of
 cross-process durability.
 
 `SqliteSweepStore` and `PostgresSweepStore` use an `i64` cursor and require
-**non-NULL bytes in every swept column** for this recipe. Packaged stores offer
+**non-NULL bytes in every swept column** for this recipe: a NULL stops the sweep
+with a column decode error. `SqliteSweepStore` compares stored values as BLOBs, so
+legacy values stored as TEXT are swept like bytes. Packaged stores offer
 no NULL policy, `WHERE` filter, discriminator or upper cursor bound. Nullable or
 filtered populations, other cursor shapes and snapshot/high-water policies need
 an application-owned `SweepStore` or manual loop with appropriate atomic predicates.
@@ -152,9 +157,9 @@ bytes, from the columns the store loads into `SweepRow::columns`. Packaged
 stores load no columns, so a record field's seal needs an application-owned
 `SweepStore`.
 
-A sweep rotates keys and padding; it does not change a seal's context. A row
-under another kind of context, such as a standalone value stored in a record's
-column, fails with `Error::ContextMismatch`. See
+A sweep rotates keys and enables or disables padding; it does not change a
+seal's context. A row under another kind of context, such as a standalone value
+stored in a record's column, fails with `Error::ContextMismatch`. See
 [change a field's seal or record ID](records.md#change-a-fields-seal-or-record-id).
 
 To move a value to other keys, such as a tenant's data changing residency, open
