@@ -11,7 +11,6 @@ use sqlx::{Connection, SqliteConnection};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-// ANCHOR: ids
 /// An org, the tenant: each org has its own keys.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, sqlx::Type)]
 #[serde(transparent)]
@@ -22,7 +21,6 @@ struct OrgId(Uuid);
 #[derive(Clone, Copy, Debug, PartialEq, sqlx::Type)]
 #[sqlx(transparent)]
 struct WorkspaceId(Uuid);
-// ANCHOR_END: ids
 
 #[allow(clippy::unnecessary_wraps)] // Normalizers are fallible by contract.
 fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
@@ -31,7 +29,6 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
     ))
 }
 
-// ANCHOR: customer
 /// A customer of one workspace of an org.
 #[derive(Clone, Debug, PartialEq, Record)]
 #[cryptbox(stored(derive(sqlx::FromRow)))]
@@ -56,7 +53,6 @@ struct Customer {
     #[cryptbox(plaintext)]
     created_at: i64,
 }
-// ANCHOR_END: customer
 
 // Ephemeral demonstration keys: one set per org, generated on every run.
 fn org_keys() -> Result<Keys, Error> {
@@ -81,7 +77,6 @@ async fn create_table(db: &mut SqliteConnection) -> Result<(), sqlx::Error> {
     Ok(())
 }
 
-// ANCHOR: insert
 async fn insert(db: &mut SqliteConnection, stored: &StoredCustomer) -> Result<(), sqlx::Error> {
     sqlx::query("INSERT INTO customer VALUES (?, ?, ?, ?, ?, ?, ?)")
         .bind(stored.id)
@@ -96,10 +91,8 @@ async fn insert(db: &mut SqliteConnection, stored: &StoredCustomer) -> Result<()
 
     Ok(())
 }
-// ANCHOR_END: insert
 
 /// Reads one customer of the caller's org, checking the org before decrypting.
-// ANCHOR: get
 async fn get(
     db: &mut SqliteConnection,
     keys: &Keys,
@@ -113,11 +106,9 @@ async fn get(
 
     Ok(Customer::open_expecting(row, keys, |row| row.org == org)?)
 }
-// ANCHOR_END: get
 
 /// Finds the customers of `org` with `email`, in every workspace, with the org's
 /// keys.
-// ANCHOR: search
 async fn search(
     db: &mut SqliteConnection,
     keys: &Keys,
@@ -138,9 +129,7 @@ async fn search(
     let hits = Customer::EMAIL_INDEX.open_matching(email, rows, keys)?;
     Ok(hits.into_iter().collect::<Result<_, _>>()?)
 }
-// ANCHOR_END: search
 
-// ANCHOR: event
 /// A record carried as a JSON message, such as a queue event: its stored form is
 /// what travels.
 #[derive(Debug, PartialEq, Record)]
@@ -163,7 +152,6 @@ struct Address {
     street: String,
     city: String,
 }
-// ANCHOR_END: event
 
 fn customer(id: u128, workspace: WorkspaceId, email: &str) -> Customer {
     Customer {

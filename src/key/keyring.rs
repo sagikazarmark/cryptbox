@@ -26,7 +26,7 @@ use super::material::{BlindIndexKey, EncryptionKey, IndexKeyId, KeyId};
 #[doc = concat!(
     "[key-rotation example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/key_rotation.rs\n",
     "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs\n",
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#choosing-keyrings",
 )]
 #[derive(Clone)]
 pub struct EncryptionKeyring(Arc<Ring<KeyId, EncryptionKey>>);
@@ -85,7 +85,7 @@ impl fmt::Debug for EncryptionKeyring {
 #[doc = concat!(
     "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/blind_indexes.rs\n",
     "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs\n",
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/choosing-keyrings.md",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#choosing-keyrings",
 )]
 #[derive(Clone)]
 pub struct BlindIndexKeyring(Arc<Ring<IndexKeyId, BlindIndexKey>>);

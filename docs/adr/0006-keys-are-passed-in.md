@@ -5,8 +5,8 @@ status: accepted
 # Keys are passed in; choosing which keys is application code
 
 > Amended for the documentation mitigations (#96). The guide is
-> [`docs/choosing-keyrings.md`](../choosing-keyrings.md) and the destruction
-> procedure is [`docs/shredding.md`](../shredding.md). #89 built
+> [`docs/guide.md`](../guide.md#choosing-keyrings) and the destruction
+> procedure is [`docs/operations.md`](../operations.md#shredding). #89 built
 > `testing::assert_sealed_under`, which the guide's tests use, but not
 > `Manifest::custody`, so the guide keeps a committed custody table beside the
 > manifest snapshot.
@@ -76,8 +76,8 @@ time**:
 Mitigations, required in v1:
 
 - A "choosing keyrings" guide that states these failure modes and warns about
-  shredding. **Done:** [`docs/choosing-keyrings.md`](../choosing-keyrings.md) and
-  [`docs/shredding.md`](../shredding.md).
+  shredding. **Done:** [`docs/guide.md`](../guide.md#choosing-keyrings) and
+  [`docs/operations.md`](../operations.md#shredding).
 - `testing::assert_sealed_under::<F>(&sealed, &keyring)`, so applications can
   unit-test which keyring seals a field (#89).
 - `Manifest::custody::<F>("…")` declarative labels, so reviewers and auditors see

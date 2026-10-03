@@ -1,6 +1,5 @@
 //! Keeps tenants apart with one keyring per tenant.
 
-// ANCHOR: tenant-field
 use std::collections::HashMap;
 
 use cryptbox::{EncryptionKey, EncryptionKeyring, Error, Padding, Seal, SealId, Sealed, Utf8};
@@ -56,7 +55,6 @@ fn main() -> Result<(), Error> {
     println!("Round trip with a keyring per tenant succeeded.");
     Ok(())
 }
-// ANCHOR_END: tenant-field
 
 #[cfg(test)]
 mod tests {

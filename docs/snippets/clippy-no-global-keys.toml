@@ -1,4 +1,0 @@
-disallowed-methods = [
-    { path = "cryptbox::keys::install", reason = "pass keys explicitly" },
-    { path = "cryptbox::keys::installed", reason = "pass keys explicitly" },
-]

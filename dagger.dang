@@ -25,47 +25,6 @@ type Cryptbox {
   test: Test! {
     Test(self.rust.container, self.postgresVersion)
   }
-
-  """
-  Shared snippets and documentation diagrams.
-  """
-  docs: Docs! {
-    Docs(self.rust.container)
-  }
-}
-
-"""
-Documentation checks shared with GitHub Actions through repository scripts.
-"""
-type Docs {
-  let container: Container!
-
-  new(container: Container!) {
-    self.container = container
-    self
-  }
-
-  """
-  Check shared documentation snippets against their canonical sources.
-  """
-  snippets: String! @check {
-    self.container
-      .withExec(["sh", "-c", "apt-get update && apt-get install -y --no-install-recommends nodejs"])
-      .withExec(["node", "scripts/doc-snippets.mjs"])
-      .combinedOutput
-  }
-
-  """
-  Re-render the canonical Mermaid diagram and compare the committed rustdoc SVG.
-  """
-  diagrams: String! @check {
-    Dagger.container
-      .from("ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.12.0@sha256:bad64c9d9ad917c8dfbe9d9e9c162b96f6615ff019b37058638d16eb27ce7783")
-      .withDirectory("/data", self.container.directory("."))
-      .withWorkdir("/data")
-      .withExec(["sh", "scripts/check-diagrams.sh"])
-      .combinedOutput
-  }
 }
 
 """

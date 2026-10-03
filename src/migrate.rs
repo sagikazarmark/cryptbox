@@ -29,8 +29,8 @@
 //! requirements permit it.
 //!
 #![doc = concat!(
-    "[maintenance sweep guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/reencryption-sweep.md\n",
-    "[legacy migration guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/legacy-migration.md",
+    "[maintenance sweep guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/operations.md#maintenance-sweeps\n",
+    "[legacy migration guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/operations.md#legacy-migration",
 )]
 //! [`Sealed::seal`]: crate::Sealed::seal
 

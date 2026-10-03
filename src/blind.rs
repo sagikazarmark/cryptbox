@@ -158,7 +158,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 ///
 #[doc = concat!(
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure\n",
     "[index context]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#index-context",
 )]
 pub trait BlindIndexSpec: Sized + 'static {

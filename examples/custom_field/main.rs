@@ -1,6 +1,5 @@
 //! Custom seal for an application-defined ASCII handle, with explicit ownership.
 
-// ANCHOR: custom-field
 use std::sync::{PoisonError, RwLock};
 
 use cryptbox::{
@@ -151,7 +150,6 @@ fn main() -> Result<(), cryptbox::Error> {
     println!("Custom field round trip and normalized lookup succeeded.");
     Ok(())
 }
-// ANCHOR_END: custom-field
 
 #[cfg(test)]
 mod tests {

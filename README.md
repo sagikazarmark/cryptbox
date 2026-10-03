@@ -27,14 +27,13 @@
 | ❌ It CAN'T | Protect a compromised application. |
 | ❌ It CAN'T | Prevent replay, or cross-row substitution of standalone values. |
 
-[Try it](docs/first-field.md) · [How it works](docs/concepts.md) ·
-[Security](docs/security.md) · [Documentation](docs/README.md) ·
-[API](https://docs.rs/cryptbox/latest/cryptbox/)
-
 ## Quick start
 
-Seal and open a string with an in-memory key. For setup instructions, follow
-[seal your first value](docs/first-field.md).
+```sh
+cargo add cryptbox
+```
+
+Seal and open a string with an in-memory key:
 
 ```rust
 use cryptbox::{
@@ -65,20 +64,19 @@ fn main() -> Result<(), cryptbox::Error> {
 
 `UserEmail` is a seal: its ID binds every value sealed with it to this seal, and
 it stores a `String` as UTF-8 without padding. `Sealed` holds the encrypted value;
-`open` returns the plaintext, and `&keys` supplies the keys. See
-[how CryptBox works](docs/concepts.md).
+`open` returns the plaintext, and `&keys` supplies the keys.
 
-Next, [run the durable SQLite example](examples/sqlite/README.md), or read
-[integration design and trade-offs](docs/integration.md) before applying it to your
-project. If you need equality lookup, continue with the
-[searchable storage example](examples/searchable/README.md). For existing plaintext or
-foreign ciphertext, review [legacy adoption](docs/legacy-migration.md) before
-changing writes.
+## Documentation
+
+- [Guide](docs/guide.md): how it works, records and tenants, keyrings, schema, storage and search, testing.
+- [Operations](docs/operations.md): key rotation, maintenance sweeps, legacy migration, shredding.
+- [Security](docs/security.md): threat model and review status.
+- [Wire format](docs/wire-format.md), [features](docs/features.md), [glossary](docs/glossary.md), [API](https://docs.rs/cryptbox/latest/cryptbox/).
+- [Examples](examples/README.md): start with the [SQLite example](examples/sqlite/README.md).
 
 ## Development
 
-See [development and documentation checks](docs/documentation.md) for local,
-GitHub Actions, and Dagger commands.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

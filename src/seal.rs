@@ -74,7 +74,7 @@ identifier!(SealId, "A stable seal identifier.");
 ///
 #[doc = concat!(
     "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
 )]
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a seal",

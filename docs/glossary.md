@@ -1,12 +1,10 @@
 # Glossary
 
 **Blind index**:
-A separately keyed, truncated searchable projection of a normalized sealed value.
-Each blind index is declared over exactly one seal, or on one sealed field of a
-record. Its seal ID domain-separates it; the record does not, since a query
-cannot know it. Equal values of one seal derive equal indexes under the same
-keys, and unrelated ones under separate keys. It deliberately reveals equality
-and frequency information.
+A separately keyed, truncated searchable projection of a normalized sealed value,
+declared over exactly one seal or one sealed field of a record. Its seal ID
+domain-separates it; the record does not, since a query cannot know it. It
+deliberately reveals equality and frequency among values under the same keys.
 
 **Candidate**:
 A row selected by a probe that still requires authenticated decryption and
@@ -26,34 +24,28 @@ application-owned static `Keys`. They belong to the column type, not to a seal.
 
 **Context**:
 What an envelope binds a value to: bytes that key derivation and the AAD both
-take, which are never stored, and a context fingerprint that the header
-stores. The envelope interprets neither. A sealed value's context is its seal
-context: its seal ID, followed by the parts of the context it is sealed in
-(`Context`), the second parameter of `Sealed<F, C>`: none for a standalone
-value (`()`), and the record ID for a field of a record (`InRecord<K>`). A seal
-knows nothing of the context its values are sealed in. Opening under another
-seal, context, or record fails. Tenants are kept apart by keys, not by the
-context.
+take, never stored, plus a context fingerprint in the header. A sealed value's
+seal context is its seal ID followed by the parts of its `Context`, the second
+parameter of `Sealed<F, C>`: none for a standalone value (`()`), the record ID
+for a record's field (`InRecord<K>`). Opening under another seal, context, or
+record fails. Tenants are kept apart by keys, not by the context.
 <!-- Agent guidance: “binding” is retired as a concept above the envelope (ADR-0011): say “context”, or “seal context” for the bytes; `Context` names a kind of context that adds parts after the seal ID (ADR-0012), and `ContextKind` is `()` or a `Context`. “Binding arguments” (`Args`), “bound value”, “bound ID type”, and “partition” are retired, as “scope”, “view”, and “keys view” were (ADR-0010). “Part” returns only for the library-owned parts of a context (ADR-0012). Applications never write context bytes. -->
 
 **Context fingerprint**:
-A public 8-byte summary of a context: truncated SHA-256 over whether it holds a
-record ID and its kind, never its values. Every envelope header stores it, and
-opening compares it with the reader's before any key lookup, reporting a
-context mismatch, such as a record field's value read as a standalone value.
-Equal fingerprints do not imply equal contexts, and security never depends on
-the fingerprint; `CiphertextInfo::context_fingerprint` reports it.
+A public 8-byte truncated SHA-256 over a context's kind, never its values.
+Every envelope header stores it; opening compares it before any key lookup to
+report a context mismatch. Security never depends on it
+(`CiphertextInfo::context_fingerprint`).
 <!-- Agent guidance: “binding fingerprint” and “shape fingerprint” are retired names; do not reintroduce them. -->
 
 **Current generation**:
 The generation selected for new encryption or new stored blind indexes.
 
 **Custody**:
-Which keyring's root material protects which values. It is an application
-decision that the library neither records nor checks: operations take the keys
-to use, and sealing under the wrong keyring succeeds. Keeping a keyring per
-tenant is how tenants are kept apart. Test it; see
-[choosing keyrings](choosing-keyrings.md).
+Which keyring's root material protects which values: an application decision
+the library neither records nor checks, so sealing under the wrong keyring
+succeeds. A keyring per tenant keeps tenants apart. Test it; see
+[choosing keyrings](guide.md#choosing-keyrings).
 <!-- Agent guidance: custody as a declared part of a binding (keys views, typed key sources) is retired by ADR-0010 and reserved for a follow-up, which may return it as keys that carry their owner. Custody is about whose keys, not about access control or storage location. -->
 
 **Default codec**:
@@ -136,14 +128,12 @@ may be staged before first use.
 
 **Record**:
 A row that stores its record ID beside its sealed fields (`Record`). Every field
-has one role: the record ID, a sealed field, or plaintext. Each sealed field has
-its own seal and is sealed in the record's context, `InRecord<K>` for a record
-ID of type `K`, so a value moved to another field or row fails to open. The
-record ID is never encrypted: opening reads it from the row and authenticates
-it. Plaintext fields, such as an org, are not
-authenticated: the application authorizes on them. `#[derive(Record)]`
-generates the stored form, a seal per sealed field, and an index handle per
-blind index. The schema manifest lists a record's plaintext fields by name.
+is the record ID, a sealed field, or plaintext. Each sealed field has its own
+seal and is sealed in `InRecord<K>`, so a value moved to another field or row
+fails to open. The record ID is stored in plaintext and authenticated on open;
+plaintext fields, such as an org, are not, so the application authorizes on them.
+`#[derive(Record)]` generates the stored form, a seal per sealed field, and an
+index handle per blind index.
 <!-- Agent guidance: a “record” is the whole row, and its “fields” are the struct's members. `Recorded<S, Id>`, `Seal::Record`, and `Seal::RECORD` are retired: a record is a context layered over its fields' seals (ADR-0012), which know nothing of it. Avoid “entity” or “model” for a record. -->
 
 **Record ID**:
@@ -153,23 +143,19 @@ before the values are sealed: a `Uuid` or `[u8; 16]`, an `i64`, or bytes
 
 **Schema manifest**:
 A reviewable listing of registered seals, blind indexes, and records with their
-persistent schema: seal ID, codec ID, padding, the fingerprint of each context a
-seal is registered in, index ID, precision, normalizer name, and a record's
-seals, record ID, record kind, context fingerprint, and plaintext fields. It
-names IDs, never Rust types, so its output is the same on every toolchain; a
-record's fields, which have no ID, are listed by name. Applications compare it with a committed snapshot in CI.
+persistent schema: IDs, codec, padding, context fingerprints, precision,
+normalizer, and a record's seals and plaintext fields (by name). It names IDs,
+never Rust types, so its output is stable across toolchains. Applications
+compare it with a committed snapshot in CI.
 <!-- Agent guidance: the codec ID and normalizer name are reported, never stored in ciphertext or indexes. Custody labels and the shred unit are retired with keys views (ADR-0010); `testing::assert_sealed_under` is how an application tests its choice of keys. -->
 
 **Seal**:
 A type that declares how its values are sealed (`Seal`): its seal ID, value
-type, codec, padding, and blind indexes. A value
-sealed with one seal does not open as another. A seal is either a marker over a
-separate value type, so one value type can back several seals, such as a home
-and a billing address, each with its own seal ID; or its own value (a
-self-valued seal), such as `struct UserEmail(String)`. Seals serve any sealed
-value: a database column, a message, or a whole response, and know nothing of
-the context their values are sealed in. A record declares a seal for each of
-its sealed fields, and seals their values in its context.
+type, codec, padding, and blind indexes. A value sealed with one seal does not
+open as another. A seal is either a marker over a separate value type, so one
+value type can back several seals (a home and a billing address); or its own
+value (a self-valued seal), such as `struct UserEmail(String)`. A seal knows
+nothing of the context its values are sealed in.
 <!-- Agent guidance: “field” is the retired name for a seal (ADR-0007) and now means only a member of a struct or record; “profile” is older still. Do not reintroduce either. Avoid “column”, “key”, or “cipher suite” as synonyms: a seal is independent of database names. -->
 
 **Seal ID**:
@@ -180,10 +166,8 @@ seal ID fails authentication.
 **Sealed value**:
 A value encrypted under a seal's context (`Sealed<F, C>`, `Sealed<F>` for a
 standalone value). Sealing encodes, pads, and encrypts; opening authenticates
-under the same context and returns the bare value. A value in a `Context` is
-sealed with `seal_in` and opened with `open_in`, which take the context's
-value, such as the record ID. Parsing a sealed value checks structure
-only.
+and returns the bare value. `seal_in` and `open_in` take the context's value,
+such as the record ID. Parsing checks structure only.
 <!-- Agent guidance: `Ciphertext<F>` is the retired name; say “seal” and “open”, not “encrypt” and “decrypt”, for the typed operations. -->
 
 **Shredding**:
@@ -196,8 +180,7 @@ of an org, are never shredded on their own.
 **Standalone value**:
 A sealed value bound to its seal ID alone (`Sealed<F>`), as opposed to a
 record's field, which is also bound to the record ID. `Sealed::seal` and `open`
-serve standalone values, of a seal declared with `#[derive(Seal)]` or by hand;
-a record's field is sealed and opened by its record.
+serve standalone values; a record seals and opens its own fields.
 <!-- Agent guidance: “standalone seal” is the older name; a seal itself knows nothing of where its values are stored (ADR-0012), so “standalone” describes a value, not a seal. -->
 
 **Stored form**:

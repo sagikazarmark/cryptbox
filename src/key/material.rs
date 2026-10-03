@@ -30,7 +30,7 @@ struct KeyMaterial<Id> {
 /// [ownership reference].
 ///
 #[doc = concat!(
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
 )]
 #[derive(Clone)]
 pub struct EncryptionKey(Arc<KeyMaterial<KeyId>>);
@@ -116,7 +116,7 @@ impl fmt::Debug for EncryptionKey {
 /// [ownership reference].
 ///
 #[doc = concat!(
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/ownership.md",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
 )]
 #[derive(Clone)]
 pub struct BlindIndexKey(Arc<KeyMaterial<IndexKeyId>>);

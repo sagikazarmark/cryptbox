@@ -78,15 +78,6 @@ jobs:
           cargo doc --locked --no-deps --all-features
           cargo doc --locked --no-deps -p cryptbox-derive
 
-      - name: Check shared snippets
-        run: node scripts/doc-snippets.mjs
-
-      - name: Check generated lifecycle diagram
-        run: |
-          docker run --rm --entrypoint sh -v "$PWD:/data" -w /data \
-            ghcr.io/mermaid-js/mermaid-cli/mermaid-cli:11.12.0@sha256:bad64c9d9ad917c8dfbe9d9e9c162b96f6615ff019b37058638d16eb27ce7783 \
-            scripts/check-diagrams.sh
-
       - name: Check current compatible dependencies
         run: |
           cargo update
