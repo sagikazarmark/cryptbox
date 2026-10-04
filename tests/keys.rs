@@ -105,13 +105,10 @@ fn key_ids_are_unique_within_a_keyring() {
 }
 
 #[test]
-fn a_blind_index_keyring_lists_its_current_key_first() {
+fn probes_cover_the_current_index_key_first_then_previous_keys() {
     let previous = BlindIndexKey::new(GENERAL_INDEX_KEY_ID, [1; 32]);
     let current = BlindIndexKey::new(PAYMENTS_INDEX_KEY_ID, [2; 32]);
     let keyring = BlindIndexKeyring::new(current, [previous]).unwrap();
-
-    let ids: Vec<_> = keyring.readable().map(BlindIndexKey::id).collect();
-    assert_eq!(ids, [PAYMENTS_INDEX_KEY_ID, GENERAL_INDEX_KEY_ID]);
 
     let probes = BlindIndex::<EmailLookup>::probes(b"ada", &keyring).unwrap();
     let probe_ids: Vec<_> = probes
@@ -122,7 +119,7 @@ fn a_blind_index_keyring_lists_its_current_key_first() {
                 .index_key_id()
         })
         .collect();
-    assert_eq!(probe_ids, ids);
+    assert_eq!(probe_ids, [PAYMENTS_INDEX_KEY_ID, GENERAL_INDEX_KEY_ID]);
 }
 
 /// The application's choice of keys: payment seals under their own keyring.

@@ -58,7 +58,7 @@ impl EncryptionKeyring {
 
     /// Returns the key with ID `id`, current or previous.
     #[must_use]
-    pub fn get(&self, id: KeyId) -> Option<&EncryptionKey> {
+    pub(crate) fn get(&self, id: KeyId) -> Option<&EncryptionKey> {
         self.0.keys.get(&id)
     }
 }
@@ -117,12 +117,12 @@ impl BlindIndexKeyring {
 
     /// Returns the key with ID `id`, current or previous.
     #[must_use]
-    pub fn get(&self, id: IndexKeyId) -> Option<&BlindIndexKey> {
+    pub(crate) fn get(&self, id: IndexKeyId) -> Option<&BlindIndexKey> {
         self.0.keys.get(&id)
     }
 
     /// Returns the current key first, followed by every previous key once.
-    pub fn readable(&self) -> impl Iterator<Item = &BlindIndexKey> {
+    pub(crate) fn readable(&self) -> impl Iterator<Item = &BlindIndexKey> {
         let current = self.current();
         std::iter::once(current).chain(
             self.0
