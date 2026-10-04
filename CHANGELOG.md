@@ -36,8 +36,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
 - **Breaking:** `Sealed<F>` replaces `Ciphertext<T, P>`, and the
   `Encrypted<T, P>` carrier is removed. `Sealed::seal(&value, &keys)`,
   `sealed.open(&keys)`, which returns the bare value, `needs_reseal`, `reseal`,
-  `reseal_across(&from_keys, &to_keys)`, and `key_id` take the keys to use. A
-  value is bound to its seal ID: opened as another seal, it fails authentication.
+  and `reseal_across(&from_keys, &to_keys)` take the keys to use, and `key_id`
+  reads the key a value is sealed under. A value is bound to its seal ID: opened as another seal, it fails authentication.
 - `Sealed<F, C = ()>` names the context a value is sealed in besides its seal ID
   (ADR-0012): `()` for a standalone value, or a `Context`, such as
   `InRecord<Id>` for a record's field. `Sealed::seal_in(&value, &context, &keys)`
@@ -109,7 +109,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
 - **Breaking:** keys are passed to each call (ADR-0006, ADR-0010, ADR-0013).
   `EncryptionKeyring` and `BlindIndexKeyring` (were `LocalEncryptionKeyring` and
   `LocalBlindIndexKeyring`) hold a current key and previous keys and reject
-  duplicate key IDs; `Keys` pairs them, and `Keys::encryption` and
+  duplicate key IDs, and `current` returns the key that seals new values or
+  derives new indexes; `Keys` pairs them, and `Keys::encryption` and
   `Keys::blind_indexes` read them.
   Operations take `EncryptionKeys`, `BlindIndexKeys`, or `RecordKeys`, and
   nothing reads a global. The implicit `encrypt` and `decrypt` have no
@@ -258,7 +259,7 @@ Decisions are recorded in ADR-0001 to ADR-0013.
 | `LocalEncryptionKeyring`, `LocalBlindIndexKeyring` | `EncryptionKeyring`, `BlindIndexKeyring`, paired in `Keys` |
 | `impl EncryptionKeyProvider for S` | resolve the keyring yourself and pass it |
 | `Encrypted<T, P>` as an SQLx column | `Sealed<P>`, opened with `open(&keys)` |
-| `impl BlindIndexMetadata for S` plus `impl BlindIndexSpec<str> for S` | one `impl BlindIndexSpec for S { type Seal = P; const BITS: u16 = …; const NORMALIZER: &'static str = "…"; type Query = str; fn normalize_query(…); fn normalize_value(…); }` |
+| `impl BlindIndexMetadata for S` plus `impl BlindIndexSpec<str> for S` | one `impl BlindIndexSpec for S { type Seal = P; const ID: IndexId = index_id!("…"); const BITS: u16 = …; const NORMALIZER: &'static str = "…"; type Query = str; fn normalize_query(…); fn normalize_value(…); }` |
 | `derive_blind_index::<S, _, _>(&v, &keys)` | `BlindIndex::<S>::derive(&v, &keys)` |
 | `blind_index_probes::<S, str, _>(q, &keys)` | `BlindIndex::<S>::probes(q, &keys)` |
 | `verify_blind_index_candidate::<S, str>(q, c)` | `BlindIndex::<S>::verify_candidate(q, c)` |
