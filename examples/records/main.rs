@@ -30,7 +30,9 @@ fn normalize_email(email: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
 }
 
 /// A customer of one workspace of an org.
-#[derive(Clone, Debug, PartialEq, Record)]
+///
+/// No derived `Debug`: it would print the email and note in plaintext.
+#[derive(Clone, PartialEq, Record)]
 #[cryptbox(stored(derive(sqlx::FromRow)))]
 struct Customer {
     #[cryptbox(record_id)]
@@ -132,7 +134,7 @@ async fn search(
 
 /// A record carried as a JSON message, such as a queue event: its stored form is
 /// what travels.
-#[derive(Debug, PartialEq, Record)]
+#[derive(PartialEq, Record)]
 #[cryptbox(stored(name = CustomerCreatedEvent, derive(Serialize, Deserialize)))]
 struct CustomerCreated {
     #[cryptbox(record_id)]
@@ -186,7 +188,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
 
-    assert_eq!(get(&mut db, &acme_keys, ACME, ada.id).await?, ada);
+    assert!(get(&mut db, &acme_keys, ACME, ada.id).await? == ada);
     // Another org's keys don't open it.
     let row: StoredCustomer = sqlx::query_as("SELECT * FROM customer WHERE id = ?")
         .bind(ada.id)
@@ -215,7 +217,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let json = serde_json::to_string(&event.seal(acme_keys.encryption())?)?;
     assert!(!json.contains("Springfield"));
     let received: CustomerCreatedEvent = serde_json::from_str(&json)?;
-    assert_eq!(CustomerCreated::open(received, &acme_keys)?, event);
+    assert!(CustomerCreated::open(received, &acme_keys)? == event);
 
     println!("Records round trip, search, and message succeeded.");
     Ok(())

@@ -30,7 +30,7 @@ cargo run --locked --example sqlx_sqlite --features derive,sqlx-sqlite -- \
   read examples/sqlite/demo/demo.sqlite3 examples/sqlite/demo/encryption-root.hex
 ```
 
-Expect `Encrypted field stored. Run read in a new process.`, then
+Expect `Sealed value stored. Run read in a new process.`, then
 `Persistent SQLite read succeeded; demonstration value verified.`
 
 `write` creates the `users` table and inserts row 1 with the ciphertext in an

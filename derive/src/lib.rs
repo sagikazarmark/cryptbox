@@ -105,6 +105,9 @@ use syn::{DeriveInput, parse_macro_input};
 /// without `From` or `Deref`. Decoding builds the type from its field directly,
 /// so a constructor that validates the field does not run: name a `codec` that
 /// validates, or seal the field's type with a marker and convert it yourself.
+/// Authentication does not stand in for validation: legacy values recovered
+/// under the `migrate` feature, values a marker seal with the same ID wrote, and
+/// values stored before the type validated all decode unchecked.
 /// The derive expands to exactly the manual impls, with `Result`, `Vec`, and
 /// `Zeroizing` spelled as absolute paths in the real expansion:
 ///

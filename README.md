@@ -37,6 +37,9 @@ cargo add cryptbox --features derive
 cargo add zeroize
 ```
 
+To store records with SQLx, also enable `sqlx-sqlite` or `sqlx-postgres`; see
+[features](docs/features.md) for the `sqlx` features your own dependency needs.
+
 ### Seal a record
 
 Mark the sensitive fields of a row, seal it before you store it, and open it

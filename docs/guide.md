@@ -407,8 +407,11 @@ opens when it needs plaintext.
 The application owns schemas, transactions, queries, and concurrency. A record's
 stored form is an ordinary struct; forward attributes with `#[cryptbox(stored(…))]`:
 
-- **SQLx:** `stored(derive(sqlx::FromRow))`; sealed values and indexes are
-  `BLOB` or `bytea`; an ID newtype uses `#[sqlx(transparent)]`.
+- **SQLx:** enable the `sqlx-sqlite` or `sqlx-postgres` feature, which
+  implements SQLx's traits for sealed values and indexes, and forward
+  `stored(derive(sqlx::FromRow))`; sealed values and indexes are `BLOB` or
+  `bytea`; an ID newtype uses `#[sqlx(transparent)]`. Your `sqlx` dependency
+  needs [its `derive` feature](features.md), and `uuid` for a `Uuid` record ID.
 - **Diesel:** `stored(derive(Queryable, Selectable, Insertable), diesel(table_name = …))`,
   and `stored(diesel(serialize_as = Vec<u8>, deserialize_as = Vec<u8>))` on each
   sealed field and index column.

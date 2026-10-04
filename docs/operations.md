@@ -142,6 +142,11 @@ padding, but **not a resized policy** such as `Padding::block(16)` to
 those values count as current. The [manual SQLite example](../examples/reencryption_sweep.rs)
 shows the same rules without the driver.
 
+An index is stale only when an older key generation derived it: a sweep does
+not notice a changed index ID, normalization, or precision, and on a row already
+sealed it rejects the missing-index marker with `InvalidBlindIndex`. Derive a new
+or changed index with application code, from the opened value.
+
 ### Before a run
 
 - Finish [writer promotion](#procedure), settle rollback policy, and keep
@@ -266,7 +271,7 @@ and [plaintext](../examples/plaintext_migration.rs) examples introduce the API.
 1. Inventory readers, writers, jobs, imports, replicas, rollback binaries,
    restore paths, legacy formats, trusted discriminators, and provenance evidence.
    Add index columns and agree a missing-index marker (these stores use an
-   **empty byte string**, not NULL).
+   **empty byte string**, not NULL); a sweep fills it only on legacy rows.
 2. Provision CryptBox roots and legacy access. Deploy compatible readers **before
    any encrypted write**: every instance must recover legacy values, decrypt all
    generations, and run [transitional search](#transitional-search).

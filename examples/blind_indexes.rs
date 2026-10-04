@@ -1,4 +1,4 @@
-//! Prepares and safely queries a blind index across index-key rotation.
+//! Derives and safely queries a blind index across index-key rotation.
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,

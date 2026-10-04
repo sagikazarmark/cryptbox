@@ -33,9 +33,11 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// unrelated indexes for equal values. See the [index context].
 ///
 /// `BITS` must be between 1 and 256. The logical [`IndexId`] is part of key
-/// derivation but is not stored in the index bytes. Changing the ID,
-/// normalization, seal, or precision creates a new logical index and
-/// requires a migration.
+/// derivation but is not stored in the index bytes, and neither are the
+/// normalization and the seal. Changing any of them, or the precision, changes
+/// every derived index while stored indexes keep the old ones, and a
+/// maintenance sweep does not notice: declare the changed index with a new ID
+/// and column, and derive it for every row from the opened value.
 ///
 /// # Examples
 ///
@@ -531,7 +533,7 @@ macro_rules! index_id {
 mod tests {
     use super::valid_normalizer;
 
-    // The same names as the derive's test in cryptbox-derive/src/attr.rs: the
+    // The same names as the derive's test in derive/src/attr.rs: the
     // derive and `assert_unique_ids!` must agree.
     #[test]
     fn normalizer_names_carry_a_version_from_one() {

@@ -78,7 +78,7 @@ async fn run(
     }
     connection.close().await?;
     match command {
-        Command::Write => println!("Encrypted field stored. Run read in a new process."),
+        Command::Write => println!("Sealed value stored. Run read in a new process."),
         Command::Read => {
             println!("Persistent SQLite read succeeded; demonstration value verified.");
         }
