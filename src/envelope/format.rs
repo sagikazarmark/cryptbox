@@ -126,7 +126,7 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
 
     // Reject reserved bits so a flag this reader does not know is never ignored.
     if flags & !FLAG_PADDED != 0 {
-        return Err(Error::InvalidEnvelope);
+        return Err(Error::UnsupportedFlags(flags));
     }
 
     let suite_id = SuiteId::new(bytes[SUITE_ID_OFFSET]);

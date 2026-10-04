@@ -84,6 +84,10 @@ pub enum Error {
     /// The envelope uses an unavailable suite.
     #[error("unsupported encryption suite {0}")]
     UnsupportedSuite(u8),
+    /// The envelope sets a reserved flag bit, which a later format may define;
+    /// carries the flags byte read from the header.
+    #[error("unsupported ciphertext flags {0:#04x}")]
+    UnsupportedFlags(u8),
     /// The envelope names a key that the keyring does not hold.
     #[error("unknown encryption key {0}")]
     UnknownEncryptionKey(KeyId),
@@ -146,6 +150,10 @@ pub enum Error {
     /// A blind-index representation or bit count is invalid.
     #[error("blind index is invalid")]
     InvalidBlindIndex,
+    /// The blind index uses an unknown format version, such as format 1, which
+    /// 0.5.0 wrote.
+    #[error("unsupported blind-index format version {0}")]
+    UnsupportedBlindIndexVersion(u8),
     /// A sweep row supplied a different number of blind-index columns than the
     /// planner registered.
     #[cfg(feature = "migrate")]

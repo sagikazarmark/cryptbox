@@ -95,8 +95,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
 - Add `BlindIndex::is_consistent_with`, which checks a stored index against
   its decrypted value under the key generation the index names.
 - **Breaking:** blind indexes are derived under their seal ID and move to format
-  2. 0.5.0 indexes fail to parse with `Error::InvalidBlindIndex` instead of
-  silently matching nothing; derive them again.
+  2. 0.5.0 indexes fail to parse with `Error::UnsupportedBlindIndexVersion(1)`
+  instead of silently matching nothing; derive them again.
 - **Breaking:** `Error::BlindIndexNormalizationFailed` carries the
   `BlindIndexError` the normalizer returned.
 
@@ -129,6 +129,11 @@ Decisions are recorded in ADR-0001 to ADR-0013.
 - **Breaking:** `Error::UnsupportedSuite` carries the suite byte read from the
   header. `SuiteId` and `EXPERIMENTAL_XCHACHA20_POLY1305` are no longer public;
   `CiphertextInfo::suite_id` reports the suite as a `u8`.
+- **Breaking:** an envelope with a reserved flag bit set reports
+  `Error::UnsupportedFlags`, carrying the flags byte, and a blind index of
+  another format version `Error::UnsupportedBlindIndexVersion`, instead of
+  `InvalidEnvelope` and `InvalidBlindIndex`, so data a later release writes is
+  reported as unsupported rather than malformed (#117).
 - A context is its seal ID, a part count, and each part's kind code and
   length-prefixed value; the context fingerprint is the first 8 bytes of SHA-256
   over the label `cryptbox/context-fingerprint/v1\0`, the part count, and the
@@ -251,9 +256,9 @@ Decisions are recorded in ADR-0001 to ADR-0013.
 ### Upgrading stored values from 0.5
 
 This release cannot read what 0.5.0 stored. Its values report
-`UnsupportedFormatVersion(1)` and its indexes `InvalidBlindIndex`, and
-`MaybeSealed::from_bytes`, `RowPlanner`, and the packaged sweeps report the
-same errors rather than hand 0.5.0 envelopes to a `LegacyFormat` handler, so a
+`UnsupportedFormatVersion(1)` and its indexes
+`UnsupportedBlindIndexVersion(1)`, and `MaybeSealed::from_bytes`,
+`RowPlanner`, and the packaged sweeps report the same errors rather than hand 0.5.0 envelopes to a `LegacyFormat` handler, so a
 sweep cannot drive this upgrade. Rewrite stored values with a program that
 depends on both versions, adding 0.5.0 under another name:
 

@@ -10,7 +10,10 @@
 
 use arbitrary::Arbitrary;
 use cryptbox::{BlindIndex, BlindIndexSpec, Error, envelope};
-use cryptbox_fuzz::{Bits1, Bits13, Bits32, Bits256, Unpadded, blind_index_keys, is_canonical};
+use cryptbox_fuzz::{
+    Bits1, Bits13, Bits32, Bits256, Unpadded, assert_index_parse_error, blind_index_keys,
+    is_canonical,
+};
 use libfuzzer_sys::fuzz_target;
 
 #[derive(Arbitrary, Debug)]
@@ -99,7 +102,7 @@ fn round_trip<Spec: BlindIndexSpec<Seal = Unpadded, Query = [u8]>>(input: &Input
     assert_ne!(mutated, stored);
 
     match BlindIndex::<Spec>::from_bytes(mutated.clone()) {
-        Err(error) => assert_eq!(error, Error::InvalidBlindIndex),
+        Err(error) => assert_index_parse_error(&mutated, &error),
         Ok(index) => {
             // Accepted bytes are canonical: they are the stored bytes as given,
             // with the unused low bits of the final byte zero.

@@ -1,14 +1,17 @@
 //! Parses arbitrary bytes as a stored blind index, as a reader does with bytes
 //! from the database.
 //!
-//! Parsing must report only `InvalidBlindIndex`, accept exactly the canonical
-//! layout of docs/wire-format.md#stored-layout, and agree between the
-//! inspection API and the typed wrapper of each precision.
+//! Parsing must report only `InvalidBlindIndex`, or `UnsupportedBlindIndexVersion`
+//! for a header of another version, accept exactly the canonical layout of
+//! docs/wire-format.md#stored-layout, and agree between the inspection API and
+//! the typed wrapper of each precision.
 
 #![no_main]
 
 use cryptbox::{BlindIndex, BlindIndexSpec, Error, envelope};
-use cryptbox_fuzz::{Bits1, Bits13, Bits32, Bits256, blind_index_keys, is_canonical};
+use cryptbox_fuzz::{
+    Bits1, Bits13, Bits32, Bits256, assert_index_parse_error, blind_index_keys, is_canonical,
+};
 use libfuzzer_sys::fuzz_target;
 
 // The version byte, the index key ID, and the bit count.
@@ -25,7 +28,7 @@ fuzz_target!(|bytes: &[u8]| {
     let info = match inspected {
         Ok(info) => info,
         Err(error) => {
-            assert_eq!(error, Error::InvalidBlindIndex);
+            assert_index_parse_error(bytes, &error);
             return;
         }
     };
@@ -63,6 +66,7 @@ fn typed<Spec: BlindIndexSpec<Seal = cryptbox_fuzz::Unpadded>>(
                 Err(error) => panic!("unexpected consistency error: {error:?}"),
             }
         }
-        _ => assert_eq!(parsed.err(), Some(Error::InvalidBlindIndex)),
+        Ok(_) => assert_eq!(parsed.err(), Some(Error::InvalidBlindIndex)),
+        Err(error) => assert_eq!(parsed.err().as_ref(), Some(error)),
     }
 }

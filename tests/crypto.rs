@@ -130,10 +130,13 @@ fn reserved_flag_bits_are_rejected_before_authentication() {
         let mut ciphertext = encrypt::<EmailSeal>(b"flagged", &keys);
         ciphertext[6] |= bit;
 
-        assert_eq!(inspect_ciphertext(&ciphertext), Err(Error::InvalidEnvelope));
+        assert_eq!(
+            inspect_ciphertext(&ciphertext),
+            Err(Error::UnsupportedFlags(bit))
+        );
         assert_eq!(
             decrypt::<EmailSeal>(&ciphertext, &keys),
-            Err(Error::InvalidEnvelope)
+            Err(Error::UnsupportedFlags(bit))
         );
     }
 }

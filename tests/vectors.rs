@@ -168,13 +168,13 @@ fn full_width_blind_index_vector_is_stable() {
 }
 
 #[test]
-fn format_1_blind_indexes_are_rejected() {
+fn format_1_blind_indexes_are_unsupported() {
     // The format 1 vector: derived under the tagged binding layout, so it is
     // rejected rather than silently matching nothing.
     let format_1 = hex::decode("01aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000d71e0").unwrap();
 
     assert_eq!(
         inspect_blind_index(&format_1).unwrap_err(),
-        Error::InvalidBlindIndex
+        Error::UnsupportedBlindIndexVersion(1)
     );
 }

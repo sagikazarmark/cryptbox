@@ -52,10 +52,16 @@ impl BlindIndexInfo {
 ///
 /// # Errors
 ///
-/// Returns [`Error::InvalidBlindIndex`](crate::Error::InvalidBlindIndex) for malformed or noncanonical bytes.
+/// Returns [`Error::InvalidBlindIndex`](crate::Error::InvalidBlindIndex) for malformed or noncanonical bytes,
+/// and [`Error::UnsupportedBlindIndexVersion`](crate::Error::UnsupportedBlindIndexVersion) for a header of another
+/// format version.
 pub fn inspect_blind_index(bytes: &[u8]) -> Result<BlindIndexInfo, Error> {
-    if bytes.len() < INDEX_HEADER_LEN || bytes[0] != INDEX_FORMAT_VERSION {
+    // Too short for a header: malformed, whatever byte 0 claims.
+    if bytes.len() < INDEX_HEADER_LEN {
         return Err(Error::InvalidBlindIndex);
+    }
+    if bytes[0] != INDEX_FORMAT_VERSION {
+        return Err(Error::UnsupportedBlindIndexVersion(bytes[0]));
     }
 
     let bits = u16::from_be_bytes([bytes[INDEX_BITS_OFFSET], bytes[INDEX_BITS_OFFSET + 1]]);

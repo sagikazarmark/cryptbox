@@ -236,7 +236,8 @@ impl<Spec: BlindIndexSpec> BlindIndex<Spec> {
     /// # Errors
     ///
     /// Returns [`Error::InvalidBlindIndex`] for malformed, noncanonical, or
-    /// incorrectly sized values. `Spec::BITS` is checked at compile time. This
+    /// incorrectly sized values, and [`Error::UnsupportedBlindIndexVersion`]
+    /// for an index of another format version. `Spec::BITS` is checked at compile time. This
     /// does not authenticate the representation or prove that it was derived
     /// with `Spec::ID`, the expected seal, or the expected input.
     pub fn from_bytes(bytes: impl Into<Vec<u8>>) -> Result<Self, Error> {

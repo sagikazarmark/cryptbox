@@ -332,6 +332,7 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::InvalidEnvelope
         | Error::UnsupportedFormatVersion(_)
         | Error::UnsupportedSuite(_)
+        | Error::UnsupportedFlags(_)
         | Error::UnknownEncryptionKey(_)
         | Error::UnknownBlindIndexKey(_)
         | Error::AuthenticationFailed
@@ -342,6 +343,7 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::PaddingOverflow
         | Error::InvalidPadding
         | Error::InvalidBlindIndex
+        | Error::UnsupportedBlindIndexVersion(_)
         | Error::UnexpectedRecord
         | Error::LegacyRecoveryFailed(_) => true,
         Error::BlindIndexKeysNotConfigured

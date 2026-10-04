@@ -112,6 +112,26 @@ pub fn is_canonical(stored: &[u8], bits: u16) -> bool {
     stored.last().is_some_and(|last| last & unused == 0)
 }
 
+/// Asserts that `error` is the one parsing `stored` as a blind index reports:
+/// `UnsupportedBlindIndexVersion` for a full header of another version, and
+/// `InvalidBlindIndex` otherwise.
+///
+/// # Panics
+///
+/// Panics for any other error.
+pub fn assert_index_parse_error(stored: &[u8], error: &Error) {
+    // The version byte, the index key ID, and the bit count.
+    const HEADER_LEN: usize = 19;
+
+    let expected = match stored.first() {
+        Some(&version) if stored.len() >= HEADER_LEN && version != 2 => {
+            Error::UnsupportedBlindIndexVersion(version)
+        }
+        _ => Error::InvalidBlindIndex,
+    };
+    assert_eq!(error, &expected);
+}
+
 /// Asserts that `error` is one structural parsing of an envelope may report.
 ///
 /// # Panics
@@ -125,6 +145,7 @@ pub fn assert_parse_error(error: &Error) {
                 | Error::InvalidEnvelope
                 | Error::UnsupportedFormatVersion(_)
                 | Error::UnsupportedSuite(_)
+                | Error::UnsupportedFlags(_)
                 | Error::MessageTooLong
         ),
         "unexpected envelope parsing error: {error:?}"
