@@ -1,0 +1,4 @@
+[advisories]
+# rsa (Marvin attack) is reachable only through sqlx-mysql: Cargo.lock lists
+# it as an optional sqlx dependency, but nothing in this workspace enables it.
+ignore = ["RUSTSEC-2023-0071"]

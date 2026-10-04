@@ -15,7 +15,7 @@ Each derive expands to the trait impls you would write by hand; a record also
 gets its stored form, a seal per sealed field, and an index handle per blind
 index. IDs, padding, index precision, and normalizer names are checked when the
 macro expands. See the [`cryptbox` README](https://github.com/sagikazarmark/cryptbox#quick-start)
-and the [API docs](https://docs.rs/cryptbox-derive).
+and the [API docs](https://docs.rs/cryptbox).
 
 This crate is versioned in lockstep with `cryptbox`: each `cryptbox` release
 requires exactly its own `cryptbox-derive` version.
