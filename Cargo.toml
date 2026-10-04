@@ -24,6 +24,7 @@ exclude = [
     "/deny.toml",
     "/devenv*",
     "/docs/agents/",
+    "/fuzz/",
     "/lychee.toml",
 ]
 

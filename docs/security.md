@@ -96,9 +96,10 @@ construction would be a new suite ID, read alongside suite 1, not a new format.
 
 The formats are frozen. The published vectors were computed independently of
 the implementation and reproduced with Node.js and OpenSSL's primitives
-([#10](https://github.com/sagikazarmark/cryptbox/issues/10)). Still outstanding:
-an independent review of the HKDF/HMAC/AAD composition and failure paths, parser
-fuzzing ([#11](https://github.com/sagikazarmark/cryptbox/issues/11)), target and
+([#10](https://github.com/sagikazarmark/cryptbox/issues/10)), and CI fuzzes the
+envelope and blind-index parsers and round trips with [fuzz targets](../fuzz/README.md)
+([#11](https://github.com/sagikazarmark/cryptbox/issues/11)). Still outstanding:
+an independent review of the HKDF/HMAC/AAD composition and failure paths, target and
 zeroization review, an accepted usage policy, and pilot use
 ([#12](https://github.com/sagikazarmark/cryptbox/issues/12)). Findings from them
 would be fixed with a new suite or format version, never by changing these. A primitive

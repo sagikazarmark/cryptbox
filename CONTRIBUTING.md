@@ -17,6 +17,8 @@ RUSTDOCFLAGS="-D warnings" cargo doc --locked --no-deps --all-features
 `dagger check` runs the same matrices, the live PostgreSQL tests, and the link
 check.
 
+`fuzz/` holds the fuzz targets for the stored formats; see [its README](fuzz/README.md).
+
 The README is included under `cfg(doctest)`, so its Rust snippets run as
 doctests. `docs/features.md` is included in the crate documentation.
 

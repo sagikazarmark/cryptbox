@@ -142,6 +142,8 @@ Decisions are recorded in ADR-0001 to ADR-0012.
   decoded strictly.
 - The blind-index test vectors include full-width (256-bit) and byte-aligned
   (64-bit) vectors.
+- `cargo-fuzz` targets cover the envelope and blind-index parsers, and sealing
+  and deriving under mutation; CI runs them for a bounded time (#11).
 
 ### Schema guardrails
 

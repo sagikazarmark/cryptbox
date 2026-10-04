@@ -103,6 +103,28 @@ type Test {
   }
 
   """
+  Fuzz the stored-format parsers for a minute per target; see fuzz/README.md.
+  """
+  fuzz: String! @check {
+    let container = self
+      .container
+      .withExec(["apt-get", "update"])
+      .withExec(["apt-get", "install", "--yes", "--no-install-recommends", "g++"])
+      .withExec(["rustup", "toolchain", "install", "nightly", "--profile", "minimal"])
+      .withExec(["cargo", "install", "cargo-fuzz", "--version", "0.13.2", "--locked"])
+
+    let targets = ["envelope_parse", "envelope_round_trip", "blind_index_parse", "blind_index_round_trip"]
+
+    targets.each { target =>
+      container = container.withExec([
+        "cargo", "+nightly", "fuzz", "run", target, "--", "-max_total_time=60",
+      ])
+    }
+
+    container.combinedOutput
+  }
+
+  """
   Run the key rotation example.
   """
   keyRotation: String! @check {
