@@ -36,8 +36,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
 - **Breaking:** `Sealed<F>` replaces `Ciphertext<T, P>`, and the
   `Encrypted<T, P>` carrier is removed. `Sealed::seal(&value, &keys)`,
   `sealed.open(&keys)`, which returns the bare value, `needs_reseal`, `reseal`,
-  `reseal_across(&from_keys, &to_keys)`, and `key_id` take the keys to use. A
-  value is bound to its seal ID: opened as another seal, it fails authentication.
+  and `reseal_across(&from_keys, &to_keys)` take the keys to use, and `key_id`
+  reads the key a value is sealed under. A value is bound to its seal ID: opened as another seal, it fails authentication.
 - `Sealed<F, C = ()>` names the context a value is sealed in besides its seal ID
   (ADR-0012): `()` for a standalone value, or a `Context`, such as
   `InRecord<Id>` for a record's field. `Sealed::seal_in(&value, &context, &keys)`
@@ -70,8 +70,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   `RecordIdType` trait. The derive generates the stored
   form, `Stored{Record}`, a seal per sealed field, a blind-index spec and an
   `Index` handle per blind index, such as `Customer::EMAIL_INDEX`, whose
-  `probes` and `open_matching` run a lookup; a blind index is stored in the
-  field's name with `_index`, such as `email_index`. `stored(…)` renames the
+  `probes` and `open_matching` run a lookup; a field takes one blind index,
+  stored in the field's name with `_index`, such as `email_index`. `stored(…)` renames the
   stored form and forwards attributes to it, such as `derive(sqlx::FromRow)` or
   Serde's.
   Sealed fields are stored as `Sealed<F, InRecord<Id>>` and `Option<T>` fields
@@ -109,7 +109,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
 - **Breaking:** keys are passed to each call (ADR-0006, ADR-0010, ADR-0013).
   `EncryptionKeyring` and `BlindIndexKeyring` (were `LocalEncryptionKeyring` and
   `LocalBlindIndexKeyring`) hold a current key and previous keys and reject
-  duplicate key IDs; `Keys` pairs them, and `Keys::encryption` and
+  duplicate key IDs, and `current` returns the key that seals new values or
+  derives new indexes; `Keys` pairs them, and `Keys::encryption` and
   `Keys::blind_indexes` read them.
   Operations take `EncryptionKeys`, `BlindIndexKeys`, or `RecordKeys`, and
   nothing reads a global. The implicit `encrypt` and `decrypt` have no
@@ -140,7 +141,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   `InvalidEnvelope` and `InvalidBlindIndex`, so data a later release writes is
   reported as unsupported rather than malformed (#117). An envelope's format
   version is checked before its length, so a later format with a shorter header
-  is unsupported too; a blind index, which has no magic, needs a full header
+  is unsupported too, and its suite before its flags, so a later suite that
+  defines a flag reports `UnsupportedSuite`; a blind index, which has no magic, needs a full header
   first.
 - A context is its seal ID, a part count, and each part's kind code and
   length-prefixed value; the context fingerprint is the first 8 bytes of SHA-256
@@ -162,8 +164,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   context fingerprints, normalizers, and plaintext fields, for snapshot tests,
   and reports duplicate IDs, seals registered in several kinds of context
   (`Manifest::sealed::<F, C>()`), and seal IDs that fields of several records
-  declare (`Duplicate::RecordField`), and whose output changes only in a
-  breaking release; `assert_unique_ids!`, which fails
+  declare (`Duplicate::RecordField`), and whose lines change spelling only in
+  a breaking release; `assert_unique_ids!`, which fails
   compilation when listed markers share an ID, declare the nil UUID, or name an
   unversioned normalizer; and `testing::assert_sealed_under`, which checks
   which keyring sealed a value.
@@ -205,6 +207,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   record field's (ADR-0012), so `new` on a record field's seal, or `for_rows`
   with a record ID of another kind, builds, and every row reports
   `ContextMismatch`, which verification counts as malformed (#113).
+  `RowPlanner` takes keys as `Sealed` does: `new` and `for_rows` any
+  `EncryptionKeys`, and `with_index` any `BlindIndexKeys`, such as `Keys`.
   `SweepStore` gains `type Columns`, carried in `SweepRow::columns`.
 - **Breaking:** a sweep runs with `Sweep::run` and is verified with
   `Sweep::verify`. `process_batch`, `run_batch`, `verify_batch`, `BatchOutcome`,
@@ -256,7 +260,7 @@ Decisions are recorded in ADR-0001 to ADR-0013.
 | `LocalEncryptionKeyring`, `LocalBlindIndexKeyring` | `EncryptionKeyring`, `BlindIndexKeyring`, paired in `Keys` |
 | `impl EncryptionKeyProvider for S` | resolve the keyring yourself and pass it |
 | `Encrypted<T, P>` as an SQLx column | `Sealed<P>`, opened with `open(&keys)` |
-| `impl BlindIndexMetadata for S` plus `impl BlindIndexSpec<str> for S` | one `impl BlindIndexSpec for S { type Seal = P; const BITS: u16 = …; const NORMALIZER: &'static str = "…"; type Query = str; fn normalize_query(…); fn normalize_value(…); }` |
+| `impl BlindIndexMetadata for S` plus `impl BlindIndexSpec<str> for S` | one `impl BlindIndexSpec for S { type Seal = P; const ID: IndexId = index_id!("…"); const BITS: u16 = …; const NORMALIZER: &'static str = "…"; type Query = str; fn normalize_query(…); fn normalize_value(…); }` |
 | `derive_blind_index::<S, _, _>(&v, &keys)` | `BlindIndex::<S>::derive(&v, &keys)` |
 | `blind_index_probes::<S, str, _>(q, &keys)` | `BlindIndex::<S>::probes(q, &keys)` |
 | `verify_blind_index_candidate::<S, str>(q, c)` | `BlindIndex::<S>::verify_candidate(q, c)` |

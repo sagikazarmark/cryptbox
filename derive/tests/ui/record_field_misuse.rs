@@ -68,4 +68,25 @@ struct NotSealed {
     handle: String,
 }
 
+// A field's index is stored in `{field}_index`, so a field takes one.
+#[derive(cryptbox::Record)]
+struct TwoIndexes {
+    #[cryptbox(record_id)]
+    id: i64,
+    #[cryptbox(seal = "2cef6a47-3e20-42dc-a319-56022cb4cf30")]
+    #[cryptbox(blind_index(
+        id = "ab78afa9-7aaa-499c-8239-037b7e136130",
+        bits = 32,
+        normalize = normalize,
+        normalizer = "exact/1",
+    ))]
+    #[cryptbox(blind_index(
+        id = "5c1f43bb-6d1f-4f43-9a37-0e2a4f6a5f4c",
+        bits = 16,
+        normalize = normalize,
+        normalizer = "exact/1",
+    ))]
+    email: String,
+}
+
 fn main() {}

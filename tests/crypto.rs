@@ -142,6 +142,24 @@ fn reserved_flag_bits_are_rejected_before_authentication() {
 }
 
 #[test]
+fn an_unknown_suite_is_reported_before_its_flags() {
+    let keys = keyring(CURRENT_KEY_ID, 9);
+    let mut ciphertext = encrypt::<EmailSeal>(b"flagged", &keys);
+    // A later suite may define a reserved flag bit.
+    ciphertext[5] = 2;
+    ciphertext[6] |= 0x02;
+
+    assert_eq!(
+        inspect_ciphertext(&ciphertext),
+        Err(Error::UnsupportedSuite(2))
+    );
+    assert_eq!(
+        decrypt::<EmailSeal>(&ciphertext, &keys),
+        Err(Error::UnsupportedSuite(2))
+    );
+}
+
+#[test]
 fn unscoped_envelopes_carry_the_empty_declaration_fingerprint() {
     let keys = keyring(CURRENT_KEY_ID, 9);
     let ciphertext = encrypt::<EmailSeal>(b"field only", &keys);

@@ -87,10 +87,26 @@ impl CiphertextInfo {
 
 pub(super) struct ParsedEnvelope<'a> {
     pub(super) info: CiphertextInfo,
+    flags: u8,
     // The whole envelope: the header followed by the suite payload.
     pub(super) bytes: &'a [u8],
     pub(super) header: &'a [u8],
     pub(super) suite_payload: &'a [u8],
+}
+
+impl ParsedEnvelope<'_> {
+    /// Rejects reserved flag bits, so a flag this reader does not know is never
+    /// ignored.
+    ///
+    /// Check the suite first: a later suite may define a flag, and its values
+    /// should report the suite, not the flag.
+    pub(super) const fn check_flags(&self) -> Result<(), Error> {
+        if self.flags & !FLAG_PADDED != 0 {
+            return Err(Error::UnsupportedFlags(self.flags));
+        }
+
+        Ok(())
+    }
 }
 
 /// Returns whether `bytes` begin with `CryptBox` ciphertext magic.
@@ -126,12 +142,6 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
         return Err(Error::InvalidEnvelope);
     }
     let flags = bytes[FLAGS_OFFSET];
-
-    // Reject reserved bits so a flag this reader does not know is never ignored.
-    if flags & !FLAG_PADDED != 0 {
-        return Err(Error::UnsupportedFlags(flags));
-    }
-
     let suite_id = SuiteId::new(bytes[SUITE_ID_OFFSET]);
 
     let padded = flags & FLAG_PADDED != 0;
@@ -147,6 +157,7 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
             key_id,
             context_fingerprint,
         },
+        flags,
         header: &bytes[..HEADER_LEN],
         suite_payload: &bytes[HEADER_LEN..],
     })

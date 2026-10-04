@@ -232,7 +232,9 @@ shorter.
 
 Flag bit `01` records that the AEAD plaintext is [padded](#plaintext-padding).
 All other bits are reserved and must be zero; readers reject an envelope with a
-reserved bit set before authentication. The flags are part of the
+reserved bit set before authentication. Readers check the suite first, so an
+envelope of an unknown suite, which may define a reserved bit, is reported as
+an unsupported suite. The flags are part of the
 authenticated prefix, so changing them fails authentication.
 
 There is no embedded payload-length field: the enclosing storage or transport
@@ -423,13 +425,27 @@ context:  123456781234423482341234567890ab000102000000080000000000000007
 envelope: 4342580002010011111111222243338444555555555555af72b9c5219cf83b000102030405060708090a0b0c0d0e0f10111213141516173270eb8abb2f33a5b07fed7df8e4f670ee1d691d5adf05262912af97de476a
 ```
 
-The fingerprints, contexts, and all three envelopes above were computed
+The same inputs for the `i64` record `-1`, whose value is two's complement, and
+the UUID record `0192d5f8-7c3a-7b4e-9f10-123456789abc`, whose context
+fingerprint is `f130f332c1aa00ec`:
+
+```text
+i64 -1
+context:  123456781234423482341234567890ab00010200000008ffffffffffffffff
+envelope: 4342580002010011111111222243338444555555555555af72b9c5219cf83b000102030405060708090a0b0c0d0e0f1011121314151617e059c58844a32a905bf67713279b873dc572e269aae6038f492426d12b1d88
+
+uuid 0192d5f8-7c3a-7b4e-9f10-123456789abc
+context:  123456781234423482341234567890ab000101000000100192d5f87c3a7b4e9f10123456789abc
+envelope: 4342580002010011111111222243338444555555555555f130f332c1aa00ec000102030405060708090a0b0c0d0e0f10111213141516176fc8252ecccb6d26c63ae0f5973d8a331de06fd0102144a92b46f3f0c684ea
+```
+
+The fingerprints, contexts, and the first three envelopes above were computed
 independently of the implementation from the recipes above: in Python, with
 an RFC 5869 HKDF written over HMAC-SHA-256 and libsodium's XChaCha20-Poly1305,
 checked against the `cryptography` package's ChaCha20-Poly1305 over a
 separately written HChaCha20. They were reproduced again with Node.js and
 OpenSSL's HKDF and ChaCha20-Poly1305, over another separately written
-HChaCha20.
+HChaCha20, which computed the `-1` and UUID record envelopes too.
 
 ## Blind-index format 2
 

@@ -42,6 +42,7 @@ pub fn inspect_ciphertext(bytes: &[u8]) -> Result<CiphertextInfo, Error> {
 fn parse_supported(bytes: &[u8]) -> Result<(SupportedSuite, ParsedEnvelope<'_>), Error> {
     let envelope = parse_envelope(bytes)?;
     let suite = SupportedSuite::from_id(envelope.info.suite())?;
+    envelope.check_flags()?;
     suite.validate_payload(envelope.suite_payload)?;
 
     Ok((suite, envelope))

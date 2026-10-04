@@ -3,7 +3,8 @@ use std::fmt;
 use zeroize::Zeroizing;
 
 use crate::{
-    BlindIndex, BlindIndexKeyring, BlindIndexSpec, Codec, EncryptionKeyring, Error, Seal,
+    BlindIndex, BlindIndexKeyring, BlindIndexKeys, BlindIndexSpec, Codec, EncryptionKeyring,
+    EncryptionKeys, Error, Seal,
     blind::{derive_value, index_context},
     bound,
     envelope::{inspect_blind_index, inspect_ciphertext},
@@ -112,7 +113,8 @@ where
 {
     context: SealContext,
     deriver: IndexDeriver<F>,
-    keys: &'a BlindIndexKeyring,
+    // `Keys` without a blind-index keyring reports its error on every row.
+    keys: Result<&'a BlindIndexKeyring, Error>,
 }
 
 /// Plans the rewrite of one encrypted column and its blind-index columns.
@@ -158,14 +160,14 @@ where
     F: Seal,
 {
     /// Creates a planner for standalone values of seal `F`, as
-    /// [`Sealed<F>`](crate::Sealed) holds them, and their encryption keyring.
+    /// [`Sealed<F>`](crate::Sealed) holds them, and the keys that protect them.
     ///
     /// A record field's values are sealed under each row's record ID: use
     /// [`Self::for_rows`]. A standalone planner reports them as
     /// [`Error::ContextMismatch`].
     #[must_use]
-    pub fn new(keys: &'a EncryptionKeyring) -> Self {
-        Self::with_record_id(keys, Box::new(|_| None))
+    pub fn new(keys: &'a (impl EncryptionKeys + ?Sized)) -> Self {
+        Self::with_record_id(keys.encryption_keyring(), Box::new(|_| None))
     }
 
     /// Creates a planner for rows of seal `F` that `keys` protects, each bound
@@ -178,11 +180,11 @@ where
     /// [`Error::ContextMismatch`]. A row without a usable record ID is a
     /// [`SweepStore`](super::SweepStore)'s to reject while loading it.
     pub fn for_rows<Id: RecordIdType>(
-        keys: &'a EncryptionKeyring,
+        keys: &'a (impl EncryptionKeys + ?Sized),
         record_id: impl Fn(&R) -> &Id + Send + Sync + 'a,
     ) -> Self {
         Self::with_record_id(
-            keys,
+            keys.encryption_keyring(),
             Box::new(move |row| Some(record_id(row).record_value())),
         )
     }
@@ -206,7 +208,10 @@ where
         self
     }
 
-    /// Registers the next blind-index column.
+    /// Registers the next blind-index column, derived with `keys`.
+    ///
+    /// [`Keys`](crate::Keys) without a blind-index keyring fail every row with
+    /// [`Error::BlindIndexKeysNotConfigured`].
     ///
     /// Columns are positional: registration order must match the order in
     /// which stored index bytes are later passed to [`Self::classify_row`] and
@@ -266,14 +271,14 @@ where
     /// }
     /// ```
     #[must_use]
-    pub fn with_index<Spec>(mut self, keys: &'a BlindIndexKeyring) -> Self
+    pub fn with_index<Spec>(mut self, keys: &'a (impl BlindIndexKeys + ?Sized)) -> Self
     where
         Spec: BlindIndexSpec<Seal = F>,
     {
         self.indexes.push(IndexColumn {
             context: index_context::<Spec>(),
             deriver: derive_index_bytes::<Spec>,
-            keys,
+            keys: keys.blind_index_keyring(),
         });
 
         self
@@ -448,11 +453,15 @@ where
     F: Seal,
 {
     fn is_stale(&self, bytes: &[u8]) -> Result<bool, Error> {
-        Ok(inspect_blind_index(bytes)?.index_key_id() != self.keys.current().id())
+        Ok(inspect_blind_index(bytes)?.index_key_id() != self.keys()?.current().id())
     }
 
     fn derive(&self, value: &F::Value) -> Result<Vec<u8>, Error> {
-        (self.deriver)(value, &self.context, self.keys)
+        (self.deriver)(value, &self.context, self.keys()?)
+    }
+
+    fn keys(&self) -> Result<&BlindIndexKeyring, Error> {
+        self.keys.clone()
     }
 }
 

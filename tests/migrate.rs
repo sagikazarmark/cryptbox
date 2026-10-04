@@ -10,8 +10,8 @@ use std::{
 use cryptbox::envelope::{inspect_blind_index, inspect_ciphertext};
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
-    index_key_id, key_id,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Keys, Padding, Seal, Sealed, Utf8,
+    index_id, index_key_id, key_id,
     migrate::{
         LegacyError, LegacyErrorKind, LegacyFormat, MaybeSealed, RowPlanner, RowState, Sweep,
         SweepError, SweepReport, SweepRow, SweepStore,
@@ -330,6 +330,44 @@ fn planner_skips_current_rows_without_writes() {
     let outcome = planner.plan_row(&(), &ciphertext, &[&index]).unwrap();
     assert_eq!(outcome.state(), RowState::Current);
     assert!(outcome.into_write().is_none());
+}
+
+#[test]
+fn planner_takes_keys_like_sealed_values_do() {
+    let keys = Keys::new(rotated_keys()).with_blind_indexes(rotated_index_keys());
+    let ciphertext = encrypt_email("mark@example.com", &rotated_keys());
+    let index = derive_email_index("mark@example.com", &old_index_keys());
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&keys);
+
+    let write = planner
+        .plan_row(&(), &ciphertext, &[&index])
+        .unwrap()
+        .into_write()
+        .unwrap();
+    assert_eq!(
+        write.indexes(),
+        &[derive_email_index(
+            "mark@example.com",
+            &rotated_index_keys()
+        )]
+    );
+}
+
+#[test]
+fn planner_index_without_blind_index_keys_fails_every_row() {
+    let keys = Keys::new(rotated_keys());
+    let ciphertext = encrypt_email("mark@example.com", &rotated_keys());
+    let index = derive_email_index("mark@example.com", &rotated_index_keys());
+    let planner = RowPlanner::<UserEmail>::new(&keys).with_index::<EmailLookup>(&keys);
+
+    assert_eq!(
+        planner.classify_row(&(), &ciphertext, &[&index]),
+        Err(Error::BlindIndexKeysNotConfigured)
+    );
+    assert_eq!(
+        planner.plan_row(&(), &ciphertext, &[&index]).unwrap_err(),
+        Error::BlindIndexKeysNotConfigured
+    );
 }
 
 #[test]
