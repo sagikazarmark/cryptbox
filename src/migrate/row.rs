@@ -93,7 +93,7 @@ impl RowOutcome {
     }
 }
 
-type RecordIdFn<'a, R> = Box<dyn Fn(&R) -> Result<Option<RecordValue>, Error> + 'a>;
+type RecordIdFn<'a, R> = Box<dyn Fn(&R) -> Result<Option<RecordValue>, Error> + Send + Sync + 'a>;
 
 type IndexDeriver<F> =
     fn(&<F as Seal>::Value, &SealContext, &BlindIndexKeyring) -> Result<Vec<u8>, Error>;
@@ -179,7 +179,7 @@ where
     /// is, and stops a sweep or verification pass.
     pub fn for_rows<Id: RecordIdType>(
         keys: &'a EncryptionKeyring,
-        record_id: impl for<'r> Fn(&'r R) -> Result<&'r Id, Error> + 'a,
+        record_id: impl for<'r> Fn(&'r R) -> Result<&'r Id, Error> + Send + Sync + 'a,
     ) -> Self {
         Self::with_record_id(
             keys,

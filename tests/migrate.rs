@@ -682,6 +682,26 @@ fn sweep_migrates_plaintext_and_stale_rows_to_a_terminal_state() {
 }
 
 #[test]
+fn a_sweep_with_a_legacy_handler_can_run_on_a_spawned_task() {
+    // Compiles only while the sweep and its future are `Send`, as
+    // `tokio::spawn` requires.
+    fn assert_send<T: Send>(value: T) -> T {
+        value
+    }
+
+    let keys = rotated_keys();
+    let index_keys = rotated_index_keys();
+    let planner = RowPlanner::<UserEmail>::new(&keys)
+        .with_legacy(&TOY_LEGACY)
+        .with_index::<EmailLookup>(&index_keys);
+    let sweep = assert_send(Sweep::new(planner));
+    let mut store = MemoryStore::new(mixed_rows());
+
+    let report = futures_executor::block_on(assert_send(sweep.run(&mut store))).unwrap();
+    assert_eq!(report.legacy, 3);
+}
+
+#[test]
 fn terminal_verification_does_not_establish_authenticated_readability() {
     let keys = rotated_keys();
     let mut bytes = encrypt_email("mark@example.com", &keys);

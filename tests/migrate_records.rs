@@ -62,6 +62,11 @@ fn record_id(row: &Columns) -> Result<&i64, Error> {
     Ok(&row.id)
 }
 
+/// Compiles only while `value` is `Send`, as `tokio::spawn` requires of a run.
+const fn assert_send<T: Send>(value: T) -> T {
+    value
+}
+
 fn old_key() -> EncryptionKey {
     EncryptionKey::new(key_id!("81000000-0000-4000-8000-000000000001"), [0x11; 32])
 }
@@ -298,7 +303,7 @@ fn a_sweep_reseals_a_records_fields_under_the_new_key() {
     assert_eq!((before.stale, before.current), (3, 1));
     assert!(!before.is_terminal());
 
-    block_on(sweep.run(&mut store)).unwrap();
+    block_on(assert_send(sweep.run(&mut store))).unwrap();
 
     let after = block_on(sweep.verify(&mut store)).unwrap();
     assert_eq!((after.stale, after.current), (0, 4));

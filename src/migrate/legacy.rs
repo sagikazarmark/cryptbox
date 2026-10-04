@@ -9,7 +9,8 @@ use zeroize::Zeroizing;
 /// must not retain plaintext in errors and are responsible for zeroizing their
 /// own intermediate values and key material. The handler is explicit and
 /// synchronous so it can be removed and its keys destroyed after the bounded
-/// migration window.
+/// migration window. It is `Send + Sync`, so a sweep that uses it can run on
+/// another task.
 ///
 /// A handler can support mixed foreign ciphertext and plaintext by recognizing
 /// its previous format and using identity recovery otherwise:
@@ -37,7 +38,7 @@ use zeroize::Zeroizing;
 /// assert_eq!(&*recovered, b"hello");
 /// # Ok::<(), LegacyError>(())
 /// ```
-pub trait LegacyFormat {
+pub trait LegacyFormat: Send + Sync {
     /// Recovers the plaintext bytes of one stored legacy value.
     ///
     /// The caller decodes the returned bytes through the seal's codec.

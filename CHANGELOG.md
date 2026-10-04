@@ -211,6 +211,9 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   build it with `SweepRow::new`.
 - **Breaking:** `MaybeSealed::from_plaintext` is removed; wrap bytes known to be
   legacy with `from_legacy_bytes`.
+- **Breaking:** `LegacyFormat` requires `Send + Sync`, so `RowPlanner`, `Sweep`,
+  and the future of `Sweep::run` are `Send` and a sweep can run on a spawned
+  task. In 0.5.0 none of them was.
 
 ### Fixes
 
