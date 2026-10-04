@@ -187,6 +187,7 @@ const _: () = {
         ];
         const RECORD_ID: &'static str = "id";
         const PLAINTEXT: &'static [&'static str] = &["org", "created_at"];
+        #[allow(clippy::clone_on_copy)]
         fn seal<K>(
             &self,
             keys: &K,

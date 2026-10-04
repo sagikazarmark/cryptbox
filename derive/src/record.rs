@@ -871,6 +871,10 @@ impl<'a> Expansion<'a> {
 
                     #schema
 
+                    // Bare fields are cloned with the field's span, so a
+                    // non-Clone type errors at the field; that span makes
+                    // clippy lint a Copy record ID in the user's crate.
+                    #[allow(clippy::clone_on_copy)]
                     fn seal<K>(
                         &self,
                         #keys: &K,
