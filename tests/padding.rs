@@ -227,6 +227,17 @@ fn fixed_length_padding_rejects_encoded_plaintext_that_does_not_fit() {
     ));
 }
 
+// The envelope records only whether a value is padded (ADR-0002), so a resized
+// policy applies to new writes and a sweep leaves stored values alone.
+#[test]
+fn a_resized_padding_policy_does_not_make_values_stale() {
+    let keys = keyring();
+    let original = Sealed::<BlockPadded>::seal(&"short".to_owned(), &keys).unwrap();
+    let current = Sealed::<WiderBlockPadded>::from_bytes(original.into_bytes()).unwrap();
+
+    assert!(!current.needs_reseal(&keys).unwrap());
+}
+
 #[test]
 fn resealing_normalizes_plaintext_to_the_current_padding_parameters() {
     let keys = keyring();
