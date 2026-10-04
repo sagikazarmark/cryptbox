@@ -92,13 +92,20 @@ or `uuid::Uuid`, or `i64`; store an ID newtype's inner value.
 There is no record-level reseal. Each sealed field reports whether it needs one
 without opening it: `stored.email.needs_reseal(&keys)?`. To rewrite a row, open
 it and seal it again, then write every sealed field and index column in one
-statement:
+statement, guarded by every byte the row was read with:
 
 ```rust
-let customer = Customer::open(stored, &keys)?;
+let customer = Customer::open(stored.clone(), &keys)?;
 let resealed = customer.seal(&keys)?;
-// UPDATE customer SET email = ?, email_index = ?, note = ? WHERE id = ?
+// UPDATE customer SET email = ?, email_index = ?, note = ?
+//  WHERE id = ? AND email = ? AND email_index = ? AND note IS ?
+// Bind `resealed`'s columns, then the ID and `stored`'s columns.
 ```
+
+Compare nullable columns null-safely (`IS` in SQLite, `IS NOT DISTINCT FROM`
+in PostgreSQL). An unguarded `WHERE id = ?` overwrites a concurrent edit with
+the value read before it. When no row is updated, another write won: read the
+row again rather than retry the stale value.
 
 `needs_reseal` checks the encryption key only. After rotating the blind-index
 key, a row whose sealed fields are current can still hold indexes under the old
@@ -116,9 +123,10 @@ in batches.
 The context does not name the org. With a keyring per org, open the record and
 seal it again with the new org's keys (`Sealed::reseal_across` for a standalone
 value). Derive every blind index again when orgs have separate index keys, and
-write sealed fields and indexes in one atomic write. The moved value leaves the
-old org's custody and survives its [shredding](operations.md#shredding); treat
-the move as an export where residency rules apply. Reads never reseal.
+write sealed fields and indexes in one atomic write, guarded as above. The moved
+value leaves the old org's custody and survives its
+[shredding](operations.md#shredding); treat the move as an export where
+residency rules apply. Reads never reseal.
 
 ### Changing a field's seal or record ID
 
