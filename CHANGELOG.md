@@ -16,6 +16,9 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   value type, which several seals can share, or its own value. `profile!`,
   `EncryptionProfile`, `Field`, `Binding`, `BindingDomain`, `FieldBound`,
   `Unbound`, `ProfileContext`, and the per-profile key context are removed.
+- **Breaking:** `FieldId` and `field_id!` are `SealId` and `seal_id!`, and
+  `from_uuid_literal` is removed from every ID type: declare IDs with the ID
+  macros, such as `key_id!`, or `from_u128`, and parse them with `FromStr`.
 - **Breaking:** only `String` and `Vec<u8>` and their `Secret` wrappers have a
   default codec, `Utf8` and `Raw`, permanently; a seal over any other value type
   names its codec. `Codec` requires `const ID: &'static str`, a stable name for
@@ -113,10 +116,11 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   key provider traits, `KeyProviderError`, `GlobalKeyContext`, and
   `GlobalProviders` are removed. Choosing which keyring protects which values is
   application code; key IDs are generated UUIDs, never shared across keyrings.
-- **Breaking:** key and keyring constructors return `Error`. New errors:
-  `DuplicateEncryptionKey`, `DuplicateBlindIndexKey`, `InvalidKeyEncoding`,
-  and `BlindIndexKeysNotConfigured`. `KeyProviderUnavailable` is removed: the library
-  never looks keys up, so resolution errors are the application's.
+- **Breaking:** `Error::KeyProviderUnavailable`, `KeyProviderNotInitialized`,
+  and `KeyProviderAlreadyInitialized` are removed: the library never looks keys
+  up or installs them, so resolution errors are the application's. A blind-index
+  operation given `Keys` without a blind-index keyring reports the new
+  `Error::BlindIndexKeysNotConfigured`.
 
 ### Wire format
 
