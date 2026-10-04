@@ -97,6 +97,8 @@ Decisions are recorded in ADR-0001 to ADR-0012.
 - **Breaking:** blind indexes are derived under their seal ID and move to format
   2. 0.5.0 indexes fail to parse with `Error::InvalidBlindIndex` instead of
   silently matching nothing; derive them again.
+- **Breaking:** `Error::BlindIndexNormalizationFailed` carries the
+  `BlindIndexError` the normalizer returned.
 
 ### Keys
 
@@ -169,7 +171,8 @@ Decisions are recorded in ADR-0001 to ADR-0012.
   reject the nil UUID, a normalizer name without a version, such as `"email"`
   instead of `"email/1"` (#77), and generic types; `Seal` rejects unions, and
   `BlindIndexSpec` anything but a struct (#82). The ID macros reject the nil
-  UUID too, and so does parsing an ID with `FromStr`.
+  UUID too, and so do `from_u128` and parsing an ID with `FromStr`;
+  `from_bytes` does not check, since stored IDs are read through it.
 - Add the opt-in `serde` feature for stored bytes: `Sealed<F>` and
   `BlindIndex<S>` serialize as unpadded base64url text in human-readable
   formats and as bytes otherwise. The `json` feature enables `serde`.

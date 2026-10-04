@@ -92,7 +92,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 ///
 /// impl BlindIndexSpec for ZeroBits {
 ///     type Seal = Bytes;
-///     const ID: IndexId = IndexId::from_bytes([0; 16]);
+///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 0;
 ///     const NORMALIZER: &'static str = "exact/1";
 ///     type Query = [u8];
@@ -117,7 +117,7 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 ///
 /// impl BlindIndexSpec for TooManyBits {
 ///     type Seal = Bytes;
-///     const ID: IndexId = IndexId::from_bytes([0; 16]);
+///     const ID: IndexId = IndexId::from_bytes([2; 16]);
 ///     const BITS: u16 = 300;
 ///     const NORMALIZER: &'static str = "exact/1";
 ///     type Query = [u8];

@@ -8,6 +8,10 @@ macro_rules! identifier {
 
         impl $name {
             /// Creates an identifier from its canonical 16-byte representation.
+            ///
+            /// The bytes are not checked: stored IDs are read through it, and
+            /// the format does not reserve the nil UUID. Declare an ID with
+            /// [`Self::from_u128`] or its macro, which reject the nil UUID.
             #[must_use]
             pub const fn from_bytes(bytes: [u8; 16]) -> Self {
                 Self(bytes)
@@ -17,9 +21,13 @@ macro_rules! identifier {
             ///
             /// `0x0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64` names the same identifier
             /// as the literal `"0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64"`.
+            ///
+            /// # Panics
+            ///
+            /// Panics for the nil UUID, which fails the build in a `const`.
             #[must_use]
             pub const fn from_u128(value: u128) -> Self {
-                Self(value.to_be_bytes())
+                Self($crate::id::non_nil(value.to_be_bytes()))
             }
 
             /// Returns the canonical 16-byte representation.

@@ -337,7 +337,7 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::AuthenticationFailed
         | Error::ContextMismatch
         | Error::CodecFailed(_)
-        | Error::BlindIndexNormalizationFailed
+        | Error::BlindIndexNormalizationFailed(_)
         | Error::MessageTooLong
         | Error::PaddingOverflow
         | Error::InvalidPadding

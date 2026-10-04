@@ -187,3 +187,9 @@ fn an_identifier_from_u128_reads_the_uuid_digits_in_order() {
         index_id!("2e4c7b1a-5d3f-4a86-9b20-7f1e6c8d4a53")
     );
 }
+
+#[test]
+#[should_panic(expected = "nil UUID")]
+fn an_identifier_from_u128_rejects_the_nil_uuid() {
+    let _ = SealId::from_u128(std::hint::black_box(0));
+}

@@ -64,6 +64,11 @@ impl Default for BlindIndexError {
 }
 
 /// An error returned by `CryptBox` operations.
+///
+/// Errors carry a category and public IDs only, never a value, plaintext, or an
+/// upstream error, which could quote its input, so any error is safe to log.
+/// Codecs and normalizers report failures the same way, through [`CodecError`]
+/// and [`BlindIndexError`].
 #[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 #[non_exhaustive]
 pub enum Error {
@@ -100,8 +105,8 @@ pub enum Error {
     #[error("codec failed: {0}")]
     CodecFailed(#[from] CodecError),
     /// Normalizing a blind-index input failed.
-    #[error("blind-index normalization failed")]
-    BlindIndexNormalizationFailed,
+    #[error(transparent)]
+    BlindIndexNormalizationFailed(#[from] BlindIndexError),
     /// The installed keys were read before [`keys::install`](crate::keys::install).
     #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
     #[error("keys are not installed")]
@@ -159,12 +164,6 @@ pub enum Error {
     #[cfg(feature = "migrate")]
     #[error("legacy recovery failed: {0}")]
     LegacyRecoveryFailed(#[from] crate::migrate::LegacyError),
-}
-
-impl From<BlindIndexError> for Error {
-    fn from(_: BlindIndexError) -> Self {
-        Self::BlindIndexNormalizationFailed
-    }
 }
 
 impl From<crypto::Error> for Error {
