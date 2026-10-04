@@ -36,6 +36,9 @@ use crate::{
 /// listed: the codec ID stands for its stored bytes, and golden-bytes fixtures
 /// ([`assert_encoding`](crate::testing::assert_encoding)) pin them.
 ///
+/// The output's spelling changes only in a breaking release, so a snapshot
+/// diff after a compatible upgrade is a schema change, never a formatting one.
+///
 /// # Examples
 ///
 /// ```
@@ -276,6 +279,7 @@ impl Manifest {
 #[non_exhaustive]
 pub enum Duplicate {
     /// Several seal types declare one seal ID.
+    #[non_exhaustive]
     Seal {
         /// The shared ID.
         id: SealId,
@@ -283,6 +287,7 @@ pub enum Duplicate {
         markers: Vec<&'static str>,
     },
     /// Several blind-index markers declare one index ID.
+    #[non_exhaustive]
     Index {
         /// The shared ID.
         id: IndexId,
@@ -290,6 +295,7 @@ pub enum Duplicate {
         markers: Vec<&'static str>,
     },
     /// One seal ID is registered in several kinds of context.
+    #[non_exhaustive]
     Context {
         /// The seal ID.
         id: SealId,
@@ -298,6 +304,7 @@ pub enum Duplicate {
     },
     /// Several record fields declare one seal ID, so their values can be
     /// swapped between them.
+    #[non_exhaustive]
     RecordField {
         /// The shared seal ID.
         id: SealId,

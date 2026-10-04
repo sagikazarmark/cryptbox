@@ -181,12 +181,14 @@ fn manifest_reports_duplicate_index_ids() {
         .index::<NicknameLookup>()
         .index::<DisplayNameLookup>();
 
+    let duplicates = manifest.duplicates();
+    let [Duplicate::Index { id, markers, .. }] = duplicates.as_slice() else {
+        panic!("expected one duplicate index ID");
+    };
+    assert_eq!(*id, NicknameLookup::ID);
     assert_eq!(
-        manifest.duplicates(),
-        [Duplicate::Index {
-            id: NicknameLookup::ID,
-            markers: vec!["schema::NicknameLookup", "schema::DisplayNameLookup"],
-        }]
+        *markers,
+        ["schema::NicknameLookup", "schema::DisplayNameLookup"]
     );
 }
 
@@ -197,15 +199,17 @@ fn manifest_reports_a_seal_in_several_contexts() {
         .sealed::<RowNote, ()>()
         .sealed::<RowNote, InRecord<i64>>();
 
+    let duplicates = manifest.duplicates();
+    let [Duplicate::Context { id, contexts, .. }] = duplicates.as_slice() else {
+        panic!("expected one seal in several contexts");
+    };
+    assert_eq!(*id, RowNote::ID);
     assert_eq!(
-        manifest.duplicates(),
-        [Duplicate::Context {
-            id: RowNote::ID,
-            contexts: vec![
-                hex::decode("af72b9c5219cf83b").unwrap().try_into().unwrap(),
-                hex::decode("502de8fcfb838c80").unwrap().try_into().unwrap(),
-            ],
-        }]
+        *contexts,
+        [
+            <[u8; 8]>::try_from(hex::decode("af72b9c5219cf83b").unwrap()).unwrap(),
+            <[u8; 8]>::try_from(hex::decode("502de8fcfb838c80").unwrap()).unwrap(),
+        ]
     );
     assert!(manifest.to_string().ends_with(
         "  context: 502de8fcfb838c80\n\

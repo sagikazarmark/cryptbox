@@ -63,20 +63,20 @@ pub trait Record: Sized + DerivedRecord {
     /// [`Sealed::open_in`](crate::Sealed::open_in) under the record ID.
     type Context: Context;
 
-    /// The seal ID of each sealed field, in field order.
-    ///
-    /// The [schema manifest](crate::schema::Manifest::record) names the record
-    /// by them.
+    /// The seal ID of each sealed field, in field order, for the [schema
+    /// manifest](crate::schema::Manifest::record). Not public API:
+    /// `#[derive(Record)]` declares it.
+    #[doc(hidden)]
     const SEALS: &'static [SealId];
 
-    /// The name of the field that holds the record ID.
+    /// The name of the field that holds the record ID, for the schema
+    /// manifest. Not public API: `#[derive(Record)]` declares it.
+    #[doc(hidden)]
     const RECORD_ID: &'static str;
 
-    /// The names of the fields stored as they are, in field order.
-    ///
-    /// Field names are the Rust names the [schema
-    /// manifest](crate::schema::Manifest::record) lists, so a field that should
-    /// have been sealed shows up in its snapshot.
+    /// The Rust names of the fields stored as they are, in field order, for the
+    /// schema manifest. Not public API: `#[derive(Record)]` declares it.
+    #[doc(hidden)]
     const PLAINTEXT: &'static [&'static str];
 
     /// Encrypts every sealed field under the record ID, and derives its blind
