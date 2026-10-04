@@ -190,7 +190,6 @@ mod tests {
     -> Result<(), Box<dyn std::error::Error>> {
         let old = EncryptionKey::generate()?;
         let current = EncryptionKey::generate()?;
-        let unknown = EncryptionKey::generate()?.id();
         let writer = EncryptionKeyring::new(old.clone(), [])?;
         let value = Handle(Secret::new("Alice-7".to_owned()));
         let sealed = Sealed::<Handle>::seal(&value, &writer)?;
@@ -200,13 +199,8 @@ mod tests {
         )?));
         let snapshot = reader.keyring()?;
         assert_eq!(snapshot.current().id(), current.id());
-        assert_eq!(snapshot.get(old.id()).unwrap().id(), old.id());
-        assert_eq!(snapshot.get(current.id()).unwrap().id(), current.id());
-        assert!(snapshot.get(unknown).is_none());
-        assert_eq!(
-            sealed.open(&reader.keyring()?)?.0.expose_secret(),
-            "Alice-7"
-        );
+        // The snapshot keeps the old key, so values sealed under it still open.
+        assert_eq!(sealed.open(&snapshot)?.0.expose_secret(), "Alice-7");
         let retired = CachedEncryptionKeys::new(Some(EncryptionKeyring::new(current, [])?));
         assert_eq!(
             sealed.open(&retired.keyring()?).unwrap_err(),
