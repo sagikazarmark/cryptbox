@@ -92,6 +92,62 @@ fn the_record_vector_opens_only_as_its_record_field() {
     );
 }
 
+// docs/wire-format.md#record-vector: the i64 record -1, two's complement.
+const NEGATIVE_RECORD: &str = "4342580002010011111111222243338444555555555555af72b9c5219cf83b000102030405060708090a0b0c0d0e0f1011121314151617e059c58844a32a905bf67713279b873dc572e269aae6038f492426d12b1d88";
+
+#[test]
+fn the_negative_record_vector_opens_under_its_record_id() {
+    let field =
+        Sealed::<VectorSeal, InRecord<i64>>::from_bytes(hex::decode(NEGATIVE_RECORD).unwrap())
+            .unwrap();
+
+    assert_eq!(field.open_in(&-1, &keys()).unwrap(), b"cryptbox vector");
+    assert_eq!(
+        field.open_in(&i64::MAX, &keys()).unwrap_err(),
+        Error::AuthenticationFailed
+    );
+}
+
+// docs/wire-format.md#record-vector: the UUID record
+// 0192d5f8-7c3a-7b4e-9f10-123456789abc.
+const UUID_RECORD: &str = "4342580002010011111111222243338444555555555555f130f332c1aa00ec000102030405060708090a0b0c0d0e0f10111213141516176fc8252ecccb6d26c63ae0f5973d8a331de06fd0102144a92b46f3f0c684ea";
+
+#[test]
+fn the_uuid_record_vector_opens_only_as_its_record_field() {
+    let id = uuid::uuid!("0192d5f8-7c3a-7b4e-9f10-123456789abc");
+    let field =
+        Sealed::<VectorSeal, InRecord<uuid::Uuid>>::from_bytes(hex::decode(UUID_RECORD).unwrap())
+            .unwrap();
+
+    assert_eq!(
+        hex::encode(
+            inspect_ciphertext(field.as_bytes())
+                .unwrap()
+                .context_fingerprint()
+        ),
+        "f130f332c1aa00ec"
+    );
+    assert_eq!(field.open_in(&id, &keys()).unwrap(), b"cryptbox vector");
+    assert_eq!(
+        field.open_in(&uuid::Uuid::nil(), &keys()).unwrap_err(),
+        Error::AuthenticationFailed
+    );
+    assert_eq!(
+        Sealed::<VectorSeal, InRecord<[u8; 16]>>::from_bytes(hex::decode(UUID_RECORD).unwrap())
+            .unwrap()
+            .open_in(id.as_bytes(), &keys())
+            .unwrap(),
+        b"cryptbox vector"
+    );
+    assert_eq!(
+        Sealed::<VectorSeal, InRecord<i64>>::from_bytes(hex::decode(UUID_RECORD).unwrap())
+            .unwrap()
+            .open_in(&7, &keys())
+            .unwrap_err(),
+        Error::ContextMismatch
+    );
+}
+
 #[test]
 fn format_1_envelopes_are_not_read() {
     let mut envelope = hex::decode(UNPADDED).unwrap();
