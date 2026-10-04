@@ -57,9 +57,8 @@ fn row(id: i64) -> Columns {
     Columns { id }
 }
 
-#[allow(clippy::unnecessary_wraps)] // A row closure is fallible by contract.
-fn record_id(row: &Columns) -> Result<&i64, Error> {
-    Ok(&row.id)
+fn record_id(row: &Columns) -> &i64 {
+    &row.id
 }
 
 /// Compiles only while `value` is `Send`, as `tokio::spawn` requires of a run.

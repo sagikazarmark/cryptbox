@@ -198,7 +198,7 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   non-exhaustive.
   `RowPlanner<F, R = ()>` and `Sweep<F, R = ()>` take the type of a row's
   columns: `RowPlanner::new(&keys)` serves standalone values, and
-  `RowPlanner::for_rows(&keys, |row| Ok(&row.id))` a record's field, whose
+  `RowPlanner::for_rows(&keys, |row| &row.id)` a record's field, whose
   context the record ID's type fixes. A seal no longer knows whether it is a
   record field's (ADR-0012), so `new` on a record field's seal, or `for_rows`
   with a record ID of another kind, builds, and every row reports

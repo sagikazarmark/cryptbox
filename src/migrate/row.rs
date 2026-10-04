@@ -93,7 +93,7 @@ impl RowOutcome {
     }
 }
 
-type RecordIdFn<'a, R> = Box<dyn Fn(&R) -> Result<Option<RecordValue>, Error> + Send + Sync + 'a>;
+type RecordIdFn<'a, R> = Box<dyn Fn(&R) -> Option<RecordValue> + Send + Sync + 'a>;
 
 type IndexDeriver<F> =
     fn(&<F as Seal>::Value, &SealContext, &BlindIndexKeyring) -> Result<Vec<u8>, Error>;
@@ -165,25 +165,25 @@ where
     /// [`Error::ContextMismatch`].
     #[must_use]
     pub fn new(keys: &'a EncryptionKeyring) -> Self {
-        Self::with_record_id(keys, Box::new(|_| Ok(None)))
+        Self::with_record_id(keys, Box::new(|_| None))
     }
 
     /// Creates a planner for rows of seal `F` that `keys` protects, each bound
     /// to the record ID `record_id` reads from its columns: a reference to a
-    /// UUID or an `i64`, such as `|row| Ok(&row.id)`.
+    /// UUID or an `i64`, such as `|row| &row.id`.
     ///
     /// Use it for a record field's values, as
     /// [`Sealed<F, InRecord<Id>>`](crate::InRecord) holds them; the record ID's
     /// type `Id` must be the field's, or every row reports
-    /// [`Error::ContextMismatch`]. An error from `record_id` is returned as it
-    /// is, and stops a sweep or verification pass.
+    /// [`Error::ContextMismatch`]. A row without a usable record ID is a
+    /// [`SweepStore`](super::SweepStore)'s to reject while loading it.
     pub fn for_rows<Id: RecordIdType>(
         keys: &'a EncryptionKeyring,
-        record_id: impl for<'r> Fn(&'r R) -> Result<&'r Id, Error> + Send + Sync + 'a,
+        record_id: impl Fn(&R) -> &Id + Send + Sync + 'a,
     ) -> Self {
         Self::with_record_id(
             keys,
-            Box::new(move |row| record_id(row).map(|id| Some(id.record_value()))),
+            Box::new(move |row| Some(record_id(row).record_value())),
         )
     }
 
@@ -302,8 +302,7 @@ where
         indexes: &[&[u8]],
     ) -> Result<RowState, Error> {
         self.check_arity(indexes)?;
-        let record = (self.record_id)(row)?;
-        let context = SealContext::new(&F::ID, record);
+        let context = SealContext::new(&F::ID, (self.record_id)(row));
 
         match inspect_ciphertext(ciphertext) {
             Ok(_) => {}
@@ -349,8 +348,7 @@ where
         indexes: &[&[u8]],
     ) -> Result<RowOutcome, Error> {
         self.check_arity(indexes)?;
-        let record = (self.record_id)(row)?;
-        let context = SealContext::new(&F::ID, record);
+        let context = SealContext::new(&F::ID, (self.record_id)(row));
 
         match inspect_ciphertext(ciphertext) {
             Ok(_) => {}

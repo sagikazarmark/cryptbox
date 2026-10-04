@@ -214,7 +214,7 @@ rewriting and verification. Packaged stores provide neither.
 
 **Records.** A record's fields are sealed under each row's record ID, and a
 planner seals with one keyring, so partition the sweep by keys: one
-`RowPlanner::for_rows(keys, |row| Ok(&row.id))` per tenant, with a store that
+`RowPlanner::for_rows(keys, |row| &row.id)` per tenant, with a store that
 selects only that tenant's rows and loads the record ID into `SweepRow::columns`.
 Packaged stores load no columns, so records need an application-owned
 `SweepStore`. A sweep never changes a value's context; a row under another
