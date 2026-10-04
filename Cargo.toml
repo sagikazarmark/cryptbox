@@ -145,12 +145,28 @@ all-features = true
 # Labels each item with the features it needs.
 rustdoc-args = ["--cfg", "docsrs"]
 
-[[package.metadata.dagger.modules]]
+[[workspace.metadata.dagger.modules]]
 name = "rust"
-# Includes no-default, default, individual-feature, and all-feature runs.
-hack.doc = ["--locked", "--each-feature"]
+# The flags apply to every workspace member. The searchable example and the E2E
+# fixture need exactly one database backend, and `macro-check` needs a live
+# database. The all-feature documentation run is a check of the cryptbox module.
+hack.doc = [
+    "--locked",
+    "--feature-powerset",
+    "--depth", "1",
+    "--mutually-exclusive-features", "postgres,sqlite",
+    "--at-least-one-of", "postgres,sqlite",
+    "--exclude-features", "macro-check",
+]
 # Pairwise coverage keeps migrate + each SQLx backend independent.
-hack.test = ["--locked", "--feature-powerset", "--depth", "2"]
+hack.test = [
+    "--locked",
+    "--feature-powerset",
+    "--depth", "2",
+    "--mutually-exclusive-features", "postgres,sqlite",
+    "--at-least-one-of", "postgres,sqlite",
+    "--exclude-features", "macro-check",
+]
 
 [package.metadata.release]
 sign-commit = true

@@ -59,25 +59,34 @@ type Test {
   """
   Execute all unit and integration tests with every feature enabled.
   """
-  allFeatures: String! @check {
+  allFeatures: Void @check {
     self.run(["cargo", "test", "--locked", "--all-targets", "--all-features"])
   }
 
   """
-  Test the derive macros, including compiler diagnostics and expansion snapshots.
+  Build the API documentation with every feature enabled, as docs.rs does.
   """
-  derive: String! @check {
+  allFeaturesDoc: Void @check {
+    self.run(["cargo", "doc", "--locked", "--no-deps", "--all-features", "-p", "cryptbox", "-p", "cryptbox-derive"])
+  }
+
+  """
+  Test the derive macros' expansion snapshots, which need cargo-expand.
+  """
+  derive: Void @check {
     self
       .container
       .withExec(["cargo", "install", "cargo-expand", "--version", "1.0.126", "--locked"])
-      .withExec(["cargo", "test", "--locked", "-p", "cryptbox-derive"])
-      .combinedOutput
+      .withExec(["cargo", "test", "--locked", "-p", "cryptbox-derive", "--test", "expand", "--", "--ignored"])
+      .sync
+
+    null
   }
 
   """
    Execute SQLx integration and process-level E2E tests against live PostgreSQL.
   """
-  postgres: String! @check {
+  postgres: Void @check {
     let server = Dagger
       .container
       .from("postgres:" + self.postgresVersion)
@@ -99,13 +108,15 @@ type Test {
         "--no-default-features", "--features", "migrate,sqlx-postgres",
         "--", "--include-ignored",
       ])
-      .combinedOutput
+      .sync
+
+    null
   }
 
   """
   Fuzz the stored-format parsers for a minute per target; see fuzz/README.md.
   """
-  fuzz: String! @check {
+  fuzz: Void @check {
     let container = self
       .container
       .withExec(["apt-get", "update"])
@@ -121,55 +132,57 @@ type Test {
       ])
     }
 
-    container.combinedOutput
+    container.sync
+
+    null
   }
 
   """
   Run the key rotation example.
   """
-  keyRotation: String! @check {
+  keyRotation: Void @check {
     self.example("key_rotation", feature: ["derive"])
   }
 
   """
   Run the re-encryption sweep example.
   """
-  reencryptionSweep: String! @check {
+  reencryptionSweep: Void @check {
     self.example("reencryption_sweep", feature: ["derive", "sqlx-sqlite"])
   }
 
   """
   Run the plaintext migration example.
   """
-  plaintextMigration: String! @check {
+  plaintextMigration: Void @check {
     self.example("plaintext_migration", feature: ["derive", "migrate", "sqlx-sqlite"])
   }
 
   """
   Run the legacy migration example.
   """
-  legacyMigration: String! @check {
+  legacyMigration: Void @check {
     self.example("legacy_migration", feature: ["derive", "migrate", "sqlx-sqlite"])
   }
 
   """
   Run the blind indexes example.
   """
-  blindIndexes: String! @check {
+  blindIndexes: Void @check {
     self.example("blind_indexes", feature: ["derive"])
   }
 
   """
   Run the SQLx SQLite example.
   """
-  sqlxSqlite: String! @check {
+  sqlxSqlite: Void @check {
     self.example("sqlx_sqlite", feature: ["derive", "sqlx-sqlite"])
   }
 
   """
   Run the explicit Serde stored-value example.
   """
-  storedValues: String! @check {
+  storedValues: Void @check {
     self.example("stored_values", feature: ["derive", "serde"])
   }
 
@@ -182,7 +195,7 @@ type Test {
     List of features to activate.
     """
     feature: [String!]! = [],
-  ): String! {
+  ): Void {
     let args = ["cargo", "run", "--locked", "--example", name]
 
     feature.each { f => args += ["--features", f] }
@@ -190,7 +203,9 @@ type Test {
     self.run(args)
   }
 
-  let run(args: [String!]!): String! {
-    self.container.withExec(args).combinedOutput
+  let run(args: [String!]!): Void {
+    self.container.withExec(args).sync
+
+    null
   }
 }

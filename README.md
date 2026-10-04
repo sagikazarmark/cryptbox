@@ -9,8 +9,7 @@
 
 > [!WARNING]
 > CryptBox has not been independently audited, and its API may change before
-> 1.0. Its stored format is stable as of 0.6; 0.6 cannot read values stored by
-> 0.5 (see [upgrading stored values from 0.5](docs/operations.md#upgrading-stored-values-from-05)).
+> 1.0.
 > **Use it at your own risk.**
 >
 > Read the [threat model](docs/security.md) for its security boundaries and

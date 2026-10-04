@@ -51,7 +51,7 @@ jobs:
         run: cargo install cargo-expand --version 1.0.126 --locked
 
       - name: Test derive macros
-        run: cargo test --locked -p cryptbox-derive
+        run: cargo test --locked -p cryptbox-derive -- --include-ignored
 
       - name: Run examples
         run: |
