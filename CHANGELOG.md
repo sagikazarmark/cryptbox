@@ -6,7 +6,7 @@ This release replaces profiles with seals and adds records. Values and blind
 indexes stored by 0.5.0 are deliberately not readable: the envelope and the
 blind index both move to format 2. Both formats are now stable: later releases
 read them, and a new construction would be a new suite ID or format version.
-Decisions are recorded in ADR-0001 to ADR-0012.
+Decisions are recorded in ADR-0001 to ADR-0013.
 
 ### Seals
 
@@ -47,10 +47,9 @@ Decisions are recorded in ADR-0001 to ADR-0012.
   `inspect_blind_index`, and `BlindIndexInfo` move to the `cryptbox::envelope`
   module. `CiphertextInfo` reports `padded` and `context_fingerprint`, and
   `BlindIndexInfo::bits` returns a `u16`.
-- **Breaking:** the automatic SQLx column is `Plain<F>`, available with an
-  `sqlx-*` feature. It seals and opens a standalone value with the installed
-  keys, and writes no blind indexes. `KeyContext` is removed, and
-  `into_secret` is `into_inner`.
+- **Breaking:** there is no automatic SQLx column that seals on encode and opens
+  on decode (ADR-0013). Bind `Sealed<F>` and open it with the keys you pass in.
+  `KeyContext` is removed.
 - **Breaking:** `Prepared`, `prepare`, `prepare_with`, and `BlindIndexRef` are
   removed, with `Error::DuplicatePreparedIndex` and
   `Error::BlindIndexNotPrepared`. Seal the value with `Sealed::seal`, derive each
@@ -103,27 +102,21 @@ Decisions are recorded in ADR-0001 to ADR-0012.
 
 ### Keys
 
-- **Breaking:** keys are passed to each call or installed once per process
-  (ADR-0004, ADR-0006, ADR-0010). `EncryptionKeyring` and `BlindIndexKeyring`
-  (were `LocalEncryptionKeyring` and `LocalBlindIndexKeyring`) hold a current
-  key and previous keys and reject duplicate key IDs; `Keys` pairs them, and
-  `Keys::encryption` and `Keys::blind_indexes` read them.
+- **Breaking:** keys are passed to each call (ADR-0006, ADR-0010, ADR-0013).
+  `EncryptionKeyring` and `BlindIndexKeyring` (were `LocalEncryptionKeyring` and
+  `LocalBlindIndexKeyring`) hold a current key and previous keys and reject
+  duplicate key IDs; `Keys` pairs them, and `Keys::encryption` and
+  `Keys::blind_indexes` read them.
   Operations take `EncryptionKeys`, `BlindIndexKeys`, or `RecordKeys`, and
-  never read the installed keys; only the automatic SQLx column does.
-  `keys::install(Keys)` replaces `GlobalKeyContext::install(GlobalProviders)` and
-  returns `keys::AlreadyInstalled` instead of replacing the installed keys;
-  `keys::installed()` returns them. The implicit `encrypt` and `decrypt` have no
-  replacement: pass `keys::installed()?` to `seal` and `open`. The
+  nothing reads a global. The implicit `encrypt` and `decrypt` have no
+  replacement: load the keys at startup and pass them to `seal` and `open`. The
   key provider traits, `KeyProviderError`, `GlobalKeyContext`, and
   `GlobalProviders` are removed. Choosing which keyring protects which values is
   application code; key IDs are generated UUIDs, never shared across keyrings.
 - **Breaking:** key and keyring constructors return `Error`. New errors:
   `DuplicateEncryptionKey`, `DuplicateBlindIndexKey`, `InvalidKeyEncoding`,
-  `KeysNotInstalled`, with an `sqlx-*` feature, and
-  `BlindIndexKeysNotConfigured`. `KeyProviderUnavailable` is removed: the library
+  and `BlindIndexKeysNotConfigured`. `KeyProviderUnavailable` is removed: the library
   never looks keys up, so resolution errors are the application's.
-- **Breaking:** the `keys` module, which installs the keys `Plain` reads, needs
-  an `sqlx-*` feature.
 
 ### Wire format
 
@@ -242,10 +235,10 @@ Decisions are recorded in ADR-0001 to ADR-0012.
 | `Encrypted::new(v).encrypt_with(&(), &keys)` | `Sealed::<P>::seal(&v, &keys)` |
 | `ciphertext.decrypt_with(&(), &keys)?.into_secret()` | `sealed.open(&keys)` |
 | `reencrypt_with`, `needs_reencryption_with` | `reseal`, `needs_reseal` |
-| `encrypt()`, `decrypt()` with `GlobalKeyContext::install(GlobalProviders::…)` | `seal(&v, keys::installed()?)`, `open(keys::installed()?)` after `keys::install(Keys::new(keyring))` |
+| `encrypt()`, `decrypt()` with `GlobalKeyContext::install(GlobalProviders::…)` | `seal(&v, &keys)`, `open(&keys)`, with `Keys::new(keyring)` loaded at startup and passed in |
 | `LocalEncryptionKeyring`, `LocalBlindIndexKeyring` | `EncryptionKeyring`, `BlindIndexKeyring`, paired in `Keys` |
 | `impl EncryptionKeyProvider for S` | resolve the keyring yourself and pass it |
-| `Encrypted<T, P>` as an SQLx column | `Plain<P>` |
+| `Encrypted<T, P>` as an SQLx column | `Sealed<P>`, opened with `open(&keys)` |
 | `impl BlindIndexMetadata for S` plus `impl BlindIndexSpec<str> for S` | one `impl BlindIndexSpec for S { type Seal = P; const BITS: u16 = …; const NORMALIZER: &'static str = "…"; type Query = str; … }` |
 | `derive_blind_index::<S, _, _>(&v, &keys)` | `BlindIndex::<S>::derive(&v, &keys)` |
 | `blind_index_probes::<S, str, _>(q, &keys)` | `BlindIndex::<S>::probes(q, &keys)` |

@@ -101,27 +101,3 @@ fn diagnostics_expose_only_allowlisted_fields() {
     );
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
-
-#[test]
-#[cfg(feature = "sqlx-sqlite")]
-fn automatic_contexts_are_isolated_between_processes() {
-    let scratch = support::Scratch::new();
-    let binary = support::build(&scratch.0, "automatic", "sqlite", None);
-    let children: Vec<_> = ["first", "second"]
-        .into_iter()
-        .map(|fixture| {
-            std::process::Command::new(&binary)
-                .arg(fixture)
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .unwrap()
-        })
-        .collect();
-    for child in children {
-        let output = child.wait_with_output().unwrap();
-        assert!(output.status.success(), "{output:?}");
-        assert_eq!(output.stdout, b"Automatic adapter round trip succeeded.\n");
-        assert!(output.stderr.is_empty(), "{output:?}");
-    }
-}

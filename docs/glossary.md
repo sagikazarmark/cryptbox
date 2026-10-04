@@ -66,13 +66,6 @@ probes, and its `open_matching` opens the candidate rows and keeps the matches.
 The number of retained blind-index bits. Fewer bits increase false candidates
 and obscure equality more, without eliminating index leakage.
 
-**Installed keys**:
-The process-wide keys set once with `keys::install` and never replaced. They
-serve only standalone values. Only the automatic column reads them, and fails
-with `KeysNotInstalled` before installation; every operation takes keys
-explicitly.
-<!-- Agent guidance: avoid “global column keys” or “global keyring”; the global is the installed keys. -->
-
 **Key generation**:
 An immutable pairing of a generation identifier and root key material. Encryption
 and blind-index generations are separate roles with independently generated keys.
@@ -83,7 +76,7 @@ stored data still needs (`EncryptionKeyring`, `BlindIndexKeyring`); `Keys`
 pairs the two roles. Operations take the keyring, or `Keys`, to use. Key IDs are
 generated UUIDs, unique within a keyring and never shared across keyrings, so
 opening with the wrong keyring fails loudly.
-<!-- Agent guidance: “key source” (`EncryptionKeySource`, `BlindIndexKeySource`) is retired (ADR-0010), as “key provider”, `Router`, and “route” are (ADR-0006): choosing which keyring protects which values is application code. -->
+<!-- Agent guidance: “key source” (`EncryptionKeySource`, `BlindIndexKeySource`) is retired (ADR-0010), as “key provider”, `Router`, and “route” are (ADR-0006): choosing which keyring protects which values is application code. Process-wide “installed keys” (`keys::install`) are retired: every operation takes its keys, and nothing reads a global. -->
 
 **Migration-state verification**:
 Inspection of stored structure and generation convergence. It is distinct from
@@ -100,13 +93,6 @@ A typed value a context adds after the seal ID: its kind code, which names
 the part and how its value is encoded, and the length-prefixed value. The
 record ID is the only part. Applications never declare parts; a `Context` does.
 <!-- Agent guidance: this is not the retired application-declared part of ADR-0005 to ADR-0010 (`#[part]`, `PartId`, `part_id!`), which stays retired; never suggest that applications add parts. Parts have no slot or part ID. -->
-
-**Plain value**:
-A plaintext value of a seal held by the automatic SQLx column (`Plain<F>`),
-which seals it on encode and opens it on decode with the installed keys. A
-column decoder does not see the row, so it serves only standalone values and
-writes no blind indexes.
-<!-- Agent guidance: `Plain` is the only plaintext-typed column; a record's fields and values of indexed seals are sealed explicitly. `Encrypted<F>` is the retired name of the plaintext carrier; do not reintroduce it. Column keys (`Plain<F, K>`, `ColumnKeys`, `GlobalKeys`) and “key context” are retired: the column reads the installed keys. -->
 
 **Probe**:
 A blind-index lookup value for one readable index-key generation. A lookup uses
@@ -161,7 +147,7 @@ A value encrypted under a seal's context (`Sealed<F, C>`, `Sealed<F>` for a
 standalone value). Sealing encodes, pads, and encrypts; opening authenticates
 and returns the bare value. `seal_in` and `open_in` take the context's value,
 such as the record ID. Parsing checks structure only.
-<!-- Agent guidance: `Ciphertext<F>` is the retired name; say “seal” and “open”, not “encrypt” and “decrypt”, for the typed operations. -->
+<!-- Agent guidance: `Plain<F>`, the automatic SQLx column that sealed on encode and opened on decode, is retired with the installed keys, as its older names `Encrypted<F>` and `Plain<F, K>` were; there is no plaintext-typed column, so do not reintroduce one. `Ciphertext<F>` is the retired name; say “seal” and “open”, not “encrypt” and “decrypt”, for the typed operations. -->
 
 **Shredding**:
 Destroying root keys, which makes every value sealed under them unreadable. What

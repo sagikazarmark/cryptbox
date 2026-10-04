@@ -7,7 +7,7 @@ use sqlx::{
     sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexSpec, ContextKind, Plain, Seal, Sealed};
+use crate::{BlindIndex, BlindIndexSpec, ContextKind, Seal, Sealed};
 
 fn blob_type_info() -> SqliteTypeInfo {
     <Vec<u8> as Type<Sqlite>>::type_info()
@@ -15,16 +15,6 @@ fn blob_type_info() -> SqliteTypeInfo {
 
 fn blob_compatible(ty: &SqliteTypeInfo) -> bool {
     <Vec<u8> as Type<Sqlite>>::compatible(ty)
-}
-
-impl<F: Seal> Type<Sqlite> for Plain<F> {
-    fn type_info() -> SqliteTypeInfo {
-        blob_type_info()
-    }
-
-    fn compatible(ty: &SqliteTypeInfo) -> bool {
-        blob_compatible(ty)
-    }
 }
 
 impl<F: Seal, C: ContextKind> Type<Sqlite> for Sealed<F, C> {
@@ -44,22 +34,6 @@ impl<Spec> Type<Sqlite> for BlindIndex<Spec> {
 
     fn compatible(ty: &SqliteTypeInfo) -> bool {
         blob_compatible(ty)
-    }
-}
-
-impl<'q, F: Seal> Encode<'q, Sqlite> for Plain<F> {
-    fn encode_by_ref(
-        &self,
-        buffer: &mut Vec<SqliteArgumentValue<'q>>,
-    ) -> Result<IsNull, BoxDynError> {
-        let sealed = self.seal_for_column()?;
-        buffer.push(SqliteArgumentValue::Blob(Cow::Owned(sealed.into_bytes())));
-
-        Ok(IsNull::No)
-    }
-
-    fn size_hint(&self) -> usize {
-        0
     }
 }
 
@@ -97,13 +71,6 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndex<Spec> {
     }
 }
 
-impl<'row, F: Seal> Decode<'row, Sqlite> for Plain<F> {
-    fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
-        let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
-        Ok(Self::open_column(bytes)?)
-    }
-}
-
 impl<'row, F: Seal, C: ContextKind> Decode<'row, Sqlite> for Sealed<F, C> {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
@@ -136,7 +103,7 @@ impl<F: Seal> Type<Sqlite> for crate::migrate::MaybeSealed<F> {
 
 // Migration-window reads only. Decoding classifies bytes without CryptBox or
 // legacy keys; recovery and decryption stay explicit calls. There is no
-// `Encode` counterpart: writes always encrypt through `Plain` or `Sealed`.
+// `Encode` counterpart: writes always encrypt through `Sealed`.
 #[cfg(feature = "migrate")]
 impl<'row, F> Decode<'row, Sqlite> for crate::migrate::MaybeSealed<F>
 where

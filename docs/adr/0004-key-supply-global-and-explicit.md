@@ -1,9 +1,13 @@
 ---
-status: accepted
+status: superseded by ADR-0013
 ---
 
 # Keys are supplied globally or explicitly, with no feature gates
 
+> Superseded by [ADR-0013](0013-keys-are-never-global.md): the installed keys
+> and the automatic column are removed before the 0.6.0 release, and every
+> operation takes its keys.
+>
 > Amended by [ADR-0006](0006-keys-are-passed-in.md). The process-wide keys and the
 > automatic column remain only for `FieldOnly` fields. Explicit operations take
 > keyrings instead of routed providers.

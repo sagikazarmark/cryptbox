@@ -4,6 +4,9 @@ status: accepted
 
 # Keys are passed in; choosing which keys is application code
 
+> Amended by [ADR-0013](0013-keys-are-never-global.md): `keys::install` and
+> the automatic column, which this ADR kept for standalone values, are removed.
+
 > Amended for the documentation mitigations (#96). The guide is
 > [`docs/guide.md`](../guide.md#choosing-keyrings) and the destruction
 > procedure is [`docs/operations.md`](../operations.md#shredding). #89 built

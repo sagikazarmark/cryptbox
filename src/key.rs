@@ -6,9 +6,8 @@ pub use material::{BlindIndexKey, EncryptionKey, IndexKeyId, KeyId};
 
 /// An encryption keyring and an optional blind-index keyring, passed together.
 ///
-/// `Keys` is a source for both roles, so it can be passed to any operation
-/// (`Sealed::seal`, `Sealed::open`, `BlindIndex::probes`, …). It is also what
-/// the automatic `SQLx` column, `Plain`, reads once installed.
+/// `Keys` serves both roles, so it can be passed to any operation
+/// (`Sealed::seal`, `Sealed::open`, `BlindIndex::probes`, …).
 ///
 /// Blind-index operations fail with
 /// [`Error::BlindIndexKeysNotConfigured`](crate::Error::BlindIndexKeysNotConfigured)

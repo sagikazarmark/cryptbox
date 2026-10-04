@@ -97,8 +97,7 @@ See `put`, `get`, and `search` in [main.rs](main.rs).
 
 - **`put`** seals the value with `Sealed::<UserEmail>::seal` and derives its
   index from the same source with `BlindIndex::<EmailLookup>::derive`, then
-  upserts both in one statement, including value-to-NULL. The automatic `Plain`
-  column cannot write an index column, so indexed values are sealed explicitly.
+  upserts both in one statement, including value-to-NULL.
 - **`get`** decodes `Option<Sealed<UserEmail>>`, which checks structure only;
   `open` authenticates.
 - **`search`** probes every readable index generation, opens each candidate, and

@@ -52,11 +52,10 @@ compatibility, not fleet membership or the state of the store. The example's
    omits matches. Promote index writers incrementally; each write seals and
    derives the indexes from the same value and persists them in one statement.
 
-A keyring is a snapshot. The installed keys (`keys::install`) are set once per
-process; changing them needs a restart. Keyrings the application passes to
-explicit operations come from its own snapshot, which owns refresh, consistency,
-and readiness: CryptBox calls do not distribute secrets or refresh KMS state. See
-the [custom-seal obligations](../examples/custom_seal/README.md#implementor-obligations).
+A keyring is a snapshot. Keyrings the application passes to operations come
+from its own snapshot, which owns refresh, consistency, and readiness: CryptBox
+calls do not distribute secrets or refresh KMS state. See the
+[custom-seal obligations](../examples/custom_seal/README.md#implementor-obligations).
 
 ### Rollback
 
@@ -258,8 +257,8 @@ backups and never authorizes key destruction: continue with
 
 The `migrate` feature adopts encryption over plaintext, previous-solution
 ciphertext, or mixed storage during a bounded window. Plaintext is the
-identity-recovery case and follows the same gates. Normal `Sealed` and `Plain`
-decoding stays strict throughout. The [legacy](../examples/legacy_migration.rs)
+identity-recovery case and follows the same gates. Normal `Sealed` decoding stays
+strict throughout. The [legacy](../examples/legacy_migration.rs)
 and [plaintext](../examples/plaintext_migration.rs) examples introduce the API.
 
 ### Rollout
@@ -316,7 +315,7 @@ values. Classification needs no keys:
   is a hard error, **never a legacy fallback**.
 
 `MaybeSealed` cannot be written; new writes use `Sealed::seal` (with
-`BlindIndex::derive` for indexes) or `Plain`. For legacy bytes that collide with
+`BlindIndex::derive` for indexes). For legacy bytes that collide with
 the `CBX\0` magic, only a trusted out-of-band discriminator may authorize
 `MaybeSealed::from_legacy_bytes`.
 

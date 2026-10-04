@@ -13,16 +13,13 @@ No features are enabled by default, and all features are additive:
   previous solution's ciphertext: permissive reads, a legacy recovery handler,
   and a resumable sweep. Normal decoding stays strict.
 - `serde` serializes `Sealed` and `BlindIndex` stored bytes: unpadded base64url
-  in human-readable formats, bytes otherwise. `Plain` is never serializable,
-  because it holds plaintext.
-- `sqlx-postgres` and `sqlx-sqlite` add `SQLx` 0.8 `BYTEA`/`BLOB` storage, and
-  `Plain<F>` with the `keys` module. `migrate::PostgresSweepStore` and
-  `migrate::SqliteSweepStore` additionally need `migrate`.
+  in human-readable formats, bytes otherwise.
+- `sqlx-postgres` and `sqlx-sqlite` add `SQLx` 0.8 `BYTEA`/`BLOB` storage.
+  `migrate::PostgresSweepStore` and `migrate::SqliteSweepStore` additionally
+  need `migrate`.
 
 `Sealed` and `BlindIndex` are ordinary columns, and a record's stored form is an
-ordinary row. `Plain<F>` is the automatic column: it seals and opens a
-standalone value with the keys installed by `keys::install`, and writes no blind
-indexes. Seal every other value explicitly, with the keys you pass in.
+ordinary row. Seal and open every value explicitly, with the keys you pass in.
 
 The `sqlx-*` features turn off `SQLx`'s default features and choose no runtime
 or TLS. Depend on `sqlx` directly as well, with your runtime and TLS features,

@@ -4,6 +4,10 @@ status: accepted
 
 # A record is a context layer over a seal
 
+> Amended by [ADR-0013](0013-keys-are-never-global.md): `Plain` and the
+> installed keys are removed, so only `Sealed::<F>::seal` can seal a record
+> field's seal standalone.
+
 > Amended before 0.6, when nothing had stored these bytes: a part carries no
 > slot and the fingerprint no role byte, both leftovers of the retired
 > application-declared parts. A part's kind code names it, and the fingerprint

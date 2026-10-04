@@ -212,7 +212,7 @@ still needs its own generation. See [key rotation](operations.md#key-rotation).
 
 `EncryptionKeyring` protects values and `BlindIndexKeyring` blind indexes;
 `Keys` pairs an encryption keyring with an optional blind-index keyring.
-Explicit operations take their keys and never read the installed keys:
+Every operation takes its keys:
 `Sealed::seal` and `open` take an `EncryptionKeyring` or `Keys`;
 `BlindIndex::derive` and `probes` a `BlindIndexKeyring` or `Keys`; a record's
 `seal` an `EncryptionKeyring`, or `Keys` when it has blind indexes.
@@ -399,27 +399,10 @@ The [custom-seal example](../examples/custom_seal/main.rs)'s
 
 ## Storage and search
 
-| Approach | Consequence |
-| --- | --- |
-| Seal explicitly | Key failures happen at that step; the sealed bytes then cross the storage or serialization boundary. |
-| Load a stored form or `Sealed<F>` | Decoding checks structure without keys; the application opens when it needs plaintext. |
-| Automatic SQLx `Plain<F>` | Seals on encode and opens on decode, with the installed keys. |
-
-`Plain<F>` serves only standalone values, and writes no blind indexes: a column
-decoder does not see the row or the caller's keys. It reads the **installed
-keys** because SQLx decoding has no context: `keys::install(keys)` sets them
-once per process from the binary entry point; a second call returns
-`AlreadyInstalled`, and before installation reads fail with
-`Error::KeysNotInstalled`. There are no thread- or task-scoped keys. Use
-`Sealed<F>` with keys you pass in for anything else. To forbid the global, add
-to `clippy.toml`:
-
-```toml
-disallowed-methods = [
-    { path = "cryptbox::keys::install", reason = "pass keys explicitly" },
-    { path = "cryptbox::keys::installed", reason = "pass keys explicitly" },
-]
-```
+Sealing and opening are explicit calls, so key failures happen at that step;
+only sealed bytes cross the storage or serialization boundary. Decoding a
+stored form or `Sealed<F>` checks structure without keys, and the application
+opens when it needs plaintext.
 
 The application owns schemas, transactions, queries, and concurrency. A record's
 stored form is an ordinary struct; forward attributes with `#[cryptbox(stored(â€¦))]`:
@@ -430,8 +413,7 @@ stored form is an ordinary struct; forward attributes with `#[cryptbox(stored(â€
   and `stored(diesel(serialize_as = Vec<u8>, deserialize_as = Vec<u8>))` on each
   sealed field and index column.
 - **Serde:** `stored(derive(Serialize, Deserialize))`. Human-readable formats
-  write unpadded base64url; binary formats write bytes. Serde never serializes
-  plaintext `Plain` values.
+  write unpadded base64url; binary formats write bytes.
 
 ### Blind indexes
 
@@ -488,8 +470,7 @@ The application owns the lifetime of its values and every copy it makes.
 | Object | Ownership and erasure |
 | --- | --- |
 | Application value `T` | Borrowed by `seal` and `BlindIndex::derive`, which retain it. Dropping it does not zeroize arbitrary types. |
-| `Plain<F>` | Owns a `T`; dropped without zeroization. |
-| Clones | Each copy of `T`, `Plain<F>` or `Secret<T>` has an independent lifetime; erasing one erases no other. |
+| Clones | Each copy of `T` or `Secret<T>` has an independent lifetime; erasing one erases no other. |
 | CryptBox temporary buffers | Encoded, padded, normalized and decrypted bytes use zeroizing storage. |
 | `Sealed<F>` | Owns the envelope. `open` borrows it and returns a new `T`. |
 | Opened `T` | A new, ordinary allocation. Wrap it: `Secret::new(sealed.open(&keys)?)`. |
@@ -506,18 +487,9 @@ not reach compiler or OS copies. See the
 
 ## Testing
 
-Give each test its own keyrings. Explicit operations never read the installed
-keys, so such tests run in parallel ([example](../tests/testing_local.rs)).
+Give each test its own keyrings. Nothing reads a global, so tests run in
+parallel ([example](../tests/testing_local.rs)).
 Predictable roots and reused IDs are test fixtures only.
-
-`keys::install` cannot be reset or replaced. A test of the installed keys runs
-in its own process, and a test binary that installs must sequence every
-dependent assertion, such as in one test function
-([example](../tests/fixtures/app/src/bin/testing-automatic.rs)). An `RwLock`
-around key lookups does not isolate fixture replacement: keys can change between
-sealing and opening. Tests of automatic columns install one fixed test keyring
-once per test binary, as the [SQLite adapter tests](../tests/sqlx_sqlite.rs)
-do.
 
 ### Diagnostics
 

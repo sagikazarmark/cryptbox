@@ -22,10 +22,5 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 zeroize = { version = "1", features = ["alloc"] }
 
 [[bin]]
-name = "automatic"
-path = "src/bin/testing-automatic.rs"
-required-features = ["sqlite"]
-
-[[bin]]
 name = "diagnostics"
 path = "src/bin/testing-diagnostics.rs"

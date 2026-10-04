@@ -90,10 +90,7 @@
 //! - [`envelope`] holds the byte-level inspection API, for tools and
 //!   migrations that look at stored bytes without a seal.
 //!
-//! Every operation takes its keys explicitly, and never reads a global. Only
-//! the automatic `SQLx` column, `Plain<F>` (with an `sqlx-*` feature), reads
-//! the keys installed with `keys::install`, because a column decoder receives
-//! no keys.
+//! Every operation takes its keys explicitly; nothing reads a global.
 //!
 // Markdown uses the first definition: qualify the shared page's relative links for rustdoc.
 #![doc = concat!(
@@ -147,8 +144,6 @@ mod error;
 mod id;
 mod key;
 mod key_source;
-#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
-pub mod keys;
 #[cfg(feature = "migrate")]
 pub mod migrate;
 mod padding;
@@ -183,8 +178,6 @@ pub use record::{Index, Record};
 pub use seal::{Seal, SealId};
 pub use seal_context::{Context, ContextKind, InRecord, RecordKey};
 pub use secret::Secret;
-#[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
-pub use value::Plain;
 pub use value::Sealed;
 
 // Paths that derive-generated code names; not public API.

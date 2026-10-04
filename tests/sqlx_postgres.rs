@@ -4,7 +4,7 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, IndexId, KeyId,
-    Keys, Padding, Plain, Seal, Sealed, Utf8, index_id, key_id, keys,
+    Keys, Padding, Seal, Sealed, Utf8, index_id, key_id,
 };
 use sqlx::{
     Connection, Decode, Encode, Postgres, Row, Type,
@@ -14,14 +14,8 @@ use zeroize::Zeroizing;
 
 const KEY_ID: KeyId = key_id!("c0000000-0000-4000-8000-00000000000c");
 
-/// The keys the automatic columns read. Every test installs the same keys, so
-/// whichever runs first installs them.
-fn installed_keys() -> &'static Keys {
-    let _ = keys::install(Keys::new(
-        EncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap(),
-    ));
-
-    keys::installed().unwrap()
+fn test_keys() -> Keys {
+    Keys::new(EncryptionKeyring::new(EncryptionKey::new(KEY_ID, [59; 32]), []).unwrap())
 }
 
 struct TestSeal;
@@ -69,17 +63,15 @@ where
 
 #[test]
 fn encrypted_storage_types_map_to_postgres_bytea() {
-    assert_sqlx_traits::<Plain<TestSeal>>();
     assert_sqlx_traits::<Sealed<TestSeal>>();
     assert_sqlx_traits::<BlindIndex<IndexSpec>>();
 
     // The permissive migration read decodes but deliberately has no Encode:
-    // writes always encrypt through `Plain` or `Sealed`.
+    // writes always encrypt through `Sealed`.
     #[cfg(feature = "migrate")]
     assert_sqlx_decode::<cryptbox::migrate::MaybeSealed<TestSeal>>();
 
     let bytea: PgTypeInfo = <Vec<u8> as Type<Postgres>>::type_info();
-    assert_eq!(<Plain<TestSeal> as Type<Postgres>>::type_info(), bytea);
     assert_eq!(<Sealed<TestSeal> as Type<Postgres>>::type_info(), bytea);
     assert_eq!(
         <BlindIndex<IndexSpec> as Type<Postgres>>::type_info(),
@@ -88,22 +80,9 @@ fn encrypted_storage_types_map_to_postgres_bytea() {
 }
 
 #[test]
-fn sqlx_encode_encrypts_plaintext_into_an_owned_argument_buffer() {
-    installed_keys();
-    let value = Plain::<TestSeal>::new("mark@example.com".to_owned());
-    let mut buffer = PgArgumentBuffer::default();
-
-    let result =
-        <Plain<TestSeal> as Encode<'_, Postgres>>::encode_by_ref(&value, &mut buffer).unwrap();
-
-    assert!(!result.is_null());
-    assert!(buffer.starts_with(b"CBX\0"));
-}
-
-#[test]
 fn sealed_encoding_preserves_the_binary_envelope() {
-    let keys = installed_keys();
-    let bytes = Sealed::<TestSeal>::seal(&"value".to_owned(), keys)
+    let keys = test_keys();
+    let bytes = Sealed::<TestSeal>::seal(&"value".to_owned(), &keys)
         .unwrap()
         .into_bytes();
     let ciphertext = Sealed::<TestSeal>::from_bytes(bytes.clone()).unwrap();
@@ -123,7 +102,7 @@ fn sealed_encoding_preserves_the_binary_envelope() {
 /// `--ignored`. The Dagger `cryptbox:test:postgres` check binds one and does exactly that.
 #[test]
 #[ignore = "requires a PostgreSQL server; set DATABASE_URL and run with --ignored"]
-fn postgres_round_trips_sealed_values_and_opens_plain_columns() {
+fn postgres_round_trips_sealed_values() {
     let url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL must point at a PostgreSQL server to run this test");
 
@@ -139,8 +118,8 @@ fn postgres_round_trips_sealed_values_and_opens_plain_columns() {
             .await
             .unwrap();
 
-        installed_keys();
-        let value = Plain::<TestSeal>::new("mark@example.com".to_owned());
+        let keys = test_keys();
+        let value = Sealed::<TestSeal>::seal(&"mark@example.com".to_owned(), &keys).unwrap();
         sqlx::query("INSERT INTO secrets (value) VALUES ($1)")
             .bind(&value)
             .execute(&mut connection)
@@ -152,10 +131,8 @@ fn postgres_round_trips_sealed_values_and_opens_plain_columns() {
             .await
             .unwrap();
         let sealed: Sealed<TestSeal> = row.try_get("value").unwrap();
-        let opened: Plain<TestSeal> = row.try_get("value").unwrap();
 
-        assert!(sealed.as_bytes().starts_with(b"CBX\0"));
-        assert_eq!(opened.expose_secret(), "mark@example.com");
-        assert_eq!(sealed.open(installed_keys()).unwrap(), "mark@example.com");
+        assert_eq!(sealed, value);
+        assert_eq!(sealed.open(&keys).unwrap(), "mark@example.com");
     });
 }
