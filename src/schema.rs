@@ -36,8 +36,10 @@ use crate::{
 /// listed: the codec ID stands for its stored bytes, and golden-bytes fixtures
 /// ([`assert_encoding`](crate::testing::assert_encoding)) pin them.
 ///
-/// The output's spelling changes only in a breaking release, so a snapshot
-/// diff after a compatible upgrade is a schema change, never a formatting one.
+/// A line's spelling changes only in a breaking release, so a snapshot diff
+/// after a compatible upgrade is a schema change, never a formatting one. A
+/// compatible release may add lines, but only for a feature the application
+/// starts using, so an unchanged schema keeps its snapshot.
 ///
 /// # Examples
 ///

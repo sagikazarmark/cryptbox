@@ -164,8 +164,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   context fingerprints, normalizers, and plaintext fields, for snapshot tests,
   and reports duplicate IDs, seals registered in several kinds of context
   (`Manifest::sealed::<F, C>()`), and seal IDs that fields of several records
-  declare (`Duplicate::RecordField`), and whose output changes only in a
-  breaking release; `assert_unique_ids!`, which fails
+  declare (`Duplicate::RecordField`), and whose lines change spelling only in
+  a breaking release; `assert_unique_ids!`, which fails
   compilation when listed markers share an ID, declare the nil UUID, or name an
   unversioned normalizer; and `testing::assert_sealed_under`, which checks
   which keyring sealed a value.
