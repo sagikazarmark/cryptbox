@@ -29,7 +29,7 @@ exclude = [
 ]
 
 [workspace]
-members = ["cryptbox-derive", "examples/searchable", "tests/fixtures/app"]
+members = ["derive", "examples/searchable", "tests/fixtures/app"]
 default-members = ["."]
 resolver = "2"
 
@@ -48,7 +48,7 @@ base64 = { version = "0.23.1", default-features = false }
 # Erase the derived key the AEAD copies, and its ChaCha20 state, on drop.
 chacha20poly1305 = { version = "0.11.0", features = ["alloc", "zeroize"], default-features = false }
 # Lockstep: generated code names this exact version's public items.
-cryptbox-derive = { version = "=0.6.0", path = "cryptbox-derive", optional = true }
+cryptbox-derive = { version = "=0.6.0", path = "derive", optional = true }
 getrandom = "0.4.3"
 hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
 hkdf = "0.13.0"
