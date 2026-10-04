@@ -25,8 +25,32 @@ use crate::{
 ///
 /// With the `derive` feature, `#[derive(Record)]` generates the stored form,
 /// this impl, a seal for each sealed field, a blind-index spec and an
-/// [`Index`] handle for each blind index.
-pub trait Record: Sized {
+/// [`Index`] handle for each blind index. Only the derive implements it:
+///
+/// ```compile_fail,E0277
+/// # use cryptbox::{EncryptionKeys, Error, InRecord, Record, RecordKeys, SealId};
+/// struct Row {
+///     id: i64,
+/// }
+///
+/// impl Record for Row {
+///     type Stored = Row;
+///     type Context = InRecord<i64>;
+///
+///     const SEALS: &'static [SealId] = &[];
+///     const RECORD_ID: &'static str = "id";
+///     const PLAINTEXT: &'static [&'static str] = &[];
+///
+///     fn seal<K: RecordKeys + ?Sized>(&self, _: &K) -> Result<Row, Error> {
+///         Ok(Row { id: self.id })
+///     }
+///
+///     fn open<K: EncryptionKeys + ?Sized>(stored: Row, _: &K) -> Result<Row, Error> {
+///         Ok(stored)
+///     }
+/// }
+/// ```
+pub trait Record: Sized + DerivedRecord {
     /// The stored form: the record ID and plaintext fields as they are, the
     /// sealed fields, and a column per blind index.
     type Stored;
@@ -106,6 +130,11 @@ pub trait Record: Sized {
         Self::open(stored, keys)
     }
 }
+
+/// Seals [`Record`]. Not public API: `#[derive(Record)]` implements it, so a
+/// hand-written impl does not compile.
+#[doc(hidden)]
+pub trait DerivedRecord {}
 
 /// A blind index of record `R` and spec `S`.
 ///

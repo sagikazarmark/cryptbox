@@ -196,6 +196,7 @@ pub mod __private {
     pub use crate::blind::valid_normalizer;
     pub use crate::codec::DefaultCodec;
     pub use crate::id::{is_nil, non_nil};
+    pub use crate::record::DerivedRecord;
     pub use crate::schema::has_duplicate;
     pub use crate::seal_context::{RecordKind, RecordValue};
 }

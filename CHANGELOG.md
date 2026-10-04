@@ -74,6 +74,7 @@ Decisions are recorded in ADR-0001 to ADR-0012.
   Serde's.
   Sealed fields are stored as `Sealed<F, InRecord<Id>>` and `Option<T>` fields
   as `Option<Sealed<F, InRecord<Id>>>`; `Record::Context` names the context.
+  Only the derive implements `Record`.
 - `Record::seal(&keys)` and `Record::open(stored, &keys)` seal and open a row,
   and `Record::open_expecting` checks a row before decrypting it, reporting
   `Error::UnexpectedRecord`. A field's value copied to another row or field

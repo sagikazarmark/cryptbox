@@ -176,6 +176,8 @@ impl ::core::fmt::Debug for StoredCustomer {
 }
 const _: () = {
     #[automatically_derived]
+    impl ::cryptbox::__private::DerivedRecord for Customer {}
+    #[automatically_derived]
     impl ::cryptbox::Record for Customer {
         type Stored = StoredCustomer;
         type Context = ::cryptbox::InRecord<i64>;

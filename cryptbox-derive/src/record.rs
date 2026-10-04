@@ -862,6 +862,9 @@ impl<'a> Expansion<'a> {
         quote! {
             const _: () = {
                 #[automatically_derived]
+                impl #krate::__private::DerivedRecord for #name {}
+
+                #[automatically_derived]
                 impl #krate::Record for #name {
                     type Stored = #stored_name;
                     #context_type

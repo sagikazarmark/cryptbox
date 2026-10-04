@@ -4,7 +4,8 @@ No features are enabled by default, and all features are additive:
 
 - `derive` adds `#[derive(Seal)]`, `#[derive(BlindIndexSpec)]`, and
   `#[derive(Record)]`. Each expands to the trait impls you would write by hand,
-  plus a record's stored form and index handles. IDs are UUID literals checked at
+  plus a record's stored form and index handles; only the derive implements
+  `Record`. IDs are UUID literals checked at
   compile time; a codec is never inferred from a type's shape.
 - `json` adds the `Json` codec. Its serialized representation is persistent
   schema. It implies `serde`.

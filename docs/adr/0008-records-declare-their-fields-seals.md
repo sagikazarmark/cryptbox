@@ -20,6 +20,12 @@ status: accepted
 > build. The stored form defaults to `Stored{Record}`, and a blind index is
 > declared on its field.
 
+> Amended before the 0.6.0 release: only `#[derive(Record)]` implements
+> `Record`, which a hidden marker trait seals. A hand-written impl with blind
+> indexes needed hidden items, and the manifest constants it must declare are
+> likely to grow. Unsealing it later is additive; the seals, blind-index specs,
+> and stored form the derive generates stay ordinary code.
+
 A record declares a seal for each of its sealed fields, and every value is bound
 to its seal ID, its scope's values, and, inside a record, the record ID:
 

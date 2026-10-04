@@ -4,9 +4,10 @@
 //! `cryptbox`; do not depend on this crate directly. Each derive expands to
 //! exactly the trait impls you would write by hand, inside `const _: () = { … };`
 //! with absolute `::cryptbox::` paths. It adds no `Debug`, `Deref`, or `From`
-//! impls, so the manual impl stays a first-class alternative. The
-//! generated items are `Record`'s stored form, the seals and blind-index
-//! specs its fields declare, its index handles, and compile-time checks.
+//! impls, so a manual `Seal` or `BlindIndexSpec` impl stays a first-class
+//! alternative; only the derive implements `Record`. The generated items are
+//! `Record`'s stored form, the seals and blind-index specs its fields declare,
+//! its index handles, and compile-time checks.
 //!
 //! Every derive takes `#[cryptbox(…)]`, on the item and, for `Record`, on its
 //! fields. Generated code names `::cryptbox`, so depend on it under that name.
@@ -293,7 +294,8 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// expands to exactly this hand-written code. The real expansion spells
+/// expands to exactly this code. Only the derive implements `Record`: it also
+/// implements a hidden marker trait that seals it. The real expansion spells
 /// `Result`, `Option`, `Clone`, `Sized`, and the codec as absolute paths, wraps
 /// each impl in `const _: () = { … };`, forwards docs, and checks, at compile
 /// time, that the record ID is a UUID, an `i64`, or bytes. The seals it declares
@@ -400,6 +402,9 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 ///     pub const EMAIL_INDEX: Index<Customer, CustomerEmailIndex> =
 ///         Index::__new(|record: &Customer| -> Option<&String> { Some(&record.email) });
 /// }
+///
+/// // Not public API: seals `Record` to the derive.
+/// impl cryptbox::__private::DerivedRecord for Customer {}
 /// ```
 #[proc_macro_derive(Record, attributes(cryptbox))]
 pub fn derive_record(input: TokenStream) -> TokenStream {
