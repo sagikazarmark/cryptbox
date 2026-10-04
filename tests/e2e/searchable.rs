@@ -10,7 +10,7 @@ pub fn check(app: &mut App) {
         .output()
         .unwrap();
     assert!(!absent.status.success());
-    assert!(absent.stdout.is_empty());
+    assert!(absent.stdout.is_empty(), "{absent:?}");
     assert_eq!(
         String::from_utf8(absent.stderr).unwrap().trim(),
         CONFIGURATION_ERROR
@@ -27,7 +27,7 @@ pub fn check(app: &mut App) {
             .output()
             .unwrap();
         assert!(!invalid.status.success());
-        assert!(invalid.stdout.is_empty());
+        assert!(invalid.stdout.is_empty(), "{invalid:?}");
         assert_eq!(
             String::from_utf8(invalid.stderr).unwrap().trim(),
             CONFIGURATION_ERROR

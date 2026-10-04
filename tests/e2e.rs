@@ -99,7 +99,7 @@ fn diagnostics_expose_only_allowlisted_fields() {
         String::from_utf8(output.stdout).unwrap(),
         "seal_id=ca274e85-63c4-4f7d-a255-2dfecbfe5e25 seal_name=user-email operation=open error=authentication_failed\n"
     );
-    assert!(output.stderr.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]
@@ -122,6 +122,6 @@ fn automatic_contexts_are_isolated_between_processes() {
         let output = child.wait_with_output().unwrap();
         assert!(output.status.success(), "{output:?}");
         assert_eq!(output.stdout, b"Automatic adapter round trip succeeded.\n");
-        assert!(output.stderr.is_empty());
+        assert!(output.stderr.is_empty(), "{output:?}");
     }
 }

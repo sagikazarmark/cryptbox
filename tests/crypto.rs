@@ -92,7 +92,7 @@ fn empty_plaintext_is_a_valid_authenticated_message() {
 
     assert_eq!(ciphertext.len(), 71);
     assert!(is_ciphertext(&ciphertext));
-    assert!(decrypt::<EmailSeal>(&ciphertext, &keys).unwrap().is_empty());
+    assert_eq!(decrypt::<EmailSeal>(&ciphertext, &keys).unwrap(), b"");
 }
 
 #[test]

@@ -138,7 +138,7 @@ fn manifest_reports_duplicate_ids() {
         .seal::<Avatar>()
         .seal::<DisplayName>();
 
-    assert!(unique.duplicates().is_empty());
+    assert_eq!(unique.duplicates(), []);
     assert_eq!(
         duplicated
             .duplicates()
@@ -211,12 +211,12 @@ fn manifest_reports_a_seal_in_several_contexts() {
         "  context: 502de8fcfb838c80\n\
          seal ID 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51 in several contexts\n"
     ));
-    assert!(
+    assert_eq!(
         Manifest::new()
             .sealed::<RowNote, InRecord<i64>>()
             .sealed::<RowNote, InRecord<i64>>()
-            .duplicates()
-            .is_empty()
+            .duplicates(),
+        []
     );
 }
 
