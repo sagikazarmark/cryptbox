@@ -205,6 +205,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   record field's (ADR-0012), so `new` on a record field's seal, or `for_rows`
   with a record ID of another kind, builds, and every row reports
   `ContextMismatch`, which verification counts as malformed (#113).
+  `RowPlanner` takes keys as `Sealed` does: `new` and `for_rows` any
+  `EncryptionKeys`, and `with_index` any `BlindIndexKeys`, such as `Keys`.
   `SweepStore` gains `type Columns`, carried in `SweepRow::columns`.
 - **Breaking:** a sweep runs with `Sweep::run` and is verified with
   `Sweep::verify`. `process_batch`, `run_batch`, `verify_batch`, `BatchOutcome`,
