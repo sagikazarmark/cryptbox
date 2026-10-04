@@ -2,92 +2,15 @@
 
 CryptBox encrypts selected values inside your Rust application before they reach
 storage. The application supplies the keys and decides which values to protect.
-Its stored format is stable, its API may still change before 1.0, and it has not
-been independently audited: read the [threat model](security.md) first.
-
-## How it works
-
-```text
-Application value → encode → optionally pad → encrypt → envelope
-Application value ← decode ← remove padding ← authenticate and decrypt
-```
-
-A **seal** declares how a value is sealed, so call sites do not repeat it:
-
-- a **seal ID**, the stable identity every sealed value and blind index is bound to;
-- the **value type**, such as `String`, that `Sealed<F>` opens to;
-- a **codec**, such as `Utf8`, between the value and bytes;
-- a **padding policy**, which groups plaintext lengths into fewer stored sizes.
-  `Padding::NONE` reveals the encoded length.
-
-`Sealed::seal` borrows the value and returns a `Sealed<F>`: the **envelope**
-(public metadata, encrypted bytes, and an authentication tag) you store. `open`
-authenticates it and returns a new value. Parsing stored bytes checks structure
-only; opening authenticates.
-
-Every value is sealed under a **context**: its seal ID, and, for a field of a
-[record](#records-and-tenants), the record's ID too (`Sealed<F, InRecord<Id>>`).
-A value opens only under the same context, even when seals share a root key.
-Markers that declare the same seal ID are one seal, which is usually a copied ID.
-
-A seal takes one of two forms, which store the same bytes for the same ID and
-codec, so a seal can change form without a migration:
-
-- A **marker** is a unit struct over a separate value type: one `Address` type
-  can back both `HomeAddress` and `BillingAddress`, each with its own seal ID.
-  Prefer it for values that arrive as plain types.
-- A **self-valued seal** is its own value, such as `struct UserEmail(String)` or
-  a whole response. It cannot be passed where another seal's value is expected;
-  prefer it for whole payloads and existing newtypes.
-
-The seal describes policy; the **suite** defines the cryptography. Suite 1 is
-HKDF-SHA-256 with XChaCha20-Poly1305; see the [wire format](wire-format.md).
-
-### Keys
-
-A **keyring** holds key generations: one **current generation** for new writes,
-and **readable generations** resolved by the exact key ID stored in each
-envelope, never falling back to the current key. A generation is an immutable
-pair of a public ID and root material, which is never stored in the envelope.
-Changing the current generation changes future writes only; existing ciphertext
-still needs its own generation. See [key rotation](operations.md#key-rotation).
-
-`EncryptionKeyring` protects values and `BlindIndexKeyring` blind indexes;
-`Keys` pairs an encryption keyring with an optional blind-index keyring.
-Explicit operations take their keys and never read the installed keys:
-`Sealed::seal`, `open` and `prepare` take an `EncryptionKeyring` or `Keys`;
-`with_index` and `BlindIndex::probes` a `BlindIndexKeyring` or `Keys`; a
-record's `seal` an `EncryptionKeyring`, or `Keys` when it has blind indexes.
-
-For durable data, reload the exact ID/material pair after restarts and retain
-readable generations while stored data needs them. A newly generated key cannot
-replace a missing one. Generate encryption and blind-index roots independently.
-Resolving keys is synchronous: load secrets from your own source and build
-keyrings locally. CryptBox does not distribute secrets or refresh remote state,
-and changing a startup snapshot's source does not refresh a running process.
-
-```mermaid
-flowchart TB
-    E["Application value T: owned plaintext"]
-    C["Sealed&lt;F&gt;: owns encrypted envelope"]
-    D["New T: opened plaintext"]
-    P["Prepared: owns sealed value and optional indexes"]
-    S["Storage: encrypted envelope and optional indexes"]
-    E -->|"Sealed::seal borrows; source retained"| C
-    C -->|"open borrows; authenticates and decodes"| D
-    E -->|"Sealed::prepare borrows; source retained"| P
-    P -.->|"borrows plaintext source for its lifetime"| E
-    P -->|"application writes representations atomically"| S
-    C -->|"application writes bytes"| S
-    S -->|"parse structure; not authentication"| C
-```
+Its stored format is stable as of 0.6, its API may still change before 1.0, and
+it has not been independently audited: read the [threat model](security.md)
+first.
 
 ## Records and tenants
 
-A **standalone value** is bound to its seal ID alone: copied to another row that
-stores the same seal, it still opens. Make values fields of a **record** when a
-value copied between rows must fail to open, and give each tenant its own
-keyring when tenants must not read each other's values.
+Most sensitive values live in rows. Derive `Record` on the row's struct and give
+every field one role: the `record_id`, a `seal` with its own seal ID, or
+`plaintext`. A field without a role fails the build.
 
 ```rust
 #[derive(cryptbox::Record)]
@@ -109,13 +32,12 @@ pub struct Customer {
 }
 ```
 
-Every field has one role; a field without one fails the build. The derive
-generates:
+The derive generates:
 
 | Item | Name | What it is |
 | --- | --- | --- |
 | Stored form | `StoredCustomer` (`Stored` + the record's name; rename it with `stored(name = …)`) | The row to write: plaintext fields as they are, each sealed field as `Sealed<_, InRecord<Uuid>>`, and a `BlindIndex` column per index. |
-| Index column | `email_index` (the field's name + `_index`; rename it with `column = …`) | A field of the stored form. |
+| Index column | `email_index` (the field's name + `_index`) | A field of the stored form. |
 | Index handle | `Customer::EMAIL_INDEX` (the column's name, upper case) | `probes` derives a lookup's probes; `open_matching` opens the candidate rows and keeps the matches. |
 | Seal | `CustomerEmail` (the record's name + the field's name; rename it with `name = …`) | One per sealed field. |
 | Blind-index spec | `CustomerEmailIndex` (the record's name + the column's name) | One per blind index. |
@@ -125,27 +47,17 @@ it. To open one field: `stored.email.open_in(&stored.id, &keys)`. A record with
 blind indexes takes `Keys` with a blind-index keyring; without one, sealing
 fails at runtime with `BlindIndexKeysNotConfigured`.
 
+Every sealed field is bound to its seal and to the record ID, so a value copied
+to another field or row fails to open. A value sealed on its own with
+`Sealed::seal`, a **standalone value**, is bound to its seal ID alone: copied to
+another row that stores the same seal, it still opens. Make values fields of a
+record when a value copied between rows must fail to open, and give each tenant
+its own keyring when tenants must not read each other's values.
+
 A `Secret<String>` or `Secret<Vec<u8>>` field stores the same bytes as the bare
 type, but redacts `Debug` and wipes the value on drop. Read it with
 `expose_secret()`. A derived `Debug` on the record itself prints every bare
 field, so keep sensitive fields in `Secret` or write `Debug` by hand.
-
-### Rotating a record's keys
-
-There is no record-level reseal. Each sealed field reports whether it needs one
-without opening it: `stored.email.needs_reseal(&keys)?`. To rewrite a row, open
-it and seal it again, then write every sealed field and index column in one
-statement:
-
-```rust
-let customer = Customer::open(stored, &keys)?;
-let resealed = customer.seal(&keys)?;
-// UPDATE customer SET email = ?, email_index = ?, note = ? WHERE id = ?
-```
-
-[Key rotation](operations.md#key-rotation) covers when to promote the new key,
-and [maintenance sweeps](operations.md#maintenance-sweeps) how to rewrite rows
-in batches.
 
 ### Plaintext columns are authorized, not authenticated
 
@@ -172,6 +84,23 @@ supported. It need not be the primary key, but must never change while sealed
 values exist. It is never encrypted. Its kind is fixed by its type: `[u8; 16]`
 or `uuid::Uuid`, `i64`, or `Vec<u8>`; store an ID newtype's inner value.
 
+### Rotating a record's keys
+
+There is no record-level reseal. Each sealed field reports whether it needs one
+without opening it: `stored.email.needs_reseal(&keys)?`. To rewrite a row, open
+it and seal it again, then write every sealed field and index column in one
+statement:
+
+```rust
+let customer = Customer::open(stored, &keys)?;
+let resealed = customer.seal(&keys)?;
+// UPDATE customer SET email = ?, email_index = ?, note = ? WHERE id = ?
+```
+
+[Key rotation](operations.md#key-rotation) covers when to promote the new key,
+and [maintenance sweeps](operations.md#maintenance-sweeps) how to rewrite rows
+in batches.
+
 ### Moving a record between orgs
 
 The context does not name the org. With a keyring per org, open the record and
@@ -191,8 +120,157 @@ while a job reseals. `Sealed::seal` also accepts a record field's seal, and the
 resulting standalone value fails to open as the record's with `ContextMismatch`.
 
 The [records example](../examples/records/README.md) runs SQLx and serde
-messages; the [tenant example](../examples/tenant_field.rs) runs a keyring per
-tenant (`cargo run --locked --example tenant_field`).
+messages; the [tenant example](../examples/tenant_seal.rs) runs a keyring per
+tenant (`cargo run --locked --example tenant_seal`).
+
+## How it works
+
+```text
+Application value → encode → optionally pad → encrypt → envelope
+Application value ← decode ← remove padding ← authenticate and decrypt
+```
+
+A **seal** declares how a value is sealed, so call sites do not repeat it. A
+record's derive declares one per sealed field; declare one yourself with
+`#[derive(Seal)]` for a standalone value:
+
+- a **seal ID**, the stable identity every sealed value and blind index is bound to;
+- the **value type**, such as `String`, that `Sealed<F>` opens to;
+- a **codec**, such as `Utf8`, between the value and bytes;
+- a **padding policy**, which groups plaintext lengths into fewer stored sizes.
+  `Padding::NONE` reveals the encoded length.
+
+A seal declares no blind indexes: a `BlindIndexSpec` is declared over a seal,
+or a record's field declares one with `blind_index(…)`.
+
+`Sealed::seal` borrows the value and returns a `Sealed<F>`: the **envelope**
+(public metadata, encrypted bytes, and an authentication tag) you store. `open`
+authenticates it and returns a new value. Parsing stored bytes checks structure
+only; opening authenticates.
+
+```mermaid
+flowchart TB
+    E["Application value T: owned plaintext"]
+    C["Sealed&lt;F&gt;: owns encrypted envelope"]
+    I["BlindIndex&lt;Spec&gt;: owns index bytes"]
+    D["New T: opened plaintext"]
+    S["Storage: encrypted envelope and optional indexes"]
+    E -->|"Sealed::seal borrows; source retained"| C
+    E -->|"BlindIndex::derive borrows; source retained"| I
+    C -->|"open borrows; authenticates and decodes"| D
+    C -->|"application writes both in one statement"| S
+    I -->|"application writes both in one statement"| S
+    S -->|"parse structure; not authentication"| C
+```
+
+### Seals
+
+A seal takes one of two forms, which store the same bytes for the same ID and
+codec, so a seal can change form without a migration:
+
+- A **marker** is a unit struct over a separate value type: one `Address` type
+  can back both `HomeAddress` and `BillingAddress`, each with its own seal ID.
+  Prefer it for values that arrive as plain types. A record's derived seals are
+  markers.
+- A **self-valued seal** is its own value, such as `struct UserEmail(String)` or
+  a whole response. It cannot be passed where another seal's value is expected;
+  prefer it for whole payloads and existing newtypes.
+
+Markers that declare the same seal ID are one seal, which is usually a copied ID.
+
+### Contexts
+
+Every value is sealed under a **context**: its seal ID, and, for a record's
+field, the record's ID too (`Sealed<F, InRecord<Id>>`; a standalone value is
+`Sealed<F>`). A value opens only under the same context, even when seals share a
+root key. `seal_in` and `open_in` take the context's value, such as the record
+ID; a record's `seal` and `open` pass it for you.
+
+### Suites
+
+The seal describes policy; the **suite** defines the cryptography. Suite 1 is
+HKDF-SHA-256 with XChaCha20-Poly1305; see the [wire format](wire-format.md).
+
+## Keys
+
+A **keyring** holds key generations: one **current generation** for new writes,
+and **readable generations** resolved by the exact key ID stored in each
+envelope, never falling back to the current key. A generation is an immutable
+pair of a public ID and root material, which is never stored in the envelope.
+Changing the current generation changes future writes only; existing ciphertext
+still needs its own generation. See [key rotation](operations.md#key-rotation).
+
+`EncryptionKeyring` protects values and `BlindIndexKeyring` blind indexes;
+`Keys` pairs an encryption keyring with an optional blind-index keyring.
+Explicit operations take their keys and never read the installed keys:
+`Sealed::seal` and `open` take an `EncryptionKeyring` or `Keys`;
+`BlindIndex::derive` and `probes` a `BlindIndexKeyring` or `Keys`; a record's
+`seal` an `EncryptionKeyring`, or `Keys` when it has blind indexes.
+
+For durable data, reload the exact ID/material pair after restarts and retain
+readable generations while stored data needs them. A newly generated key cannot
+replace a missing one. Generate encryption and blind-index roots independently.
+Resolving keys is synchronous: load secrets from your own source and build
+keyrings locally. CryptBox does not distribute secrets or refresh remote state,
+and changing a startup snapshot's source does not refresh a running process.
+
+### Loading keys
+
+`EncryptionKey::generate` and `BlindIndexKey::generate` never reveal their
+material, so they serve tests and demos only. Provision every durable generation
+once, outside the application, as a fresh key ID and 32 random bytes kept
+together in your secret store:
+
+```sh
+uuidgen               # the key ID: public, but unique to this material
+openssl rand -hex 32  # the root material: secret
+```
+
+Run both again for every generation and for each role: an encryption root and a
+blind-index root never share material or an ID. Never reuse a key ID with
+different material, and never generate a replacement for a missing generation:
+fail to start instead.
+
+At startup, pair each ID with its material and build the keyrings. Key IDs are
+not secret, so they can be compiled in with `key_id!` and `index_key_id!`, or
+loaded with the material and parsed (`KeyId` and `IndexKeyId` implement
+`FromStr`, accepting a hyphenated UUID). `from_hex` takes exactly 64 hex digits
+and `from_base64` standard Base64 of 32 bytes; both decode straight into
+zeroizing key storage and fail with `Error::InvalidKeyEncoding` without echoing
+the input. Erase your copy of the encoded secret yourself, such as by reading it
+into a `Zeroizing<String>`.
+
+```rust
+use cryptbox::{
+    BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyId, Keys,
+    index_key_id, key_id,
+};
+
+const ENCRYPTION_1: KeyId = key_id!("6f1c2e9a-0b4d-4c7e-9a35-2d8b7e10c4f2");
+const ENCRYPTION_2: KeyId = key_id!("b83e5d27-91a0-4f6c-8d42-7c19e6a03b5d");
+const INDEX_1: IndexKeyId = index_key_id!("3a9d0f64-5e21-47b8-b6c3-e0f41d8a2967");
+
+fn load_keys() -> Result<Keys, Box<dyn std::error::Error>> {
+    // `secret` is your own loader, returning a `Zeroizing<String>`.
+    let encryption = EncryptionKeyring::new(
+        // The current generation writes...
+        EncryptionKey::from_hex(ENCRYPTION_2, &secret("encryption-2")?)?,
+        // ...and previous generations stay readable while stored data needs them.
+        [EncryptionKey::from_hex(ENCRYPTION_1, &secret("encryption-1")?)?],
+    )?;
+    let indexes = BlindIndexKeyring::new(
+        BlindIndexKey::from_hex(INDEX_1, &secret("index-1")?)?,
+        [],
+    )?;
+    Ok(Keys::new(encryption).with_blind_indexes(indexes))
+}
+```
+
+`EncryptionKeyring::new` rejects a key ID repeated within the keyring with
+`Error::DuplicateEncryptionKey` (`DuplicateBlindIndexKey` for blind-index
+keys). The [SQLite example](../examples/sqlite/README.md) loads a root from a
+file; the [searchable example](../examples/searchable/README.md) loads two
+generations per role and stages a rotation.
 
 ## Choosing keyrings
 
@@ -219,7 +297,7 @@ only if key IDs follow these rules:
 - Generate every ID as a random UUID, as `EncryptionKey::generate` does.
 - Never reuse an ID for different material: the wrong key then looks right, and
   opening fails as corruption.
-- Keep IDs unique within a keyring (`KeyError::DuplicateEncryptionKey`) and never
+- Keep IDs unique within a keyring (`Error::DuplicateEncryptionKey`) and never
   share one across keyrings.
 - Keep the ID and its bytes together for the life of the data.
 - Never let one root serve both encryption and blind indexes.
@@ -231,9 +309,9 @@ Cloning a keyring shares its keys rather than copying material, so hand one out
 from behind a lock or a swapped snapshot; calls already in flight keep the
 keyring they were handed. Cache keyrings per tenant. Fail closed, with your own
 error, when the snapshot is not loaded or the tenant is unknown; never fall back
-to another tenant's keys. A refreshed keyring keeps
-every previous key whose values have not been resealed. The
-[custom-field example](../examples/custom_field/README.md#implementor-obligations)
+to another tenant's keys. A refreshed keyring keeps every previous key whose
+values have not been resealed. The
+[custom-seal example](../examples/custom_seal/README.md#implementor-obligations)
 states the contract for keys the application refreshes.
 
 Write the custody decision down: a committed table of one row per seal (keys
@@ -306,14 +384,14 @@ when padding is enabled or disabled, but not when it is only resized. See the
   `assert_unique_ids!(indexes: EmailLookup, EmailDomain)` fail compilation on a
   shared ID. `#[derive(Record)]` rejects an ID repeated within one record.
 
-The [custom-field example](../examples/custom_field/main.rs)'s
+The [custom-seal example](../examples/custom_seal/main.rs)'s
 `stored_bytes_and_schema_match_their_committed_fixtures` test runs these checks.
 
 ## Storage and search
 
 | Approach | Consequence |
 | --- | --- |
-| Seal or prepare explicitly | Key failures happen at that step; the sealed bytes then cross the storage or serialization boundary. |
+| Seal explicitly | Key failures happen at that step; the sealed bytes then cross the storage or serialization boundary. |
 | Load a stored form or `Sealed<F>` | Decoding checks structure without keys; the application opens when it needs plaintext. |
 | Automatic SQLx `Plain<F>` | Seals on encode and opens on decode, with the installed keys. |
 
@@ -378,8 +456,16 @@ its error, never as a non-match.
   decrypts but is absent from lookups. See
   [what each check establishes](security.md#what-each-check-establishes).
 
-`Sealed::prepare` derives the sealed value and its indexes from one source; it
-does not persist them. Write them in one statement or one transaction.
+A record's `seal` derives its index columns with its sealed fields. For a
+standalone value, seal it and derive its indexes from the same value, then write
+them in one statement or one transaction, so a stored index never disagrees with
+its ciphertext:
+
+```rust
+let sealed = Sealed::<UserEmail>::seal(&email, &keys)?;
+let index = BlindIndex::<EmailLookup>::derive(&email, &keys)?;
+// INSERT INTO users (id, email, email_lookup) VALUES (?, ?, ?)
+```
 
 Runnable: [SQLite](../examples/sqlite/README.md),
 [searchable storage](../examples/searchable/README.md),
@@ -391,12 +477,11 @@ The application owns the lifetime of its values and every copy it makes.
 
 | Object | Ownership and erasure |
 | --- | --- |
-| Application value `T` | Borrowed by `seal` and `prepare`, which retain it. Dropping it does not zeroize arbitrary types. |
+| Application value `T` | Borrowed by `seal` and `BlindIndex::derive`, which retain it. Dropping it does not zeroize arbitrary types. |
 | `Plain<F>` | Owns a `T`; dropped without zeroization. |
 | Clones | Each copy of `T`, `Plain<F>` or `Secret<T>` has an independent lifetime; erasing one erases no other. |
 | CryptBox temporary buffers | Encoded, padded, normalized and decrypted bytes use zeroizing storage. |
 | `Sealed<F>` | Owns the envelope. `open` borrows it and returns a new `T`. |
-| `Prepared` | Owns the sealed value and indexes and borrows the source; dropping it does not erase the source. |
 | Opened `T` | A new, ordinary allocation. Wrap it: `Secret::new(sealed.open(&keys)?)`. |
 | `Secret<T>` | Zeroizes `T` on drop and redacts `Debug`; it cannot prevent explicit access or erase earlier copies. |
 | `EncryptionKey`, `BlindIndexKey` | Clones share reference-counted material, zeroized when the last handle drops. |
@@ -407,7 +492,7 @@ bytes as the bare types. Custom codecs and normalizers must protect their own
 intermediate allocations, including error paths and allocations released by
 growth: `Zeroizing<Vec<u8>>` wipes only its current allocation. Zeroization does
 not reach compiler or OS copies. See the
-[implementor obligations](../examples/custom_field/README.md#implementor-obligations).
+[implementor obligations](../examples/custom_seal/README.md#implementor-obligations).
 
 ## Testing
 

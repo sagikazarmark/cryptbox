@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, fmt, sync::Arc};
 
-use super::KeyError;
 use super::material::{BlindIndexKey, EncryptionKey, IndexKeyId, KeyId};
+use crate::Error;
 
 /// The current encryption key plus the previous keys that still open stored
 /// values.
@@ -24,9 +24,9 @@ use super::material::{BlindIndexKey, EncryptionKey, IndexKeyId, KeyId};
 /// library cannot detect.
 ///
 #[doc = concat!(
-    "[key-rotation example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/key_rotation.rs\n",
-    "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs\n",
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#choosing-keyrings",
+    "[key-rotation example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/key_rotation.rs\n",
+    "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/reencryption_sweep.rs\n",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#choosing-keyrings",
 )]
 #[derive(Clone)]
 pub struct EncryptionKeyring(Arc<Ring<KeyId, EncryptionKey>>);
@@ -36,16 +36,16 @@ impl EncryptionKeyring {
     ///
     /// # Errors
     ///
-    /// Returns [`KeyError::DuplicateEncryptionKey`] for any repeated key ID.
+    /// Returns [`Error::DuplicateEncryptionKey`] for any repeated key ID.
     pub fn new(
         current: EncryptionKey,
         previous: impl IntoIterator<Item = EncryptionKey>,
-    ) -> Result<Self, KeyError> {
+    ) -> Result<Self, Error> {
         Ring::new(
             current,
             previous,
             EncryptionKey::id,
-            KeyError::DuplicateEncryptionKey,
+            Error::DuplicateEncryptionKey,
         )
         .map(|ring| Self(Arc::new(ring)))
     }
@@ -83,9 +83,9 @@ impl fmt::Debug for EncryptionKeyring {
 /// keyrings].
 ///
 #[doc = concat!(
-    "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/blind_indexes.rs\n",
-    "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs\n",
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#choosing-keyrings",
+    "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/blind_indexes.rs\n",
+    "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/reencryption_sweep.rs\n",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#choosing-keyrings",
 )]
 #[derive(Clone)]
 pub struct BlindIndexKeyring(Arc<Ring<IndexKeyId, BlindIndexKey>>);
@@ -95,16 +95,16 @@ impl BlindIndexKeyring {
     ///
     /// # Errors
     ///
-    /// Returns [`KeyError::DuplicateBlindIndexKey`] for any repeated key ID.
+    /// Returns [`Error::DuplicateBlindIndexKey`] for any repeated key ID.
     pub fn new(
         current: BlindIndexKey,
         previous: impl IntoIterator<Item = BlindIndexKey>,
-    ) -> Result<Self, KeyError> {
+    ) -> Result<Self, Error> {
         Ring::new(
             current,
             previous,
             BlindIndexKey::id,
-            KeyError::DuplicateBlindIndexKey,
+            Error::DuplicateBlindIndexKey,
         )
         .map(|ring| Self(Arc::new(ring)))
     }
@@ -150,8 +150,8 @@ impl<Id: Ord + Copy, Key: Clone> Ring<Id, Key> {
         current: Key,
         previous: impl IntoIterator<Item = Key>,
         id_of: impl Fn(&Key) -> Id,
-        duplicate: impl FnOnce(Id) -> KeyError,
-    ) -> Result<Self, KeyError> {
+        duplicate: impl FnOnce(Id) -> Error,
+    ) -> Result<Self, Error> {
         let mut keys = BTreeMap::new();
         keys.insert(id_of(&current), current.clone());
         for key in previous {

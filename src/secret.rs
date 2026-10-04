@@ -11,11 +11,11 @@ use zeroize::{Zeroize, Zeroizing};
 /// `Secret::new(sealed.open(&keys)?)`.
 /// A seal can also take `Secret<String>` or `Secret<Vec<u8>>` as its value type: their
 /// default codecs ([`crate::Utf8`], [`crate::Raw`]) write the same bytes.
-/// See the [custom-field example] and [ownership reference].
+/// See the [custom-seal example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
+    "[custom-seal example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/custom_seal/README.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#ownership-and-erasure",
 )]
 pub struct Secret<T: Zeroize> {
     value: Zeroizing<T>,

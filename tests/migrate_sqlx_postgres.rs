@@ -9,8 +9,8 @@ use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Error, IndexId, Padding, Seal, Sealed, Utf8, index_id, index_key_id, key_id,
     migrate::{
-        LegacyError, LegacyFormat, MaybeSealed, PostgresSweepStore, RowPlanner, Sweep, SweepReport,
-        SweepStore, SweepTable,
+        LegacyError, LegacyFormat, MaybeSealed, PostgresSweepStore, RowPlanner, RowState, Sweep,
+        SweepReport, SweepStore, SweepTable,
     },
     seal_id,
 };
@@ -143,14 +143,12 @@ async fn insert(
     index_keys: &BlindIndexKeyring,
 ) {
     let value = email.to_owned();
-    let prepared = Sealed::<UserEmail>::prepare(&value, keys)
-        .unwrap()
-        .with_index::<EmailLookup>(index_keys)
-        .unwrap();
+    let sealed = Sealed::<UserEmail>::seal(&value, keys).unwrap();
+    let index = BlindIndex::<EmailLookup>::derive(&value, index_keys).unwrap();
     sqlx::query("INSERT INTO users VALUES ($1, $2, $3)")
         .bind(id)
-        .bind(prepared.sealed())
-        .bind(prepared.index::<EmailLookup>().unwrap())
+        .bind(&sealed)
+        .bind(&index)
         .execute(connection)
         .await
         .unwrap();
@@ -285,9 +283,18 @@ fn postgres_sweep_converts_mixed_rows_and_resumes_stored_progress() {
             assert_eq!(store.load_checkpoint().await.unwrap(), None);
             let before = sweep.verify(&mut store).await.unwrap();
             assert_eq!((before.legacy, before.stale, before.current), (2, 2, 2));
-            let first = sweep.run_batch(&mut store).await.unwrap();
-            assert_eq!(first.checkpoint, Some(10));
-            assert_eq!(first.report.legacy, 1);
+            // One batch by hand, as a run interrupted after its first batch leaves it.
+            let rows = store.load_batch(None, 1).await.unwrap();
+            let row = &rows[0];
+            let plan = RowPlanner::<UserEmail>::new(&keys)
+                .with_legacy(&ToyLegacy)
+                .with_index::<EmailLookup>(&index_keys)
+                .plan_row(&(), &row.ciphertext, &[&row.indexes[0]])
+                .unwrap();
+            assert_eq!(plan.state(), RowState::Legacy);
+            assert!(store.update(row, plan.write().unwrap()).await.unwrap());
+            store.save_checkpoint(&row.cursor).await.unwrap();
+            assert_eq!(row.cursor, 10);
             assert_eq!(store.load_checkpoint().await.unwrap(), Some(10));
         }
         connection.close().await.unwrap();
@@ -358,14 +365,12 @@ fn postgres_guarded_updates_preserve_competing_ciphertext_and_index_writes() {
             let replacement = plan.write().unwrap();
 
             let other_value = "other@example.com".to_owned();
-            let prepared = Sealed::<UserEmail>::prepare(&other_value, &old_keys)
-                .unwrap()
-                .with_index::<EmailLookup>(&old_index_keys)
-                .unwrap();
+            let sealed = Sealed::<UserEmail>::seal(&other_value, &old_keys).unwrap();
+            let index = BlindIndex::<EmailLookup>::derive(&other_value, &old_index_keys).unwrap();
             let changed_bytes = if column == "email_ciphertext" {
-                prepared.sealed().as_bytes().to_vec()
+                sealed.as_bytes().to_vec()
             } else {
-                prepared.index::<EmailLookup>().unwrap().as_bytes().to_vec()
+                index.as_bytes().to_vec()
             };
             let result = sqlx::query(&format!("UPDATE users SET {column} = $1 WHERE id = 10"))
                 .bind(&changed_bytes)

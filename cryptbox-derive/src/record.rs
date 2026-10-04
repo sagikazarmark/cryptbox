@@ -40,7 +40,6 @@ struct IndexDecl {
     normalize: Path,
     normalizer: LitStr,
     query: Type,
-    project: Option<Path>,
     column: Ident,
 }
 
@@ -251,8 +250,6 @@ fn parse_index(field: &Ident, meta: &ParseNestedMeta<'_>) -> syn::Result<IndexDe
     let mut normalize = None;
     let mut normalizer = None;
     let mut query = None;
-    let mut project = None;
-    let mut column = None;
 
     meta.parse_nested_meta(|inner| {
         if inner.path.is_ident("id") {
@@ -265,14 +262,10 @@ fn parse_index(field: &Ident, meta: &ParseNestedMeta<'_>) -> syn::Result<IndexDe
             normalizer = Some(parse_normalizer(inner.value()?)?);
         } else if inner.path.is_ident("query") {
             query = Some(inner.value()?.parse()?);
-        } else if inner.path.is_ident("project") {
-            project = Some(inner.value()?.parse()?);
-        } else if inner.path.is_ident("column") {
-            column = Some(inner.value()?.parse()?);
         } else {
             return Err(inner.error(format!(
                 "unknown `blind_index` key `{}`; expected one of `id`, `bits`, `normalize`, \
-                 `normalizer`, `query`, `project`, or `column`",
+                 `normalizer`, or `query`",
                 path_string(&inner.path)
             )));
         }
@@ -292,8 +285,7 @@ fn parse_index(field: &Ident, meta: &ParseNestedMeta<'_>) -> syn::Result<IndexDe
         normalize: normalize.ok_or_else(|| missing("normalize", "normalize_fn"))?,
         normalizer: normalizer.ok_or_else(|| missing("normalizer", "\"email/1\""))?,
         query: query.unwrap_or_else(|| syn::parse_quote!(str)),
-        project,
-        column: column.unwrap_or_else(|| format_ident!("{}_index", field.unraw())),
+        column: format_ident!("{}_index", field.unraw()),
     })
 }
 
@@ -306,7 +298,7 @@ struct RecordAttrs {
 
 fn parse_record_attrs(input: &DeriveInput, errors: &mut Errors) -> RecordAttrs {
     let mut parsed = RecordAttrs {
-        krate: syn::parse_quote!(::cryptbox),
+        krate: crate::attr::krate(),
         stored_name: None,
         stored: Vec::new(),
     };
@@ -333,12 +325,9 @@ fn parse_record_attrs(input: &DeriveInput, errors: &mut Errors) -> RecordAttrs {
                         _ => parsed.stored.push(item),
                     }
                 }
-            } else if meta.path.is_ident("crate") {
-                let path: LitStr = meta.value()?.parse()?;
-                parsed.krate = path.parse()?;
             } else {
                 return Err(meta.error(format!(
-                    "unknown `cryptbox` key `{}` on a record; expected `stored(…)` or `crate`",
+                    "unknown `cryptbox` key `{}` on a record; expected `stored(…)`",
                     path_string(&meta.path)
                 )));
             }
@@ -443,9 +432,9 @@ fn check_record(name: &Ident, fields: &[Field<'_>], errors: &mut Errors) {
                 errors.push(syn::Error::new(
                     index.column.span(),
                     format!(
-                        "the stored form already has a field `{}`: name the index column with \
-                         `column = …`",
-                        index.column
+                        "the blind index of `{}` is stored in the `{}` column, which is already a \
+                         field: rename that field",
+                        field.ident, index.column
                     ),
                 ));
             }
@@ -625,7 +614,7 @@ impl<'a> Expansion<'a> {
         let ty = self.record_id.ty;
         let check = quote_spanned! {ty.span()=>
             const _: fn() = || {
-                fn check<T: #krate::__private::RecordKey>() {}
+                fn check<T: #krate::RecordKey>() {}
                 check::<#ty>();
             };
         };
@@ -710,19 +699,12 @@ impl<'a> Expansion<'a> {
             normalize,
             normalizer,
             query,
-            project,
             column,
             ..
         } = index;
         let query_arg = Ident::new("query", Span::mixed_site());
         let value_arg = Ident::new("value", Span::mixed_site());
-        let normalize_value = project.as_ref().map_or_else(
-            || quote_spanned!(normalize.span()=> #normalize(#value_arg)),
-            |project| {
-                let projected = quote_spanned!(project.span()=> &#project(#value_arg));
-                quote_spanned!(normalize.span()=> #normalize(#projected))
-            },
-        );
+        let normalize_value = quote_spanned!(normalize.span()=> #normalize(#value_arg));
         let normalized = quote! {
             ::core::result::Result<
                 #krate::__private::Zeroizing<::std::vec::Vec<u8>>,

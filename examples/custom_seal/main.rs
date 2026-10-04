@@ -132,12 +132,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let old_index_key = BlindIndexKey::generate()?; // Independent of encryption keys.
     let index_writer = BlindIndexKeyring::new(old_index_key.clone(), [])?;
     let value = Handle(Secret::new("Alice-7".to_owned()));
-    let prepared = Sealed::<Handle>::prepare(&value, &keys.keyring()?)?
-        .with_index::<HandleEquality>(&index_writer)?;
-    let sealed = prepared.sealed().clone();
-    let stored_index = prepared.index::<HandleEquality>()?.as_bytes().to_vec();
+    let sealed = Sealed::<Handle>::seal(&value, &keys.keyring()?)?;
+    let stored_index = BlindIndex::<HandleEquality>::derive(&value, &index_writer)?.into_bytes();
     // These two representations belong in one atomic storage write.
-    drop(prepared); // Releases the borrow, not the source plaintext.
 
     // A KMS refresh promotes a new encryption key and keeps the old one readable.
     keys.refresh(EncryptionKeyring::new(
@@ -158,7 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?);
     assert_eq!(opened.0.expose_secret(), "Alice-7");
     assert_eq!(value.0.expose_secret(), "Alice-7");
-    println!("Custom field round trip and normalized lookup succeeded.");
+    println!("Custom seal round trip and normalized lookup succeeded.");
     Ok(())
 }
 
@@ -266,7 +263,7 @@ mod tests {
 seal dcaa3c69-1767-49a1-8476-36555eaf54bf
   codec: handle/1
   padding: none
-  context: 65640fc8333534b9
+  context: 502de8fcfb838c80
 index 6c0e20d5-cb30-4b84-8dd1-995f872b417c
   seal: dcaa3c69-1767-49a1-8476-36555eaf54bf
   bits: 128

@@ -4,27 +4,6 @@ mod material;
 pub use keyring::{BlindIndexKeyring, EncryptionKeyring};
 pub use material::{BlindIndexKey, EncryptionKey, IndexKeyId, KeyId};
 
-/// A key or keyring could not be created.
-///
-/// It converts into the same variant of [`Error`](crate::Error), so `?` works in
-/// functions that return the crate's error.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
-#[non_exhaustive]
-pub enum KeyError {
-    /// The operating-system random source failed.
-    #[error("secure randomness is unavailable")]
-    RandomnessUnavailable,
-    /// Encoded root key material is malformed or does not decode to 32 bytes.
-    #[error("encoded key material is invalid")]
-    InvalidKeyEncoding,
-    /// A keyring contains the same encryption key ID more than once.
-    #[error("duplicate encryption key ID {0}")]
-    DuplicateEncryptionKey(KeyId),
-    /// A keyring contains the same blind-index key ID more than once.
-    #[error("duplicate blind-index key ID {0}")]
-    DuplicateBlindIndexKey(IndexKeyId),
-}
-
 /// An encryption keyring and an optional blind-index keyring, passed together.
 ///
 /// `Keys` is a source for both roles, so it can be passed to any operation
@@ -39,7 +18,7 @@ pub enum KeyError {
 /// separate keys, pass each its own `Keys`; see [choosing keyrings].
 ///
 #[doc = concat!(
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#choosing-keyrings",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#choosing-keyrings",
 )]
 ///
 /// # Examples

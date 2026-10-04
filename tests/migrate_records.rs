@@ -227,11 +227,13 @@ impl SweepStore for MemoryStore {
             .iter()
             .filter(|row| row.columns.id > after)
             .take(limit)
-            .map(|row| SweepRow {
-                cursor: row.columns.id,
-                columns: row.columns.clone(),
-                ciphertext: row.ciphertext.clone(),
-                indexes: row.indexes.clone(),
+            .map(|row| {
+                SweepRow::new(
+                    row.columns.id,
+                    row.columns.clone(),
+                    row.ciphertext.clone(),
+                    row.indexes.clone(),
+                )
             })
             .collect()))
     }

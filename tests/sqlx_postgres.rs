@@ -3,8 +3,8 @@
 #![cfg(feature = "sqlx-postgres")]
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, EncryptionKey, EncryptionKeyring,
-    IndexId, KeyId, Keys, Padding, Plain, Seal, Sealed, Utf8, index_id, key_id, keys,
+    BlindIndex, BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, IndexId, KeyId,
+    Keys, Padding, Plain, Seal, Sealed, Utf8, index_id, key_id, keys,
 };
 use sqlx::{
     Connection, Decode, Encode, Postgres, Row, Type,
@@ -59,13 +59,6 @@ where
 {
 }
 
-fn assert_sqlx_encode<T>()
-where
-    T: Type<Postgres>,
-    for<'q> T: Encode<'q, Postgres>,
-{
-}
-
 #[cfg(feature = "migrate")]
 fn assert_sqlx_decode<T>()
 where
@@ -79,10 +72,9 @@ fn encrypted_storage_types_map_to_postgres_bytea() {
     assert_sqlx_traits::<Plain<TestSeal>>();
     assert_sqlx_traits::<Sealed<TestSeal>>();
     assert_sqlx_traits::<BlindIndex<IndexSpec>>();
-    assert_sqlx_encode::<BlindIndexRef<'static, IndexSpec>>();
 
     // The permissive migration read decodes but deliberately has no Encode:
-    // writes always encrypt through `Plain`, `Sealed`, or `Prepared`.
+    // writes always encrypt through `Plain` or `Sealed`.
     #[cfg(feature = "migrate")]
     assert_sqlx_decode::<cryptbox::migrate::MaybeSealed<TestSeal>>();
 

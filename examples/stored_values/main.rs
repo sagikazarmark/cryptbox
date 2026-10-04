@@ -26,7 +26,7 @@ fn normalize_email(input: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
     id = "2ce82e31-6001-4b05-b4e2-8fc262997209",
     seal = UserEmail,
     // Demonstration precision; choose precision and normalization for your domain.
-bits = 128,
+    bits = 128,
     query = str,
     normalize = normalize_email,
     normalizer = "email/1",
@@ -56,12 +56,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let email = "Mark@Example.com".to_owned();
     // The UserEmail seal binds the sealed value and index to its seal ID.
-    // prepare borrows email: it does not remove plaintext from memory.
-    let prepared =
-        Sealed::<UserEmail>::prepare(&email, &keys)?.with_index::<EmailLookup>(&index_keys)?;
+    // Sealing and deriving borrow email: they do not remove plaintext from memory.
     let stored = StoredUser {
-        email: prepared.sealed().clone(),
-        email_lookup: BlindIndex::from_bytes(prepared.index::<EmailLookup>()?.as_bytes())?,
+        email: Sealed::<UserEmail>::seal(&email, &keys)?,
+        email_lookup: BlindIndex::<EmailLookup>::derive(&email, &index_keys)?,
     };
     // Persist both fields atomically as one document in the chosen storage system.
     let document = serde_json::to_vec(&stored)?;

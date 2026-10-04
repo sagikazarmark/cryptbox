@@ -60,9 +60,9 @@ jobs:
           cargo run --locked --example blind_indexes --features derive
           cargo run --locked --example stored_values --features derive,serde
           cargo run --locked --example sqlx_sqlite --features derive,sqlx-sqlite
-          cargo run --locked --example first_field
-          cargo run --locked --example tenant_field
-          cargo run --locked --example custom_field
+          cargo run --locked --example first_seal
+          cargo run --locked --example tenant_seal
+          cargo run --locked --example custom_seal
           cargo run --locked --example records --features derive,json,sqlx-sqlite
 
       - name: Run documentation tests

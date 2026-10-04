@@ -10,7 +10,6 @@ use syn::{
 /// Every key of the helper attributes. Each attribute accepts a subset.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum Key {
-    Crate,
     Id,
     Value,
     Codec,
@@ -20,13 +19,11 @@ pub(crate) enum Key {
     Query,
     Normalize,
     Normalizer,
-    Project,
     Transparent,
 }
 
 impl Key {
-    const ALL: [Self; 12] = [
-        Self::Crate,
+    const ALL: [Self; 10] = [
         Self::Id,
         Self::Value,
         Self::Codec,
@@ -36,13 +33,11 @@ impl Key {
         Self::Query,
         Self::Normalize,
         Self::Normalizer,
-        Self::Project,
         Self::Transparent,
     ];
 
     pub(crate) fn name(self) -> &'static str {
         match self {
-            Self::Crate => "crate",
             Self::Id => "id",
             Self::Value => "value",
             Self::Codec => "codec",
@@ -52,7 +47,6 @@ impl Key {
             Self::Query => "query",
             Self::Normalize => "normalize",
             Self::Normalizer => "normalizer",
-            Self::Project => "project",
             Self::Transparent => "transparent",
         }
     }
@@ -115,7 +109,6 @@ impl Padding {
 pub(crate) struct Attrs {
     /// The helper attribute's name, such as `seal`.
     attribute: &'static str,
-    pub(crate) krate: Option<Path>,
     pub(crate) id: Option<UuidLiteral>,
     pub(crate) value: Option<Type>,
     pub(crate) codec: Option<Type>,
@@ -125,7 +118,6 @@ pub(crate) struct Attrs {
     pub(crate) query: Option<Type>,
     pub(crate) normalize: Option<Path>,
     pub(crate) normalizer: Option<LitStr>,
-    pub(crate) project: Option<Path>,
     pub(crate) transparent: Option<Span>,
     seen: Vec<Key>,
 }
@@ -142,7 +134,6 @@ impl Attrs {
     ) -> Self {
         let mut parsed = Self {
             attribute,
-            krate: None,
             id: None,
             value: None,
             codec: None,
@@ -152,7 +143,6 @@ impl Attrs {
             query: None,
             normalize: None,
             normalizer: None,
-            project: None,
             transparent: None,
             seen: Vec::new(),
         };
@@ -219,10 +209,6 @@ impl Attrs {
 
     fn parse_value(&mut self, key: Key, input: ParseStream) -> syn::Result<()> {
         match key {
-            Key::Crate => {
-                let path: LitStr = input.parse()?;
-                self.krate = Some(path.parse()?);
-            }
             Key::Id => self.id = Some(parse_uuid(key.name(), input)?),
             Key::Value => self.value = Some(input.parse()?),
             Key::Codec => self.codec = Some(input.parse()?),
@@ -232,7 +218,6 @@ impl Attrs {
             Key::Query => self.query = Some(input.parse()?),
             Key::Normalize => self.normalize = Some(input.parse()?),
             Key::Normalizer => self.normalizer = Some(parse_normalizer(input)?),
-            Key::Project => self.project = Some(input.parse()?),
             Key::Transparent => {
                 unreachable!("flags have no `= value`")
             }
@@ -245,13 +230,11 @@ impl Attrs {
     pub(crate) fn seen(&self, key: Key) -> bool {
         self.seen.contains(&key)
     }
+}
 
-    /// The path generated code uses to name `cryptbox`.
-    pub(crate) fn krate(&self) -> Path {
-        self.krate
-            .clone()
-            .unwrap_or_else(|| syn::parse_quote!(::cryptbox))
-    }
+/// The path generated code uses to name `cryptbox`.
+pub(crate) fn krate() -> Path {
+    syn::parse_quote!(::cryptbox)
 }
 
 /// Returns a required value, reporting it as missing unless its key was already reported.

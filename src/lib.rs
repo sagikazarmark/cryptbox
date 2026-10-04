@@ -4,43 +4,52 @@
 //! seal, and, in a [`Context`] such as a [`Record`]'s field, to the record it is
 //! stored in. [`Sealed::open`] authenticates it and returns the plaintext value.
 //!
-//! The stored format is stable: later releases read what this one writes. The
-//! API may still change before 1.0, and the library has not been independently
-//! audited. See the [threat model] for assumptions and limitations. The
-//! [guide] covers integration, and [operations] covers key rotation, sweeps,
-//! migration, and shredding.
+//! The stored format is stable as of 0.6: later releases read what this one
+//! writes. The API may still change before 1.0, and the library has not been
+//! independently audited. See the [threat model] for assumptions and
+//! limitations. The [guide] covers integration, and [operations] covers key
+//! rotation, sweeps, migration, and shredding.
 //!
 #![doc = concat!(
-    "[threat model]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/security.md\n",
-    "[guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md\n",
-    "[operations]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/operations.md",
+    "[threat model]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/security.md\n",
+    "[guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md\n",
+    "[operations]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/operations.md",
 )]
 //!
 //! # Quick start
 //!
-//! ```rust
-//! use cryptbox::{EncryptionKey, EncryptionKeyring, Padding, Seal, SealId, Sealed, Utf8};
+//! With the `derive` feature, `#[derive(Record)]` seals the sensitive fields of
+//! a row, each bound to the row's record ID:
 //!
-//! struct UserEmail;
+// Compiled only with the derive feature, which docs.rs enables.
+#![cfg_attr(feature = "derive", doc = "```rust")]
+#![cfg_attr(not(feature = "derive"), doc = "```rust,ignore")]
+//! use cryptbox::{EncryptionKey, EncryptionKeyring, Record};
 //!
-//! impl Seal for UserEmail {
-//!     const ID: SealId = cryptbox::seal_id!("ca274e85-63c4-4f7d-a255-2dfecbfe5e25");
-//!     const PADDING: Padding = Padding::NONE;
-//!     type Value = String;
-//!     type Codec = Utf8;
+//! #[derive(Record)]
+//! struct User {
+//!     #[cryptbox(record_id)]
+//!     id: i64,
+//!     // Generate a fresh UUID for every seal, such as with `uuidgen`.
+//!     #[cryptbox(seal = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25")]
+//!     email: String,
 //! }
 //!
 //! fn main() -> Result<(), cryptbox::Error> {
 //!     // Demo only: this key is lost when the process exits.
 //!     let keys = EncryptionKeyring::new(EncryptionKey::generate()?, [])?;
-//!     let sealed = Sealed::<UserEmail>::seal(&"mark@example.com".to_owned(), &keys)?;
-//!     assert_eq!(sealed.open(&keys)?, "mark@example.com");
+//!     let user = User { id: 7, email: "mark@example.com".to_owned() };
+//!
+//!     // What you store: `id` as it is, and `email` sealed.
+//!     let stored: StoredUser = user.seal(&keys)?;
+//!     let user = User::open(stored, &keys)?;
+//!     assert_eq!(user.email, "mark@example.com");
 //!     Ok(())
 //! }
 //! ```
 //!
-//! With the `derive` feature, `#[derive(Seal)]` writes the impl, and
-//! `#[derive(Record)]` seals the fields of a whole row; see the [README].
+//! The [README] adds a blind index to look users up by email, and the
+//! [records example] stores them with `SQLx`.
 //!
 //! Before durable storage, settle the persistent schema below and load stable
 //! key material and generation IDs across restarts.
@@ -51,8 +60,9 @@
 //! it fails loudly; see the [tenant example].
 //!
 #![doc = concat!(
-    "[README]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/README.md\n",
-    "[tenant example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/tenant_field.rs",
+    "[README]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/README.md\n",
+    "[records example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/records/README.md\n",
+    "[tenant example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/tenant_seal.rs",
 )]
 //!
 //! # Type model
@@ -71,8 +81,6 @@
 //!   previous keys; [`Keys`] pairs them. Operations take the keys to use
 //!   ([`EncryptionKeys`], [`BlindIndexKeys`], [`RecordKeys`]); choosing which
 //!   keyring protects which values is application code.
-//! - [`Prepared`] borrows a source value and derives sealed value and indexes for
-//!   an application-owned atomic write; it does not persist them.
 //! - A [`Record`] is a row whose sealed fields are bound to its record ID; it
 //!   seals and opens the whole row, and its [`Index`] handles derive probes and
 //!   open the candidate rows of a lookup.
@@ -89,7 +97,7 @@
 //!
 // Markdown uses the first definition: qualify the shared page's relative links for rustdoc.
 #![doc = concat!(
-    "\n[stored-value walkthrough]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/stored_values/README.md\n\n",
+    "\n[stored-value walkthrough]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/stored_values/README.md\n\n",
     include_str!("../docs/features.md"),
 )]
 //!
@@ -97,8 +105,9 @@
 //!
 //! Codec compatibility, seal and index IDs, a record ID's type, normalization,
 //! and index precision are persistent schema. Stored bytes do not describe them,
-//! beyond a diagnostic fingerprint of the kind of context a value is sealed under; changing them requires a
-//! migration plan. Padding is not schema: the envelope records it.
+//! beyond a diagnostic fingerprint of the kind of context a value is sealed
+//! under; changing them requires a migration plan. Padding is not schema: the
+//! envelope records it.
 //! Guard them in CI with [`testing::assert_encoding`] fixtures, a
 //! [`schema::Manifest`] snapshot, and [`assert_unique_ids!`].
 //!
@@ -122,6 +131,7 @@
 //! configuration.
 
 #![forbid(unsafe_code)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 // The README's quick start uses the derives.
 #[cfg(all(doctest, feature = "derive"))]
@@ -142,7 +152,6 @@ pub mod keys;
 #[cfg(feature = "migrate")]
 pub mod migrate;
 mod padding;
-mod prepare;
 mod record;
 pub mod schema;
 mod seal;
@@ -157,7 +166,7 @@ mod sqlx_sqlite;
 pub mod testing;
 mod value;
 
-pub use blind::{BlindIndex, BlindIndexRef, BlindIndexSpec, IndexId};
+pub use blind::{BlindIndex, BlindIndexSpec, IndexId};
 #[cfg(feature = "json")]
 pub use codec::Json;
 pub use codec::{Codec, Raw, Utf8};
@@ -166,15 +175,13 @@ pub use cryptbox_derive::{BlindIndexSpec, Record, Seal};
 pub use error::{BlindIndexError, CodecError, CodecErrorKind, Error};
 pub use id::InvalidIdentifier;
 pub use key::{
-    BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyError,
-    KeyId, Keys,
+    BlindIndexKey, BlindIndexKeyring, EncryptionKey, EncryptionKeyring, IndexKeyId, KeyId, Keys,
 };
 pub use key_source::{BlindIndexKeys, EncryptionKeys, RecordKeys};
 pub use padding::Padding;
-pub use prepare::Prepared;
 pub use record::{Index, Record};
 pub use seal::{Seal, SealId};
-pub use seal_context::{Context, ContextKind, InRecord};
+pub use seal_context::{Context, ContextKind, InRecord, RecordKey};
 pub use secret::Secret;
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 pub use value::Plain;
@@ -190,5 +197,5 @@ pub mod __private {
     pub use crate::codec::DefaultCodec;
     pub use crate::id::{is_nil, non_nil};
     pub use crate::schema::has_duplicate;
-    pub use crate::seal_context::{RecordKey, RecordKind, RecordValue};
+    pub use crate::seal_context::{RecordKind, RecordValue};
 }

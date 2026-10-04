@@ -49,14 +49,14 @@ compatibility, not fleet membership or the state of the store. The example's
 2. **Blind index.** Repeat the gate for the new index pair, retaining every
    historical probe. Use a target-encryption, target-index canary: a reader can
    decrypt it and still fail its probe check. Missing index material silently
-   omits matches. Promote index writers incrementally; prepared writes persist
-   ciphertext and indexes atomically.
+   omits matches. Promote index writers incrementally; each write seals and
+   derives the indexes from the same value and persists them in one statement.
 
 A keyring is a snapshot. The installed keys (`keys::install`) are set once per
 process; changing them needs a restart. Keyrings the application passes to
 explicit operations come from its own snapshot, which owns refresh, consistency,
 and readiness: CryptBox calls do not distribute secrets or refresh KMS state. See
-the [custom-field obligations](../examples/custom_field/README.md#implementor-obligations).
+the [custom-seal obligations](../examples/custom_seal/README.md#implementor-obligations).
 
 ### Rollback
 
@@ -67,6 +67,16 @@ index pair hides matches even when decryption succeeds. A rolled-back binary mus
 also support the stored formats, persistent schema, and all-probe candidate
 verification. Settle rollback policy before sweeping, because old-generation
 writers reintroduce stale rows behind sweep progress.
+
+### New suites and formats
+
+A later cipher suite or format version, if one is ever added, must be opt-in
+for writers, and passes the same gate as a key: upgrade **every** reader,
+including rollback deployments, to a release that reads it before **any**
+writer produces it. `Sealed::from_bytes` rejects an unknown suite or format
+version (`UnsupportedSuite`, `UnsupportedFormatVersion`) when a column is
+decoded, before any key is consulted, so an old reader fails on the whole row,
+not just the value.
 
 ### Retirement and recovery
 
@@ -178,9 +188,11 @@ application-owned `SweepStore` or manual loop.
 4. A zero-row update is a concurrent write: count and skip it, never retry the
    stale plan. Save progress only after the batch succeeds.
 
-`Sweep::run` loops to exhaustion, `run_batch` loads and saves progress, and
-`process_batch` takes and returns a cursor for an orchestrator that journals its
-own. A returned checkpoint of `None` means exhaustion.
+`Sweep::run` loops to exhaustion, saving progress after each batch. An
+orchestrator that journals its own progress steps through `SweepStore` itself:
+`load_batch`, `RowPlanner::plan_row` and `update` for each row, then
+`save_checkpoint` with the last row's cursor; an empty batch means exhaustion.
+The searchable example's `sweep-batch` command does this.
 
 **Failures.** A packaged batch is not one transaction: earlier rows may commit
 before a later failure. Stop, investigate after the saved progress, fix the
@@ -220,9 +232,8 @@ explains what each check establishes.
    through final checks and cutover, or repeat complete passes until clean.
 2. **Migration state.** `Sweep::verify` runs a fresh read-only pass from the
    beginning, ignoring rewrite progress. Require zero legacy, stale, and malformed
-   rows. With `verify_batch`, start without a cursor, merge every report with
-   `SweepReport::merge`, follow checkpoints to `None`, then check `is_terminal()`;
-   a clean partial report proves nothing.
+   rows: check `is_terminal()` on the report of a complete pass. A clean partial
+   pass proves nothing.
 3. **Authenticate every value.** Parse and open each value or record with the
    intended keyring, and validate decoded application constraints. Account for
    every row.
@@ -260,9 +271,9 @@ and [plaintext](../examples/plaintext_migration.rs) examples introduce the API.
 2. Provision CryptBox roots and legacy access. Deploy compatible readers **before
    any encrypted write**: every instance must recover legacy values, decrypt all
    generations, and run [transitional search](#transitional-search).
-3. Promote every writer to atomic prepared writes. Fence old binaries and
-   credentials and drain transactions before assuming the legacy population is
-   bounded.
+3. Promote every writer to atomic writes that seal and derive indexes from the
+   same value. Fence old binaries and credentials and drain transactions before
+   assuming the legacy population is bounded.
 4. [Sweep](#maintenance-sweeps) with fixed targets, durable progress, and one
    owner. Keep compatible readers and keys until the window closes.
 
@@ -304,9 +315,9 @@ values. Classification needs no keys:
 - A malformed or unsupported envelope, or an envelope that fails authentication,
   is a hard error, **never a legacy fallback**.
 
-`MaybeSealed` cannot be written; new writes use `Sealed::seal`,
-`Sealed::prepare`, or `Plain`. For legacy bytes that collide with the `CBX\0`
-magic, only a trusted out-of-band discriminator may authorize
+`MaybeSealed` cannot be written; new writes use `Sealed::seal` (with
+`BlindIndex::derive` for indexes) or `Plain`. For legacy bytes that collide with
+the `CBX\0` magic, only a trusted out-of-band discriminator may authorize
 `MaybeSealed::from_legacy_bytes`.
 
 ### Transitional search
@@ -341,9 +352,9 @@ need a fresh run and fresh verification.
 
 To repair an exceptional row, load the exact tuple and discriminator, classify it
 normally (or with `from_legacy_bytes` **only** for a known collision), recover,
-validate, prepare, and write with a full-tuple guard, clearing the discriminator
-in the same transaction. Writers must update format metadata transactionally, or
-exceptional rows must stay fenced. See `repair` in
+validate, seal and derive indexes, and write with a full-tuple guard, clearing
+the discriminator in the same transaction. Writers must update format metadata
+transactionally, or exceptional rows must stay fenced. See `repair` in
 [migration.rs](../examples/searchable/migration.rs).
 
 ### Closing the window

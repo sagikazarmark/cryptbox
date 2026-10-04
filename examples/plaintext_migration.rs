@@ -154,12 +154,12 @@ async fn insert_encrypted(
     index_keys: &BlindIndexKeyring,
 ) -> Result<(), Box<dyn Error>> {
     let value = email.to_owned();
-    let prepared =
-        Sealed::<UserEmail>::prepare(&value, keys)?.with_index::<EmailLookup>(index_keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&value, keys)?;
+    let index = BlindIndex::<EmailLookup>::derive(&value, index_keys)?;
 
     sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
-        .bind(prepared.sealed())
-        .bind(prepared.index::<EmailLookup>()?)
+        .bind(&sealed)
+        .bind(&index)
         .execute(connection)
         .await?;
 

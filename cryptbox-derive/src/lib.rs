@@ -9,8 +9,7 @@
 //! specs its fields declare, its index handles, and compile-time checks.
 //!
 //! Every derive takes `#[cryptbox(…)]`, on the item and, for `Record`, on its
-//! fields, and accepts `crate = "path"` in its item-level attribute, for code
-//! that reaches `cryptbox` under another path.
+//! fields. Generated code names `::cryptbox`, so depend on it under that name.
 
 mod attr;
 mod blind_index;
@@ -155,15 +154,12 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 /// | `bits = N` | yes | The retained index bits, from 1 to 256. |
 /// | `query = Type` | yes | The lookup input, such as `str`. |
 /// | `normalize = path` | yes | A `fn(&Query) -> Result<Zeroizing<Vec<u8>>, BlindIndexError>`. |
-/// | `project = path` | no | A `fn(&Value) -> P` where `&P` coerces to `&Query`. |
 /// | `normalizer = "…"` | yes | The name of the normalization rules, such as `"email/1"`; see `BlindIndexSpec::NORMALIZER`. |
 ///
-/// One normalizer serves both lookups and stored values. Without `project`, it
-/// receives the sealed value directly, so `&Value` must coerce to `&Query`,
-/// as `&String` does to `&str`. With `project`, it receives the projection,
-/// such as one part of a larger value; prefer projections that borrow, because
-/// an owned projection is a plaintext copy the normalizer cannot erase. Write
-/// the impl by hand when a projection can fail or needs its own normalization.
+/// One normalizer serves both lookups and stored values. It receives the sealed
+/// value directly, so `&Value` must coerce to `&Query`, as `&String` does to
+/// `&str`. Write the impl by hand to index part of a value, such as an email's
+/// domain, or to normalize stored values differently from queries.
 ///
 /// The `normalizer` name is never derived from the paths: renaming a function
 /// leaves stored indexes intact, while changing its body does not rename it.
@@ -229,9 +225,6 @@ pub fn derive_seal(input: TokenStream) -> TokenStream {
 ///     }
 /// };
 /// ```
-///
-/// With `project = street`, where `fn street(address: &Address) -> &str`,
-/// `normalize_value` calls `normalize_email(&street(value))` instead.
 #[proc_macro_derive(BlindIndexSpec, attributes(cryptbox))]
 pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
     derive(input, blind_index::expand)
@@ -260,19 +253,18 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// | `id = "…"` | yes | The index ID. |
 /// | `bits = N` | yes | The retained index bits, from 1 to 256. |
 /// | `normalize = path`, `normalizer = "…"` | yes | As for `#[derive(BlindIndexSpec)]`. |
-/// | `query = Type`, `project = path` | no | As for `#[derive(BlindIndexSpec)]`; `query` defaults to `str`. |
-/// | `column = name` | no | The stored form's index column. Defaults to the field's name and `_index`. |
+/// | `query = Type` | no | As for `#[derive(BlindIndexSpec)]`; defaults to `str`. |
 ///
 /// On the record, `#[cryptbox(stored(…))]` names the stored form, with
 /// `name = Name` (by default `Stored` and the record's name, such as
 /// `StoredCustomer`), and forwards every other attribute to it, such as
 /// `stored(derive(sqlx::FromRow), sqlx(rename_all = "snake_case"))`. On a
 /// field, `stored(…)` forwards attributes to the stored form's field.
-/// `crate = "path"` names the path to `cryptbox`.
 ///
 /// The stored form has the record's fields in order, each sealed field as its
 /// `Sealed<Seal, InRecord<Id>>`, sealed under the record ID of type `Id`, and
-/// each blind index in a `BlindIndex<Spec>` column after its field.
+/// each blind index in a `BlindIndex<Spec>` column after its field, named after
+/// the field with `_index`, such as `email_index`.
 /// `Record::seal` clones the record ID and plaintext fields, so they implement
 /// `Clone`.
 ///

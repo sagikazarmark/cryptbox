@@ -3,7 +3,7 @@
 use std::error::Error;
 
 use cryptbox::{
-    BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
     EncryptionKeyring, Keys, Padding, Plain, Seal, SealId, Sealed, Utf8, keys,
 };
 use sqlx::{Connection, Row, sqlite::SqliteConnection};
@@ -97,10 +97,11 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
     // One statement maintains the sealed value and index pair atomically.
     let keys = keys::installed()?;
     let email = plaintext.to_owned();
-    let prepared = Sealed::<UserEmail>::prepare(&email, keys)?.with_index::<EmailLookup>(keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&email, keys)?;
+    let index = BlindIndex::<EmailLookup>::derive(&email, keys)?;
     sqlx::query("UPDATE users SET email = ?, email_idx = ?")
-        .bind(prepared.sealed())
-        .bind(prepared.index::<EmailLookup>()?)
+        .bind(&sealed)
+        .bind(&index)
         .execute(&mut connection)
         .await?;
     let row = sqlx::query("SELECT email, email_idx FROM users")
@@ -108,9 +109,6 @@ async fn round_trip(plaintext: &str) -> Result<(), Box<dyn Error>> {
         .await?;
     let read: Sealed<UserEmail> = row.try_get("email")?;
     assert_eq!(read.open(keys)?, plaintext);
-    assert_eq!(
-        row.try_get::<Vec<u8>, _>("email_idx")?,
-        prepared.index::<EmailLookup>()?.as_bytes(),
-    );
+    assert_eq!(row.try_get::<Vec<u8>, _>("email_idx")?, index.as_bytes(),);
     Ok(())
 }

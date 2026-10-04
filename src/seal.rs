@@ -3,8 +3,9 @@ use crate::{Codec, Padding};
 
 identifier!(SealId, "A stable seal identifier.");
 
-/// Declares how values are sealed: their identity, value type, codec,
-/// padding, and blind indexes.
+/// Declares how values are sealed: their identity, value type, codec, and
+/// padding. Blind indexes over a seal's values are
+/// [`BlindIndexSpec`](crate::BlindIndexSpec)s.
 ///
 /// A seal is either a marker over a separate value type or its own value
 /// (`type Value = Self`). A value type (`String`, `Address`, `Secret<String>`)
@@ -68,11 +69,11 @@ identifier!(SealId, "A stable seal identifier.");
 /// [`Utf8`](crate::Utf8) or [`Raw`](crate::Raw); every other value type names
 /// its codec, so no other crate can choose or change it.
 ///
-/// See the [custom-field example] and [ownership reference].
+/// See the [custom-seal example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
+    "[custom-seal example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/custom_seal/README.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#ownership-and-erasure",
 )]
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a seal",

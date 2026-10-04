@@ -17,7 +17,7 @@ use crate::Error;
 /// re-encryption rewrites a value whose flag disagrees with the current policy.
 ///
 /// Padded values use ISO/IEC 7816-4 padding: a `0x80` marker followed by zero
-/// bytes. See the [custom-field example] and [ownership reference].
+/// bytes. See the [custom-seal example] and [ownership reference].
 ///
 /// Invalid parameters in a constant are rejected at compile time:
 ///
@@ -26,8 +26,8 @@ use crate::Error;
 /// ```
 ///
 #[doc = concat!(
-    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
+    "[custom-seal example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/custom_seal/README.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#ownership-and-erasure",
 )]
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub struct Padding(Policy);

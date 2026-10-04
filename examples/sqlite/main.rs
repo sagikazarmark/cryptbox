@@ -56,15 +56,10 @@ fn load_keys(path: &Path) -> Result<EncryptionKeyring, Box<dyn Error>> {
         .strip_suffix(b"\r\n")
         .or_else(|| input.strip_suffix(b"\n"))
         .unwrap_or(&input);
-    if hex.len() != 64 {
-        return Err(invalid.into());
-    }
-    let mut root = Zeroizing::new([0_u8; 32]);
-    hex::decode_to_slice(hex, root.as_mut()).map_err(|_| invalid)?;
-    Ok(EncryptionKeyring::new(
-        EncryptionKey::new(ENCRYPTION_KEY_ID, *root),
-        [],
-    )?)
+    let hex = std::str::from_utf8(hex).map_err(|_| invalid)?;
+    // Decodes straight into zeroizing key storage, and fails unless exactly 32 bytes.
+    let key = EncryptionKey::from_hex(ENCRYPTION_KEY_ID, hex).map_err(|_| invalid)?;
+    Ok(EncryptionKeyring::new(key, [])?)
 }
 
 async fn run(

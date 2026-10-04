@@ -18,12 +18,17 @@ No features are enabled by default, and all features are additive:
   `Plain<F>` with the `keys` module. `migrate::PostgresSweepStore` and
   `migrate::SqliteSweepStore` additionally need `migrate`.
 
-`Sealed`, `BlindIndex`, and a record's stored form are ordinary columns.
-`Plain<F>` is the automatic column: it seals and opens a standalone value with
-the keys installed by `keys::install`, and writes no blind indexes. Seal every
-other value explicitly, with the keys you pass in. The features
-disable `SQLx` defaults and choose no runtime or TLS: add `SQLx` (and `serde`
-with `derive`, for derives) directly. docs.rs enables all features.
+`Sealed` and `BlindIndex` are ordinary columns, and a record's stored form is an
+ordinary row. `Plain<F>` is the automatic column: it seals and opens a
+standalone value with the keys installed by `keys::install`, and writes no blind
+indexes. Seal every other value explicitly, with the keys you pass in.
+
+The `sqlx-*` features turn off `SQLx`'s default features and choose no runtime
+or TLS. Depend on `sqlx` directly as well, with your runtime and TLS features,
+its `derive` feature for `stored(derive(sqlx::FromRow))`, and its `uuid` feature
+for a `Uuid` record ID or column. Likewise, deriving `Serialize` or
+`Deserialize` on a stored form needs your own `serde` dependency with its
+`derive` feature. docs.rs enables all features.
 
 Deserializing `Sealed` or `BlindIndex` checks structure only: a sealed value is
 authenticated when opened, and index candidates must be compared against

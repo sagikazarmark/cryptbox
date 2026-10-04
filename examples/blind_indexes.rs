@@ -40,10 +40,10 @@ fn main() -> Result<(), cryptbox::Error> {
     let old_index_keys = BlindIndexKeyring::new(old_index_key.clone(), [])?;
 
     let value = "Mark@Example.com".to_owned();
-    let prepared = Sealed::<UserEmail>::prepare(&value, &encryption_keys)?
-        .with_index::<EmailLookup>(&old_index_keys)?;
-    let stored = prepared.sealed().clone();
-    let stored_index = prepared.index::<EmailLookup>()?.as_bytes().to_vec();
+    let sealed = Sealed::<UserEmail>::seal(&value, &encryption_keys)?;
+    let index = BlindIndex::<EmailLookup>::derive(&value, &old_index_keys)?;
+    let stored = sealed.clone();
+    let stored_index = index.as_bytes().to_vec();
 
     let index_keys = BlindIndexKeyring::new(
         BlindIndexKey::new(CURRENT_INDEX_KEY_ID, [0x53; 32]),
@@ -63,5 +63,6 @@ fn main() -> Result<(), cryptbox::Error> {
         query, &candidate
     )?);
 
+    println!("Blind-index lookup across index generations succeeded.");
     Ok(())
 }

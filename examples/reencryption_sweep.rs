@@ -129,15 +129,16 @@ async fn run() -> Result<(), Box<dyn Error>> {
 
     // Fresh verification must see a late stale write even at a negative cursor.
     let late = "late@example.com".to_owned();
-    let prepared = Sealed::<UserEmail>::prepare(&late, &old_keys)?
-        .with_index::<EmailLookup>(&old_index_keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&late, &old_keys)?;
+    let index = BlindIndex::<EmailLookup>::derive(&late, &old_index_keys)?;
     sqlx::query("UPDATE users SET email_ciphertext = ?, email_bidx = ? WHERE id = -1")
-        .bind(prepared.sealed())
-        .bind(prepared.index::<EmailLookup>()?)
+        .bind(&sealed)
+        .bind(&index)
         .execute(&mut connection)
         .await?;
     assert!(!verify_sweep(&mut connection, &rotated_keys, &rotated_index_keys).await?);
 
+    println!("Maintenance sweep and verification succeeded.");
     Ok(())
 }
 
@@ -149,13 +150,13 @@ async fn insert_email(
     index_keys: &BlindIndexKeyring,
 ) -> Result<(), Box<dyn Error>> {
     let value = email.to_owned();
-    let prepared =
-        Sealed::<UserEmail>::prepare(&value, keys)?.with_index::<EmailLookup>(index_keys)?;
+    let sealed = Sealed::<UserEmail>::seal(&value, keys)?;
+    let index = BlindIndex::<EmailLookup>::derive(&value, index_keys)?;
 
     sqlx::query("INSERT INTO users (id, email_ciphertext, email_bidx) VALUES (?, ?, ?)")
         .bind(id)
-        .bind(prepared.sealed())
-        .bind(prepared.index::<EmailLookup>()?)
+        .bind(&sealed)
+        .bind(&index)
         .execute(connection)
         .await?;
 

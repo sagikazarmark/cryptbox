@@ -14,8 +14,9 @@ status: accepted
 
 Ciphertext format 2 records whether the AEAD plaintext is padded, as a flag in
 the envelope header. The header is already authenticated (the AAD covers
-`envelope[0..46]` today), so the flag cannot be altered. Readers remove padding
-only when the flag is set, which makes padding a writer-side policy: a field can
+`envelope[0..55]`, the header and nonce), so the flag cannot be altered.
+Readers remove padding only when the flag is set, which makes padding a
+writer-side policy: a field can
 enable or disable padding at any time, old values stay readable, and a
 re-encryption sweep upgrades them.
 

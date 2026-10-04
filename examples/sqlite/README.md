@@ -45,8 +45,10 @@ Remove `examples/sqlite/demo` to start over.
 
 `write` and `read` in [main.rs](main.rs) are the storage boundary: SQLx decoding
 of `Sealed<UserEmail>` checks structure, and `open(&keys)` authenticates. Replace
-`load_keys` with loading a stable ID/root pair from your secret store; `hex` and
-`zeroize` are choices of this sample's file loader. A standalone value is bound
-to its seal, not its row; see [records](../../docs/guide.md#records-and-tenants)
-and the [persistent schema](../../docs/guide.md#persistent-schema). For equality
-lookup, continue with [searchable storage](../searchable/README.md).
+`load_keys` with loading a stable ID/root pair from your secret store, as in
+[loading keys](../../docs/guide.md#loading-keys); `EncryptionKey::from_hex`
+decodes the root, and the zeroizing file buffer is this sample's choice. A
+standalone value is bound to its seal, not its row; see
+[records](../../docs/guide.md#records-and-tenants) and the
+[persistent schema](../../docs/guide.md#persistent-schema). For equality lookup,
+continue with [searchable storage](../searchable/README.md).

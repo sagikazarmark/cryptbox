@@ -2,8 +2,7 @@
 //!
 //! Every operation takes its keys explicitly and never reads the global:
 //! [`Sealed::seal`](crate::Sealed::seal), [`Sealed::open`](crate::Sealed::open),
-//! [`Sealed::prepare`](crate::Sealed::prepare),
-//! [`Prepared::with_index`](crate::Prepared::with_index), and
+//! [`BlindIndex::derive`](crate::BlindIndex::derive), and
 //! [`BlindIndex::probes`](crate::BlindIndex::probes). Only the automatic `SQLx`
 //! column, [`Plain<F>`](crate::Plain), reads the installed keys, because
 //! `SQLx` encoding and decoding receive no context; [`installed()`] returns
@@ -48,7 +47,7 @@
 //! ```
 //!
 #![doc = concat!(
-    "[testing guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#testing",
+    "[testing guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#testing",
 )]
 
 use std::sync::OnceLock;
@@ -62,6 +61,7 @@ static INSTALLED: OnceLock<Keys> = OnceLock::new();
 /// Installed keys are never replaced.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 #[error("keys are already installed")]
+#[non_exhaustive]
 pub struct AlreadyInstalled;
 
 /// Installs the process-wide keys for the remainder of the process.

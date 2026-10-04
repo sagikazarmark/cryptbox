@@ -2,9 +2,9 @@
 
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
-use syn::{Data, DeriveInput, Ident, Path, Type, spanned::Spanned};
+use syn::{Data, DeriveInput, Ident, spanned::Spanned};
 
-use crate::attr::{Attrs, Errors, Key, required};
+use crate::attr::{Attrs, Errors, Key, krate, required};
 
 const KEYS: &[Key] = &[
     Key::Id,
@@ -13,15 +13,13 @@ const KEYS: &[Key] = &[
     Key::Query,
     Key::Normalize,
     Key::Normalizer,
-    Key::Project,
-    Key::Crate,
 ];
 
 pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
     reject_shapes(input, &mut errors);
     let mut attrs = Attrs::parse(&input.attrs, "cryptbox", KEYS, &mut errors);
-    let krate = attrs.krate();
+    let krate = krate();
     let name = &input.ident;
 
     let id = required(
@@ -87,7 +85,9 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
 
     // Span the calls on the user's paths so type errors point at the attribute.
     let normalize_query = quote_spanned!(normalize.span()=> #normalize(#query_arg));
-    let normalize_value = normalize_value(&normalize, attrs.project.as_ref(), &seal, &value_arg);
+    // Point a value that does not fit the normalizer at the `seal` key.
+    let value = Ident::new("value", Span::mixed_site().located_at(seal.span()));
+    let normalize_value = quote_spanned!(normalize.span()=> #normalize(#value));
 
     let normalized = quote! {
         ::core::result::Result<
@@ -136,22 +136,5 @@ fn reject_shapes(input: &DeriveInput, errors: &mut Errors) {
             input.ident.span(),
             "`BlindIndexSpec` is derived for a struct, such as a unit struct marker",
         ));
-    }
-}
-
-// Calls the normalizer on the sealed value, or on its projection.
-fn normalize_value(
-    normalize: &Path,
-    project: Option<&Path>,
-    seal: &Type,
-    value_arg: &Ident,
-) -> TokenStream {
-    if let Some(project) = project {
-        let projected = quote_spanned!(project.span()=> &#project(#value_arg));
-        quote_spanned!(normalize.span()=> #normalize(#projected))
-    } else {
-        // Point a value that does not fit the normalizer at the `seal` key.
-        let value = Ident::new("value", Span::mixed_site().located_at(seal.span()));
-        quote_spanned!(normalize.span()=> #normalize(#value))
     }
 }

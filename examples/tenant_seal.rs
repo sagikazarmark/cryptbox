@@ -72,7 +72,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tenant_field_round_trip() -> Result<(), Box<dyn std::error::Error>> {
+    fn tenant_seal_round_trip() -> Result<(), Box<dyn std::error::Error>> {
         main()
     }
 

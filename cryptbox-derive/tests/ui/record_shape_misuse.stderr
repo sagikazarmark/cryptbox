@@ -22,8 +22,8 @@ error: `id` is bound into every sealed field, so it can't be optional
 37 |     id: Option<i64>,
    |         ^^^^^^
 
-error: the stored form already has a field `id`: name the index column with `column = …`
-  --> tests/ui/record_shape_misuse.rs:53:18
+error: the blind index of `email` is stored in the `email_index` column, which is already a field: rename that field
+  --> tests/ui/record_shape_misuse.rs:54:5
    |
-53 |         column = id,
-   |                  ^^
+54 |     email: String,
+   |     ^^^^^

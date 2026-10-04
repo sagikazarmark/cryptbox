@@ -7,7 +7,7 @@ use sqlx::{
     sqlite::{SqliteArgumentValue, SqliteTypeInfo, SqliteValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, ContextKind, Plain, Seal, Sealed};
+use crate::{BlindIndex, BlindIndexSpec, ContextKind, Plain, Seal, Sealed};
 
 fn blob_type_info() -> SqliteTypeInfo {
     <Vec<u8> as Type<Sqlite>>::type_info()
@@ -38,16 +38,6 @@ impl<F: Seal, C: ContextKind> Type<Sqlite> for Sealed<F, C> {
 }
 
 impl<Spec> Type<Sqlite> for BlindIndex<Spec> {
-    fn type_info() -> SqliteTypeInfo {
-        blob_type_info()
-    }
-
-    fn compatible(ty: &SqliteTypeInfo) -> bool {
-        blob_compatible(ty)
-    }
-}
-
-impl<Spec> Type<Sqlite> for BlindIndexRef<'_, Spec> {
     fn type_info() -> SqliteTypeInfo {
         blob_type_info()
     }
@@ -107,23 +97,6 @@ impl<'q, Spec> Encode<'q, Sqlite> for BlindIndex<Spec> {
     }
 }
 
-impl<'q, Spec> Encode<'q, Sqlite> for BlindIndexRef<'_, Spec> {
-    fn encode_by_ref(
-        &self,
-        buffer: &mut Vec<SqliteArgumentValue<'q>>,
-    ) -> Result<IsNull, BoxDynError> {
-        buffer.push(SqliteArgumentValue::Blob(Cow::Owned(
-            self.as_bytes().to_vec(),
-        )));
-
-        Ok(IsNull::No)
-    }
-
-    fn size_hint(&self) -> usize {
-        self.as_bytes().len()
-    }
-}
-
 impl<'row, F: Seal> Decode<'row, Sqlite> for Plain<F> {
     fn decode(value: SqliteValueRef<'row>) -> Result<Self, BoxDynError> {
         let bytes = <Vec<u8> as Decode<'row, Sqlite>>::decode(value)?;
@@ -163,8 +136,7 @@ impl<F: Seal> Type<Sqlite> for crate::migrate::MaybeSealed<F> {
 
 // Migration-window reads only. Decoding classifies bytes without CryptBox or
 // legacy keys; recovery and decryption stay explicit calls. There is no
-// `Encode` counterpart: writes always encrypt through `Plain`, `Sealed`, or
-// `Prepared`.
+// `Encode` counterpart: writes always encrypt through `Plain` or `Sealed`.
 #[cfg(feature = "migrate")]
 impl<'row, F> Decode<'row, Sqlite> for crate::migrate::MaybeSealed<F>
 where

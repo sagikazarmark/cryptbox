@@ -2,8 +2,8 @@
 
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, IndexId, KeyError, Padding, Raw, Seal, SealId, Sealed, index_id,
-    index_key_id, key_id,
+    EncryptionKeyring, Error, IndexId, Padding, Raw, Seal, SealId, Sealed, index_id, index_key_id,
+    key_id,
 };
 use zeroize::Zeroizing;
 
@@ -103,18 +103,18 @@ fn encoded_keys_must_decode_to_exactly_32_bytes() {
 
     assert!(matches!(
         EncryptionKey::from_hex(encryption_id, "00"),
-        Err(KeyError::InvalidKeyEncoding)
+        Err(Error::InvalidKeyEncoding)
     ));
     assert!(matches!(
         EncryptionKey::from_base64(encryption_id, "AA=="),
-        Err(KeyError::InvalidKeyEncoding)
+        Err(Error::InvalidKeyEncoding)
     ));
     assert!(matches!(
         BlindIndexKey::from_hex(index_id, "not hexadecimal"),
-        Err(KeyError::InvalidKeyEncoding)
+        Err(Error::InvalidKeyEncoding)
     ));
     assert!(matches!(
         BlindIndexKey::from_base64(index_id, "not base64"),
-        Err(KeyError::InvalidKeyEncoding)
+        Err(Error::InvalidKeyEncoding)
     ));
 }

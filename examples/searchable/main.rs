@@ -238,7 +238,7 @@ async fn maintenance(
     use cryptbox::migrate::PostgresSweepStore as Store;
     #[cfg(feature = "sqlite")]
     use cryptbox::migrate::SqliteSweepStore as Store;
-    use cryptbox::migrate::{RowPlanner, Sweep, SweepReport, SweepStore, SweepTable};
+    use cryptbox::migrate::{RowPlanner, RowState, Sweep, SweepStore, SweepTable};
 
     // Run identity belongs to the operator; this store persists only (name, cursor).
     let table = SweepTable::new("users", "id", "email")
@@ -249,7 +249,6 @@ async fn maintenance(
     let legacy = migration::PreviousEncryption::load()?;
     #[cfg(feature = "legacy-migration")]
     let planner = planner.with_legacy(&legacy);
-    let sweep = Sweep::new(planner).with_batch_size(2);
     let mut store = Store::new(connection, &table);
     store.ensure_progress_table().await?;
     match command {
@@ -279,33 +278,39 @@ async fn maintenance(
             println!("Conflicts: 1.");
         }
         "sweep-batch" | "sweep-uncheckpointed" => {
-            let outcome = if command == "sweep-uncheckpointed" {
-                // Rehearse process loss after writes, before durable progress is saved.
-                let after = store.load_checkpoint().await?;
-                sweep.process_batch(&mut store, after.as_ref()).await?
-            } else {
-                sweep.run_batch(&mut store).await?
-            };
+            // One step of `Sweep::run`, so the fixture can rehearse process loss
+            // between batches: uncheckpointed writes land, progress is not saved.
+            let after = store.load_checkpoint().await?;
+            let rows = store.load_batch(after.as_ref(), 2).await?;
+            let (mut current, mut stale, mut conflicts) = (0, 0, 0);
+            for row in &rows {
+                let indexes: Vec<&[u8]> = row.indexes.iter().map(Vec::as_slice).collect();
+                let plan = planner.plan_row(&(), &row.ciphertext, &indexes)?;
+                let written = match plan.write() {
+                    Some(replacement) => store.update(row, replacement).await?,
+                    None => true,
+                };
+                match plan.state() {
+                    _ if !written => conflicts += 1,
+                    RowState::Current => current += 1,
+                    RowState::Stale => stale += 1,
+                    _ => {}
+                }
+            }
+            let checkpoint = rows.last().map(|row| row.cursor);
+            if let (Some(cursor), "sweep-batch") = (&checkpoint, command) {
+                store.save_checkpoint(cursor).await?;
+            }
             println!(
-                "Checkpoint: {:?}; current: {}; stale: {}; conflicts: {}.",
-                outcome.checkpoint,
-                outcome.report.current,
-                outcome.report.stale,
-                outcome.report.conflicts
+                "Checkpoint: {checkpoint:?}; current: {current}; stale: {stale}; conflicts: {conflicts}."
             );
         }
         "sweep-verify" => {
-            // Separate, fresh cursor: never resume verification from rewrite progress.
-            let mut cursor = None;
-            let mut report = SweepReport::default();
-            loop {
-                let batch = sweep.verify_batch(&mut store, cursor.as_ref()).await?;
-                report.merge(batch.report);
-                cursor = batch.checkpoint;
-                if cursor.is_none() {
-                    break;
-                }
-            }
+            // A fresh full pass: never resume verification from rewrite progress.
+            let report = Sweep::new(planner)
+                .with_batch_size(2)
+                .verify(&mut store)
+                .await?;
             println!(
                 "Complete: {}; current: {}; stale: {}; legacy: {}; malformed: {}.",
                 report.is_terminal(),
@@ -326,15 +331,15 @@ fn rotation_canary(
     indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     let value = CANARY.to_owned();
-    let prepared =
-        Sealed::<UserEmail>::prepare(&value, encryption)?.with_index::<EmailLookup>(indexes)?;
+    let sealed = Sealed::<UserEmail>::seal(&value, encryption)?;
+    let index = BlindIndex::<EmailLookup>::derive(&value, indexes)?;
     // Out-of-band synthetic data: never put a future generation in the live users table.
     std::fs::write(
         path,
         format!(
             "{}\n{}\n",
-            hex::encode(prepared.sealed().as_bytes()),
-            hex::encode(prepared.index::<EmailLookup>()?.as_bytes())
+            hex::encode(sealed.as_bytes()),
+            hex::encode(index.as_bytes())
         ),
     )?;
     println!("Canary saved.");
@@ -374,21 +379,18 @@ async fn put(
     if let Some(email) = &email {
         validate_email(email)?;
     }
-    let prepared = email
+    let sealed = email
         .as_ref()
-        .map(|email| {
-            Sealed::<UserEmail>::prepare(email, encryption)?.with_index::<EmailLookup>(indexes)
-        })
+        .map(|email| Sealed::<UserEmail>::seal(email, encryption))
         .transpose()?;
-    let sealed = prepared.as_ref().map(|p| p.sealed());
-    let index = prepared
+    let index = email
         .as_ref()
-        .map(|p| p.index::<EmailLookup>())
+        .map(|email| BlindIndex::<EmailLookup>::derive(email, indexes))
         .transpose()?;
     // One statement: insert OR update both representations from the same source.
     sqlx::query("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)
         ON CONFLICT (id) DO UPDATE SET email = excluded.email, email_lookup = excluded.email_lookup")
-        .bind(id).bind(sealed).bind(index.map(|i| i.as_bytes()))
+        .bind(id).bind(sealed).bind(index.as_ref().map(BlindIndex::as_bytes))
         .execute(connection).await?;
     println!("Stored {id}.");
     Ok(())
@@ -446,10 +448,10 @@ async fn macro_put(
     indexes: &BlindIndexKeyring,
 ) -> Result<()> {
     validate_email(&email)?;
-    let prepared =
-        Sealed::<UserEmail>::prepare(&email, encryption)?.with_index::<EmailLookup>(indexes)?;
-    let sealed = prepared.sealed();
-    let index = prepared.index::<EmailLookup>()?.as_bytes();
+    let sealed = Sealed::<UserEmail>::seal(&email, encryption)?;
+    let index = BlindIndex::<EmailLookup>::derive(&email, indexes)?;
+    let sealed = &sealed;
+    let index = index.as_bytes();
     // PostgreSQL's macro sees BYTEA, not the custom wrapper: override input inference.
     sqlx::query!("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)
         ON CONFLICT (id) DO UPDATE SET email = excluded.email, email_lookup = excluded.email_lookup",

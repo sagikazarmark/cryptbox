@@ -1,7 +1,7 @@
 use std::{fmt, marker::PhantomData};
 
 use crate::{
-    Codec, Context, ContextKind, EncryptionKeys, Error, KeyId, Prepared, Seal, bound,
+    Codec, Context, ContextKind, EncryptionKeys, Error, KeyId, Seal, bound,
     envelope::validated_key_id,
     seal_context::{self, SealContext},
 };
@@ -148,8 +148,8 @@ impl<F: Seal, C: ContextKind> Sealed<F, C> {
     /// See the complete [key-rotation example] and [maintenance sweep example].
     ///
     #[doc = concat!(
-        "[key-rotation example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/key_rotation.rs\n",
-        "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/reencryption_sweep.rs",
+        "[key-rotation example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/key_rotation.rs\n",
+        "[maintenance sweep example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/reencryption_sweep.rs",
     )]
     ///
     /// # Errors
@@ -199,22 +199,6 @@ impl<F: Seal> Sealed<F> {
     /// keys, unavailable keys, invalid padding, or codec failure.
     pub fn open(&self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<F::Value, Error> {
         self.open_under(&SealContext::standalone::<F>(), keys)
-    }
-
-    /// Seals `value` into a prepared storage representation that blind indexes
-    /// can be added to.
-    ///
-    /// Indexes are then derived from the same borrowed value with
-    /// [`Prepared::with_index`].
-    ///
-    /// # Errors
-    ///
-    /// Returns any error of [`Self::seal`].
-    pub fn prepare<'a>(
-        value: &'a F::Value,
-        keys: &(impl EncryptionKeys + ?Sized),
-    ) -> Result<Prepared<'a, F>, Error> {
-        Ok(Prepared::new(value, Self::seal(value, keys)?))
     }
 
     /// Opens and reseals this value as `F` currently writes it, with the same
@@ -411,7 +395,7 @@ impl<F: Seal, C: ContextKind> fmt::Debug for Sealed<F, C> {
 ///
 #[doc = concat!(
     "See the [ownership reference].\n\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#ownership-and-erasure",
 )]
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 pub struct Plain<F: Seal> {

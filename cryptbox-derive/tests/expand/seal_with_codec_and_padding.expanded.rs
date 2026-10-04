@@ -21,7 +21,7 @@ const _: () = {
     }
 };
 #[cryptbox(id = "00000000-0000-4000-8000-000000000001", value = Address)]
-#[cryptbox(codec = AddressCodec, padding = length(256usize), crate = "::cryptbox")]
+#[cryptbox(codec = AddressCodec, padding = length(256usize))]
 pub struct FixedAddress;
 const _: () = {
     #[automatically_derived]

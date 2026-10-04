@@ -5,6 +5,8 @@ A separately keyed, truncated searchable projection of a normalized sealed value
 declared over exactly one seal or one sealed field of a record. Its seal ID
 domain-separates it; the record does not, since a query cannot know it. It
 deliberately reveals equality and frequency among values under the same keys.
+The application derives it from the same value it seals and writes both in one
+statement; a record's `seal` derives both for its fields.
 
 **Candidate**:
 A row selected by a probe that still requires authenticated decryption and
@@ -94,11 +96,10 @@ for blind-index derivation and candidate comparison. It is persistent schema;
 the normalizer name (`BlindIndexSpec::NORMALIZER`) identifies its rules.
 
 **Part**:
-A typed value a context adds after the seal ID: its slot, a UUID the library
-allocates, the kind of its value, and the length-prefixed value. The record ID,
-in the nil slot, is the only part. Applications never declare parts or slots;
-a `Context` does.
-<!-- Agent guidance: this is not the retired application-declared part of ADR-0005 to ADR-0010 (`#[part]`, `PartId`, `part_id!`), which stays retired; never suggest that applications add parts. Say “slot” only for a part's UUID. -->
+A typed value a context adds after the seal ID: its kind code, which names
+the part and how its value is encoded, and the length-prefixed value. The
+record ID is the only part. Applications never declare parts; a `Context` does.
+<!-- Agent guidance: this is not the retired application-declared part of ADR-0005 to ADR-0010 (`#[part]`, `PartId`, `part_id!`), which stays retired; never suggest that applications add parts. Parts have no slot or part ID. -->
 
 **Plain value**:
 A plaintext value of a seal held by the automatic SQLx column (`Plain<F>`),
@@ -106,10 +107,6 @@ which seals it on encode and opens it on decode with the installed keys. A
 column decoder does not see the row, so it serves only standalone values and
 writes no blind indexes.
 <!-- Agent guidance: `Plain` is the only plaintext-typed column; a record's fields and values of indexed seals are sealed explicitly. `Encrypted<F>` is the retired name of the plaintext carrier; do not reintroduce it. Column keys (`Plain<F, K>`, `ColumnKeys`, `GlobalKeys`) and “key context” are retired: the column reads the installed keys. -->
-
-**Prepared storage**:
-A sealed value and optional blind indexes derived from the same source value, ready
-for an application-owned atomic write. Preparation is not persistence.
 
 **Probe**:
 A blind-index lookup value for one readable index-key generation. A lookup uses
@@ -146,11 +143,12 @@ compare it with a committed snapshot in CI.
 
 **Seal**:
 A type that declares how its values are sealed (`Seal`): its seal ID, value
-type, codec, padding, and blind indexes. A value sealed with one seal does not
-open as another. A seal is either a marker over a separate value type, so one
-value type can back several seals (a home and a billing address); or its own
-value (a self-valued seal), such as `struct UserEmail(String)`. A seal knows
-nothing of the context its values are sealed in.
+type, codec, and padding. It declares no blind indexes: those are declared over
+it (`BlindIndexSpec`) or on a record's sealed field. A value sealed with one
+seal does not open as another. A seal is either a marker over a separate value
+type, so one value type can back several seals (a home and a billing address),
+or its own value (a self-valued seal), such as `struct UserEmail(String)`. A seal
+knows nothing of the context its values are sealed in.
 <!-- Agent guidance: “field” is the retired name for a seal (ADR-0007) and now means only a member of a struct or record; “profile” is older still. Do not reintroduce either. Avoid “column”, “key”, or “cipher suite” as synonyms: a seal is independent of database names. -->
 
 **Seal ID**:

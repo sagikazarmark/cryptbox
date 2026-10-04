@@ -5,11 +5,11 @@
 a refreshed keyring snapshot.
 
 ```sh
-cargo run --locked --example custom_field
-cargo test --locked --example custom_field
+cargo run --locked --example custom_seal
+cargo test --locked --example custom_seal
 ```
 
-Expect `Custom field round trip and normalized lookup succeeded.` Keys are
+Expect `Custom seal round trip and normalized lookup succeeded.` Keys are
 generated per run.
 
 ## What it shows

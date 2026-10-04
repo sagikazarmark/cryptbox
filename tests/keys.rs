@@ -3,8 +3,8 @@
 use cryptbox::envelope::inspect_blind_index;
 use cryptbox::{
     BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyError, KeyId, Keys, Padding, Raw, Seal,
-    SealId, Sealed, index_id, index_key_id, key_id, seal_id, testing::assert_sealed_under,
+    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Keys, Padding, Raw, Seal, SealId, Sealed,
+    index_id, index_key_id, key_id, seal_id, testing::assert_sealed_under,
 };
 use zeroize::Zeroizing;
 
@@ -90,17 +90,17 @@ fn key_ids_are_unique_within_a_keyring() {
     let other = EncryptionKey::new(GENERAL_KEY_ID, [2; 32]);
     assert_eq!(
         EncryptionKeyring::new(key.clone(), [other]).unwrap_err(),
-        KeyError::DuplicateEncryptionKey(GENERAL_KEY_ID)
+        Error::DuplicateEncryptionKey(GENERAL_KEY_ID)
     );
     assert_eq!(
         EncryptionKeyring::new(key.clone(), [key]).unwrap_err(),
-        KeyError::DuplicateEncryptionKey(GENERAL_KEY_ID)
+        Error::DuplicateEncryptionKey(GENERAL_KEY_ID)
     );
 
     let index_key = BlindIndexKey::new(GENERAL_INDEX_KEY_ID, [1; 32]);
     assert_eq!(
         BlindIndexKeyring::new(index_key.clone(), [index_key]).unwrap_err(),
-        KeyError::DuplicateBlindIndexKey(GENERAL_INDEX_KEY_ID)
+        Error::DuplicateBlindIndexKey(GENERAL_INDEX_KEY_ID)
     );
 }
 
@@ -184,10 +184,7 @@ fn keys_without_a_blind_index_keyring_reject_index_operations() {
         Error::BlindIndexKeysNotConfigured
     );
     assert_eq!(
-        Sealed::<Email>::prepare(&b"ada".to_vec(), &keys)
-            .unwrap()
-            .with_index::<EmailLookup>(&keys)
-            .unwrap_err(),
+        BlindIndex::<EmailLookup>::derive(&b"ada".to_vec(), &keys).unwrap_err(),
         Error::BlindIndexKeysNotConfigured
     );
 }
@@ -198,14 +195,13 @@ fn keys_serve_both_roles() {
         .with_blind_indexes(index_keyring(GENERAL_INDEX_KEY_ID, 3));
     let value = b"ada@example.com".to_vec();
 
-    let prepared = Sealed::<Email>::prepare(&value, &keys)
-        .unwrap()
-        .with_index::<EmailLookup>(&keys)
-        .unwrap();
+    let sealed = Sealed::<Email>::seal(&value, &keys).unwrap();
 
-    assert_eq!(prepared.sealed().key_id(), GENERAL_KEY_ID);
+    let index = BlindIndex::<EmailLookup>::derive(&value, &keys).unwrap();
+
+    assert_eq!(sealed.key_id(), GENERAL_KEY_ID);
     assert_eq!(
-        inspect_blind_index(prepared.index::<EmailLookup>().unwrap().as_bytes())
+        inspect_blind_index(index.as_bytes())
             .unwrap()
             .index_key_id(),
         GENERAL_INDEX_KEY_ID

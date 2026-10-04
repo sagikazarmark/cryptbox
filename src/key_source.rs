@@ -12,14 +12,15 @@ use crate::{BlindIndexKeyring, EncryptionKeyring, Error, Keys};
 /// see [choosing keyrings]. This trait is sealed.
 ///
 #[doc = concat!(
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#choosing-keyrings",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#choosing-keyrings",
 )]
 #[diagnostic::on_unimplemented(
     message = "`{Self}` are not encryption keys",
     label = "pass an `EncryptionKeyring` or `Keys`"
 )]
 pub trait EncryptionKeys: sealed::Sealed + Send + Sync {
-    /// Returns the encryption keyring.
+    /// Returns the encryption keyring. Not public API: pass the keys on.
+    #[doc(hidden)]
     fn encryption_keyring(&self) -> &EncryptionKeyring;
 }
 
@@ -30,11 +31,12 @@ pub trait EncryptionKeys: sealed::Sealed + Send + Sync {
     label = "pass a `BlindIndexKeyring` or `Keys`"
 )]
 pub trait BlindIndexKeys: sealed::Sealed + Send + Sync {
-    /// Returns the blind-index keyring.
+    /// Returns the blind-index keyring. Not public API: pass the keys on.
     ///
     /// # Errors
     ///
     /// Returns [`Error::BlindIndexKeysNotConfigured`] for [`Keys`] without one.
+    #[doc(hidden)]
     fn blind_index_keyring(&self) -> Result<&BlindIndexKeyring, Error>;
 }
 
@@ -46,12 +48,14 @@ pub trait BlindIndexKeys: sealed::Sealed + Send + Sync {
     label = "pass an `EncryptionKeyring`, or `Keys` when the record has blind indexes"
 )]
 pub trait RecordKeys: EncryptionKeys {
-    /// Returns the blind-index keyring.
+    /// Returns the blind-index keyring. Not public API: `#[derive(Record)]`
+    /// calls it.
     ///
     /// # Errors
     ///
     /// Returns [`Error::BlindIndexKeysNotConfigured`] for an
     /// [`EncryptionKeyring`], or [`Keys`] without one.
+    #[doc(hidden)]
     fn record_blind_index_keyring(&self) -> Result<&BlindIndexKeyring, Error>;
 }
 

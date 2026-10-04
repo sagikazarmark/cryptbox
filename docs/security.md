@@ -40,6 +40,7 @@ target are required; see [platform constraints](features.md#platforms-and-tested
 | Copy ciphertext between rows of the same seal | Rejected for a record's fields. Standalone values can be substituted among rows under the same keys. |
 | Return a whole row in place of another | Every value opens, since each is bound to its own row. When you asked for a record by ID, compare the opened ID with it. |
 | Restore an older authentic value | No replay, rollback, or freshness protection. |
+| Set an optional sealed column to `NULL` | Not detected: presence is not authenticated. An `Option<Sealed<…>>` set to `NULL` reads as `None`, as if no value had been stored. |
 | Observe sizes, indexes, and queries | Unpadded length reveals encoded length; padding reveals a bucket. Blind indexes leak equality/frequency across every value of their seal under the same index keys. Access patterns remain visible. |
 | Alter indexes or omit query results | Candidate comparison rejects false matches but cannot detect omitted ones. |
 | Compromise the live application | Plaintext and keys can be exposed. |

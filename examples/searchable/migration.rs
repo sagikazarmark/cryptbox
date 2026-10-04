@@ -135,23 +135,19 @@ async fn seed(
         ),
         [],
     )?;
-    // Avoid CLI output from put: the prepared pair still uses one atomic statement.
-    for (id, encryption, index) in [
+    // Avoid CLI output from put: the sealed value and index still share one statement.
+    for (id, encryption, indexes) in [
         (30_i64, &old_keys, &old_indexes),
         (40, keys, indexes),
         (50, keys, indexes),
     ] {
         let value = "mixed@example.com".to_owned();
-        let prepared =
-            Sealed::<UserEmail>::prepare(&value, encryption)?.with_index::<EmailLookup>(index)?;
-        let token = if id == 50 {
-            &[]
-        } else {
-            prepared.index::<EmailLookup>()?.as_bytes()
-        };
+        let sealed = Sealed::<UserEmail>::seal(&value, encryption)?;
+        let index = BlindIndex::<EmailLookup>::derive(&value, indexes)?;
+        let token = if id == 50 { &[] } else { index.as_bytes() };
         sqlx::query("INSERT INTO users (id, email, email_lookup) VALUES ($1, $2, $3)")
             .bind(id)
-            .bind(prepared.sealed())
+            .bind(&sealed)
             .bind(token)
             .execute(&mut *db)
             .await?;
@@ -241,10 +237,10 @@ async fn repair(
         keys,
         &PreviousEncryption::load()?,
     )?;
-    let prepared =
-        Sealed::<UserEmail>::prepare(&value, keys)?.with_index::<EmailLookup>(indexes)?;
+    let sealed = Sealed::<UserEmail>::seal(&value, keys)?;
+    let index = BlindIndex::<EmailLookup>::derive(&value, indexes)?;
     let changed = sqlx::query("UPDATE users SET email = $1, email_lookup = $2 WHERE id = $3 AND email = $4 AND email_lookup = $5")
-        .bind(prepared.sealed()).bind(prepared.index::<EmailLookup>()?.as_bytes())
+        .bind(&sealed).bind(index.as_bytes())
         .bind(id).bind(bytes.as_slice()).bind(&old_index).execute(&mut *tx).await?.rows_affected();
     if changed != 1 {
         return Err("guarded repair conflict: reload and investigate".into());
@@ -349,13 +345,13 @@ pub(super) async fn command(
         ["migration-restore"] => {
             // Fixture-only trusted source. In production require investigated, approved data.
             let value = "mixed@example.com".to_owned();
-            let prepared =
-                Sealed::<UserEmail>::prepare(&value, keys)?.with_index::<EmailLookup>(indexes)?;
+            let sealed = Sealed::<UserEmail>::seal(&value, keys)?;
+            let index = BlindIndex::<EmailLookup>::derive(&value, indexes)?;
             let mut tx = db.begin().await?;
             // INSERT, not upsert: a concurrently recreated row must not be overwritten.
             sqlx::query("INSERT INTO users (id, email, email_lookup) VALUES (20, $1, $2)")
-                .bind(prepared.sealed())
-                .bind(prepared.index::<EmailLookup>()?.as_bytes())
+                .bind(&sealed)
+                .bind(index.as_bytes())
                 .execute(&mut *tx)
                 .await?;
             let resolved = sqlx::query(

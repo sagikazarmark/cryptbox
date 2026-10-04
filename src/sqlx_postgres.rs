@@ -5,7 +5,7 @@ use sqlx::{
     postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef},
 };
 
-use crate::{BlindIndex, BlindIndexRef, BlindIndexSpec, ContextKind, Plain, Seal, Sealed};
+use crate::{BlindIndex, BlindIndexSpec, ContextKind, Plain, Seal, Sealed};
 
 fn bytea_type_info() -> PgTypeInfo {
     <Vec<u8> as Type<Postgres>>::type_info()
@@ -121,8 +121,7 @@ impl<F: Seal> Type<Postgres> for crate::migrate::MaybeSealed<F> {
 
 // Migration-window reads only. Decoding classifies bytes without CryptBox or
 // legacy keys; recovery and decryption stay explicit calls. There is no
-// `Encode` counterpart: writes always encrypt through `Plain`, `Sealed`, or
-// `Prepared`.
+// `Encode` counterpart: writes always encrypt through `Plain` or `Sealed`.
 #[cfg(feature = "migrate")]
 impl<'row, F> Decode<'row, Postgres> for crate::migrate::MaybeSealed<F>
 where
@@ -132,27 +131,5 @@ where
         let bytes = <Vec<u8> as Decode<'row, Postgres>>::decode(value)?;
 
         Ok(Self::from_bytes(bytes)?)
-    }
-}
-
-impl<Spec> Type<Postgres> for BlindIndexRef<'_, Spec> {
-    fn type_info() -> PgTypeInfo {
-        bytea_type_info()
-    }
-
-    fn compatible(ty: &PgTypeInfo) -> bool {
-        bytea_compatible(ty)
-    }
-}
-
-impl<Spec> Encode<'_, Postgres> for BlindIndexRef<'_, Spec> {
-    fn encode_by_ref(&self, buffer: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
-        buffer.extend_from_slice(self.as_bytes());
-
-        Ok(IsNull::No)
-    }
-
-    fn size_hint(&self) -> usize {
-        self.as_bytes().len()
     }
 }

@@ -47,8 +47,12 @@ macro_rules! identifier {
         impl ::std::str::FromStr for $name {
             type Err = $crate::InvalidIdentifier;
 
+            /// Parses the hyphenated form, rejecting the nil UUID as the ID macros do.
             fn from_str(value: &str) -> Result<Self, Self::Err> {
-                $crate::id::parse_uuid(value).map(Self)
+                match $crate::id::parse_uuid(value) {
+                    Ok(bytes) if !$crate::id::is_nil(&bytes) => Ok(Self(bytes)),
+                    _ => Err($crate::InvalidIdentifier),
+                }
             }
         }
     };
@@ -57,14 +61,14 @@ macro_rules! identifier {
 // Each module declares its identifiers next to what they identify.
 pub(crate) use identifier;
 
-/// The supplied text is not a canonical hyphenated UUID.
+/// The supplied text is not a hyphenated UUID, or is the nil UUID.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub struct InvalidIdentifier;
 
 impl fmt::Display for InvalidIdentifier {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("identifier must be a hyphenated UUID")
+        formatter.write_str("identifier must be a hyphenated, non-nil UUID")
     }
 }
 
@@ -142,6 +146,7 @@ mod tests {
             "urn:uuid:0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a64",
             "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b8a6z",
             "0b6f3c2a_8e41_4d57_a9c3_5e1f2d7b8a64",
+            "00000000-0000-0000-0000-000000000000",
             "",
         ] {
             assert_eq!(input.parse::<SealId>(), Err(InvalidIdentifier), "{input}");

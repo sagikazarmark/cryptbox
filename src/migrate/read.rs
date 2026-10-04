@@ -93,7 +93,6 @@ pub struct MaybeSealed<F: Seal> {
 
 enum State<F: Seal> {
     Sealed(Sealed<F>),
-    Plaintext(F::Value),
     Legacy(Zeroizing<Vec<u8>>),
 }
 
@@ -129,13 +128,6 @@ where
                 state: State::Legacy(Zeroizing::new(bytes)),
             }),
             Err(error) => Err(error),
-        }
-    }
-
-    /// Wraps a value whose storage is known out of band to hold plaintext.
-    pub const fn from_plaintext(value: F::Value) -> Self {
-        Self {
-            state: State::Plaintext(value),
         }
     }
 
@@ -182,7 +174,6 @@ where
     pub fn open(self, keys: &(impl EncryptionKeys + ?Sized)) -> Result<F::Value, Error> {
         match self.state {
             State::Sealed(sealed) => sealed.open(keys),
-            State::Plaintext(value) => Ok(value),
             State::Legacy(bytes) => decode_legacy::<F>(&bytes, None),
         }
     }
@@ -204,7 +195,6 @@ where
     ) -> Result<F::Value, Error> {
         match self.state {
             State::Sealed(sealed) => sealed.open(keys),
-            State::Plaintext(value) => Ok(value),
             State::Legacy(bytes) => decode_legacy::<F>(&bytes, Some(legacy)),
         }
     }
@@ -215,7 +205,7 @@ impl<F: Seal> MaybeSealed<F> {
     #[doc(alias = "is_plaintext")]
     #[must_use]
     pub const fn is_legacy(&self) -> bool {
-        matches!(self.state, State::Plaintext(_) | State::Legacy(_))
+        matches!(self.state, State::Legacy(_))
     }
 
     /// Returns the envelope when the stored bytes were classified as one.
@@ -223,7 +213,7 @@ impl<F: Seal> MaybeSealed<F> {
     pub fn as_sealed(&self) -> Option<&Sealed<F>> {
         match &self.state {
             State::Sealed(sealed) => Some(sealed),
-            State::Plaintext(_) | State::Legacy(_) => None,
+            State::Legacy(_) => None,
         }
     }
 }

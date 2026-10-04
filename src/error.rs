@@ -1,4 +1,4 @@
-use crate::{IndexId, IndexKeyId, KeyError, KeyId, crypto};
+use crate::{IndexKeyId, KeyId, crypto};
 
 /// The non-sensitive category of a codec failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -145,12 +145,6 @@ pub enum Error {
     /// A blind-index representation or bit count is invalid.
     #[error("blind index is invalid")]
     InvalidBlindIndex,
-    /// The same logical index was added to a prepared value twice.
-    #[error("blind index {0} was prepared more than once")]
-    DuplicatePreparedIndex(IndexId),
-    /// The requested logical index was not prepared.
-    #[error("blind index {0} was not prepared")]
-    BlindIndexNotPrepared(IndexId),
     /// A sweep row supplied a different number of blind-index columns than the
     /// planner registered.
     #[cfg(feature = "migrate")]
@@ -178,17 +172,6 @@ impl From<crypto::Error> for Error {
         match error {
             crypto::Error::Internal => Self::Internal,
             crypto::Error::RandomnessUnavailable => Self::RandomnessUnavailable,
-        }
-    }
-}
-
-impl From<KeyError> for Error {
-    fn from(error: KeyError) -> Self {
-        match error {
-            KeyError::RandomnessUnavailable => Self::RandomnessUnavailable,
-            KeyError::InvalidKeyEncoding => Self::InvalidKeyEncoding,
-            KeyError::DuplicateEncryptionKey(id) => Self::DuplicateEncryptionKey(id),
-            KeyError::DuplicateBlindIndexKey(id) => Self::DuplicateBlindIndexKey(id),
         }
     }
 }

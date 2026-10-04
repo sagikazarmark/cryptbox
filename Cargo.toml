@@ -1,6 +1,6 @@
 [package]
 name = "cryptbox"
-version = "0.5.0"
+version = "0.6.0"
 description = "Strongly typed application-layer encryption for Rust values"
 edition = "2024"
 rust-version = "1.85"
@@ -17,6 +17,7 @@ exclude = [
     "/.editorconfig",
     "/.github/",
     "/.gitignore",
+    "/examples/sqlite/.gitignore",
     "/AGENTS.md",
     "/CONTEXT.md",
     "/dagger*",
@@ -46,7 +47,7 @@ base64 = { version = "0.23.1", default-features = false }
 # Erase the derived key the AEAD copies, and its ChaCha20 state, on drop.
 chacha20poly1305 = { version = "0.11.0", features = ["alloc", "zeroize"], default-features = false }
 # Lockstep: generated code names this exact version's public items.
-cryptbox-derive = { version = "=0.5.0", path = "cryptbox-derive", optional = true }
+cryptbox-derive = { version = "=0.6.0", path = "cryptbox-derive", optional = true }
 getrandom = "0.4.3"
 hex = { version = "0.4.3", default-features = false, features = ["alloc"] }
 hkdf = "0.13.0"
@@ -93,10 +94,10 @@ broken_intra_doc_links = "deny"
 missing_crate_level_docs = "deny"
 
 [[example]]
-name = "first_field"
+name = "first_seal"
 
 [[example]]
-name = "tenant_field"
+name = "tenant_seal"
 
 [[example]]
 name = "blind_indexes"
@@ -122,8 +123,8 @@ path = "examples/records/main.rs"
 required-features = ["derive", "json", "sqlx-sqlite"]
 
 [[example]]
-name = "custom_field"
-path = "examples/custom_field/main.rs"
+name = "custom_seal"
+path = "examples/custom_seal/main.rs"
 
 [[example]]
 name = "reencryption_sweep"
@@ -139,6 +140,8 @@ required-features = ["derive", "migrate", "sqlx-sqlite"]
 
 [package.metadata.docs.rs]
 all-features = true
+# Labels each item with the features it needs.
+rustdoc-args = ["--cfg", "docsrs"]
 
 [[package.metadata.dagger.modules]]
 name = "rust"

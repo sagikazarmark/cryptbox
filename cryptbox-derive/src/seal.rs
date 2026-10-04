@@ -4,7 +4,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::{quote, quote_spanned};
 use syn::{Data, DeriveInput, Fields, Member, Path, Type, spanned::Spanned};
 
-use crate::attr::{Attrs, Errors, Key, UuidLiteral, required};
+use crate::attr::{Attrs, Errors, Key, UuidLiteral, krate, required};
 
 const KEYS: &[Key] = &[
     Key::Id,
@@ -12,7 +12,6 @@ const KEYS: &[Key] = &[
     Key::Codec,
     Key::Transparent,
     Key::Padding,
-    Key::Crate,
 ];
 
 /// What the seal's values are, and how they are encoded.
@@ -33,7 +32,7 @@ pub(crate) fn expand(input: &DeriveInput) -> syn::Result<TokenStream> {
     let mut errors = Errors::default();
     reject_shapes(input, &mut errors);
     let mut attrs = Attrs::parse(&input.attrs, "cryptbox", KEYS, &mut errors);
-    let krate = attrs.krate();
+    let krate = krate();
     let name = &input.ident;
 
     let id = required(
@@ -146,7 +145,7 @@ pub(crate) fn seal_items(
 /// value; the codec is always stated or a built-in default, never inferred.
 fn form<'a>(input: &'a DeriveInput, attrs: &mut Attrs, errors: &mut Errors) -> Option<Form<'a>> {
     let name = &input.ident;
-    let krate = attrs.krate();
+    let krate = krate();
     let codec = attrs.codec.take();
     let transparent = attrs.transparent;
 

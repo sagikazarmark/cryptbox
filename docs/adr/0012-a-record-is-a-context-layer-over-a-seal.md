@@ -4,6 +4,18 @@ status: accepted
 
 # A record is a context layer over a seal
 
+> Amended before 0.6, when nothing had stored these bytes: a part carries no
+> slot and the fingerprint no role byte, both leftovers of the retired
+> application-declared parts. A part's kind code names it, and the fingerprint
+> label is `cryptbox/context-fingerprint/v1\0`. The context bytes, fingerprints,
+> and test vectors below are those of
+> [the wire format](../wire-format.md#seal-context), not ADR-0011's.
+>
+> Also amended before 0.6, as the API was trimmed: `Seal` declares no `Indexes`
+> (a blind index is a `BlindIndexSpec` over its seal), `Prepared` and `prepare`
+> are removed, and a context's values have `seal_in` and `open_in` only, with no
+> `reseal_in` or `prepare_in`. `MaybeEncrypted` is `MaybeSealed`.
+
 A seal declares only its identity and encoding. Which context a sealed value is
 sealed under besides its seal ID is part of the sealed value's type, not the seal's:
 `Sealed<F, C = ()>`. A record is the first such context, `InRecord<K>`:

@@ -11,6 +11,7 @@ use super::{RowPlanner, RowWrite, SweepReport};
 ///
 /// The stored bytes may be legacy data, including plaintext, so the buffers are
 /// zeroized on drop and `Debug` prints lengths only.
+#[non_exhaustive]
 pub struct SweepRow<C, R = ()> {
     /// The row's unique, immutable cursor value.
     pub cursor: C,
@@ -22,6 +23,21 @@ pub struct SweepRow<C, R = ()> {
     /// Each blind-index column's bytes exactly as read, in the order the
     /// columns were registered with [`RowPlanner::with_index`].
     pub indexes: Vec<Vec<u8>>,
+}
+
+impl<C, R> SweepRow<C, R> {
+    /// A row loaded from storage: its cursor, the columns its context is read
+    /// from, and the bytes read from the encrypted column and from each
+    /// blind-index column.
+    #[must_use]
+    pub const fn new(cursor: C, columns: R, ciphertext: Vec<u8>, indexes: Vec<Vec<u8>>) -> Self {
+        Self {
+            cursor,
+            columns,
+            ciphertext,
+            indexes,
+        }
+    }
 }
 
 impl<C, R> Drop for SweepRow<C, R> {
@@ -124,19 +140,9 @@ where
 /// Both operate through a [`SweepStore`], keeping the driver independent of
 /// any storage backend.
 ///
-/// Both are thin loops over single-batch primitives, so external
-/// orchestrators (a scheduler tick, a queue consumer, or a durable-execution
-/// runtime) can drive the sweep one batch at a time instead:
-///
-/// - [`Self::run_batch`] and [`Self::verify_batch`] page with the store's
-///   durable checkpoint (run) or a caller-held cursor (verify);
-/// - [`Self::process_batch`] performs no checkpoint IO at all, taking and
-///   returning the cursor so the orchestrator owns progress durability.
-///
-/// Batch replay is idempotent: current rows are skipped and every update
-/// compares the originally read bytes, so stepped execution composes with
-/// at-least-once runtimes. Replayed rewrites lose their compare-and-swap and
-/// surface as conflicts, which makes summed per-batch reports advisory;
+/// Rerunning is idempotent: current rows are skipped and every update compares
+/// the originally read bytes. A rewrite replayed after a crash loses its
+/// compare-and-swap and counts as a conflict, so run reports are advisory;
 /// [`Self::verify`] remains the authoritative terminal-state check.
 #[derive(Debug)]
 pub struct Sweep<'a, F, R = ()>
@@ -168,102 +174,13 @@ where
         self
     }
 
-    /// Rewrites one batch strictly after `after`, without checkpoint IO.
-    ///
-    /// The caller owns progress durability: a durable-execution runtime or
-    /// scheduler journals the returned checkpoint itself and passes it back
-    /// as `after` for the next step. Replaying a batch is safe.
+    /// Resumes from the durable checkpoint and rewrites until exhausted,
+    /// saving the checkpoint after every batch.
     ///
     /// Rows that lose their compare-and-swap to a concurrent writer are
     /// counted as conflicts and deliberately not retried: once every writer
     /// uses current keys, the newer value is already current, and
     /// [`Self::verify`] detects legacy or stale generations left behind.
-    ///
-    /// # Errors
-    ///
-    /// Returns a storage error, or stops at the first row that cannot be
-    /// classified or rewritten so the operator can investigate; the batch is
-    /// then not checkpointed, so the row lies within one batch after `after`.
-    pub async fn process_batch<S: SweepStore<Columns = R>>(
-        &self,
-        store: &mut S,
-        after: Option<&S::Cursor>,
-    ) -> Result<BatchOutcome<S::Cursor>, SweepError<S::Error>> {
-        let mut report = SweepReport::default();
-        let rows = store
-            .load_batch(after, self.batch_size)
-            .await
-            .map_err(SweepError::Store)?;
-        let Some(last) = rows.last() else {
-            return Ok(BatchOutcome {
-                report,
-                checkpoint: None,
-            });
-        };
-        let checkpoint = last.cursor.clone();
-
-        for row in &rows {
-            let indexes: Vec<&[u8]> = row.indexes.iter().map(Vec::as_slice).collect();
-            let outcome = self
-                .planner
-                .plan_row(&row.columns, &row.ciphertext, &indexes)
-                .map_err(SweepError::Row)?;
-
-            match outcome.write() {
-                None => report.record(outcome.state()),
-                Some(replacement) => {
-                    if store
-                        .update(row, replacement)
-                        .await
-                        .map_err(SweepError::Store)?
-                    {
-                        report.record(outcome.state());
-                    } else {
-                        report.conflicts += 1;
-                    }
-                }
-            }
-        }
-
-        Ok(BatchOutcome {
-            report,
-            checkpoint: Some(checkpoint),
-        })
-    }
-
-    /// Rewrites one batch using the store's durable checkpoint.
-    ///
-    /// Loads the checkpoint, processes the next batch, and saves the new
-    /// checkpoint when the batch was non-empty. Suited to externally
-    /// scheduled steps (a cron tick or queue consumer) that rely on the
-    /// store for progress durability. A returned checkpoint of `None` means
-    /// the scan is exhausted.
-    ///
-    /// # Errors
-    ///
-    /// Fails under the same conditions as [`Self::process_batch`], plus
-    /// checkpoint load and save failures.
-    pub async fn run_batch<S: SweepStore<Columns = R>>(
-        &self,
-        store: &mut S,
-    ) -> Result<BatchOutcome<S::Cursor>, SweepError<S::Error>> {
-        let after = store.load_checkpoint().await.map_err(SweepError::Store)?;
-        let outcome = self.process_batch(store, after.as_ref()).await?;
-
-        if let Some(checkpoint) = &outcome.checkpoint {
-            store
-                .save_checkpoint(checkpoint)
-                .await
-                .map_err(SweepError::Store)?;
-        }
-
-        Ok(outcome)
-    }
-
-    /// Resumes from the durable checkpoint and rewrites until exhausted.
-    ///
-    /// Equivalent to looping [`Self::process_batch`] with per-batch
-    /// checkpoint saves until the scan is exhausted.
     ///
     /// # Errors
     ///
@@ -277,69 +194,18 @@ where
         let mut report = SweepReport::default();
         let mut cursor = store.load_checkpoint().await.map_err(SweepError::Store)?;
 
-        loop {
-            let outcome = self.process_batch(store, cursor.as_ref()).await?;
-            report.merge(outcome.report);
-            let Some(checkpoint) = outcome.checkpoint else {
-                return Ok(report);
-            };
-
+        while let Some(checkpoint) = self
+            .process_batch(store, cursor.as_ref(), &mut report)
+            .await?
+        {
             store
                 .save_checkpoint(&checkpoint)
                 .await
                 .map_err(SweepError::Store)?;
             cursor = Some(checkpoint);
         }
-    }
 
-    /// Classifies one batch strictly after `after`, without writing.
-    ///
-    /// The read-only counterpart of [`Self::process_batch`] for stepped
-    /// verification: the caller holds the cursor between steps and sums the
-    /// per-batch reports with [`SweepReport::merge`].
-    /// Start with `after = None`, follow every returned checkpoint until `None`,
-    /// then check the merged report. A clean batch does not establish a clean
-    /// full pass. Like [`Self::verify`], this checks migration state only.
-    ///
-    /// # Errors
-    ///
-    /// Returns a storage error or a configuration or environment failure, such
-    /// as an index column arity mismatch or unavailable keys. Malformed rows are
-    /// counted, not errors.
-    pub async fn verify_batch<S: SweepStore<Columns = R>>(
-        &self,
-        store: &mut S,
-        after: Option<&S::Cursor>,
-    ) -> Result<BatchOutcome<S::Cursor>, SweepError<S::Error>> {
-        let mut report = SweepReport::default();
-        let rows = store
-            .load_batch(after, self.batch_size)
-            .await
-            .map_err(SweepError::Store)?;
-        let Some(last) = rows.last() else {
-            return Ok(BatchOutcome {
-                report,
-                checkpoint: None,
-            });
-        };
-        let checkpoint = last.cursor.clone();
-
-        for row in &rows {
-            let indexes: Vec<&[u8]> = row.indexes.iter().map(Vec::as_slice).collect();
-            match self
-                .planner
-                .classify_row(&row.columns, &row.ciphertext, &indexes)
-            {
-                Ok(state) => report.record(state),
-                Err(error) if is_row_data_failure(&error) => report.malformed += 1,
-                Err(error) => return Err(SweepError::Row(error)),
-            }
-        }
-
-        Ok(BatchOutcome {
-            report,
-            checkpoint: Some(checkpoint),
-        })
+        Ok(report)
     }
 
     /// Performs a fresh, full, read-only pass from the start.
@@ -365,7 +231,9 @@ where
     ///
     /// # Errors
     ///
-    /// Fails under the same conditions as [`Self::verify_batch`].
+    /// Returns a storage error or a configuration or environment failure, such
+    /// as an index column arity mismatch or unavailable keys. Malformed rows are
+    /// counted, not errors.
     pub async fn verify<S: SweepStore<Columns = R>>(
         &self,
         store: &mut S,
@@ -373,27 +241,83 @@ where
         let mut report = SweepReport::default();
         let mut cursor: Option<S::Cursor> = None;
 
-        loop {
-            let outcome = self.verify_batch(store, cursor.as_ref()).await?;
-            report.merge(outcome.report);
-            match outcome.checkpoint {
-                Some(next) => cursor = Some(next),
-                None => return Ok(report),
+        while let Some(checkpoint) = self
+            .verify_batch(store, cursor.as_ref(), &mut report)
+            .await?
+        {
+            cursor = Some(checkpoint);
+        }
+
+        Ok(report)
+    }
+
+    /// Rewrites one batch strictly after `after` into `report`, and returns the
+    /// cursor after it, or `None` when the scan is exhausted.
+    async fn process_batch<S: SweepStore<Columns = R>>(
+        &self,
+        store: &mut S,
+        after: Option<&S::Cursor>,
+        report: &mut SweepReport,
+    ) -> Result<Option<S::Cursor>, SweepError<S::Error>> {
+        let rows = store
+            .load_batch(after, self.batch_size)
+            .await
+            .map_err(SweepError::Store)?;
+
+        for row in &rows {
+            let indexes: Vec<&[u8]> = row.indexes.iter().map(Vec::as_slice).collect();
+            let outcome = self
+                .planner
+                .plan_row(&row.columns, &row.ciphertext, &indexes)
+                .map_err(SweepError::Row)?;
+
+            match outcome.write() {
+                None => report.record(outcome.state()),
+                Some(replacement) => {
+                    if store
+                        .update(row, replacement)
+                        .await
+                        .map_err(SweepError::Store)?
+                    {
+                        report.record(outcome.state());
+                    } else {
+                        report.conflicts += 1;
+                    }
+                }
             }
         }
-    }
-}
 
-/// The result of processing or verifying one batch.
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[non_exhaustive]
-pub struct BatchOutcome<C> {
-    /// Tallies for this batch only; sum across batches with
-    /// [`SweepReport::merge`].
-    pub report: SweepReport,
-    /// The cursor after this batch, to pass as `after` for the next step.
-    /// `None` means the scan is exhausted.
-    pub checkpoint: Option<C>,
+        Ok(rows.last().map(|row| row.cursor.clone()))
+    }
+
+    /// Classifies one batch strictly after `after` into `report`, without
+    /// writing, and returns the cursor after it, or `None` when the scan is
+    /// exhausted.
+    async fn verify_batch<S: SweepStore<Columns = R>>(
+        &self,
+        store: &mut S,
+        after: Option<&S::Cursor>,
+        report: &mut SweepReport,
+    ) -> Result<Option<S::Cursor>, SweepError<S::Error>> {
+        let rows = store
+            .load_batch(after, self.batch_size)
+            .await
+            .map_err(SweepError::Store)?;
+
+        for row in &rows {
+            let indexes: Vec<&[u8]> = row.indexes.iter().map(Vec::as_slice).collect();
+            match self
+                .planner
+                .classify_row(&row.columns, &row.ciphertext, &indexes)
+            {
+                Ok(state) => report.record(state),
+                Err(error) if is_row_data_failure(&error) => report.malformed += 1,
+                Err(error) => return Err(SweepError::Row(error)),
+            }
+        }
+
+        Ok(rows.last().map(|row| row.cursor.clone()))
+    }
 }
 
 /// Reports whether `error` describes one row's stored bytes, rather than the
@@ -428,8 +352,6 @@ const fn is_row_data_failure(error: &Error) -> bool {
         | Error::RandomnessUnavailable
         | Error::InvalidKeyEncoding
         | Error::Internal
-        | Error::DuplicatePreparedIndex(_)
-        | Error::BlindIndexNotPrepared(_)
         | Error::IndexColumnMismatch { .. } => false,
     }
 }

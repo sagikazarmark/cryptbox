@@ -85,10 +85,10 @@ fn global_keys_install_once_and_serve_only_what_reads_them() {
         .unwrap();
 
     // A second installation is rejected and does not replace the first.
-    assert_eq!(
+    assert!(matches!(
         keys::install(Keys::new(keyring(REJECTED_KEY_ID, 3))),
-        Err(AlreadyInstalled)
-    );
+        Err(AlreadyInstalled { .. })
+    ));
 
     // The installed keys are the keys installed.
     let global = keys::installed().unwrap();

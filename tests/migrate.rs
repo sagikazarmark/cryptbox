@@ -306,7 +306,7 @@ fn unsupported_format_version_is_a_hard_error_not_plaintext() {
 #[test]
 fn out_of_band_constructors_bypass_byte_classification() {
     let keys = rotated_keys();
-    let read = MaybeSealed::<UserEmail>::from_plaintext("CBX\0-prefixed legacy value".to_owned());
+    let read = MaybeSealed::<UserEmail>::from_legacy_bytes(b"CBX\0-prefixed legacy value".to_vec());
     assert!(read.is_legacy());
 
     let ciphertext =
@@ -599,11 +599,8 @@ impl SweepStore for MemoryStore {
             .iter()
             .filter(|(cursor, _, _)| *cursor > after)
             .take(limit)
-            .map(|(cursor, ciphertext, indexes)| SweepRow {
-                cursor: *cursor,
-                columns: (),
-                ciphertext: ciphertext.clone(),
-                indexes: indexes.clone(),
+            .map(|(cursor, ciphertext, indexes)| {
+                SweepRow::new(*cursor, (), ciphertext.clone(), indexes.clone())
             })
             .collect()))
     }
@@ -836,133 +833,6 @@ fn verification_counts_foreign_ciphertext_without_recovery() {
     assert_eq!(store.update_calls, 0);
     assert_eq!(store.checkpoint_saves, 0);
     assert_eq!(store.checkpoint, Some(3));
-}
-
-#[test]
-fn stepped_run_batches_match_a_full_run() {
-    let keys = rotated_keys();
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<UserEmail>::new(&keys)
-        .with_legacy(&TOY_LEGACY)
-        .with_index::<EmailLookup>(&index_keys);
-    let sweep = Sweep::new(planner).with_batch_size(2);
-    let mut store = MemoryStore::new(mixed_rows());
-
-    // Each externally scheduled step processes exactly one batch and saves
-    // the durable checkpoint; the None checkpoint signals exhaustion.
-    let mut report = SweepReport::default();
-    let mut steps = 0;
-    loop {
-        let outcome = futures_executor::block_on(sweep.run_batch(&mut store)).unwrap();
-        report.merge(outcome.report);
-        steps += 1;
-        if outcome.checkpoint.is_none() {
-            break;
-        }
-        assert_eq!(store.checkpoint, outcome.checkpoint);
-    }
-
-    assert_eq!(steps, 4);
-    assert_eq!(store.checkpoint_saves, 3);
-    assert_eq!(report.legacy, 3);
-    assert_eq!(report.stale, 1);
-    assert_eq!(report.current, 1);
-    assert_eq!(report.conflicts, 0);
-
-    let verified = futures_executor::block_on(sweep.verify(&mut store)).unwrap();
-    assert!(verified.is_terminal());
-}
-
-#[test]
-fn orchestrator_owned_cursor_never_touches_store_checkpoints() {
-    let keys = rotated_keys();
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<UserEmail>::new(&keys)
-        .with_legacy(&TOY_LEGACY)
-        .with_index::<EmailLookup>(&index_keys);
-    let sweep = Sweep::new(planner).with_batch_size(2);
-    let mut store = MemoryStore::new(mixed_rows());
-
-    // A durable-execution runtime journals the cursor itself and passes it
-    // back on the next step; the store's checkpoint stays untouched.
-    let mut journaled_cursor: Option<i64> = None;
-    let mut report = SweepReport::default();
-    loop {
-        let outcome =
-            futures_executor::block_on(sweep.process_batch(&mut store, journaled_cursor.as_ref()))
-                .unwrap();
-        report.merge(outcome.report);
-        match outcome.checkpoint {
-            Some(next) => journaled_cursor = Some(next),
-            None => break,
-        }
-    }
-
-    assert_eq!(store.checkpoint_saves, 0);
-    assert_eq!(store.checkpoint, None);
-    assert_eq!(journaled_cursor, Some(5));
-    assert_eq!(report.legacy, 3);
-    assert_eq!(report.stale, 1);
-    assert_eq!(report.current, 1);
-
-    let verified = futures_executor::block_on(sweep.verify(&mut store)).unwrap();
-    assert!(verified.is_terminal());
-}
-
-#[test]
-fn replaying_a_processed_batch_is_idempotent() {
-    let keys = rotated_keys();
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<UserEmail>::new(&keys)
-        .with_legacy(&TOY_LEGACY)
-        .with_index::<EmailLookup>(&index_keys);
-    let sweep = Sweep::new(planner).with_batch_size(2);
-    let mut store = MemoryStore::new(mixed_rows());
-
-    // An at-least-once runtime applied the side effect but crashed before
-    // journaling the cursor, so the same step fires again.
-    let first = futures_executor::block_on(sweep.process_batch(&mut store, None)).unwrap();
-    assert_eq!(first.report.legacy, 2);
-    assert_eq!(first.checkpoint, Some(2));
-    let rows_after_first: Vec<_> = store.rows.clone();
-
-    let replay = futures_executor::block_on(sweep.process_batch(&mut store, None)).unwrap();
-    assert_eq!(replay.checkpoint, Some(2));
-    assert_eq!(replay.report.current, 2);
-    assert_eq!(
-        replay.report.legacy + replay.report.stale + replay.report.conflicts,
-        0
-    );
-    assert_eq!(store.rows, rows_after_first);
-}
-
-#[test]
-fn stepped_verification_matches_a_full_pass() {
-    let keys = rotated_keys();
-    let index_keys = rotated_index_keys();
-    let planner = RowPlanner::<UserEmail>::new(&keys)
-        .with_legacy(&TOY_LEGACY)
-        .with_index::<EmailLookup>(&index_keys);
-    let sweep = Sweep::new(planner).with_batch_size(3);
-    let mut store = MemoryStore::new(mixed_rows());
-
-    let full = futures_executor::block_on(sweep.verify(&mut store)).unwrap();
-
-    let mut cursor: Option<i64> = None;
-    let mut stepped = SweepReport::default();
-    loop {
-        let outcome =
-            futures_executor::block_on(sweep.verify_batch(&mut store, cursor.as_ref())).unwrap();
-        stepped.merge(outcome.report);
-        match outcome.checkpoint {
-            Some(next) => cursor = Some(next),
-            None => break,
-        }
-    }
-
-    assert_eq!(stepped, full);
-    assert_eq!(store.update_calls, 0);
-    assert_eq!(store.checkpoint_saves, 0);
 }
 
 #[test]

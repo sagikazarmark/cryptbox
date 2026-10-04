@@ -3,7 +3,7 @@ use std::{fmt, sync::Arc};
 use base64::Engine as _;
 use zeroize::Zeroizing;
 
-use super::KeyError;
+use crate::Error;
 use crate::id::identifier;
 
 identifier!(KeyId, "An opaque encryption-key generation identifier.");
@@ -30,7 +30,7 @@ struct KeyMaterial<Id> {
 /// [ownership reference].
 ///
 #[doc = concat!(
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#ownership-and-erasure",
 )]
 #[derive(Clone)]
 pub struct EncryptionKey(Arc<KeyMaterial<KeyId>>);
@@ -40,9 +40,9 @@ impl EncryptionKey {
     ///
     /// # Errors
     ///
-    /// Returns [`KeyError::RandomnessUnavailable`] if the operating-system random
+    /// Returns [`Error::RandomnessUnavailable`] if the operating-system random
     /// source fails.
-    pub fn generate() -> Result<Self, KeyError> {
+    pub fn generate() -> Result<Self, Error> {
         let id = KeyId::from_bytes(random_id()?);
         Ok(Self(generate_key_material(id)?))
     }
@@ -54,9 +54,9 @@ impl EncryptionKey {
     ///
     /// # Errors
     ///
-    /// Returns [`KeyError::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
     /// not represent exactly 32 bytes.
-    pub fn from_hex(id: KeyId, encoded: &str) -> Result<Self, KeyError> {
+    pub fn from_hex(id: KeyId, encoded: &str) -> Result<Self, Error> {
         Ok(Self(key_material_from_hex(id, encoded)?))
     }
 
@@ -67,9 +67,9 @@ impl EncryptionKey {
     ///
     /// # Errors
     ///
-    /// Returns [`KeyError::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
     /// not represent exactly 32 bytes.
-    pub fn from_base64(id: KeyId, encoded: &str) -> Result<Self, KeyError> {
+    pub fn from_base64(id: KeyId, encoded: &str) -> Result<Self, Error> {
         Ok(Self(key_material_from_base64(id, encoded)?))
     }
 
@@ -116,7 +116,7 @@ impl fmt::Debug for EncryptionKey {
 /// [ownership reference].
 ///
 #[doc = concat!(
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#ownership-and-erasure",
 )]
 #[derive(Clone)]
 pub struct BlindIndexKey(Arc<KeyMaterial<IndexKeyId>>);
@@ -126,9 +126,9 @@ impl BlindIndexKey {
     ///
     /// # Errors
     ///
-    /// Returns [`KeyError::RandomnessUnavailable`] if the operating-system random
+    /// Returns [`Error::RandomnessUnavailable`] if the operating-system random
     /// source fails.
-    pub fn generate() -> Result<Self, KeyError> {
+    pub fn generate() -> Result<Self, Error> {
         let id = IndexKeyId::from_bytes(random_id()?);
         Ok(Self(generate_key_material(id)?))
     }
@@ -140,9 +140,9 @@ impl BlindIndexKey {
     ///
     /// # Errors
     ///
-    /// Returns [`KeyError::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
     /// not represent exactly 32 bytes.
-    pub fn from_hex(id: IndexKeyId, encoded: &str) -> Result<Self, KeyError> {
+    pub fn from_hex(id: IndexKeyId, encoded: &str) -> Result<Self, Error> {
         Ok(Self(key_material_from_hex(id, encoded)?))
     }
 
@@ -153,9 +153,9 @@ impl BlindIndexKey {
     ///
     /// # Errors
     ///
-    /// Returns [`KeyError::InvalidKeyEncoding`] if `encoded` is malformed or does
+    /// Returns [`Error::InvalidKeyEncoding`] if `encoded` is malformed or does
     /// not represent exactly 32 bytes.
-    pub fn from_base64(id: IndexKeyId, encoded: &str) -> Result<Self, KeyError> {
+    pub fn from_base64(id: IndexKeyId, encoded: &str) -> Result<Self, Error> {
         Ok(Self(key_material_from_base64(id, encoded)?))
     }
 
@@ -189,38 +189,35 @@ impl fmt::Debug for BlindIndexKey {
     }
 }
 
-fn random_id() -> Result<[u8; 16], KeyError> {
+fn random_id() -> Result<[u8; 16], Error> {
     let mut id = [0_u8; 16];
-    getrandom::fill(&mut id).map_err(|_| KeyError::RandomnessUnavailable)?;
+    getrandom::fill(&mut id).map_err(|_| Error::RandomnessUnavailable)?;
     Ok(id)
 }
 
-fn generate_key_material<Id: Clone>(id: Id) -> Result<Arc<KeyMaterial<Id>>, KeyError> {
+fn generate_key_material<Id: Clone>(id: Id) -> Result<Arc<KeyMaterial<Id>>, Error> {
     initialize_key_material(id, |bytes| {
-        getrandom::fill(bytes).map_err(|_| KeyError::RandomnessUnavailable)
+        getrandom::fill(bytes).map_err(|_| Error::RandomnessUnavailable)
     })
 }
 
-fn key_material_from_hex<Id: Clone>(
-    id: Id,
-    encoded: &str,
-) -> Result<Arc<KeyMaterial<Id>>, KeyError> {
+fn key_material_from_hex<Id: Clone>(id: Id, encoded: &str) -> Result<Arc<KeyMaterial<Id>>, Error> {
     initialize_key_material(id, |bytes| {
-        hex::decode_to_slice(encoded, bytes).map_err(|_| KeyError::InvalidKeyEncoding)
+        hex::decode_to_slice(encoded, bytes).map_err(|_| Error::InvalidKeyEncoding)
     })
 }
 
 fn key_material_from_base64<Id: Clone>(
     id: Id,
     encoded: &str,
-) -> Result<Arc<KeyMaterial<Id>>, KeyError> {
+) -> Result<Arc<KeyMaterial<Id>>, Error> {
     initialize_key_material(id, |bytes| {
         let decoded_len = base64::engine::general_purpose::STANDARD
             .decode_slice(encoded, bytes)
-            .map_err(|_| KeyError::InvalidKeyEncoding)?;
+            .map_err(|_| Error::InvalidKeyEncoding)?;
 
         if decoded_len != bytes.len() {
-            return Err(KeyError::InvalidKeyEncoding);
+            return Err(Error::InvalidKeyEncoding);
         }
 
         Ok(())
@@ -229,8 +226,8 @@ fn key_material_from_base64<Id: Clone>(
 
 fn initialize_key_material<Id: Clone>(
     id: Id,
-    initialize: impl FnOnce(&mut [u8; 32]) -> Result<(), KeyError>,
-) -> Result<Arc<KeyMaterial<Id>>, KeyError> {
+    initialize: impl FnOnce(&mut [u8; 32]) -> Result<(), Error>,
+) -> Result<Arc<KeyMaterial<Id>>, Error> {
     let mut material = Arc::new(KeyMaterial {
         id,
         bytes: Zeroizing::new([0_u8; 32]),

@@ -37,7 +37,7 @@ mod tests {
     }
 
     #[test]
-    fn first_field_round_trip() -> Result<(), cryptbox::Error> {
+    fn first_seal_round_trip() -> Result<(), cryptbox::Error> {
         main()
     }
 

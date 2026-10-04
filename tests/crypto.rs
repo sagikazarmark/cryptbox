@@ -3,7 +3,7 @@
 use cryptbox::EncryptionKey;
 use cryptbox::envelope::{inspect_ciphertext, is_ciphertext};
 use cryptbox::{
-    EncryptionKeyring, Error, KeyError, KeyId, Padding, Raw, Seal, Sealed, Utf8, key_id, seal_id,
+    EncryptionKeyring, Error, KeyId, Padding, Raw, Seal, Sealed, Utf8, key_id, seal_id,
 };
 
 const OLD_KEY_ID: KeyId = key_id!("10000000-0000-4000-8000-000000000001");
@@ -150,7 +150,7 @@ fn unscoped_envelopes_carry_the_empty_declaration_fingerprint() {
                 .unwrap()
                 .context_fingerprint()
         ),
-        "65640fc8333534b9"
+        "502de8fcfb838c80"
     );
 }
 
@@ -299,7 +299,7 @@ fn keyrings_reject_duplicate_generation_ids() {
 
     assert!(matches!(
         EncryptionKeyring::new(key(CURRENT_KEY_ID, 43), [duplicate]),
-        Err(KeyError::DuplicateEncryptionKey(id)) if id == CURRENT_KEY_ID
+        Err(Error::DuplicateEncryptionKey(id)) if id == CURRENT_KEY_ID
     ));
 }
 

@@ -91,11 +91,11 @@ impl std::io::Write for ZeroizingByteBuffer {
 /// the application, which zeroizes it only if it is a [`Secret`] or erases
 /// itself on drop.
 ///
-/// See the [custom-field example] and [ownership reference].
+/// See the [custom-seal example] and [ownership reference].
 ///
 #[doc = concat!(
-    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure",
+    "[custom-seal example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/custom_seal/README.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#ownership-and-erasure",
 )]
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot encode `{T}`",

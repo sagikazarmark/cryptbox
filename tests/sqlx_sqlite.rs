@@ -3,8 +3,8 @@
 #![cfg(feature = "sqlx-sqlite")]
 
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexRef, BlindIndexSpec, EncryptionKey, EncryptionKeyring,
-    IndexId, KeyId, Keys, Padding, Plain, Seal, Sealed, Utf8, index_id, key_id, keys,
+    BlindIndex, BlindIndexError, BlindIndexSpec, EncryptionKey, EncryptionKeyring, IndexId, KeyId,
+    Keys, Padding, Plain, Seal, Sealed, Utf8, index_id, key_id, keys,
 };
 use sqlx::{
     Connection, Decode, Encode, Row, Sqlite, Type,
@@ -90,7 +90,6 @@ fn sqlite_encode_encrypts_plaintext_into_an_owned_blob() {
     assert_sqlx_encode::<Plain<TestSeal>>();
     assert_sqlx_encode::<Sealed<TestSeal>>();
     assert_sqlx_encode::<BlindIndex<IndexSpec>>();
-    assert_sqlx_encode::<BlindIndexRef<'static, IndexSpec>>();
 
     installed_keys();
     let value = Plain::<TestSeal>::new("mark@example.com".to_owned());

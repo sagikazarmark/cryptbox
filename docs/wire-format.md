@@ -100,24 +100,35 @@ record ID, so a field's value is not accepted in another row. See
 ```text
 seal_context = seal_id[16] || count[2] || part*
 
-part         = slot[16] || kind[1] || len[4] || value[len]
+part         = kind[1] || len[4] || value[len]
 ```
 
+- `seal_id` is the seal's 16-byte UUID. There is no leading tag or type byte:
+  the context starts with the seal ID.
 - `count` is the number of parts, as an unsigned 16-bit integer: `0000` for a
-  standalone value, `Sealed<F>`, and `0001` for a record's field.
-- Each part names its slot, a UUID the library allocates, and the kind of its
-  value. The record ID is the only part today, in the nil slot. `len` is an
-  unsigned 32-bit byte count, so every value is length-prefixed.
-- Parts appear in ascending byte order of their slots, and a slot appears at
-  most once, so a context has exactly one encoding. The fingerprint lists its
-  entries in the same order.
-- There is no leading tag or type byte: the context starts with the seal ID.
+  standalone value, `Sealed<F>`, and `0001` for a record's field. The record ID
+  is the only part today.
+- `kind` is the part's [kind code](#record-id-kinds), which names both the part
+  and how its value is encoded. Codes `01` to `03` belong to the record ID; a
+  later kind of part would take codes of its own, so parts of different
+  contexts never share a code.
+- `len` is the value's length as an unsigned 32-bit byte count, so every value
+  is length-prefixed, and `value` is its `len` bytes.
+- Parts would appear in ascending order of their kind codes, each part at most
+  once, so a context has exactly one encoding. The fingerprint lists its kind
+  codes in the same order.
+
+The seal ID has a fixed length, `count` says how many parts follow, and each
+part carries its own length, so a context parses one way only: different
+contexts never share bytes.
 
 The reader supplies the expected context, from the type of the sealed value and,
 for a record's field, the record ID the row stores; it is not stored in the
 envelope. This
 makes the application decide where a value belongs, rather than allowing stored
 bytes to select their own context.
+
+#### Record ID kinds
 
 Record ID kinds are fixed and canonical. There is no text kind:
 
@@ -136,28 +147,43 @@ The context fingerprint names the kind of context, never its values, because
 the header is stored in plaintext:
 
 ```text
-fingerprint label: "cryptbox/binding-fingerprint/v1\0"
+fingerprint label: "cryptbox/context-fingerprint/v1\0"
 
-fingerprint = SHA-256(fingerprint_label
-                      || count[2]
-                      || (slot[16] || kind[1] || 03)*)[0..8]
+fingerprint = SHA-256(fingerprint_label || count[2] || kind[1]*)[0..8]
 ```
 
-The label keeps its original name: stored headers carry fingerprints computed
-with it. These fingerprints are fixed permanently:
+- `fingerprint_label` is the 32 ASCII bytes above, including the terminating
+  NUL. It separates the fingerprint from every other hash of these bytes.
+- `count` is the context's part count, exactly as in the context: `0000` or
+  `0001`.
+- `kind` is each part's kind code, in the context's order; the values and their
+  lengths are left out. A standalone value's fingerprint therefore hashes the
+  label and `0000` alone, and a record field's the label, `0001`, and its
+  record ID's kind code.
+- `[0..8]` keeps the first 8 bytes of the 32-byte digest.
+
+The label and `count` have fixed lengths, and `count` says how many one-byte
+kind codes follow, so different kinds of context never hash the same bytes.
+These fingerprints are fixed permanently:
 
 | Context | Fingerprint |
 | --- | --- |
-| A standalone value | `65640fc8333534b9` |
-| A record's field with a UUID record ID | `87770d1356443105` |
-| A record's field with an `i64` record ID | `76081b730530f822` |
-| A record's field with a bytes record ID | `338f462e2f4a92a7` |
+| A standalone value | `502de8fcfb838c80` |
+| A record's field with a UUID record ID | `f130f332c1aa00ec` |
+| A record's field with an `i64` record ID | `af72b9c5219cf83b` |
+| A record's field with a bytes record ID | `842fa0b572b1196a` |
 
 For seal `12345678-1234-4234-8234-1234567890ab` and the `i64` record `7`, the
 context is:
 
 ```text
-123456781234423482341234567890ab00010000000000000000000000000000000002000000080000000000000007
+123456781234423482341234567890ab000102000000080000000000000007
+
+123456781234423482341234567890ab  seal_id
+0001                              count: one part
+02                                kind: i64 record ID
+00000008                          len: 8 bytes
+0000000000000007                  value: 7
 ```
 
 #### Reader rules
@@ -357,16 +383,16 @@ obligations.
 These fixed inputs and expected outputs help check byte-for-byte compatibility.
 The first vector encrypts unpadded plaintext (flags `00`) bound to
 `SealId 12345678-1234-4234-8234-1234567890ab` alone, so its header carries the
-empty declaration's fingerprint:
+standalone value's fingerprint:
 
 ```text
 root key:    1111111111111111111111111111111111111111111111111111111111111111
 KeyId:       11111111-2222-4333-8444-555555555555
 context:     123456781234423482341234567890ab0000
-fingerprint: 65640fc8333534b9
+fingerprint: 502de8fcfb838c80
 plaintext:   6372797074626f7820766563746f72 ("cryptbox vector")
 nonce:       000102030405060708090a0b0c0d0e0f1011121314151617
-envelope:    434258000201001111111122224333844455555555555565640fc8333534b9000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e330da90830136eec9273c8315c1f22b7b
+envelope:    4342580002010011111111222243338444555555555555502de8fcfb838c80000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e30624c444239c62d73be5eac7459c548f
 ```
 
 The padded vector uses the same root key, `KeyId`, context, and nonce as the
@@ -375,7 +401,7 @@ flags `01`:
 
 ```text
 padded plaintext: 6372797074626f7820766563746f7280
-envelope:         434258000201011111111122224333844455555555555565640fc8333534b9000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e3c5e74a10b924aec9355f18b42c5b131fa0
+envelope:         4342580002010111111111222243338444555555555555502de8fcfb838c80000102030405060708090a0b0c0d0e0f10111213141516173a8e058803722f56b0ffc9ecbbb7e3c5bd94437a46143e4373c11bdfdfbc47b4
 ```
 
 Both decrypt to `"cryptbox vector"` whatever the reader's padding policy. The
@@ -386,18 +412,20 @@ independently as described under the record vector below.
 
 This vector uses the root key, `KeyId`, `SealId`, plaintext, and nonce above,
 unpadded, with the [seal context](#seal-context) of the `i64` record `7`, whose
-context fingerprint is `76081b730530f822`:
+context fingerprint is `af72b9c5219cf83b`:
 
 ```text
-context:  123456781234423482341234567890ab00010000000000000000000000000000000002000000080000000000000007
-envelope: 434258000201001111111122224333844455555555555576081b730530f822000102030405060708090a0b0c0d0e0f1011121314151617c899d84358bcff6b35f9bb49eea2c2e906efc22bcad85fd463c7217135fe97
+context:  123456781234423482341234567890ab000102000000080000000000000007
+envelope: 4342580002010011111111222243338444555555555555af72b9c5219cf83b000102030405060708090a0b0c0d0e0f10111213141516173270eb8abb2f33a5b07fed7df8e4f670ee1d691d5adf05262912af97de476a
 ```
 
 The fingerprints, contexts, and all three envelopes above were computed
-independently of the implementation from the recipes above, with a separate
-HKDF, HChaCha20, and ChaCha20-Poly1305 construction. They were reproduced
-again with Node.js and OpenSSL's HKDF and ChaCha20-Poly1305, over a separately
-written HChaCha20.
+independently of the implementation from the recipes above: in Python, with
+an RFC 5869 HKDF written over HMAC-SHA-256 and libsodium's XChaCha20-Poly1305,
+checked against the `cryptography` package's ChaCha20-Poly1305 over a
+separately written HChaCha20. They were reproduced again with Node.js and
+OpenSSL's HKDF and ChaCha20-Poly1305, over another separately written
+HChaCha20.
 
 ## Blind-index format 2
 
@@ -460,6 +488,14 @@ out, because a query cannot know the row, so every value of one seal shares it,
 and equal values derive equal indexes under the same key. Separate blind-index
 roots, such as one per tenant, derive unrelated indexes.
 
+The normalizer's name (`BlindIndexSpec::NORMALIZER`) and the seal's codec ID
+are **not** part of index key derivation: only the `IndexId` names the index.
+Changing an index's normalization under the same `IndexId` derives different
+bytes for the same value with the same key, so stored indexes silently stop
+matching their probes; nothing fails to parse. Only a schema manifest snapshot
+(`schema::Manifest`), which lists each index's normalizer, catches the change.
+Give changed normalization a new `IndexId`, and derive its indexes again.
+
 ### Blind-index recipe
 
 Inputs are an independent 32-byte blind-index root (never an encryption root),
@@ -501,21 +537,64 @@ values to share an index, index hits remain candidates requiring authenticated
 decryption and normalized plaintext comparison. See the
 [verified search example](../examples/searchable/README.md) for using these bytes in a query.
 
-### Blind-index vector
+### Blind-index vectors
+
+All three vectors share these inputs and differ only in the retained bit count:
 
 ```text
 root key:     2222222222222222222222222222222222222222222222222222222222222222
 IndexKeyId:   aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee
 IndexId:      abcdefab-cdef-4def-8def-abcdefabcdef
-SealId:      12345678-1234-4234-8234-1234567890ab
+SealId:       12345678-1234-4234-8234-1234567890ab
 context:      123456781234423482341234567890ab0000
-bits:         13
 normalized:   6e6f726d616c697a6564406578616d706c652e636f6d ("normalized@example.com")
+```
+
+```text
+bits:         256
+stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee0100887b39ac8e4b85234adcd87e67b61b0bb4277c21fbe68df317109bd22ef64ed3
+
+bits:         64
+stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee0040e20160c5ea7a01a3
+
+bits:         13
 stored value: 02aaaaaaaabbbb4ccc8dddeeeeeeeeeeee000de800
 ```
 
-The final byte `00` has its three unused low bits cleared.
+The 256-bit vector keeps the whole HMAC, so it checks every derivation step
+at full strength. The 64-bit one is byte-aligned truncation. In the 13-bit one,
+the final byte `00` has its three unused low bits cleared; it pins only 13
+bits, so it checks the masking rather than the derivation. The bit count is
+part of `header`, and so of the index key, so a shorter index is not a prefix
+of a longer one.
 
-The blind-index vector was computed from the recipe above independently of
-the implementation, with a separate HKDF and HMAC construction, and reproduced
-again with Node.js and OpenSSL's HKDF and HMAC.
+The blind-index vectors were computed from the recipe above independently of
+the implementation: in Python, with an RFC 5869 HKDF written over HMAC-SHA-256,
+and again with Node.js and OpenSSL's HKDF and HMAC.
+
+## Text form
+
+The envelope and the blind index are binary. Where they must be text, as in
+JSON, CryptBox writes their exact bytes as **unpadded base64url**: the URL- and
+filename-safe alphabet of
+[RFC 4648, section 5](https://www.rfc-editor.org/rfc/rfc4648#section-5)
+(`A`–`Z`, `a`–`z`, `0`–`9`, `-`, `_`), with no `=` padding, no line breaks, and
+no other characters. The text form adds nothing to the bytes and is not
+authenticated; the bytes it decodes to are parsed as usual.
+
+The `serde` feature writes this form for human-readable formats, and raw bytes
+for binary formats. A reader decodes it strictly. It rejects:
+
+- `=` padding, even where the padded form would be correct;
+- the standard alphabet's `+` and `/`;
+- whitespace and any other character outside the alphabet;
+- nonzero unused bits in the final character, so each byte string has exactly
+  one text form.
+
+A human-readable reader also accepts the bytes as an array of integers.
+
+The [unpadded envelope vector](#envelope-vectors), as text:
+
+```text
+Q0JYAAIBABEREREiIkMzhERVVVVVVVVQLej8-4OMgAABAgMEBQYHCAkKCwwNDg8QERITFBUWFzqOBYgDci9WsP_J7Lu34wYkxEQjnGLXO-Xqx0WcVI8
+```

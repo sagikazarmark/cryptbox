@@ -273,57 +273,6 @@ fn a_derived_blind_index_derives_the_same_index_as_its_manual_equivalent() {
     assert!(BlindIndex::<EmailLookup>::verify_candidate("MARK@example.com", &email).unwrap());
 }
 
-fn street(address: &Address) -> &str {
-    &address.street
-}
-
-#[derive(BlindIndexSpec)]
-#[cryptbox(
-    id = "3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64",
-    seal = BillingAddress,
-    bits = 64,
-    query = str,
-    normalize = normalize_text,
-    project = street,
-    normalizer = "street/1",
-)]
-struct StreetLookup;
-
-/// The manual equivalent of [`StreetLookup`].
-struct ManualStreetLookup;
-
-impl BlindIndexSpec for ManualStreetLookup {
-    type Seal = BillingAddress;
-    const ID: IndexId = index_id!("3f5d8c2b-6e40-4b97-8c31-8a2f7d9e5b64");
-    const BITS: u16 = 64;
-    const NORMALIZER: &'static str = "street/1";
-    type Query = str;
-
-    fn normalize_query(query: &str) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        normalize_text(query)
-    }
-
-    fn normalize_value(value: &Address) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
-        normalize_text(&value.street)
-    }
-}
-
-#[test]
-fn a_projected_blind_index_normalizes_part_of_the_value() {
-    let keys = index_keys();
-
-    assert_eq!(
-        BlindIndex::<StreetLookup>::derive(&address(), &keys)
-            .unwrap()
-            .as_bytes(),
-        BlindIndex::<ManualStreetLookup>::derive(&address(), &keys)
-            .unwrap()
-            .as_bytes()
-    );
-    assert!(BlindIndex::<StreetLookup>::verify_candidate("1 MAIN STREET", &address()).unwrap());
-    assert!(!BlindIndex::<StreetLookup>::verify_candidate("Springfield", &address()).unwrap());
-}
-
 #[test]
 fn a_transparent_seal_rejects_what_its_inner_codec_rejects() {
     let error = <SelfValuedEmail as Codec<SelfValuedEmail>>::decode(&[0xff]).unwrap_err();
@@ -331,52 +280,9 @@ fn a_transparent_seal_rejects_what_its_inner_codec_rejects() {
     assert_eq!(error.kind(), CodecErrorKind::InvalidUtf8);
 }
 
-/// A value type without a default codec: every seal over it names one.
-#[derive(Clone, Debug, PartialEq)]
-struct Postcode {
-    code: String,
-}
-
-struct PostcodeCodec;
-
-impl Codec<Postcode> for PostcodeCodec {
-    const ID: &'static str = "postcode/1";
-
-    fn encode(value: &Postcode) -> Result<Zeroizing<Vec<u8>>, CodecError> {
-        Ok(Zeroizing::new(value.code.as_bytes().to_vec()))
-    }
-
-    fn decode(bytes: &[u8]) -> Result<Postcode, CodecError> {
-        Ok(Postcode {
-            code: String::from_utf8(bytes.to_vec())
-                .map_err(|_| CodecError::new(CodecErrorKind::InvalidUtf8))?,
-        })
-    }
-}
-
-mod renamed {
-    pub use cryptbox as encryption;
-}
-
-#[derive(Seal)]
-#[cryptbox(
-    crate = "renamed::encryption",
-    id = "ca274e85-63c4-4f7d-a255-2dfecbfe5e25",
-    value = Postcode,
-    codec = PostcodeCodec,
-)]
-struct RenamedCratePostcode;
-
-#[test]
-fn derives_can_name_cryptbox_through_another_path() {
-    assert_eq!(RenamedCratePostcode::ID, UserEmail::ID);
-    assert_codec::<RenamedCratePostcode, PostcodeCodec>();
-}
-
 #[test]
 fn a_derived_blind_index_names_its_normalizer() {
     assert_eq!(EmailLookup::NORMALIZER, ManualEmailLookup::NORMALIZER);
-    assert_eq!(StreetLookup::NORMALIZER, ManualStreetLookup::NORMALIZER);
 }
 
 #[derive(Seal)]
@@ -401,19 +307,11 @@ struct ProjectEmailLookup;
 fn a_derived_blind_index_matches_its_probes() {
     let keys = index_keys();
     let email = "Mark@Example.com".to_owned();
-    let prepare = || {
-        Sealed::<ProjectEmail>::prepare(&email, &keyring())
-            .unwrap()
-            .with_index::<ProjectEmailLookup>(&keys)
-            .unwrap()
-            .index::<ProjectEmailLookup>()
-            .unwrap()
-            .to_blind_index()
-    };
+    let derived = BlindIndex::<ProjectEmailLookup>::derive(&email, &keys).unwrap();
 
     let probes = BlindIndex::<ProjectEmailLookup>::probes("mark@example.com", &keys).unwrap();
 
-    assert_eq!(prepare(), probes[0]);
+    assert_eq!(derived, probes[0]);
 }
 
 mod uuid_records {

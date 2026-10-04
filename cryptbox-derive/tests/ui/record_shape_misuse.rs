@@ -50,9 +50,10 @@ struct BadIndex {
         bits = 32,
         normalize = normalize,
         normalizer = "email/1",
-        column = id,
     ))]
     email: String,
+    #[cryptbox(plaintext)]
+    email_index: String,
 }
 
 fn main() {}

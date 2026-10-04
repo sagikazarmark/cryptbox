@@ -12,8 +12,9 @@ The fixed keys are public fixtures.
 
 ## What it shows
 
-- `StoredUser` holds `Sealed<UserEmail>` and `BlindIndex<EmailLookup>`, produced
-  together by `Sealed::prepare`. Serde stores their bytes as unpadded base64url
+- `StoredUser` holds `Sealed<UserEmail>` and `BlindIndex<EmailLookup>`, sealed
+  and derived from the same `String` with `Sealed::seal` and
+  `BlindIndex::derive`. Serde stores their bytes as unpadded base64url
   in JSON; the plaintext `String` is never serialized.
 - Deserialization checks **structure only**. Damaged ciphertext still
   deserializes, then fails to open. See

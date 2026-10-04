@@ -72,16 +72,14 @@ fn round_trip(plaintext: &str, encryption_root: u8, index_root: u8) -> Result<()
     let sealed = Sealed::<UserEmail>::seal(&value, &keys)?;
     assert_eq!(sealed.open(&keys)?, plaintext);
 
-    let prepared =
-        Sealed::<UserEmail>::prepare(&value, &keys)?.with_index::<EmailLookup>(&indexes)?;
+    let index = BlindIndex::<EmailLookup>::derive(&value, &indexes)?;
     let probes = BlindIndex::<EmailLookup>::probes(plaintext, &indexes)?;
-    let stored_index = prepared.index::<EmailLookup>()?;
     assert!(
         probes
             .iter()
-            .any(|probe| probe.as_bytes() == stored_index.as_bytes())
+            .any(|probe| probe.as_bytes() == index.as_bytes())
     );
-    let candidate = prepared.sealed().open(&keys)?;
+    let candidate = sealed.open(&keys)?;
     assert!(BlindIndex::<EmailLookup>::verify_candidate(
         plaintext, &candidate,
     )?);

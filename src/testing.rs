@@ -15,7 +15,7 @@ use crate::{Codec, ContextKind, EncryptionKeyring, Seal, Sealed};
 /// no `PartialEq`.
 ///
 #[doc = concat!(
-    "[guarding the schema in CI]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#guarding-the-schema-in-ci",
+    "[guarding the schema in CI]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#guarding-the-schema-in-ci",
 )]
 ///
 /// # Examples
@@ -76,7 +76,7 @@ pub fn assert_encoding<F: Seal>(value: &F::Value, expected: &str) {
 /// the value.
 ///
 #[doc = concat!(
-    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#test-the-choice",
+    "[choosing keyrings]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#test-the-choice",
 )]
 ///
 /// # Examples

@@ -42,7 +42,7 @@ fn manifest_lists_each_seal() {
 seal 5a0f6c1e-2b7d-4e39-8c14-9d3a7e2b6f01
   codec: utf8
   padding: none
-  context: 65640fc8333534b9
+  context: 502de8fcfb838c80
 seal 9c2e4b7a-1d3f-4a58-b6e0-7f8a9b0c1d2e
   codec: raw
   padding: block(64)
@@ -72,7 +72,7 @@ fn manifest_shows_the_context_a_seal_is_stored_in() {
 seal 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51
   codec: utf8
   padding: block(16)
-  context: 76081b730530f822
+  context: af72b9c5219cf83b
 "
     );
 
@@ -202,13 +202,13 @@ fn manifest_reports_a_seal_in_several_contexts() {
         [Duplicate::Context {
             id: RowNote::ID,
             contexts: vec![
-                hex::decode("76081b730530f822").unwrap().try_into().unwrap(),
-                hex::decode("65640fc8333534b9").unwrap().try_into().unwrap(),
+                hex::decode("af72b9c5219cf83b").unwrap().try_into().unwrap(),
+                hex::decode("502de8fcfb838c80").unwrap().try_into().unwrap(),
             ],
         }]
     );
     assert!(manifest.to_string().ends_with(
-        "  context: 65640fc8333534b9\n\
+        "  context: 502de8fcfb838c80\n\
          seal ID 6e2d9a4c-1b7f-4c38-a5e0-3d9b8c7a6f51 in several contexts\n"
     ));
     assert!(
@@ -288,7 +288,7 @@ record
   seals: dd965aff-c187-49ed-86fe-b75e63fd228d, c173ce33-731d-4051-b1d7-e5dd549c5371
   record id: id
   record kind: i64
-  context: 76081b730530f822
+  context: af72b9c5219cf83b
   plaintext: tenant, created_at, type
 "
         );
@@ -312,7 +312,7 @@ record
             Manifest::new()
                 .record::<Note>()
                 .to_string()
-                .ends_with("  context: 76081b730530f822\n  plaintext: none\n")
+                .ends_with("  context: af72b9c5219cf83b\n  plaintext: none\n")
         );
     }
 

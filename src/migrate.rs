@@ -29,8 +29,8 @@
 //! requirements permit it.
 //!
 #![doc = concat!(
-    "[maintenance sweep guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/operations.md#maintenance-sweeps\n",
-    "[legacy migration guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/operations.md#legacy-migration",
+    "[maintenance sweep guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/operations.md#maintenance-sweeps\n",
+    "[legacy migration guide]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/operations.md#legacy-migration",
 )]
 //! [`Sealed::seal`]: crate::Sealed::seal
 
@@ -54,6 +54,6 @@ pub use row::{RowOutcome, RowPlanner, RowState, RowWrite};
 pub use sqlx_postgres::PostgresSweepStore;
 #[cfg(feature = "sqlx-sqlite")]
 pub use sqlx_sqlite::SqliteSweepStore;
-pub use sweep::{BatchOutcome, Sweep, SweepError, SweepRow, SweepStore};
+pub use sweep::{Sweep, SweepError, SweepRow, SweepStore};
 #[cfg(any(feature = "sqlx-postgres", feature = "sqlx-sqlite"))]
 pub use table::SweepTable;

@@ -150,13 +150,13 @@ identifier!(IndexId, "A stable logical blind-index identifier.");
 /// [`BlindIndex`] derives, probes, and verifies indexes of a spec, so an
 /// implementation supplies only the associated items and the two normalizers.
 ///
-/// See the [custom-field example] and [ownership reference].
+/// See the [custom-seal example] and [ownership reference].
 /// Padding is a closed set of policies; a custom normalizer does not bind an index to a row.
 ///
 #[doc = concat!(
-    "[custom-field example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/custom_field/README.md\n",
-    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/guide.md#ownership-and-erasure\n",
-    "[index context]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/docs/wire-format.md#index-context",
+    "[custom-seal example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/custom_seal/README.md\n",
+    "[ownership reference]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/guide.md#ownership-and-erasure\n",
+    "[index context]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/docs/wire-format.md#index-context",
 )]
 pub trait BlindIndexSpec: Sized + 'static {
     /// The seal whose values this index projects.
@@ -253,8 +253,9 @@ impl<Spec: BlindIndexSpec> BlindIndex<Spec> {
 
     /// Derives the current stored index for a value of the spec's seal.
     ///
-    /// Use this to recompute a stored index from decrypted plaintext. New
-    /// writes usually derive indexes through [`crate::Prepared::with_index`].
+    /// Derive it from the same value that is sealed into the row, and write both
+    /// in one statement; also use this to recompute a stored index from
+    /// decrypted plaintext.
     ///
     /// # Errors
     ///
@@ -274,7 +275,7 @@ impl<Spec: BlindIndexSpec> BlindIndex<Spec> {
     /// See the complete [blind-index example].
     ///
     #[doc = concat!(
-        "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/main/examples/blind_indexes.rs",
+        "[blind-index example]: ", env!("CARGO_PKG_REPOSITORY"), "/blob/v", env!("CARGO_PKG_VERSION"), "/examples/blind_indexes.rs",
     )]
     ///
     /// # Errors
@@ -398,46 +399,6 @@ impl<Spec> Eq for BlindIndex<Spec> {}
 impl<Spec> fmt::Debug for BlindIndex<Spec> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("BlindIndex([REDACTED])")
-    }
-}
-
-/// A borrowed typed blind-index value, typically obtained from [`crate::Prepared`].
-#[derive(Clone, Copy)]
-pub struct BlindIndexRef<'a, Spec> {
-    bytes: &'a [u8],
-    marker: PhantomData<fn() -> Spec>,
-}
-
-impl<'a, Spec> BlindIndexRef<'a, Spec> {
-    pub(crate) fn from_validated_bytes(bytes: &'a [u8]) -> Self {
-        Self {
-            bytes,
-            marker: PhantomData,
-        }
-    }
-
-    /// Returns the complete stored representation, including key generation.
-    #[must_use]
-    pub const fn as_bytes(&self) -> &'a [u8] {
-        self.bytes
-    }
-
-    /// Copies the borrowed representation into an owned [`BlindIndex`].
-    #[must_use]
-    pub fn to_blind_index(&self) -> BlindIndex<Spec> {
-        BlindIndex::from_validated_bytes(self.bytes.to_vec())
-    }
-}
-
-impl<Spec> AsRef<[u8]> for BlindIndexRef<'_, Spec> {
-    fn as_ref(&self) -> &[u8] {
-        self.as_bytes()
-    }
-}
-
-impl<Spec> fmt::Debug for BlindIndexRef<'_, Spec> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("BlindIndexRef([REDACTED])")
     }
 }
 

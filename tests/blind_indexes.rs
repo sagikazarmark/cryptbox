@@ -1,14 +1,12 @@
-//! Public-boundary tests for blind indexes and prepared storage values.
+//! Public-boundary tests for blind indexes.
 
 use cryptbox::envelope::inspect_blind_index;
 use cryptbox::{
-    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, EncryptionKey,
-    EncryptionKeyring, Error, IndexId, IndexKeyId, KeyId, Padding, Seal, Sealed, Utf8, index_id,
-    index_key_id, key_id, seal_id,
+    BlindIndex, BlindIndexError, BlindIndexKey, BlindIndexKeyring, BlindIndexSpec, Error, IndexId,
+    IndexKeyId, Padding, Seal, Utf8, index_id, index_key_id, seal_id,
 };
 use zeroize::Zeroizing;
 
-const ENCRYPTION_KEY_ID: KeyId = key_id!("50000000-0000-4000-8000-000000000005");
 const OLD_INDEX_KEY_ID: IndexKeyId = index_key_id!("60000000-0000-4000-8000-000000000006");
 const CURRENT_INDEX_KEY_ID: IndexKeyId = index_key_id!("70000000-0000-4000-8000-000000000007");
 
@@ -161,25 +159,6 @@ fn candidate_hits_require_normalized_plaintext_verification() {
     assert!(
         !BlindIndex::<EmailExact>::verify_candidate("mark@example.com", &email("short")).unwrap()
     );
-}
-
-#[test]
-fn prepared_values_derive_the_sealed_value_and_indexes_from_one_source() {
-    let encryption_keys =
-        EncryptionKeyring::new(EncryptionKey::new(ENCRYPTION_KEY_ID, [53; 32]), []).unwrap();
-    let index_keys = index_keys();
-    let value = email("Mark@Example.com");
-
-    let prepared = Sealed::<EmailSeal>::prepare(&value, &encryption_keys)
-        .unwrap()
-        .with_index::<EmailExact>(&index_keys)
-        .unwrap();
-
-    assert!(!prepared.sealed().as_bytes().is_empty());
-    let prepared_index = prepared.index::<EmailExact>().unwrap();
-    let direct = BlindIndex::<EmailExact>::derive(&value, &index_keys).unwrap();
-    assert_eq!(prepared_index.as_bytes(), direct.as_bytes());
-    assert_eq!(AsRef::<[u8]>::as_ref(&prepared_index), direct.as_bytes());
 }
 
 /// A computed index over part of the value.
@@ -484,28 +463,6 @@ impl BlindIndexSpec for TicketEmailExact {
     fn normalize_value(value: &String) -> Result<Zeroizing<Vec<u8>>, BlindIndexError> {
         Ok(normalize_email(value))
     }
-}
-
-fn ticket_keys() -> EncryptionKeyring {
-    EncryptionKeyring::new(EncryptionKey::new(ENCRYPTION_KEY_ID, [42; 32]), []).unwrap()
-}
-
-#[test]
-fn prepared_indexes_match_derived_ones() {
-    let keys = ticket_keys();
-    let index_keys = index_keys();
-    let value = email("mark@example.com");
-    let prepared = Sealed::<TicketEmail>::prepare(&value, &keys)
-        .unwrap()
-        .with_index::<TicketEmailExact>(&index_keys)
-        .unwrap();
-
-    assert_eq!(
-        prepared.index::<TicketEmailExact>().unwrap().as_bytes(),
-        BlindIndex::<TicketEmailExact>::derive(&value, &index_keys)
-            .unwrap()
-            .into_bytes()
-    );
 }
 
 #[test]

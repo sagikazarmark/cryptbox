@@ -12,11 +12,7 @@ use crate::{Error, Seal, SealId, envelope::Context as EnvelopeContext};
 
 // A persistent domain separator, not a display string: stored headers carry
 // fingerprints computed with it.
-const FINGERPRINT_LABEL: &[u8] = b"cryptbox/binding-fingerprint/v1\0";
-
-// The record ID's slot: persistent context bytes, a nil ID and role code 3.
-const RECORD_SLOT: [u8; 16] = [0; 16];
-const RECORD_ROLE: u8 = 3;
+const FINGERPRINT_LABEL: &[u8] = b"cryptbox/context-fingerprint/v1\0";
 
 /// The canonical kind of a record ID. Not public API: kinds are persistent
 /// schema, and there is no text kind.
@@ -31,7 +27,8 @@ pub enum RecordKind {
 }
 
 impl RecordKind {
-    // Kind codes are persistent context bytes.
+    // Kind codes are persistent context bytes. Each belongs to one part, so a
+    // later part takes codes of its own.
     const fn code(self) -> u8 {
         match self {
             Self::Uuid => 1,
@@ -63,7 +60,10 @@ impl RecordValue<'_> {
 }
 
 /// A type a record ID can have: `[u8; 16]`, `uuid::Uuid`, `i64`, `Vec<u8>`, or
-/// `Box<[u8]>`. Not public API: `#[derive(Record)]` names it for a record's `record_id` field.
+/// `Box<[u8]>`.
+///
+/// The trait is sealed: record ID kinds are persistent context bytes, so the
+/// set is fixed.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` is not a record ID type",
     label = "a record ID is a UUID, an `i64`, or bytes",
@@ -199,8 +199,7 @@ pub(crate) fn fingerprint(record: Option<RecordKind>) -> [u8; 8] {
     hasher.update(FINGERPRINT_LABEL);
     hasher.update(u16::from(record.is_some()).to_be_bytes());
     if let Some(kind) = record {
-        hasher.update(RECORD_SLOT);
-        hasher.update([kind.code(), RECORD_ROLE]);
+        hasher.update([kind.code()]);
     }
 
     let digest = hasher.finalize();
@@ -219,7 +218,7 @@ pub(crate) struct SealContext {
 
 impl SealContext {
     /// The context of seal `id`, with the record ID `record` for a record's
-    /// field: `seal_id ‖ count ‖ record?`.
+    /// field: `seal_id ‖ count ‖ (kind ‖ len ‖ value)?`.
     ///
     /// Returns [`Error::MessageTooLong`] for a record ID longer than `u32::MAX`
     /// bytes.
@@ -239,7 +238,6 @@ impl SealContext {
             };
             let len = u32::try_from(value.len()).map_err(|_| Error::MessageTooLong)?;
 
-            bytes.extend_from_slice(&RECORD_SLOT);
             bytes.push(record.kind().code());
             bytes.extend_from_slice(&len.to_be_bytes());
             bytes.extend_from_slice(value);
@@ -297,8 +295,8 @@ mod tests {
             hex::encode(&context.bytes),
             "123456781234423482341234567890ab0000"
         );
-        // Independently computed with shasum over the documented label and count.
-        assert_eq!(context.fingerprint, hex_array("65640fc8333534b9"));
+        // Independently computed over the documented label and count.
+        assert_eq!(context.fingerprint, hex_array("502de8fcfb838c80"));
     }
 
     #[test]
@@ -310,14 +308,13 @@ mod tests {
             concat!(
                 "123456781234423482341234567890ab",
                 "0001",
-                "00000000000000000000000000000000",
                 "02",
                 "00000008",
                 "0000000000000001",
             )
         );
-        // Independently computed with shasum over the documented bytes.
-        assert_eq!(context.fingerprint, hex_array("76081b730530f822"));
+        // Independently computed over the documented bytes.
+        assert_eq!(context.fingerprint, hex_array("af72b9c5219cf83b"));
     }
 
     #[test]
@@ -329,14 +326,13 @@ mod tests {
             concat!(
                 "123456781234423482341234567890ab",
                 "0001",
-                "00000000000000000000000000000000",
                 "03",
                 "00000005",
                 "726f772d37",
             )
         );
-        // Independently computed with shasum over the documented bytes.
-        assert_eq!(context.fingerprint, hex_array("338f462e2f4a92a7"));
+        // Independently computed over the documented bytes.
+        assert_eq!(context.fingerprint, hex_array("842fa0b572b1196a"));
     }
 
     #[test]
@@ -349,14 +345,13 @@ mod tests {
             concat!(
                 "123456781234423482341234567890ab",
                 "0001",
-                "00000000000000000000000000000000",
                 "01",
                 "00000010",
                 "abababababababababababababababab",
             )
         );
-        // Independently computed with shasum over the documented bytes.
-        assert_eq!(context.fingerprint, hex_array("87770d1356443105"));
+        // Independently computed over the documented bytes.
+        assert_eq!(context.fingerprint, hex_array("f130f332c1aa00ec"));
     }
 
     #[test]
@@ -397,7 +392,7 @@ mod tests {
 
         // The bytes and fingerprint pinned by `a_record_id_follows_the_seal_id`.
         assert_eq!(context.bytes, expected.bytes);
-        assert_eq!(context.fingerprint, hex_array("76081b730530f822"));
+        assert_eq!(context.fingerprint, hex_array("af72b9c5219cf83b"));
         assert_eq!(
             fingerprint(<InRecord<i64> as ContextKind>::RECORD),
             context.fingerprint

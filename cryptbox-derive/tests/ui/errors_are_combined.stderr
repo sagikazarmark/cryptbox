@@ -4,7 +4,7 @@ error: `id` must be a hyphenated UUID, such as "0b6f3c2a-8e41-4d57-a9c3-5e1f2d7b
 2 | #[cryptbox(id = "not a uuid", value = String, bits = 300)]
   |                 ^^^^^^^^^^^^
 
-error: unknown `cryptbox` key `value`; expected one of `id`, `seal`, `bits`, `query`, `normalize`, `normalizer`, `project`, `crate`
+error: unknown `cryptbox` key `value`; expected one of `id`, `seal`, `bits`, `query`, `normalize`, `normalizer`
  --> tests/ui/errors_are_combined.rs:2:31
   |
 2 | #[cryptbox(id = "not a uuid", value = String, bits = 300)]

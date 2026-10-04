@@ -30,5 +30,6 @@ fn main() -> Result<(), cryptbox::Error> {
     assert_eq!(rewritten.key_id(), CURRENT_KEY_ID);
     assert!(!rewritten.needs_reseal(&rotated_keys)?);
 
+    println!("Key rotation and reseal succeeded.");
     Ok(())
 }

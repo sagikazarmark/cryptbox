@@ -119,13 +119,11 @@ fn migrates_a_sqlite_table_from_plaintext_to_a_terminal_state() {
             ("fourth@example.com", &keys, &index_keys),
         ] {
             let value = email.to_owned();
-            let prepared = Sealed::<UserEmail>::prepare(&value, keyring)
-                .unwrap()
-                .with_index::<EmailLookup>(index_keyring)
-                .unwrap();
+            let sealed = Sealed::<UserEmail>::seal(&value, keyring).unwrap();
+            let index = BlindIndex::<EmailLookup>::derive(&value, index_keyring).unwrap();
             sqlx::query("INSERT INTO users (email_ciphertext, email_bidx) VALUES (?, ?)")
-                .bind(prepared.sealed())
-                .bind(prepared.index::<EmailLookup>().unwrap())
+                .bind(&sealed)
+                .bind(&index)
                 .execute(&mut connection)
                 .await
                 .unwrap();
