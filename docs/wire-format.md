@@ -232,7 +232,9 @@ shorter.
 
 Flag bit `01` records that the AEAD plaintext is [padded](#plaintext-padding).
 All other bits are reserved and must be zero; readers reject an envelope with a
-reserved bit set before authentication. The flags are part of the
+reserved bit set before authentication. Readers check the suite first, so an
+envelope of an unknown suite, which may define a reserved bit, is reported as
+an unsupported suite. The flags are part of the
 authenticated prefix, so changing them fails authentication.
 
 There is no embedded payload-length field: the enclosing storage or transport

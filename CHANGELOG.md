@@ -141,7 +141,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   `InvalidEnvelope` and `InvalidBlindIndex`, so data a later release writes is
   reported as unsupported rather than malformed (#117). An envelope's format
   version is checked before its length, so a later format with a shorter header
-  is unsupported too; a blind index, which has no magic, needs a full header
+  is unsupported too, and its suite before its flags, so a later suite that
+  defines a flag reports `UnsupportedSuite`; a blind index, which has no magic, needs a full header
   first.
 - A context is its seal ID, a part count, and each part's kind code and
   length-prefixed value; the context fingerprint is the first 8 bytes of SHA-256
