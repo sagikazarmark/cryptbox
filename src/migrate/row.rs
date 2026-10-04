@@ -170,7 +170,7 @@ where
 
     /// Creates a planner for rows of seal `F` that `keys` protects, each bound
     /// to the record ID `record_id` reads from its columns: a reference to a
-    /// UUID or an `i64`, such as `|row| &row.id`.
+    /// UUID, a `[u8; 16]`, or an `i64`, such as `|row| &row.id`.
     ///
     /// Use it for a record field's values, as
     /// [`Sealed<F, InRecord<Id>>`](crate::InRecord) holds them; the record ID's

@@ -9,9 +9,10 @@ No features are enabled by default, and all features are additive:
   compile time; a codec is never inferred from a type's shape.
 - `json` adds the `Json` codec. Its serialized representation is persistent
   schema. It implies `serde`.
-- `migrate` adds the `migrate` module for adopting `CryptBox` over plaintext or a
-  previous solution's ciphertext: permissive reads, a legacy recovery handler,
-  and a resumable sweep. Normal decoding stays strict.
+- `migrate` adds the `migrate` module for rewriting stored values: a resumable
+  sweep for key rotation and format or padding changes, and, for adopting
+  `CryptBox` over plaintext or a previous solution's ciphertext, permissive
+  reads and a legacy recovery handler. Normal decoding stays strict.
 - `serde` serializes `Sealed` and `BlindIndex` stored bytes: unpadded base64url
   in human-readable formats, bytes otherwise.
 - `sqlx-postgres` and `sqlx-sqlite` add `SQLx` 0.8 `BYTEA`/`BLOB` storage.

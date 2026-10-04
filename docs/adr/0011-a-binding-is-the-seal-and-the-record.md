@@ -4,6 +4,10 @@ status: accepted
 
 # A binding is the seal and the record
 
+> Amended before release: bytes record IDs are dropped. No stored value used
+> one, and the wire format reserves their kind code, so a record ID is a `Uuid`
+> or `[u8; 16]`, or an `i64`.
+
 > Amended by [ADR-0012](0012-a-record-is-a-context-layer-over-a-seal.md):
 > a record field's seal is no longer marked by a hidden `Seal::RECORD`. The
 > record is a context, `InRecord<K>`, that its derive seals and opens with

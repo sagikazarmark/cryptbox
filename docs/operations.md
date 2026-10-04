@@ -219,8 +219,9 @@ selects only that tenant's rows and loads the record ID into `SweepRow::columns`
 Packaged stores load no columns, so records need an application-owned
 `SweepStore`. A sweep never changes a value's context; a row under another
 context fails with `Error::ContextMismatch` (see
-[records and tenants](guide.md#records-and-tenants)). To move a value to other
-keys, open and seal the record again, or use `Sealed::reseal_across`.
+[records and tenants](guide.md#records-and-tenants)). To move a record to other
+keys, open it and seal it again; `Sealed::reseal_across` serves standalone values
+only.
 
 ### Verification
 

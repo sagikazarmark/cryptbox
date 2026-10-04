@@ -91,6 +91,7 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   `BlindIndexSpec<Input>`: it declares `type Seal`, `const ID`, `const BITS: u16`
   (was `usize`), `const NORMALIZER: &'static str`, a name for its normalization
   rules, and `type Query`, and normalizes queries and stored values separately,
+  with `normalize_query` and `normalize_value` in place of `normalize`,
   so an index can project part of a value. `derive_blind_index`,
   `blind_index_probes`, and `verify_blind_index_candidate` are replaced by
   `BlindIndex::<S>::derive`, `BlindIndex::<S>::probes`, and
@@ -161,7 +162,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   context fingerprints, normalizers, and plaintext fields, for snapshot tests,
   and reports duplicate IDs, seals registered in several kinds of context
   (`Manifest::sealed::<F, C>()`), and seal IDs that fields of several records
-  declare (`Duplicate::RecordField`); `assert_unique_ids!`, which fails
+  declare (`Duplicate::RecordField`), and whose output changes only in a
+  breaking release; `assert_unique_ids!`, which fails
   compilation when listed markers share an ID, declare the nil UUID, or name an
   unversioned normalizer; and `testing::assert_sealed_under`, which checks
   which keyring sealed a value.
@@ -254,7 +256,7 @@ Decisions are recorded in ADR-0001 to ADR-0013.
 | `LocalEncryptionKeyring`, `LocalBlindIndexKeyring` | `EncryptionKeyring`, `BlindIndexKeyring`, paired in `Keys` |
 | `impl EncryptionKeyProvider for S` | resolve the keyring yourself and pass it |
 | `Encrypted<T, P>` as an SQLx column | `Sealed<P>`, opened with `open(&keys)` |
-| `impl BlindIndexMetadata for S` plus `impl BlindIndexSpec<str> for S` | one `impl BlindIndexSpec for S { type Seal = P; const BITS: u16 = …; const NORMALIZER: &'static str = "…"; type Query = str; … }` |
+| `impl BlindIndexMetadata for S` plus `impl BlindIndexSpec<str> for S` | one `impl BlindIndexSpec for S { type Seal = P; const BITS: u16 = …; const NORMALIZER: &'static str = "…"; type Query = str; fn normalize_query(…); fn normalize_value(…); }` |
 | `derive_blind_index::<S, _, _>(&v, &keys)` | `BlindIndex::<S>::derive(&v, &keys)` |
 | `blind_index_probes::<S, str, _>(q, &keys)` | `BlindIndex::<S>::probes(q, &keys)` |
 | `verify_blind_index_candidate::<S, str>(q, c)` | `BlindIndex::<S>::verify_candidate(q, c)` |
