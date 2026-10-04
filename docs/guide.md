@@ -377,7 +377,10 @@ codec over a positional format can decode into wrong values silently when
 fields or variants are reordered: append fields, never reorder them.
 
 Name a normalizer's rules with `BlindIndexSpec::NORMALIZER`, such as
-`"email/1"`, and bump the version with every change.
+`"email/1"`. The name is not part of the index bytes, so bumping it alone does
+not keep stored indexes valid: when the rules change, bump the name, give the
+index a new ID, and derive its indexes again
+([why](wire-format.md#index-context)).
 
 Padding is not schema. The envelope authenticates whether its payload is
 padded, so enabling, disabling or resizing padding keeps existing values

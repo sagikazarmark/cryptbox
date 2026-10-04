@@ -143,8 +143,9 @@ fn main() -> Result<(), cryptbox::Error> {
 ```
 
 `normalize` defines which emails are equal, and `normalizer = "email/1"` names
-those rules: stored indexes depend on them, so bump the version whenever the
-rules change. `User::EMAIL_INDEX` is the index handle the derive generates. An
+those rules. Stored indexes depend on the rules, not the name: when the rules
+change, bump the name and give the index a new `id`, then derive its indexes
+again. The name only makes the change visible in a schema snapshot. `User::EMAIL_INDEX` is the index handle the derive generates. An
 index reveals which rows share an email, and a 32-bit index also selects some
 rows that do not match, so `open_matching` decrypts each candidate and compares
 it before returning a match.

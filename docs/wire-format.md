@@ -500,6 +500,11 @@ matching their probes; nothing fails to parse. Only a schema manifest snapshot
 (`schema::Manifest`), which lists each index's normalizer, catches the change.
 Give changed normalization a new `IndexId`, and derive its indexes again.
 
+This is deliberate, and fixed with index format 2. Deriving under the name
+would not detect anything: changed rules under an unchanged name still derive
+different bytes, and a bumped name would only make stale indexes miss under
+another label. It would make renaming a normalizer re-derive every index.
+
 ### Blind-index recipe
 
 Inputs are an independent 32-byte blind-index root (never an encryption root),
