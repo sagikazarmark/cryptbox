@@ -75,9 +75,10 @@ fn main() -> Result<(), cryptbox::Error> {
 
 `#[derive(Record)]` generates the stored form, `StoredUser`, with a `Sealed`
 column for each sealed field. Every sealed field is bound to its seal and to the
-row's `id`, so a value copied to another field or row fails to open. `Secret`
-keeps the SSN out of `Debug` output and wipes it on drop; read it with
-`expose_secret`.
+row's `id`, so a value copied to another field or row fails to open. The record
+ID must exist before sealing, so generate it in the application (UUIDv7 is a good
+choice), not with an autoincrement column. `Secret` keeps the SSN out of `Debug`
+output and wipes it on drop; read it with `expose_secret`.
 
 ### Look it up by email
 

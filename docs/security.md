@@ -2,7 +2,9 @@
 
 CryptBox encrypts selected application values before storage.
 Ciphertext format 2, blind-index format 2, and suite 1 are stable: later
-releases read them. **They have not had an independent cryptographic audit**;
+releases read them. Compatibility runs one way: a release rejects a format or
+suite newer than it knows, so upgrade every reader before any writer produces
+one ([new suites and formats](operations.md#new-suites-and-formats)). **They have not had an independent cryptographic audit**;
 version numbers and passing tests do not indicate security approval.
 
 ## Trust boundary and assumptions
@@ -37,7 +39,7 @@ target are required; see [platform constraints](features.md#platforms-and-tested
 | Modify stored ciphertext | Authenticated decryption rejects tampering. Parsing alone does not authenticate. |
 | Copy ciphertext to another seal | Rejected. A record field's value read as a standalone value reports `ContextMismatch`. |
 | Copy ciphertext to another tenant | Only keys separate tenants: with a keyring per tenant, it fails with `UnknownEncryptionKey`. Under a shared keyring, a plaintext tenant column changed in place is not detected. |
-| Copy ciphertext between rows of the same seal | Rejected for a record's fields. Standalone values can be substituted among rows under the same keys. |
+| Copy ciphertext between rows of the same seal | Rejected for a record's fields. The context holds the seal ID and record ID, not the table or record type: two records whose fields share a seal ID and whose record IDs overlap, such as `users` row 7 and `contacts` row 7, can swap values. Check that `Manifest::duplicates()` is empty. Standalone values can be substituted among rows under the same keys. |
 | Return a whole row in place of another | Every value opens, since each is bound to its own row. When you asked for a record by ID, compare the opened ID with it. |
 | Restore an older authentic value | No replay, rollback, or freshness protection. |
 | Set an optional sealed column to `NULL` | Not detected: presence is not authenticated. An `Option<Sealed<…>>` set to `NULL` reads as `None`, as if no value had been stored. |
@@ -60,7 +62,10 @@ ranges, or full-text search.
   open candidates, and compare normalized plaintext. Never use truncated indexes
   as uniqueness constraints, and avoid indexing low-cardinality sensitive values.
 - Protect logs, traces, crash dumps, swap, and application copies; see
-  [ownership and erasure](guide.md#ownership-and-erasure).
+  [ownership and erasure](guide.md#ownership-and-erasure). CryptBox errors carry
+  a category and public IDs only, never a value or an upstream error: codecs and
+  normalizers report a sanitized `CodecError` or `BlindIndexError`, since their
+  own errors can quote their input.
 - Treat rotation as selecting a new current generation, not revocation or
   re-encryption; see [key rotation](operations.md#key-rotation). Live-table
   convergence does not retire backup dependencies.

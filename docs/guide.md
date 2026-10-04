@@ -57,7 +57,10 @@ its own keyring when tenants must not read each other's values.
 A `Secret<String>` or `Secret<Vec<u8>>` field stores the same bytes as the bare
 type, but redacts `Debug` and wipes the value on drop. Read it with
 `expose_secret()`. A derived `Debug` on the record itself prints every bare
-field, so keep sensitive fields in `Secret` or write `Debug` by hand.
+field, so keep sensitive fields in `Secret` or write `Debug` by hand. `Secret`
+stores only those two types: a sealed field of any other type, such as a
+`u32` or an address with `codec = cryptbox::Json`, needs a hand-written `Debug`
+to stay out of logs.
 
 ### Plaintext columns are authorized, not authenticated
 
@@ -96,6 +99,13 @@ let customer = Customer::open(stored, &keys)?;
 let resealed = customer.seal(&keys)?;
 // UPDATE customer SET email = ?, email_index = ?, note = ? WHERE id = ?
 ```
+
+`needs_reseal` checks the encryption key only. After rotating the blind-index
+key, a row whose sealed fields are current can still hold indexes under the old
+one: compare
+`envelope::inspect_blind_index(stored.email_index.as_bytes())?.index_key_id()`
+with the current index key, and rewrite those rows too. Dropping the old index
+key first silently drops their rows from lookups.
 
 [Key rotation](operations.md#key-rotation) covers when to promote the new key,
 and [maintenance sweeps](operations.md#maintenance-sweeps) how to rewrite rows
