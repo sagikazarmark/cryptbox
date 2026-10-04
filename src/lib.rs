@@ -176,7 +176,7 @@ pub use key_source::{BlindIndexKeys, EncryptionKeys, RecordKeys};
 pub use padding::Padding;
 pub use record::{Index, Record};
 pub use seal::{Seal, SealId};
-pub use seal_context::{Context, ContextKind, InRecord, RecordKey};
+pub use seal_context::{Context, ContextKind, InRecord, RecordIdType};
 pub use secret::Secret;
 pub use value::Sealed;
 

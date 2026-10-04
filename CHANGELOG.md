@@ -37,7 +37,7 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   value is bound to its seal ID: opened as another seal, it fails authentication.
 - `Sealed<F, C = ()>` names the context a value is sealed in besides its seal ID
   (ADR-0012): `()` for a standalone value, or a `Context`, such as
-  `InRecord<K>` for a record's field. `Sealed::seal_in(&value, &context, &keys)`
+  `InRecord<Id>` for a record's field. `Sealed::seal_in(&value, &context, &keys)`
   and `open_in` take the context's value, such as the record ID; `needs_reseal`
   serves every context. `C` is bounded by `ContextKind`, which only the library
   implements. A seal knows nothing of where its values are stored.
@@ -64,7 +64,7 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   `codec`, `padding`, `name`, and `blind_index(…)`), or
   `#[cryptbox(plaintext)]`; a field without one fails the build. A record ID is
   a `Uuid` or `[u8; 16]`, an `i64`, or bytes, the types of the sealed
-  `RecordKey` trait. The derive generates the stored
+  `RecordIdType` trait. The derive generates the stored
   form, `Stored{Record}`, a seal per sealed field, a blind-index spec and an
   `Index` handle per blind index, such as `Customer::EMAIL_INDEX`, whose
   `probes` and `open_matching` run a lookup; a blind index is stored in the

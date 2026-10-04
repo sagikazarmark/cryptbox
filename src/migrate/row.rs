@@ -7,7 +7,7 @@ use crate::{
     blind::{derive_value, index_context},
     bound,
     envelope::{inspect_blind_index, inspect_ciphertext},
-    seal_context::{RecordKey, RecordValue, SealContext},
+    seal_context::{RecordIdType, RecordValue, SealContext},
 };
 
 use super::{LegacyFormat, legacy};
@@ -173,13 +173,13 @@ where
     /// UUID, an `i64`, or bytes, such as `|row| Ok(&row.id)`.
     ///
     /// Use it for a record field's values, as
-    /// [`Sealed<F, InRecord<K>>`](crate::InRecord) holds them; the record ID's
-    /// type `K` must be the field's, or every row reports
+    /// [`Sealed<F, InRecord<Id>>`](crate::InRecord) holds them; the record ID's
+    /// type `Id` must be the field's, or every row reports
     /// [`Error::ContextMismatch`]. An error from `record_id` is returned as it
     /// is, and stops a sweep or verification pass.
-    pub fn for_rows<K: RecordKey>(
+    pub fn for_rows<Id: RecordIdType>(
         keys: &'a EncryptionKeyring,
-        record_id: impl for<'r> Fn(&'r R) -> Result<&'r K, Error> + 'a,
+        record_id: impl for<'r> Fn(&'r R) -> Result<&'r Id, Error> + 'a,
     ) -> Self {
         Self::with_record_id(
             keys,

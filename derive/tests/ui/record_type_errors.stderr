@@ -4,9 +4,9 @@ error[E0277]: `String` is not a record ID type
 2 | #[derive(cryptbox::Record)]
   |          ^^^^^^^^^^^^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
-  = help: the trait `RecordKey` is not implemented for `String`
+  = help: the trait `RecordIdType` is not implemented for `String`
   = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
-  = help: the following other types implement trait `RecordKey`:
+  = help: the following other types implement trait `RecordIdType`:
             Box<[u8]>
             Vec<u8>
             [u8; 16]
@@ -26,9 +26,9 @@ error[E0277]: `String` is not a record ID type
 5 |     id: String,
   |         ^^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
-  = help: the trait `RecordKey` is not implemented for `String`
+  = help: the trait `RecordIdType` is not implemented for `String`
   = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
-  = help: the following other types implement trait `RecordKey`:
+  = help: the following other types implement trait `RecordIdType`:
             Box<[u8]>
             Vec<u8>
             [u8; 16]
@@ -74,9 +74,9 @@ error[E0277]: `String` is not a record ID type
 5 |     id: String,
   |         ^^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
-  = help: the trait `RecordKey` is not implemented for `String`
+  = help: the trait `RecordIdType` is not implemented for `String`
   = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
-  = help: the following other types implement trait `RecordKey`:
+  = help: the following other types implement trait `RecordIdType`:
             Box<[u8]>
             Vec<u8>
             [u8; 16]
@@ -98,9 +98,9 @@ error[E0277]: `String` is not a record ID type
 5 |     id: String,
   |         ^^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
-  = help: the trait `RecordKey` is not implemented for `String`
+  = help: the trait `RecordIdType` is not implemented for `String`
   = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
-  = help: the following other types implement trait `RecordKey`:
+  = help: the following other types implement trait `RecordIdType`:
             Box<[u8]>
             Vec<u8>
             [u8; 16]
@@ -121,11 +121,11 @@ error[E0599]: the associated function or constant `seal_in` exists for struct `S
   |
  ::: $WORKSPACE/src/seal_context.rs
   |
-  | pub struct InRecord<K>(PhantomData<fn() -> K>);
-  | ---------------------- doesn't satisfy `InRecord<String>: cryptbox::Context`
+  | pub struct InRecord<Id>(PhantomData<fn() -> Id>);
+  | ----------------------- doesn't satisfy `InRecord<String>: cryptbox::Context`
   |
   = note: the following trait bounds were not satisfied:
-          `String: RecordKey`
+          `String: RecordIdType`
           which is required by `InRecord<String>: cryptbox::Context`
 
 error[E0277]: `String` is not a record ID type
@@ -134,9 +134,9 @@ error[E0277]: `String` is not a record ID type
 7 |     email: String,
   |     ^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
-  = help: the trait `RecordKey` is not implemented for `String`
+  = help: the trait `RecordIdType` is not implemented for `String`
   = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
-  = help: the following other types implement trait `RecordKey`:
+  = help: the following other types implement trait `RecordIdType`:
             Box<[u8]>
             Vec<u8>
             [u8; 16]
@@ -155,9 +155,9 @@ error[E0277]: `String` is not a record ID type
 2 | #[derive(cryptbox::Record)]
   |          ^^^^^^^^^^^^^^^^ a record ID is a UUID, an `i64`, or bytes
   |
-  = help: the trait `RecordKey` is not implemented for `String`
+  = help: the trait `RecordIdType` is not implemented for `String`
   = note: use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`
-  = help: the following other types implement trait `RecordKey`:
+  = help: the following other types implement trait `RecordIdType`:
             Box<[u8]>
             Vec<u8>
             [u8; 16]

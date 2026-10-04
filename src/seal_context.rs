@@ -69,7 +69,7 @@ impl RecordValue<'_> {
     label = "a record ID is a UUID, an `i64`, or bytes",
     note = "use `[u8; 16]`, `i64`, `Vec<u8>`, `Box<[u8]>`, or `uuid::Uuid`"
 )]
-pub trait RecordKey: sealed::Sealed + 'static {
+pub trait RecordIdType: sealed::Sealed + 'static {
     #[doc(hidden)]
     const KIND: RecordKind;
 
@@ -77,7 +77,7 @@ pub trait RecordKey: sealed::Sealed + 'static {
     fn record_value(&self) -> RecordValue<'_>;
 }
 
-impl RecordKey for [u8; 16] {
+impl RecordIdType for [u8; 16] {
     const KIND: RecordKind = RecordKind::Uuid;
 
     fn record_value(&self) -> RecordValue<'_> {
@@ -85,7 +85,7 @@ impl RecordKey for [u8; 16] {
     }
 }
 
-impl RecordKey for uuid::Uuid {
+impl RecordIdType for uuid::Uuid {
     const KIND: RecordKind = RecordKind::Uuid;
 
     fn record_value(&self) -> RecordValue<'_> {
@@ -93,7 +93,7 @@ impl RecordKey for uuid::Uuid {
     }
 }
 
-impl RecordKey for i64 {
+impl RecordIdType for i64 {
     const KIND: RecordKind = RecordKind::I64;
 
     fn record_value(&self) -> RecordValue<'_> {
@@ -101,7 +101,7 @@ impl RecordKey for i64 {
     }
 }
 
-impl RecordKey for Vec<u8> {
+impl RecordIdType for Vec<u8> {
     const KIND: RecordKind = RecordKind::Bytes;
 
     fn record_value(&self) -> RecordValue<'_> {
@@ -109,7 +109,7 @@ impl RecordKey for Vec<u8> {
     }
 }
 
-impl RecordKey for Box<[u8]> {
+impl RecordIdType for Box<[u8]> {
     const KIND: RecordKind = RecordKind::Bytes;
 
     fn record_value(&self) -> RecordValue<'_> {
@@ -163,29 +163,29 @@ pub trait Context: ContextKind {
 }
 
 /// The context of a record's sealed field: its seal ID and the record ID, of
-/// type `K`.
+/// type `Id`.
 ///
-/// `#[derive(Record)]` stores each sealed field as `Sealed<F, InRecord<K>>`,
+/// `#[derive(Record)]` stores each sealed field as `Sealed<F, InRecord<Id>>`,
 /// seals it under the record's ID, and opens it under the ID the row stores,
-/// so a value copied to another row or field fails to open. `K` is a record ID
+/// so a value copied to another row or field fails to open. `Id` is a record ID
 /// type: a `Uuid` or `[u8; 16]`, an `i64`, or bytes.
-pub struct InRecord<K>(PhantomData<fn() -> K>);
+pub struct InRecord<Id>(PhantomData<fn() -> Id>);
 
-impl<K: RecordKey> sealed::Sealed for InRecord<K> {}
+impl<Id: RecordIdType> sealed::Sealed for InRecord<Id> {}
 
-impl<K: RecordKey> ContextKind for InRecord<K> {
-    const RECORD: Option<RecordKind> = Some(K::KIND);
+impl<Id: RecordIdType> ContextKind for InRecord<Id> {
+    const RECORD: Option<RecordKind> = Some(Id::KIND);
 }
 
-impl<K: RecordKey> Context for InRecord<K> {
-    type Value = K;
+impl<Id: RecordIdType> Context for InRecord<Id> {
+    type Value = Id;
 
-    fn record_value(value: &K) -> RecordValue<'_> {
+    fn record_value(value: &Id) -> RecordValue<'_> {
         value.record_value()
     }
 }
 
-impl<K> fmt::Debug for InRecord<K> {
+impl<Id> fmt::Debug for InRecord<Id> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("InRecord")
     }

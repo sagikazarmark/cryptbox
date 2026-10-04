@@ -90,7 +90,7 @@ supplies the context it expects. A sealed value's context is its
 A value's context starts with its seal's stable `SealId`, so an email seal's
 ciphertext is not accepted under a different seal, even when both use the same
 root key. A `Context`, the second parameter of
-`Sealed<F, C>`, adds parts after it: a record's field, `InRecord<K>`, adds the
+`Sealed<F, C>`, adds parts after it: a record's field, `InRecord<Id>`, adds the
 record ID, so a field's value is not accepted in another row. See
 [ADR-0005](adr/0005-runtime-binding-is-the-core.md),
 [ADR-0008](adr/0008-records-declare-their-fields-seals.md),

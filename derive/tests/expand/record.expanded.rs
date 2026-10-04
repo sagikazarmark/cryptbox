@@ -37,7 +37,7 @@ pub struct Customer {
     pub created_at: i64,
 }
 const _: fn() = || {
-    fn check<T: ::cryptbox::RecordKey>() {}
+    fn check<T: ::cryptbox::RecordIdType>() {}
     check::<i64>();
 };
 ///The seal of `Customer::email`, which `#[derive(Record)]` declares.

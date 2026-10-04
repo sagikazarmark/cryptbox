@@ -23,7 +23,7 @@ What an envelope binds a value to: bytes that key derivation and the AAD both
 take, never stored, plus a context fingerprint in the header. A sealed value's
 seal context is its seal ID followed by the parts of its `Context`, the second
 parameter of `Sealed<F, C>`: none for a standalone value (`()`), the record ID
-for a record's field (`InRecord<K>`). Opening under another seal, context, or
+for a record's field (`InRecord<Id>`). Opening under another seal, context, or
 record fails. Tenants are kept apart by keys, not by the context.
 <!-- Agent guidance: “binding” is retired as a concept above the envelope (ADR-0011): say “context”, or “seal context” for the bytes; `Context` names a kind of context that adds parts after the seal ID (ADR-0012), and `ContextKind` is `()` or a `Context`. “Binding arguments” (`Args`), “bound value”, “bound ID type”, and “partition” are retired, as “scope”, “view”, and “keys view” were (ADR-0010). “Part” returns only for the library-owned parts of a context (ADR-0012). Applications never write context bytes. -->
 
@@ -107,7 +107,7 @@ may be staged before first use.
 **Record**:
 A row that stores its record ID beside its sealed fields (`Record`). Every field
 is the record ID, a sealed field, or plaintext. Each sealed field has its own
-seal and is sealed in `InRecord<K>`, so a value moved to another field or row
+seal and is sealed in `InRecord<Id>`, so a value moved to another field or row
 fails to open. The record ID is stored in plaintext and authenticated on open;
 plaintext fields, such as an org, are not, so the application authorizes on them.
 `#[derive(Record)]` generates the stored form, a seal per sealed field, and an
