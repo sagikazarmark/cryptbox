@@ -103,6 +103,25 @@ fn format_1_envelopes_are_not_read() {
     );
 }
 
+#[test]
+fn a_short_envelope_of_another_format_is_unsupported_not_malformed() {
+    // A later format may have a shorter header than format 2.
+    assert_eq!(
+        inspect_ciphertext(b"CBX\0\x03").unwrap_err(),
+        Error::UnsupportedFormatVersion(3)
+    );
+    // Without a version byte, the bytes are malformed.
+    assert_eq!(
+        inspect_ciphertext(b"CBX\0").unwrap_err(),
+        Error::InvalidEnvelope
+    );
+    // A format 2 envelope too short for its header is malformed.
+    assert_eq!(
+        inspect_ciphertext(b"CBX\0\x02").unwrap_err(),
+        Error::InvalidEnvelope
+    );
+}
+
 /// A blind index over the vector seal that keeps `$bits` bits.
 macro_rules! vector_index {
     ($name:ident, $bits:expr) => {

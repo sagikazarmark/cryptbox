@@ -197,7 +197,7 @@ fn permissive_decode_propagates_hard_errors() {
             .await
             .unwrap();
         sqlx::query("INSERT INTO rows (bytes) VALUES (?)")
-            .bind(b"CBX\0garbage".to_vec())
+            .bind(b"CBX\0\x02garbage".to_vec())
             .execute(&mut connection)
             .await
             .unwrap();

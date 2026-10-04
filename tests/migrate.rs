@@ -287,7 +287,7 @@ fn from_legacy_bytes_bypasses_classification_even_with_magic_prefix() {
 #[test]
 fn magic_prefixed_garbage_is_a_hard_error_not_plaintext() {
     assert_eq!(
-        MaybeSealed::<UserEmail>::from_bytes(b"CBX\0garbage".to_vec()).unwrap_err(),
+        MaybeSealed::<UserEmail>::from_bytes(b"CBX\0\x02garbage".to_vec()).unwrap_err(),
         Error::InvalidEnvelope,
     );
 }
@@ -760,7 +760,7 @@ fn sweep_run_stops_at_a_malformed_row_and_keeps_the_last_checkpoint() {
     let sweep = Sweep::new(planner).with_batch_size(2);
 
     let mut rows = mixed_rows();
-    rows[2].1 = b"CBX\0garbage".to_vec();
+    rows[2].1 = b"CBX\0\x02garbage".to_vec();
     let mut store = MemoryStore::new(rows);
 
     let error = futures_executor::block_on(sweep.run(&mut store)).unwrap_err();

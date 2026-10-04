@@ -112,15 +112,18 @@ pub(super) fn parse_envelope(bytes: &[u8]) -> Result<ParsedEnvelope<'_>, Error> 
         return Err(Error::NotCiphertext);
     }
 
-    // Too short for a header: malformed, whatever byte 4 claims.
-    if bytes.len() < HEADER_LEN {
-        return Err(Error::InvalidEnvelope);
-    }
-
     // Offsets follow the layout table: ../../docs/wire-format.md#envelope.
-    let format_version = bytes[FORMAT_VERSION_OFFSET];
+    // The magic marks the bytes as an envelope, so the version is checked before
+    // the length: a later format may have a shorter header.
+    let Some(&format_version) = bytes.get(FORMAT_VERSION_OFFSET) else {
+        return Err(Error::InvalidEnvelope);
+    };
     if format_version != FORMAT_VERSION {
         return Err(Error::UnsupportedFormatVersion(format_version));
+    }
+
+    if bytes.len() < HEADER_LEN {
+        return Err(Error::InvalidEnvelope);
     }
     let flags = bytes[FLAGS_OFFSET];
 

@@ -226,6 +226,11 @@ offset  size  field
 55+N    16    Poly1305 tag
 ```
 
+The magic and format version are the only bytes every format shares. Readers
+check the version as soon as the magic is present, before the length, so an
+envelope of a later format is reported as unsupported even if its header is
+shorter.
+
 Flag bit `01` records that the AEAD plaintext is [padded](#plaintext-padding).
 All other bits are reserved and must be zero; readers reject an envelope with a
 reserved bit set before authentication. The flags are part of the
