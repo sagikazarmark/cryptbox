@@ -66,7 +66,7 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   field has one role, `#[cryptbox(record_id)]`, `#[cryptbox(seal = "…")]` (with
   `codec`, `padding`, `name`, and `blind_index(…)`), or
   `#[cryptbox(plaintext)]`; a field without one fails the build. A record ID is
-  a `Uuid` or `[u8; 16]`, an `i64`, or bytes, the types of the sealed
+  a `Uuid` or `[u8; 16]`, or an `i64`, the types of the sealed
   `RecordIdType` trait. The derive generates the stored
   form, `Stored{Record}`, a seal per sealed field, a blind-index spec and an
   `Index` handle per blind index, such as `Customer::EMAIL_INDEX`, whose

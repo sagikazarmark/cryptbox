@@ -80,7 +80,7 @@ fn check(bytes: &[u8]) {
         Sealed::<Unpadded, InRecord<i64>>::from_bytes(bytes).expect("parsing ignores the context");
     assert_forgery_error(&record.open_in(&7, &keys).unwrap_err());
 
-    let record = Sealed::<Unpadded, InRecord<Vec<u8>>>::from_bytes(bytes)
+    let record = Sealed::<Unpadded, InRecord<[u8; 16]>>::from_bytes(bytes)
         .expect("parsing ignores the context");
-    assert_forgery_error(&record.open_in(&b"row".to_vec(), &keys).unwrap_err());
+    assert_forgery_error(&record.open_in(&[7; 16], &keys).unwrap_err());
 }

@@ -301,7 +301,7 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// implements a hidden marker trait that seals it. The real expansion spells
 /// `Result`, `Option`, `Clone`, `Sized`, and the codec as absolute paths, wraps
 /// each impl in `const _: () = { … };`, forwards docs, and checks, at compile
-/// time, that the record ID is a UUID, an `i64`, or bytes. The seals it declares
+/// time, that the record ID is a UUID or an `i64`. The seals it declares
 /// know nothing of the record: the record seals and opens their values in its
 /// context, `cryptbox::InRecord`, under its record ID:
 ///

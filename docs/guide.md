@@ -85,7 +85,7 @@ The record ID must exist before the first value is sealed. Generate it on the
 client (UUIDv7 recommended); sealing against a database-assigned key is not
 supported. It need not be the primary key, but must never change while sealed
 values exist. It is never encrypted. Its kind is fixed by its type: `[u8; 16]`
-or `uuid::Uuid`, `i64`, or `Vec<u8>`; store an ID newtype's inner value.
+or `uuid::Uuid`, or `i64`; store an ID newtype's inner value.
 
 ### Rotating a record's keys
 

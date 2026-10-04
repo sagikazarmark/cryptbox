@@ -271,13 +271,13 @@ impl<F: Seal, C: Context> Sealed<F, C> {
     /// # Errors
     ///
     /// Returns an error when encoding, padding, key lookup, randomness, or
-    /// encryption fails, or for a bytes record ID longer than `u32::MAX` bytes.
+    /// encryption fails.
     pub fn seal_in(
         value: &F::Value,
         context: &C::Value,
         keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<Self, Error> {
-        Self::seal_under(value, &SealContext::of::<F, C>(context)?, keys)
+        Self::seal_under(value, &SealContext::of::<F, C>(context), keys)
     }
 
     /// Authenticates, decrypts, and decodes this value under `context`, the
@@ -299,7 +299,7 @@ impl<F: Seal, C: Context> Sealed<F, C> {
         context: &C::Value,
         keys: &(impl EncryptionKeys + ?Sized),
     ) -> Result<F::Value, Error> {
-        self.open_under(&SealContext::of::<F, C>(context)?, keys)
+        self.open_under(&SealContext::of::<F, C>(context), keys)
     }
 }
 

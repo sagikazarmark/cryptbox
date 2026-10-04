@@ -93,7 +93,7 @@ impl RowOutcome {
     }
 }
 
-type RecordIdFn<'a, R> = Box<dyn for<'r> Fn(&'r R) -> Result<Option<RecordValue<'r>>, Error> + 'a>;
+type RecordIdFn<'a, R> = Box<dyn Fn(&R) -> Result<Option<RecordValue>, Error> + 'a>;
 
 type IndexDeriver<F> =
     fn(&<F as Seal>::Value, &SealContext, &BlindIndexKeyring) -> Result<Vec<u8>, Error>;
@@ -170,7 +170,7 @@ where
 
     /// Creates a planner for rows of seal `F` that `keys` protects, each bound
     /// to the record ID `record_id` reads from its columns: a reference to a
-    /// UUID, an `i64`, or bytes, such as `|row| Ok(&row.id)`.
+    /// UUID or an `i64`, such as `|row| Ok(&row.id)`.
     ///
     /// Use it for a record field's values, as
     /// [`Sealed<F, InRecord<Id>>`](crate::InRecord) holds them; the record ID's
@@ -303,7 +303,7 @@ where
     ) -> Result<RowState, Error> {
         self.check_arity(indexes)?;
         let record = (self.record_id)(row)?;
-        let context = SealContext::new(&F::ID, record)?;
+        let context = SealContext::new(&F::ID, record);
 
         match inspect_ciphertext(ciphertext) {
             Ok(_) => {}
@@ -350,7 +350,7 @@ where
     ) -> Result<RowOutcome, Error> {
         self.check_arity(indexes)?;
         let record = (self.record_id)(row)?;
-        let context = SealContext::new(&F::ID, record)?;
+        let context = SealContext::new(&F::ID, record);
 
         match inspect_ciphertext(ciphertext) {
             Ok(_) => {}

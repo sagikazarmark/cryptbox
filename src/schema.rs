@@ -422,7 +422,6 @@ const fn kind_name(kind: RecordKind) -> &'static str {
     match kind {
         RecordKind::Uuid => "uuid",
         RecordKind::I64 => "i64",
-        RecordKind::Bytes => "bytes",
     }
 }
 

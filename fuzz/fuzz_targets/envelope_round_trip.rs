@@ -26,7 +26,7 @@ struct Input {
 enum Context {
     Standalone,
     Record(i64),
-    BytesRecord(Vec<u8>),
+    UuidRecord([u8; 16]),
 }
 
 /// One change to the stored envelope.
@@ -99,11 +99,10 @@ fn round_trip<F: Seal<Value = Vec<u8>>>(input: &Input) {
                 sealed.open_in(&id.wrapping_add(1), &keys),
                 Err(Error::AuthenticationFailed)
             );
-            let other = Sealed::<F, InRecord<Vec<u8>>>::from_bytes(sealed.as_bytes()).unwrap();
-            assert_eq!(
-                other.open_in(&id.to_be_bytes().to_vec(), &keys),
-                Err(Error::ContextMismatch)
-            );
+            let other = Sealed::<F, InRecord<[u8; 16]>>::from_bytes(sealed.as_bytes()).unwrap();
+            let mut uuid = [0; 16];
+            uuid[8..].copy_from_slice(&id.to_be_bytes());
+            assert_eq!(other.open_in(&uuid, &keys), Err(Error::ContextMismatch));
             let other = Sealed::<F>::from_bytes(sealed.as_bytes()).unwrap();
             assert_eq!(other.open(&keys), Err(Error::ContextMismatch));
 
@@ -112,19 +111,19 @@ fn round_trip<F: Seal<Value = Vec<u8>>>(input: &Input) {
                     .map(|sealed| sealed.open_in(id, &keys))
             });
         }
-        Context::BytesRecord(id) => {
-            let sealed = Sealed::<F, InRecord<Vec<u8>>>::seal_in(plaintext, id, &keys)
+        Context::UuidRecord(id) => {
+            let sealed = Sealed::<F, InRecord<[u8; 16]>>::seal_in(plaintext, id, &keys)
                 .expect("sealing succeeds");
 
-            let mut other_id = id.clone();
-            other_id.push(0);
+            let mut other_id = *id;
+            other_id[15] ^= 1;
             assert_eq!(
                 sealed.open_in(&other_id, &keys),
                 Err(Error::AuthenticationFailed)
             );
 
             check(plaintext, sealed.as_bytes(), &input.mutation, |bytes| {
-                Sealed::<F, InRecord<Vec<u8>>>::from_bytes(bytes)
+                Sealed::<F, InRecord<[u8; 16]>>::from_bytes(bytes)
                     .map(|sealed| sealed.open_in(id, &keys))
             });
         }

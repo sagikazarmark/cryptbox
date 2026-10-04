@@ -1,4 +1,4 @@
-/// Not a record ID type: a record ID is a UUID, an `i64`, or bytes.
+/// Not a record ID type: a record ID is a UUID or an `i64`.
 #[derive(cryptbox::Record)]
 struct TextId {
     #[cryptbox(record_id)]

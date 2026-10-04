@@ -109,9 +109,9 @@ part         = kind[1] || len[4] || value[len]
   standalone value, `Sealed<F>`, and `0001` for a record's field. The record ID
   is the only part today.
 - `kind` is the part's [kind code](#record-id-kinds), which names both the part
-  and how its value is encoded. Codes `01` to `03` belong to the record ID; a
-  later kind of part would take codes of its own, so parts of different
-  contexts never share a code.
+  and how its value is encoded. Codes `01` and `02` belong to the record ID, and `03` is
+  reserved; a later kind of part would take codes of its own, so parts of
+  different contexts never share a code.
 - `len` is the value's length as an unsigned 32-bit byte count, so every value
   is length-prefixed, and `value` is its `len` bytes.
 - Parts would appear in ascending order of their kind codes, each part at most
@@ -130,13 +130,13 @@ bytes to select their own context.
 
 #### Record ID kinds
 
-Record ID kinds are fixed and canonical. There is no text kind:
+Record ID kinds are fixed and canonical. There is no bytes or text kind, and
+code `03` is reserved: no released version writes it.
 
 | Kind | Code | Value bytes |
 | --- | --- | --- |
 | uuid | `01` | 16 raw UUID bytes |
 | i64 | `02` | 8 bytes, big-endian two's complement |
-| bytes | `03` | raw bytes, as given |
 
 Every record ID carries its kind code, so the same bytes under different kinds,
 such as an `i64` and its 8 big-endian bytes, never collide.
@@ -171,7 +171,6 @@ These fingerprints are fixed permanently:
 | A standalone value | `502de8fcfb838c80` |
 | A record's field with a UUID record ID | `f130f332c1aa00ec` |
 | A record's field with an `i64` record ID | `af72b9c5219cf83b` |
-| A record's field with a bytes record ID | `842fa0b572b1196a` |
 
 For seal `12345678-1234-4234-8234-1234567890ab` and the `i64` record `7`, the
 context is:
