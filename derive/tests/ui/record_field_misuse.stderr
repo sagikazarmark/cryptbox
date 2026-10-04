@@ -39,3 +39,9 @@ error: `handle` is not sealed, so it has no blind index: seal it to index it
    |
 62 |     #[cryptbox(blind_index(
    |                ^^^^^^^^^^^
+
+error: `email` has more than one `blind_index`: a field takes one, stored in `email_index`; derive any other outside the record, with its own `BlindIndexSpec` over the field's seal
+  --> tests/ui/record_field_misuse.rs:83:16
+   |
+83 |     #[cryptbox(blind_index(
+   |                ^^^^^^^^^^^

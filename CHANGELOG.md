@@ -70,8 +70,8 @@ Decisions are recorded in ADR-0001 to ADR-0013.
   `RecordIdType` trait. The derive generates the stored
   form, `Stored{Record}`, a seal per sealed field, a blind-index spec and an
   `Index` handle per blind index, such as `Customer::EMAIL_INDEX`, whose
-  `probes` and `open_matching` run a lookup; a blind index is stored in the
-  field's name with `_index`, such as `email_index`. `stored(…)` renames the
+  `probes` and `open_matching` run a lookup; a field takes one blind index,
+  stored in the field's name with `_index`, such as `email_index`. `stored(…)` renames the
   stored form and forwards attributes to it, such as `derive(sqlx::FromRow)` or
   Serde's.
   Sealed fields are stored as `Sealed<F, InRecord<Id>>` and `Option<T>` fields

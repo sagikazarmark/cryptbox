@@ -198,6 +198,20 @@ fn parse_field<'a>(field: &'a syn::Field, errors: &mut Errors) -> Option<Field<'
 
     let role = if role == "seal" {
         let id = attrs.seal.take()?;
+        // Every index is stored in `{field}_index`, so a second one would only
+        // report that column as taken.
+        if let [_, second, ..] = attrs.indexes.as_slice() {
+            errors.push(syn::Error::new(
+                second.span,
+                format!(
+                    "`{ident}` has more than one `blind_index`: a field takes one, stored in \
+                     `{}`; derive any other outside the record, with its own `BlindIndexSpec` \
+                     over the field's seal",
+                    second.column
+                ),
+            ));
+            attrs.indexes.truncate(1);
+        }
         Role::Seal(Box::new(Sealing {
             id,
             codec: attrs.codec.take().map(|(_, codec)| codec),

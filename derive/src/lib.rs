@@ -249,8 +249,9 @@ pub fn derive_blind_index_spec(input: TokenStream) -> TokenStream {
 /// A sealed field also takes `codec = Type`, `padding = …`, as for
 /// `#[derive(Seal)]`, and `name = Name` to name its seal instead of the
 /// record's name and the field's, such as `CustomerEmail`. An `Option<T>`
-/// field seals `T` when it is present. Each
-/// `blind_index(…)` on a sealed field declares a blind index it writes:
+/// field seals `T` when it is present. A sealed field takes at most one
+/// `blind_index(…)`, the blind index it writes; derive any other outside the
+/// record, with its own `BlindIndexSpec` over the field's seal:
 ///
 /// | `blind_index(…)` key | Required | Meaning |
 /// | --- | --- | --- |
