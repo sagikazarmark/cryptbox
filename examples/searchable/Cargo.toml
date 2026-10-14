@@ -21,6 +21,6 @@ cryptbox = { path = "../..", features = ["derive"] }
 chacha20poly1305 = { version = "0.11", default-features = false, features = ["alloc"], optional = true }
 getrandom = { version = "0.4", optional = true }
 hex = "0.4"
-sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-native-roots"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 zeroize = { version = "1", features = ["alloc"] }
